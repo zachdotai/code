@@ -1,31 +1,52 @@
 import { FullScreenLayout } from "@components/FullScreenLayout";
+import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useLogoutMutation } from "@features/auth/hooks/authMutations";
-import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import {
+  authKeys,
+  getAuthIdentity,
+  useAuthStateValue,
+} from "@features/auth/hooks/authQueries";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import {
   ArrowSquareOut,
+  CheckCircle,
   GearSix,
   Robot,
   SignOut,
   WarningCircle,
 } from "@phosphor-icons/react";
-import { Button, Callout, Flex, Text } from "@radix-ui/themes";
+import { Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { trpcClient } from "@renderer/trpc/client";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { logger } from "@utils/logger";
 import { motion } from "framer-motion";
+import { useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
+const log = logger.scope("ai-approval-screen");
+
 interface AiApprovalScreenProps {
+  orgId: string | null;
   orgName: string | null;
   isAdmin: boolean;
 }
 
-export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
+export function AiApprovalScreen({
+  orgId,
+  orgName,
+  isAdmin,
+}: AiApprovalScreenProps) {
   const logoutMutation = useLogoutMutation();
   const openSettings = useSettingsDialogStore((s) => s.open);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const projectId = useAuthStateValue((s) => s.projectId);
+  const status = useAuthStateValue((s) => s.status);
+  const client = useOptionalAuthenticatedClient();
+  const queryClient = useQueryClient();
+  const [fellBackToWeb, setFellBackToWeb] = useState(false);
 
   useHotkeys(SHORTCUTS.SETTINGS, () => openSettings(), {
     preventDefault: true,
@@ -40,6 +61,38 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
     if (!approvalUrl) return;
     void trpcClient.os.openExternal.mutate({ url: approvalUrl });
   };
+
+  // Compute the same auth identity used by `useCurrentUser` so we invalidate
+  // the right cache key after toggling — onboarding then re-runs the
+  // `needsAiApproval` check and lets us into the main app without a refresh.
+  const authIdentity = getAuthIdentity({
+    status,
+    cloudRegion,
+    projectId,
+    bootstrapComplete: false,
+    availableProjectIds: [],
+    availableOrgIds: [],
+    hasCodeAccess: null,
+    needsScopeReauth: false,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      if (!client || !orgId) {
+        throw new Error("Missing API client or organization");
+      }
+      await client.setAiDataProcessingApproved(orgId, true);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: authKeys.currentUser(authIdentity),
+      });
+    },
+    onError: (err) => {
+      log.warn("Inline AI approval failed; falling back to web", err);
+      setFellBackToWeb(true);
+    },
+  });
 
   const footerLeft = (
     <Button
@@ -114,21 +167,19 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
                 </Callout.Root>
 
                 {isAdmin ? (
-                  <Flex direction="column" gap="2">
-                    <Button
-                      size="3"
-                      onClick={openApproval}
-                      disabled={!approvalUrl}
-                      className="w-full"
-                    >
-                      Approve in PostHog
-                      <ArrowSquareOut size={16} />
-                    </Button>
-                    <Text className="text-(--gray-10) text-[13px]">
-                      Opens PostHog in your browser. Come back here once you've
-                      approved.
-                    </Text>
-                  </Flex>
+                  <AdminApprovalActions
+                    canApproveInline={!!client && !!orgId}
+                    approvalUrl={approvalUrl}
+                    isPending={approveMutation.isPending}
+                    fellBackToWeb={fellBackToWeb}
+                    error={
+                      approveMutation.error instanceof Error
+                        ? approveMutation.error.message
+                        : null
+                    }
+                    onApprove={() => approveMutation.mutate()}
+                    onOpenApproval={openApproval}
+                  />
                 ) : (
                   <Text className="text-(--gray-11) text-sm">
                     Ask an organization admin to approve AI data processing.
@@ -141,5 +192,77 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
       </FullScreenLayout>
       <SettingsDialog />
     </>
+  );
+}
+
+interface AdminApprovalActionsProps {
+  canApproveInline: boolean;
+  approvalUrl: string | null;
+  isPending: boolean;
+  fellBackToWeb: boolean;
+  error: string | null;
+  onApprove: () => void;
+  onOpenApproval: () => void;
+}
+
+function AdminApprovalActions({
+  canApproveInline,
+  approvalUrl,
+  isPending,
+  fellBackToWeb,
+  error,
+  onApprove,
+  onOpenApproval,
+}: AdminApprovalActionsProps) {
+  // If the inline call ever fails (e.g. an older backend without the narrow
+  // exemption, a temporary 403, or a network error), fall through to the old
+  // "open the web settings" path so the user is never stuck. Robust against
+  // dismissal because the Skip button below logs out instead of looping.
+  if (fellBackToWeb || !canApproveInline) {
+    return (
+      <Flex direction="column" gap="2">
+        <Button
+          size="3"
+          onClick={onOpenApproval}
+          disabled={!approvalUrl}
+          className="w-full"
+        >
+          Approve in PostHog
+          <ArrowSquareOut size={16} />
+        </Button>
+        <Text className="text-(--gray-10) text-[13px]">
+          {error
+            ? `${error}. Opens PostHog in your browser — come back once you've approved.`
+            : "Opens PostHog in your browser. Come back here once you've approved."}
+        </Text>
+      </Flex>
+    );
+  }
+
+  return (
+    <Flex direction="column" gap="2">
+      <Button
+        size="3"
+        onClick={onApprove}
+        disabled={isPending}
+        className="w-full"
+      >
+        {isPending ? (
+          <>
+            <Spinner size="2" />
+            Approving…
+          </>
+        ) : (
+          <>
+            <CheckCircle size={16} weight="bold" />
+            Approve AI data processing
+          </>
+        )}
+      </Button>
+      <Text className="text-(--gray-10) text-[13px]">
+        Toggles the org-level setting from here. You can change this later in
+        organization settings on PostHog.
+      </Text>
+    </Flex>
   );
 }

@@ -644,6 +644,38 @@ export class PostHogAPIClient {
     });
   }
 
+  /**
+   * Toggle the org-level "AI data processing approval" flag. PostHog Code uses
+   * project-scoped OAuth tokens; the backend has a narrow exemption that lets
+   * those tokens flip *only* this single field on the parent org.
+   * See `_is_narrow_ai_consent_toggle` in `posthog/permissions.py`.
+   */
+  async setAiDataProcessingApproved(
+    orgId: string,
+    approved: boolean,
+  ): Promise<void> {
+    const urlPath = `/api/organizations/${encodeURIComponent(orgId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ is_ai_data_processing_approved: approved }),
+      },
+    });
+    if (!response.ok) {
+      const err = (await response.json().catch(() => ({}))) as {
+        detail?: unknown;
+      };
+      const detail =
+        typeof err.detail === "string"
+          ? err.detail
+          : `Failed to update AI data processing approval (${response.status})`;
+      throw new Error(detail);
+    }
+  }
+
   async getProject(projectId: number) {
     //@ts-expect-error this is not in the generated client
     const data = await this.api.get("/api/projects/{project_id}/", {

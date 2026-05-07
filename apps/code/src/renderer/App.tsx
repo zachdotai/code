@@ -262,6 +262,7 @@ function App() {
       return (
         <motion.div key="ai-approval" initial={{ opacity: 1 }}>
           <AiApprovalScreen
+            orgId={currentOrg?.id ?? null}
             orgName={currentOrg?.name ?? null}
             isAdmin={isAdmin}
           />
