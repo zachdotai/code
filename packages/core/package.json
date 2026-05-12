@@ -1,0 +1,49 @@
+{
+  "name": "@posthog/core",
+  "version": "1.0.0",
+  "description": "Shared business logic for PostHog cloud task operations",
+  "type": "module",
+  "exports": {
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    },
+    "./credentials": {
+      "types": "./dist/credentials.d.ts",
+      "import": "./dist/credentials.js"
+    },
+    "./oauth": {
+      "types": "./dist/oauth.d.ts",
+      "import": "./dist/oauth.js"
+    },
+    "./sse-parser": {
+      "types": "./dist/sse-parser.d.ts",
+      "import": "./dist/sse-parser.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "node ../../scripts/rimraf.mjs dist .turbo"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.8"
+  },
+  "files": [
+    "dist/**/*",
+    "src/**/*"
+  ]
+}

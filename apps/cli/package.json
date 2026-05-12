@@ -1,0 +1,32 @@
+{
+  "name": "@posthog/code-cli",
+  "version": "1.0.0",
+  "description": "CLI for triggering and monitoring PostHog Code cloud tasks",
+  "type": "module",
+  "bin": {
+    "posthog-code": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "node ../../scripts/rimraf.mjs dist .turbo"
+  },
+  "dependencies": {
+    "@posthog/core": "workspace:*",
+    "commander": "^14.0.2"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist/**/*"
+  ]
+}
