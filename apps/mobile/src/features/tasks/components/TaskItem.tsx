@@ -18,8 +18,6 @@ function TaskItemComponent({ task, onPress }: TaskItemProps) {
       ? formatDistanceToNow(createdAt, { addSuffix: true })
       : format(createdAt, "MMM d");
 
-  const environment = task.latest_run?.environment;
-
   return (
     <Pressable
       onPress={() => onPress(task)}
@@ -33,30 +31,17 @@ function TaskItemComponent({ task, onPress }: TaskItemProps) {
       {/* Content column */}
       <View className="min-w-0 flex-1">
         <View className="flex-row items-center gap-2">
-          <Text className="shrink-0 text-[11px] text-gray-9">{task.slug}</Text>
-          {environment === "cloud" && (
-            <View className="rounded bg-accent-3 px-1.5 py-0.5">
-              <Text className="text-[10px] text-accent-11">Cloud</Text>
-            </View>
-          )}
-          {environment === "local" && (
-            <View className="rounded bg-gray-4 px-1.5 py-0.5">
-              <Text className="text-[10px] text-gray-11">Local</Text>
-            </View>
-          )}
-          <View className="flex-1" />
+          <Text
+            className="flex-1 font-medium text-[14px] text-gray-12"
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {task.title}
+          </Text>
           <Text className="shrink-0 text-[11px] text-gray-9">
             {timeDisplay}
           </Text>
         </View>
-
-        <Text
-          className="mt-1 font-medium text-[14px] text-gray-12"
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
-          {task.title}
-        </Text>
 
         {task.description ? (
           <Text

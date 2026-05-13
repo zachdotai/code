@@ -14,6 +14,7 @@ import { useThemeColors } from "@/lib/theme";
 import { useIntegrations } from "../hooks/useIntegrations";
 import { useTasks } from "../hooks/useTasks";
 import { useArchivedTasksStore } from "../stores/archivedTasksStore";
+import { taskActivityTimestamp, useTaskStore } from "../stores/taskStore";
 import type { Task } from "../types";
 import { SwipeableTaskItem } from "./SwipeableTaskItem";
 
@@ -114,15 +115,33 @@ function CreateTaskEmptyState({ onCreateTask }: CreateTaskEmptyStateProps) {
 type ListItem =
   | { type: "task"; task: Task; isArchived: boolean }
   | { type: "repo-header"; repoLabel: string; count: number }
+  | { type: "date-header"; label: string; count: number }
   | { type: "archived-header"; count: number; expanded: boolean };
 
 const NO_REPO_LABEL = "No repository";
 
-function repoSortKey(task: Task): number {
-  // Most recent activity first within a group.
-  const ts = task.latest_run?.updated_at ?? task.updated_at ?? task.created_at;
-  return -new Date(ts).getTime();
+function relativeDateGroup(ms: number): string {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfDate = new Date(ms);
+  startOfDate.setHours(0, 0, 0, 0);
+  const days = Math.round(
+    (startOfToday.getTime() - startOfDate.getTime()) / 86_400_000,
+  );
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return "This week";
+  if (days < 30) return "This month";
+  return "Earlier";
 }
+
+const DATE_GROUP_ORDER = [
+  "Today",
+  "Yesterday",
+  "This week",
+  "This month",
+  "Earlier",
+];
 
 export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
   const { tasks, isLoading, error, refetch } = useTasks();
@@ -130,6 +149,8 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
     useIntegrations();
   const themeColors = useThemeColors();
   const { archivedTasks, archive, unarchive } = useArchivedTasksStore();
+  const organizeMode = useTaskStore((s) => s.organizeMode);
+  const sortMode = useTaskStore((s) => s.sortMode);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
@@ -158,39 +179,76 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
       (a, b) => (archivedTasks[a.id] ?? 0) - (archivedTasks[b.id] ?? 0),
     );
 
-    // Group active tasks by repository.
-    const groups = new Map<string, Task[]>();
-    for (const task of active) {
-      const key = task.repository?.trim() || NO_REPO_LABEL;
-      const bucket = groups.get(key);
-      if (bucket) {
-        bucket.push(task);
-      } else {
-        groups.set(key, [task]);
-      }
-    }
-
-    // Sort each group's tasks by most-recent activity.
-    for (const tasksInRepo of groups.values()) {
-      tasksInRepo.sort((a, b) => repoSortKey(a) - repoSortKey(b));
-    }
-
-    // Order groups: most-recently-active repo first; "No repository" last.
-    const groupEntries = Array.from(groups.entries()).sort((a, b) => {
-      if (a[0] === NO_REPO_LABEL) return 1;
-      if (b[0] === NO_REPO_LABEL) return -1;
-      return repoSortKey(a[1][0]) - repoSortKey(b[1][0]);
-    });
-
     const items: ListItem[] = [];
-    for (const [repoLabel, tasksInRepo] of groupEntries) {
-      items.push({
-        type: "repo-header",
-        repoLabel,
-        count: tasksInRepo.length,
+
+    if (organizeMode === "by-project") {
+      // Group active tasks by repository.
+      const groups = new Map<string, Task[]>();
+      for (const task of active) {
+        const key = task.repository?.trim() || NO_REPO_LABEL;
+        const bucket = groups.get(key);
+        if (bucket) {
+          bucket.push(task);
+        } else {
+          groups.set(key, [task]);
+        }
+      }
+
+      // Sort each group's tasks by the configured sortMode (newest first).
+      for (const tasksInRepo of groups.values()) {
+        tasksInRepo.sort(
+          (a, b) =>
+            taskActivityTimestamp(b, sortMode) -
+            taskActivityTimestamp(a, sortMode),
+        );
+      }
+
+      // Order groups: most-recently-active repo first; "No repository" last.
+      const groupEntries = Array.from(groups.entries()).sort((a, b) => {
+        if (a[0] === NO_REPO_LABEL) return 1;
+        if (b[0] === NO_REPO_LABEL) return -1;
+        return (
+          taskActivityTimestamp(b[1][0], sortMode) -
+          taskActivityTimestamp(a[1][0], sortMode)
+        );
       });
-      for (const task of tasksInRepo) {
-        items.push({ type: "task", task, isArchived: false });
+
+      for (const [repoLabel, tasksInRepo] of groupEntries) {
+        items.push({
+          type: "repo-header",
+          repoLabel,
+          count: tasksInRepo.length,
+        });
+        for (const task of tasksInRepo) {
+          items.push({ type: "task", task, isArchived: false });
+        }
+      }
+    } else {
+      // Chronological — flat list grouped by relative-date buckets.
+      const sorted = [...active].sort(
+        (a, b) =>
+          taskActivityTimestamp(b, sortMode) -
+          taskActivityTimestamp(a, sortMode),
+      );
+
+      const buckets = new Map<string, Task[]>();
+      for (const task of sorted) {
+        const label = relativeDateGroup(taskActivityTimestamp(task, sortMode));
+        const bucket = buckets.get(label);
+        if (bucket) {
+          bucket.push(task);
+        } else {
+          buckets.set(label, [task]);
+        }
+      }
+
+      for (const label of DATE_GROUP_ORDER) {
+        const bucket = buckets.get(label);
+        if (!bucket || bucket.length === 0) continue;
+        items.push({ type: "date-header", label, count: bucket.length });
+        for (const task of bucket) {
+          items.push({ type: "task", task, isArchived: false });
+        }
       }
     }
 
@@ -209,7 +267,7 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
     }
 
     return items;
-  }, [tasks, archivedTasks, archivedExpanded]);
+  }, [tasks, archivedTasks, archivedExpanded, organizeMode, sortMode]);
 
   if (error) {
     return (
@@ -259,6 +317,8 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
             return "__archived_header__";
           case "repo-header":
             return `__repo__${item.repoLabel}`;
+          case "date-header":
+            return `__date__${item.label}`;
           case "task":
             return `${item.task.id}-${item.isArchived ? "a" : "v"}`;
         }
@@ -273,6 +333,21 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
                 numberOfLines={1}
               >
                 {item.repoLabel}
+              </Text>
+              <Text className="text-[11px] text-gray-9">{item.count}</Text>
+            </View>
+          );
+        }
+
+        if (item.type === "date-header") {
+          return (
+            <View className="flex-row items-center gap-2 bg-gray-2 px-3 py-2">
+              <Text
+                className="flex-1 font-medium text-[12px] text-gray-11 uppercase"
+                style={{ letterSpacing: 0.5 }}
+                numberOfLines={1}
+              >
+                {item.label}
               </Text>
               <Text className="text-[11px] text-gray-9">{item.count}</Text>
             </View>

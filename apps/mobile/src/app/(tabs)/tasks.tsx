@@ -5,11 +5,17 @@ import { InteractionManager, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MenuButton } from "@/features/navigation/components/MenuButton";
 import { TaskList } from "@/features/tasks";
+import {
+  TaskFilterButton,
+  TaskFilterMenu,
+  useTaskFilterMenu,
+} from "@/features/tasks/components/TaskFilterMenu";
 
 export default function TasksScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const readyRef = useRef(true);
+  const filterMenu = useTaskFilterMenu();
 
   // Block navigation while a modal dismiss animation is in progress.
   // When the screen loses focus (modal opens), readyRef is false.
@@ -57,6 +63,7 @@ export default function TasksScreen() {
               Your PostHog Code sessions
             </Text>
           </View>
+          <TaskFilterButton onPress={filterMenu.show} />
           <Pressable
             onPress={handleCreateTask}
             className="rounded-md bg-accent-9 px-3.5 py-2 active:opacity-80"
@@ -70,6 +77,8 @@ export default function TasksScreen() {
 
       {/* Task List */}
       <TaskList onTaskPress={handleTaskPress} onCreateTask={handleCreateTask} />
+
+      <TaskFilterMenu open={filterMenu.open} onClose={filterMenu.hide} />
     </View>
   );
 }

@@ -9,6 +9,7 @@ export interface Task {
   origin_product: string;
   repository?: string | null;
   github_integration?: number | null;
+  internal?: boolean;
   latest_run?: TaskRun;
 }
 

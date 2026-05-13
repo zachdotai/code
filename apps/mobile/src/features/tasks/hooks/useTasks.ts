@@ -26,7 +26,7 @@ export const taskKeys = {
 export function useTasks(filters?: { repository?: string }) {
   const { projectId, oauthAccessToken } = useAuthStore();
   const { data: currentUser } = useUserQuery();
-  const { orderBy, orderDirection, filter } = useTaskStore();
+  const { sortMode, showInternal, filter } = useTaskStore();
 
   const queryFilters = {
     ...filters,
@@ -41,8 +41,8 @@ export function useTasks(filters?: { repository?: string }) {
 
   const filteredTasks = filterAndSortTasks(
     query.data ?? [],
-    orderBy,
-    orderDirection,
+    sortMode,
+    showInternal,
     filter,
   );
 
