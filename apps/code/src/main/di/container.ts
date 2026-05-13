@@ -19,6 +19,7 @@ import { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
 import { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
 import { ElectronMainWindow } from "../platform-adapters/electron-main-window";
 import { ElectronNotifier } from "../platform-adapters/electron-notifier";
+import { ElectronPdfExporter } from "../platform-adapters/electron-pdf-exporter";
 import { ElectronPowerManager } from "../platform-adapters/electron-power-manager";
 import { ElectronSecureStorage } from "../platform-adapters/electron-secure-storage";
 import { ElectronStoragePaths } from "../platform-adapters/electron-storage-paths";
@@ -30,6 +31,7 @@ import { AppLifecycleService } from "../services/app-lifecycle/service";
 import { ArchiveService } from "../services/archive/service";
 import { AuthService } from "../services/auth/service";
 import { AuthProxyService } from "../services/auth-proxy/service";
+import { CanvasExportService } from "../services/canvas-export/service";
 import { CloudTaskService } from "../services/cloud-task/service";
 import { ConnectivityService } from "../services/connectivity/service";
 import { ContextMenuService } from "../services/context-menu/service";
@@ -88,6 +90,7 @@ container.bind(MAIN_TOKENS.Notifier).to(ElectronNotifier);
 container.bind(MAIN_TOKENS.ContextMenu).to(ElectronContextMenu);
 container.bind(MAIN_TOKENS.BundledResources).to(ElectronBundledResources);
 container.bind(MAIN_TOKENS.ImageProcessor).to(ElectronImageProcessor);
+container.bind(MAIN_TOKENS.PdfExporter).to(ElectronPdfExporter);
 
 container.bind(MAIN_TOKENS.DatabaseService).to(DatabaseService);
 container
@@ -117,6 +120,7 @@ container.bind(MAIN_TOKENS.ProvisioningService).to(ProvisioningService);
 
 container.bind(MAIN_TOKENS.ExternalAppsService).to(ExternalAppsService);
 container.bind(MAIN_TOKENS.FeatureScanService).to(FeatureScanService);
+container.bind(MAIN_TOKENS.CanvasExportService).to(CanvasExportService);
 container.bind(MAIN_TOKENS.LlmGatewayService).to(LlmGatewayService);
 container.bind(MAIN_TOKENS.McpAppsService).to(McpAppsService);
 container.bind(MAIN_TOKENS.FileWatcherService).to(FileWatcherService);

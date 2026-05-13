@@ -63,6 +63,10 @@
     "./image-processor": {
       "types": "./dist/image-processor.d.ts",
       "import": "./dist/image-processor.js"
+    },
+    "./pdf-exporter": {
+      "types": "./dist/pdf-exporter.d.ts",
+      "import": "./dist/pdf-exporter.js"
     }
   },
   "scripts": {
