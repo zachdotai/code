@@ -62,6 +62,7 @@ interface ViewState {
     | "task-detail"
     | "task-input"
     | "canvas-input"
+    | "canvas-new"
     | "settings"
     | "folder-settings"
     | "inbox"

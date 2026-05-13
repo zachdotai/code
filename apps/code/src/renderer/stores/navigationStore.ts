@@ -16,6 +16,7 @@ type ViewType =
   | "task-detail"
   | "task-input"
   | "canvas-input"
+  | "canvas-new"
   | "folder-settings"
   | "inbox"
   | "archived"
@@ -60,6 +61,7 @@ interface NavigationStore {
   ) => void;
   clearTaskInputReportAssociation: () => void;
   navigateToCanvasInput: (canvasId: string) => void;
+  navigateToNewCanvas: () => void;
   navigateToFolderSettings: (folderId: string) => void;
   navigateToInbox: () => void;
   navigateToArchived: () => void;
@@ -89,6 +91,9 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
     return view1.folderId === view2.folderId;
   }
   if (view1.type === "canvas-input" && view2.type === "canvas-input") {
+    return view1.canvasId === view2.canvasId;
+  }
+  if (view1.type === "canvas-new" && view2.type === "canvas-new") {
     return view1.canvasId === view2.canvasId;
   }
   if (view1.type === "inbox" && view2.type === "inbox") {
@@ -265,6 +270,10 @@ export const useNavigationStore = create<NavigationStore>()(
 
         navigateToCanvasInput: (canvasId: string) => {
           navigate({ type: "canvas-input", canvasId });
+        },
+
+        navigateToNewCanvas: () => {
+          navigate({ type: "canvas-new", canvasId: crypto.randomUUID() });
         },
 
         navigateToFolderSettings: (folderId: string) => {

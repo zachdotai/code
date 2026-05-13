@@ -6,11 +6,13 @@ import { SpaceSwitcher } from "@components/SpaceSwitcher";
 import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksView";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
 import { useUsageLimitDetection } from "@features/billing/hooks/useUsageLimitDetection";
+import { CanvasInput } from "@features/canvas/components/CanvasInput";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
+import { CanvasChatBox } from "@features/rendering-canvas/CanvasChatBox";
 import { RenderingCanvas } from "@features/rendering-canvas/RenderingCanvas";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
@@ -124,7 +126,16 @@ export function MainLayout() {
           )}
 
           {view.type === "canvas-input" && view.canvasId && (
-            <RenderingCanvas canvasId={view.canvasId} className="h-full" />
+            <Flex direction="column" height="100%">
+              <Box flexGrow="1" overflow="hidden">
+                <RenderingCanvas canvasId={view.canvasId} className="h-full" />
+              </Box>
+              <CanvasChatBox canvasId={view.canvasId} />
+            </Flex>
+          )}
+
+          {view.type === "canvas-new" && view.canvasId && (
+            <CanvasInput canvasId={view.canvasId} />
           )}
 
           {view.type === "folder-settings" && <FolderSettingsView />}

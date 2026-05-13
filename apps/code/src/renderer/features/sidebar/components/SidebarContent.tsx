@@ -6,7 +6,7 @@ import { ArchiveIcon } from "@phosphor-icons/react";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
 import type React from "react";
-import { AddFolderButton } from "./AddFolderButton";
+import { AddCanvasButton } from "./AddCanvasButton";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SidebarMenu } from "./SidebarMenu";
 import { UpdateBanner } from "./UpdateBanner";
@@ -24,7 +24,7 @@ export const SidebarContent: React.FC = () => {
       </Box>
       <UpdateBanner />
       <SidebarUsageBar />
-      {activeTab === "files" && <AddFolderButton />}
+      {activeTab === "files" && <AddCanvasButton />}
       <Box className="shrink-0 border-gray-6 border-t">
         <TestCanvasButton />
       </Box>
