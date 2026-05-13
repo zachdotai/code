@@ -1,3 +1,7 @@
+import {
+  isLocalTemplateId,
+  LOCAL_MCP_TEMPLATES,
+} from "@features/mcp-servers/localTemplates";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import type {
@@ -92,6 +96,19 @@ export function useMcpServers() {
     (client) => client.getMcpServers(),
   );
 
+  const mergedServers = useMemo<McpRecommendedServer[] | undefined>(() => {
+    if (!servers) return servers;
+    const remoteIconKeys = new Set(
+      servers.map((s) => s.icon_key).filter((k): k is string => !!k),
+    );
+    const locals = LOCAL_MCP_TEMPLATES.filter(
+      (t) => !t.icon_key || !remoteIconKeys.has(t.icon_key),
+    );
+    return [...servers, ...locals].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
+  }, [servers]);
+
   const installedTemplateIds = useMemo(
     () =>
       new Set(
@@ -170,17 +187,6 @@ export function useMcpServers() {
     },
   );
 
-  const installTemplate = useCallback(
-    (template: McpRecommendedServer, opts?: { api_key?: string }) => {
-      setInstallingId(template.id);
-      installTemplateMutation.mutate({
-        template_id: template.id,
-        api_key: opts?.api_key,
-      });
-    },
-    [installTemplateMutation],
-  );
-
   const installCustomMutation = useAuthenticatedMutation(
     (
       client,
@@ -202,11 +208,34 @@ export function useMcpServers() {
           toast.error(data.error);
         }
         invalidateInstallations();
+        setInstallingId(null);
       },
       onError: (error: Error) => {
         toast.error(error.message || "Failed to add server");
+        setInstallingId(null);
       },
     },
+  );
+
+  const installTemplate = useCallback(
+    (template: McpRecommendedServer, opts?: { api_key?: string }) => {
+      setInstallingId(template.id);
+      if (isLocalTemplateId(template.id)) {
+        installCustomMutation.mutate({
+          name: template.name,
+          url: template.url,
+          description: template.description ?? "",
+          auth_type: template.auth_type ?? "oauth",
+          ...(opts?.api_key ? { api_key: opts.api_key } : {}),
+        });
+        return;
+      }
+      installTemplateMutation.mutate({
+        template_id: template.id,
+        api_key: opts?.api_key,
+      });
+    },
+    [installTemplateMutation, installCustomMutation],
   );
 
   const reauthorizeMutation = useAuthenticatedMutation(
@@ -247,7 +276,7 @@ export function useMcpServers() {
   return {
     installations: installations as McpServerInstallation[] | undefined,
     installationsLoading,
-    servers: servers as McpRecommendedServer[] | undefined,
+    servers: mergedServers,
     serversLoading,
     installedTemplateIds,
     installedUrls,

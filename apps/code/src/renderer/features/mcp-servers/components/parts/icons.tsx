@@ -20,10 +20,7 @@ import IconGitHub from "@renderer/assets/services/github.svg";
 import IconGitLab from "@renderer/assets/services/gitlab.svg";
 import IconGmail from "@renderer/assets/services/gmail.svg";
 import IconGoogleCalendar from "@renderer/assets/services/google_calendar.svg";
-import IconGoogleDocs from "@renderer/assets/services/google_docs.svg";
 import IconGoogleDrive from "@renderer/assets/services/google_drive.svg";
-import IconGoogleSheets from "@renderer/assets/services/google_sheets.svg";
-import IconGoogleSlides from "@renderer/assets/services/google_slides.svg";
 import IconGranola from "@renderer/assets/services/granola.svg";
 import IconHex from "@renderer/assets/services/hex.svg";
 import IconHubSpot from "@renderer/assets/services/hubspot.svg";
@@ -66,10 +63,7 @@ const BRAND_ICONS: Record<string, string> = {
   gitlab: IconGitLab,
   gmail: IconGmail,
   google_calendar: IconGoogleCalendar,
-  google_docs: IconGoogleDocs,
   google_drive: IconGoogleDrive,
-  google_sheets: IconGoogleSheets,
-  google_slides: IconGoogleSlides,
   granola: IconGranola,
   hex: IconHex,
   hubspot: IconHubSpot,
