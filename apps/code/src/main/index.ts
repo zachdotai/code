@@ -15,6 +15,7 @@ import type { AuthService } from "./services/auth/service";
 import type { ExternalAppsService } from "./services/external-apps/service";
 import type { GitHubIntegrationService } from "./services/github-integration/service";
 import type { InboxLinkService } from "./services/inbox-link/service";
+import type { MemoryService } from "./services/memory/service";
 import type { NotificationService } from "./services/notification/service";
 import type { OAuthService } from "./services/oauth/service";
 import {
@@ -164,6 +165,10 @@ async function initializeServices(): Promise<void> {
     MAIN_TOKENS.SuspensionService,
   );
   suspensionService.startInactivityChecker();
+
+  const memoryService = container.get<MemoryService>(MAIN_TOKENS.MemoryService);
+  await memoryService.ensureDir();
+  await memoryService.startWatcher();
 
   // Track app started event
   trackAppEvent(ANALYTICS_EVENTS.APP_STARTED);

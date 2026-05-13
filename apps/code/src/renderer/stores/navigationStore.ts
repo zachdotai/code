@@ -148,6 +148,9 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
   if (view1.type === "setup" && view2.type === "setup") {
     return true;
   }
+  if (view1.type === "memory" && view2.type === "memory") {
+    return true;
+  }
   return false;
 };
 
