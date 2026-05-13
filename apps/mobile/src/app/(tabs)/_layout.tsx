@@ -18,8 +18,13 @@ export default function TabsLayout() {
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
-        // Let the drawer's Modal handle back when it's open.
-        if (useNavDrawerStore.getState().isOpen) return false;
+        const store = useNavDrawerStore.getState();
+        // Drawer always-mounted: close it explicitly here since there's no
+        // Modal onRequestClose to fall through to.
+        if (store.isOpen) {
+          store.close();
+          return true;
+        }
         if (pathname === HOME_ROUTE) return false;
         router.replace(HOME_ROUTE);
         return true;

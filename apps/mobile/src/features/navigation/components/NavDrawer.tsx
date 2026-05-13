@@ -1,14 +1,14 @@
 import { Text } from "@components/text";
 import { usePathname, useRouter } from "expo-router";
 import { GearSix, Plus, Tray } from "phosphor-react-native";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import {
   Animated,
   Dimensions,
   Easing,
-  Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -63,48 +63,25 @@ export function NavDrawer() {
 
   const translateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
-      // Mount before the animation kicks off so the drawer is on-screen to
-      // animate. The animation then slides it in from the offscreen position.
-      setIsMounted(true);
-      Animated.parallel([
-        Animated.timing(translateX, {
-          toValue: 0,
-          duration: 280,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropOpacity, {
-          toValue: 1,
-          duration: 280,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-      return;
-    }
-
+    // Drawer is always mounted; only the animation values move. The native
+    // driver runs these off the JS thread, so a press triggers the slide
+    // instantly without re-rendering the (heavy) drawer subtree.
     Animated.parallel([
       Animated.timing(translateX, {
-        toValue: -DRAWER_WIDTH,
-        duration: 220,
-        easing: Easing.in(Easing.cubic),
+        toValue: isOpen ? 0 : -DRAWER_WIDTH,
+        duration: isOpen ? 280 : 220,
+        easing: isOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.timing(backdropOpacity, {
-        toValue: 0,
-        duration: 220,
-        easing: Easing.in(Easing.cubic),
+        toValue: isOpen ? 1 : 0,
+        duration: isOpen ? 280 : 220,
+        easing: isOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
-    ]).start(({ finished }) => {
-      // Only unmount once the close animation actually settles, so a rapid
-      // re-open mid-close doesn't accidentally tear the drawer down.
-      if (finished) setIsMounted(false);
-    });
+    ]).start();
   }, [isOpen, translateX, backdropOpacity]);
 
   const handleNewTask = () => {
@@ -127,120 +104,116 @@ export function NavDrawer() {
   const isOnSettings = pathname === "/settings";
 
   return (
-    <Modal
-      visible={isMounted}
-      transparent
-      animationType="none"
-      onRequestClose={close}
-      statusBarTranslucent
+    <View
+      pointerEvents={isOpen ? "auto" : "none"}
+      style={StyleSheet.absoluteFillObject}
     >
-      <View className="flex-1">
-        <Animated.View
-          className="absolute inset-0 bg-black/40"
-          style={{ opacity: backdropOpacity }}
-        >
-          <Pressable className="flex-1" onPress={close} />
-        </Animated.View>
+      <Animated.View
+        pointerEvents={isOpen ? "auto" : "none"}
+        style={[
+          StyleSheet.absoluteFillObject,
+          { backgroundColor: "rgba(0,0,0,0.4)", opacity: backdropOpacity },
+        ]}
+      >
+        {/* Touch-down close so the dismiss starts the moment the finger lands. */}
+        <Pressable className="flex-1" onPressIn={close} />
+      </Animated.View>
 
-        <Animated.View
-          className="absolute top-0 bottom-0 left-0 border-gray-6 border-r bg-gray-2"
-          style={{
-            width: DRAWER_WIDTH,
-            paddingTop: insets.top + 12,
-            paddingBottom: insets.bottom,
-            transform: [{ translateX }],
-          }}
-        >
-          <Pressable
-            onPress={handleHome}
-            className="px-4 pb-3 active:opacity-60"
+      <Animated.View
+        className="absolute top-0 bottom-0 left-0 border-gray-6 border-r bg-gray-2"
+        style={{
+          width: DRAWER_WIDTH,
+          paddingTop: insets.top + 12,
+          paddingBottom: insets.bottom,
+          transform: [{ translateX }],
+        }}
+      >
+        <Pressable onPress={handleHome} className="px-4 pb-3 active:opacity-60">
+          <Text className="font-bold text-[20px] text-gray-12">PostHog</Text>
+        </Pressable>
+
+        <View className="gap-0.5 px-2 pb-2">
+          <DrawerItem
+            icon={<Plus size={18} color={iconColorActive} weight="bold" />}
+            label="New task"
+            onPress={handleNewTask}
+          />
+          <DrawerItem
+            icon={
+              <Tray
+                size={18}
+                color={isOnInbox ? iconColorActive : iconColor}
+                weight={isOnInbox ? "fill" : "regular"}
+              />
+            }
+            label="Inbox"
+            active={isOnInbox}
+            onPress={handleInbox}
+          />
+        </View>
+
+        <View className="mx-3 mb-1 border-gray-6 border-t" />
+
+        <View className="px-4 pt-3 pb-1.5">
+          <Text
+            className="font-medium text-[11px] text-gray-10 uppercase"
+            style={{ letterSpacing: 0.5 }}
           >
-            <Text className="font-bold text-[20px] text-gray-12">PostHog</Text>
-          </Pressable>
+            Tasks
+          </Text>
+        </View>
 
-          <View className="gap-0.5 px-2 pb-2">
-            <DrawerItem
-              icon={<Plus size={18} color={iconColorActive} weight="bold" />}
-              label="New task"
-              onPress={handleNewTask}
-            />
-            <DrawerItem
-              icon={
-                <Tray
-                  size={18}
-                  color={isOnInbox ? iconColorActive : iconColor}
-                  weight={isOnInbox ? "fill" : "regular"}
-                />
-              }
-              label="Inbox"
-              active={isOnInbox}
-              onPress={handleInbox}
-            />
-          </View>
-
-          <View className="mx-3 mb-1 border-gray-6 border-t" />
-
-          <View className="px-4 pt-3 pb-1.5">
-            <Text
-              className="font-medium text-[11px] text-gray-10 uppercase"
-              style={{ letterSpacing: 0.5 }}
-            >
-              Tasks
-            </Text>
-          </View>
-
-          <ScrollView
-            className="flex-1"
-            contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 12 }}
-          >
-            {tasks.length === 0 ? (
-              <View className="px-2.5 py-2">
-                <Text className="text-[13px] text-gray-10">No tasks yet</Text>
-              </View>
-            ) : (
-              tasks.map((task) => {
-                const taskHref = `/task/${task.id}`;
-                const active = pathname === taskHref;
-                return (
-                  <Pressable
-                    key={task.id}
-                    onPress={() => handleTaskPress(task.id)}
-                    className={`flex-row items-center gap-2.5 rounded-md px-2.5 py-2 ${active ? "bg-gray-3" : "active:bg-gray-2"}`}
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 12 }}
+        >
+          {tasks.length === 0 ? (
+            <View className="px-2.5 py-2">
+              <Text className="text-[13px] text-gray-10">No tasks yet</Text>
+            </View>
+          ) : (
+            tasks.map((task) => {
+              const taskHref = `/task/${task.id}`;
+              const active = pathname === taskHref;
+              return (
+                <Pressable
+                  key={task.id}
+                  onPress={() => handleTaskPress(task.id)}
+                  className={`flex-row items-center gap-2.5 rounded-md px-2.5 py-2 ${active ? "bg-gray-3" : "active:bg-gray-2"}`}
+                >
+                  <View className="h-4 w-4 shrink-0 items-center justify-center">
+                    <TaskStatusIcon task={task} size={14} />
+                  </View>
+                  <Text
+                    className="flex-1 text-[14px] text-gray-12"
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
                   >
-                    <View className="h-4 w-4 shrink-0 items-center justify-center">
-                      <TaskStatusIcon task={task} size={14} />
-                    </View>
-                    <Text
-                      className="flex-1 text-[14px] text-gray-12"
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                    >
-                      {task.title}
-                    </Text>
-                  </Pressable>
-                );
-              })
-            )}
-          </ScrollView>
+                    {task.title}
+                  </Text>
+                </Pressable>
+              );
+            })
+          )}
+        </ScrollView>
 
-          <View className="mx-3 mt-1 border-gray-6 border-t" />
+        <View className="mx-3 mt-1 border-gray-6 border-t" />
 
-          <View className="px-2 pt-2">
-            <DrawerItem
-              icon={
-                <GearSix
-                  size={18}
-                  color={isOnSettings ? iconColorActive : iconColor}
-                  weight={isOnSettings ? "fill" : "regular"}
-                />
-              }
-              label="Settings"
-              active={isOnSettings}
-              onPress={handleSettings}
-            />
-          </View>
-        </Animated.View>
-      </View>
-    </Modal>
+        <View className="px-2 pt-2">
+          <DrawerItem
+            icon={
+              <GearSix
+                size={18}
+                color={isOnSettings ? iconColorActive : iconColor}
+                weight={isOnSettings ? "fill" : "regular"}
+              />
+            }
+            label="Settings"
+            active={isOnSettings}
+            onPress={handleSettings}
+          />
+        </View>
+      </Animated.View>
+    </View>
   );
 }

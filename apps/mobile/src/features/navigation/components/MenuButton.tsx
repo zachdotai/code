@@ -13,7 +13,9 @@ export function MenuButton({ className }: MenuButtonProps) {
 
   return (
     <Pressable
-      onPress={open}
+      // Fire on touch-down (not release) so the drawer starts animating in
+      // the same frame the finger lands.
+      onPressIn={open}
       hitSlop={12}
       className={`h-10 w-10 items-center justify-center rounded-lg active:bg-gray-3 ${className ?? ""}`}
       accessibilityLabel="Open navigation menu"
