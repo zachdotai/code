@@ -75,12 +75,40 @@ Repo affinity emerges naturally — a nest whose goal is "improve checkout conve
 
 ---
 
+## Event sources
+
+Most of Hedgemony's autonomy needs to know about three external events: **PR state changes** (open/merge/close), **new PR review comments**, and **CI status changes**. There are existing pieces in the PostHog cloud backend that already cover part of this — choices below are about how much to lean on them vs. handle locally.
+
+**What already exists upstream (in `posthog/products/tasks/backend/`):**
+
+- `webhooks.py: handle_pull_request_event` — receives GitHub `pull_request` webhook events (opened/closed/merged), looks up the associated `TaskRun` by PR URL or branch+repo, and on merge automatically resolves linked signal reports via `_resolve_signal_reports_for_task`. Wired into `posthog.urls.github_webhook`.
+- `temporal/automation/` + `automation_service.py` — `TaskAutomation` model with `cron_expression`. Creates Temporal schedules that fire `run-task-automation` periodically, which spawns a fresh `TaskRun` in `background` mode. Generic primitive for "scheduled agent runs."
+- `temporal/slack_relay/` — `PostHogCodeAgentRelayWorkflow` relays messages between Slack and the Code agent. Bidirectional — pattern for out-of-band agent ↔ operator comms.
+
+**What's NOT covered upstream:** `pull_request_review` and `pull_request_review_comment` GitHub events. Today's posthog-code "Fix with agent" flow is purely user-click-driven; no automated routing of review comments exists anywhere.
+
+**Three patterns to choose from for any given event source:**
+
+| Pattern | How it works | Latency | Cost |
+|---|---|---|---|
+| **A. Local poll** | Hedgemony main-process service polls the existing posthog-code services (`git/service.ts: getTaskPrStatus`, `github-integration/service.ts`) on an interval. | High (interval-bound). | Zero new infra; pure posthog-code change. |
+| **B. Cloud-piggyback poll** | Extend the upstream `webhooks.py` handler to write events to a new "events" table; posthog-code polls a new PostHog API endpoint for unconsumed events. | Medium. | New table + endpoint upstream; new poll in posthog-code. |
+| **C. Cloud push (SSE)** | Extend the existing cloud-task SSE channel (`apps/code/src/main/services/cloud-task/sse-parser.ts`) to relay Hedgemony events from `webhooks.py` straight to the local instance. | Low. | New event types on the SSE channel; new server-side fanout. |
+
+**Recommended v1 stance per source:**
+
+- **PR open/close/merge** → Pattern A for v1 (poll `getTaskPrStatus` for nest hoglets), Pattern C in v2 (the webhook handler already exists, just need to fan it out).
+- **PR review comments + CI status** → Pattern A for v1 (poll via `github-integration/service.ts`). No upstream piece exists yet, so B/C would require new cloud work.
+- **Hedgehog heartbeat** → Local timer in v1. If the hedgehog ever moves cloud-side, use `TaskAutomation` to drive her cron tick (it's literally built for this).
+
+---
+
 ## Hedgehog orchestrator
 
 She's a long-running `Task` with `hedgemony_hoglet.role = 'orchestrator'`. One per nest.
 
 - **Harness**: orchestration-only — uses claude/codex but with a constrained tool set (spawn/kill hoglets, inspect PRs, route feedback, judge goal). She has no permission to commit code herself.
-- **Scheduling**: tick-driven. Wakes on events (new hoglet, PR state change, review comment, CI status change) plus a periodic heartbeat for goal judgment. Event sources: existing `git/service.ts` (`getTaskPrStatus`), `github-integration/service.ts`, plus a new internal event bus the Hedgemony services publish to.
+- **Scheduling**: tick-driven. Wakes on events relayed by the Hedgemony services (see [Event sources](#event-sources)) plus a periodic heartbeat for goal judgment. v1: local timer. v2 (if she moves cloud-side): drive the heartbeat via `TaskAutomation`'s cron schedule, which is exactly what it's built for.
 - **Persistence**: every tick ends by writing `hedgemony_hedgehog_state.serialized_state_json`. Crash recovery = read the row, resume from last tick.
 - **Tools exposed to her**:
   - `spawn_hoglet(prompt, signal_report_id?)` → creates Task + hoglet row.
@@ -97,7 +125,7 @@ She's a long-running `Task` with `hedgemony_hoglet.role = 'orchestrator'`. One p
 
 The hedgehog maintains a DAG per nest in `hedgemony_pr_dependency`. Edges are explicit — she declares "PR B depends on PR A" when she spawns B referencing A's work.
 
-- **Detection**: parent merge events come from polling `getTaskPrStatus` for nest tasks, or eventually GitHub webhooks. On parent merge → state transitions to `satisfied`, child gets a rebase signal.
+- **Detection**: see [Event sources](#event-sources). v1 polls `getTaskPrStatus` for nest hoglets; v2 piggybacks on the existing upstream `handle_pull_request_event` webhook (which already auto-resolves signal reports on merge). On parent merge → state transitions to `satisfied`, child gets a rebase signal.
 - **Execution**: rebases run through the existing worktree-manager (`packages/agent/src/worktree-manager.ts`). No new git plumbing.
 - **Conflict handling (v1)**: rebase fails → child hoglet receives a routed prompt ("rebase conflict, resolve and continue"). Real conflict resolution stays with the hoglet, not the hedgehog.
 
@@ -115,7 +143,9 @@ posthog-code already has the entire mechanism, currently driven by user click. H
 - **Existing injector**: `sendPromptToAgent(taskId, prompt)` — sends the prompt as a new message into the task's conversation.
 - **Existing UI hook**: "Fix with agent" button on `PrCommentThread`, batched-send on `PendingReviewBar`.
 
-**Hedgemony wiring**: a `FeedbackRoutingService` polls PR review threads (via the existing github-integration service) and CI status. New comment or failure → build a prompt with the existing builders → call `sendPromptToAgent` → log an entry in `hedgemony_feedback_event` to avoid double-routing.
+**What's genuinely new**: nothing upstream currently handles `pull_request_review` or `pull_request_review_comment` GitHub events. Today's "Fix with agent" flow is purely user-click-driven. The hedgehog automating this is a real new capability, not a re-wiring of something existing.
+
+**Hedgemony wiring**: a `FeedbackRoutingService` (main process, follows the services-over-hooks pattern in CLAUDE.md) consumes events per [Event sources](#event-sources) — v1 polls via the existing github-integration service; v2 can graduate to a new upstream webhook handler + SSE push. New comment or failure → build a prompt with the existing builders → call `sendPromptToAgent` → log an entry in `hedgemony_feedback_event` to avoid double-routing.
 
 The hedgehog has visibility into this log so she can decide whether to also intervene (e.g. spawn a sibling hoglet for context, mark a hoglet stuck and reassign).
 
@@ -169,3 +199,16 @@ When disabled: services not constructed, tables not created (or empty), renderer
 ## Migrations
 
 Standard posthog-code sqlite migration in `apps/code/src/main/db/`. One migration file creates all five Hedgemony tables; future migrations add columns as needed. Migrations always run (they're idempotent) even when the feature flag is off — keeps schema state consistent and avoids "first-toggle creates tables on hot path" pitfalls. Empty tables cost nothing.
+
+---
+
+## Out-of-band notifications (v2)
+
+posthog cloud already has `PostHogCodeAgentRelayWorkflow` (`products/tasks/backend/temporal/slack_relay/`) for bidirectional Slack ↔ Code agent messaging, including markdown ↔ Slack mrkdwn conversion.
+
+v2 wiring for Hedgemony:
+
+- **Hedgehog → operator notifications**: nest hits goal, nest stuck, hoglet blocked too long, rebase conflict persists. Relay through `PostHogCodeAgentRelayWorkflow` to the operator's Slack DM or a configured channel.
+- **Operator → hedgehog commands** (out of band): "pause nest X", "ship all merged PRs from nest X", "spawn ad-hoc hoglet for $thing". Same channel, reverse direction.
+
+Out of v1 scope. The relay primitive is in place so this is purely product/UX work when it's time.
