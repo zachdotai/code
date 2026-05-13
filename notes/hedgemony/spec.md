@@ -114,4 +114,4 @@ Persistent hoglet identity / cosmetics, multiplayer, voice lines, cloud-vs-local
 3. **Idle hoglet TTL** — when does the hedgehog give up on an unraised hoglet?
 4. **Goal-completion confidence** — does the hedgehog always require operator confirmation to close a nest, or auto-close above some confidence?
 5. **Render budget** — how many simultaneous hoglets before DOM strains and we need a canvas layer?
-6. **Inbox ↔ Hedgemony default** — which is the entry point when both exist?
+6. **Command Center default view** — when `hedgemonyEnabled`, does Command Center open in grid mode or map mode? (Inbox vs Command Center placement is no longer an open — they're separate top-level views.)

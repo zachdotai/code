@@ -8,9 +8,11 @@ Assumes the data model and services from the backend-integration doc.
 
 ## View placement
 
-A new top-level view, sibling to Inbox and Command Center. Reached from the main sidebar (`apps/code/src/renderer/features/sidebar/components/SidebarMenu.tsx`). Feature-flagged — the route is registered only when `hedgemonyEnabled`.
+Hedgemony is a view mode *inside* Command Center, sibling to its existing 9-grid mode. Command Center owns the route; the user toggles between "grid" and "map" within the same surface. Inbox remains its own top-level view alongside Command Center.
 
-Folder: `apps/code/src/renderer/features/hedgemony/`, matching the existing feature-folder convention (`features/inbox`, `features/command-center`, `features/code-review`, etc.).
+Toggle lives in Command Center's view chrome (probably alongside its existing layout-preset selector). Feature-flagged — the toggle only renders when `hedgemonyEnabled`; with the flag off, Command Center behaves exactly as it does today.
+
+Folder: `apps/code/src/renderer/features/hedgemony/` (sibling feature folder, matching `features/inbox`, `features/command-center`, etc.). Command Center imports the map view from here. Kept as a sibling rather than nested under `features/command-center/` because Hedgemony has its own stores, tRPC router, and services — nesting would bloat Command Center and complicate eventual extraction.
 
 ---
 
