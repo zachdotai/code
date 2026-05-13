@@ -1153,6 +1153,7 @@ export class AgentServer {
 
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
+        await this.maybeCompleteAutomationRun(payload, taskRun);
       }
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
@@ -1276,6 +1277,7 @@ export class AgentServer {
 
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
+        await this.maybeCompleteAutomationRun(payload, taskRun);
       }
     } catch (error) {
       this.logger.error("Failed to send resume message", error);
@@ -1741,6 +1743,37 @@ ${attributionInstructions}
         branchName,
         error,
       });
+    }
+  }
+
+  private shouldAutoCompleteAutomationRun(taskRun: TaskRun | null): boolean {
+    const state = taskRun?.state;
+    return Boolean(
+      state &&
+        typeof state === "object" &&
+        typeof state.automation_id === "string" &&
+        state.automation_id.trim().length > 0,
+    );
+  }
+
+  private async maybeCompleteAutomationRun(
+    payload: JwtPayload,
+    taskRun: TaskRun | null,
+  ): Promise<void> {
+    if (!this.shouldAutoCompleteAutomationRun(taskRun)) {
+      return;
+    }
+
+    try {
+      await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
+        status: "completed",
+      });
+      this.logger.debug("Automation run marked completed after end_turn", {
+        taskId: payload.task_id,
+        runId: payload.run_id,
+      });
+    } catch (error) {
+      this.logger.error("Failed to mark automation run completed", error);
     }
   }
 

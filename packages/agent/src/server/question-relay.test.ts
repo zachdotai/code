@@ -551,6 +551,117 @@ describe("Question relay", () => {
       });
     });
 
+    it("marks automation-triggered runs completed after a successful first turn", async () => {
+      vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
+        id: "test-task-id",
+        title: "t",
+        description: "original task description",
+      } as unknown as Task);
+      vi.spyOn(server.posthogAPI, "getTaskRun").mockResolvedValue({
+        id: "test-run-id",
+        task: "test-task-id",
+        state: { automation_id: "automation-1" },
+      } as unknown as TaskRun);
+      vi.spyOn(
+        server as unknown as {
+          syncCloudBranchMetadata: (
+            payload: Record<string, unknown>,
+          ) => Promise<void>;
+        },
+        "syncCloudBranchMetadata",
+      ).mockResolvedValue(undefined);
+
+      const promptSpy = vi.fn().mockResolvedValue({ stopReason: "end_turn" });
+      const updateTaskRunSpy = vi
+        .spyOn(server.posthogAPI, "updateTaskRun")
+        .mockResolvedValue({} as TaskRun);
+      const relaySpy = vi
+        .spyOn(server.posthogAPI, "relayMessage")
+        .mockResolvedValue(undefined);
+      server.session = {
+        payload: TEST_PAYLOAD,
+        acpSessionId: "acp-session",
+        clientConnection: { prompt: promptSpy },
+        logWriter: {
+          appendRawLine: vi.fn(),
+          flushAll: vi.fn().mockResolvedValue(undefined),
+          getFullAgentResponse: vi
+            .fn()
+            .mockReturnValue(
+              "At 2026-05-13 17:45, the waitlist count is 2827.",
+            ),
+          resetTurnMessages: vi.fn(),
+          flush: vi.fn().mockResolvedValue(undefined),
+          isRegistered: vi.fn().mockReturnValue(true),
+        },
+      };
+
+      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+
+      expect(relaySpy).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        "At 2026-05-13 17:45, the waitlist count is 2827.",
+      );
+      expect(updateTaskRunSpy).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        {
+          status: "completed",
+        },
+      );
+    });
+
+    it("keeps non-automation runs open after a successful first turn", async () => {
+      vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
+        id: "test-task-id",
+        title: "t",
+        description: "original task description",
+      } as unknown as Task);
+      vi.spyOn(server.posthogAPI, "getTaskRun").mockResolvedValue({
+        id: "test-run-id",
+        task: "test-task-id",
+        state: {},
+      } as unknown as TaskRun);
+      vi.spyOn(
+        server as unknown as {
+          syncCloudBranchMetadata: (
+            payload: Record<string, unknown>,
+          ) => Promise<void>;
+        },
+        "syncCloudBranchMetadata",
+      ).mockResolvedValue(undefined);
+
+      const promptSpy = vi.fn().mockResolvedValue({ stopReason: "end_turn" });
+      const updateTaskRunSpy = vi
+        .spyOn(server.posthogAPI, "updateTaskRun")
+        .mockResolvedValue({} as TaskRun);
+      vi.spyOn(server.posthogAPI, "relayMessage").mockResolvedValue(undefined);
+      server.session = {
+        payload: TEST_PAYLOAD,
+        acpSessionId: "acp-session",
+        clientConnection: { prompt: promptSpy },
+        logWriter: {
+          appendRawLine: vi.fn(),
+          flushAll: vi.fn().mockResolvedValue(undefined),
+          getFullAgentResponse: vi.fn().mockReturnValue("done"),
+          resetTurnMessages: vi.fn(),
+          flush: vi.fn().mockResolvedValue(undefined),
+          isRegistered: vi.fn().mockReturnValue(true),
+        },
+      };
+
+      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+
+      expect(updateTaskRunSpy).not.toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        {
+          status: "completed",
+        },
+      );
+    });
+
     it("does not replay a transient upstream termination before any session activity", async () => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",
