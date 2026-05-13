@@ -46,15 +46,13 @@ A hoglet is a `Task` with a row in `hedgemony_hoglet`. The Task itself is unchan
 
 ## Signal ingestion + auto-spawn
 
-Reuse `apps/code/src/renderer/api/posthogClient.ts` (`PosthogAPIClient.getSignalReports()`). Hedgemony adds a polling tick (or piggybacks on Inbox's existing poll — TBD) that:
+Reuse `apps/code/src/renderer/api/posthogClient.ts` (`PosthogAPIClient.getSignalReports()`). Hedgemony registers its own polling tick (separate from Inbox autonomy — keeps the feature self-contained and easier to disable):
 
 1. Fetches new `SignalReport`s.
 2. Skips reports already routed (check `hedgemony_hoglet.signal_report_id`).
 3. For each new report, builds an initial task prompt from `title + summary + findings + suggested_reviewers` and creates a `Task` in `not_started`.
 4. Inserts a `hedgemony_hoglet` row with `signal_report_id` set; `nest_id` decided by the affinity router (next section).
 5. Hedgehog of the matched nest sees a new idle hoglet and decides raise / hold / release.
-
-Open: whether to register a separate poll or extend the autonomy flow already in place for high-priority reports. Lean toward separate — keeps Hedgemony self-contained and easier to disable.
 
 ---
 
@@ -77,29 +75,25 @@ Repo affinity emerges naturally — a nest whose goal is "improve checkout conve
 
 ## Event sources
 
-Most of Hedgemony's autonomy needs to know about three external events: **PR state changes** (open/merge/close), **new PR review comments**, and **CI status changes**. There are existing pieces in the PostHog cloud backend that already cover part of this — choices below are about how much to lean on them vs. handle locally.
+Hedgemony's autonomy needs three external event types: **PR state changes** (open/merge/close), **new PR review comments**, and **CI status changes**.
 
-**What already exists upstream (in `posthog/products/tasks/backend/`):**
+**v1: poll everything locally.**
 
-- `webhooks.py: handle_pull_request_event` — receives GitHub `pull_request` webhook events (opened/closed/merged), looks up the associated `TaskRun` by PR URL or branch+repo, and on merge automatically resolves linked signal reports via `_resolve_signal_reports_for_task`. Wired into `posthog.urls.github_webhook`.
-- `temporal/automation/` + `automation_service.py` — `TaskAutomation` model with `cron_expression`. Creates Temporal schedules that fire `run-task-automation` periodically, which spawns a fresh `TaskRun` in `background` mode. Generic primitive for "scheduled agent runs."
-- `temporal/slack_relay/` — `PostHogCodeAgentRelayWorkflow` relays messages between Slack and the Code agent. Bidirectional — pattern for out-of-band agent ↔ operator comms.
+- A main-process `EventSourceService` polls existing posthog-code services on an interval: `git/service.ts: getTaskPrStatus` for PR state, `github-integration/service.ts` for review comments and CI status.
+- Polled events feed a local in-process event bus that downstream Hedgemony services (PR graph, feedback routing, hedgehog) subscribe to.
+- Hedgehog heartbeat: local timer.
 
-**What's NOT covered upstream:** `pull_request_review` and `pull_request_review_comment` GitHub events. Today's posthog-code "Fix with agent" flow is purely user-click-driven; no automated routing of review comments exists anywhere.
+Zero new cloud infra, zero changes to upstream `posthog/products/tasks/`. The whole feature ships from a posthog-code branch.
 
-**Three patterns to choose from for any given event source:**
+**What's already in place upstream** (referenced by future v2 work, not consumed in v1):
 
-| Pattern | How it works | Latency | Cost |
-|---|---|---|---|
-| **A. Local poll** | Hedgemony main-process service polls the existing posthog-code services (`git/service.ts: getTaskPrStatus`, `github-integration/service.ts`) on an interval. | High (interval-bound). | Zero new infra; pure posthog-code change. |
-| **B. Cloud-piggyback poll** | Extend the upstream `webhooks.py` handler to write events to a new "events" table; posthog-code polls a new PostHog API endpoint for unconsumed events. | Medium. | New table + endpoint upstream; new poll in posthog-code. |
-| **C. Cloud push (SSE)** | Extend the existing cloud-task SSE channel (`apps/code/src/main/services/cloud-task/sse-parser.ts`) to relay Hedgemony events from `webhooks.py` straight to the local instance. | Low. | New event types on the SSE channel; new server-side fanout. |
+- `webhooks.py: handle_pull_request_event` — GitHub `pull_request` events already land here and auto-resolve linked signal reports on merge. Future v2 graduation: extend it to fan PR events out to posthog-code via the existing cloud-task SSE channel, eliminating the local poll for merges.
+- `TaskAutomation` (`automation_service.py` + `temporal/automation/`) — cron-scheduled `TaskRun`s in background mode. If/when the hedgehog moves cloud-side (v2 persistence rung), this drives her heartbeat.
+- `PostHogCodeAgentRelayWorkflow` (`temporal/slack_relay/`) — bidirectional Slack ↔ agent relay. Used in v2 for out-of-band notifications (see [Out-of-band notifications](#out-of-band-notifications-v2)).
 
-**Recommended v1 stance per source:**
+**Not covered anywhere yet:** automated `pull_request_review` / `pull_request_review_comment` handling. v1 polls locally; v2 will need a new upstream webhook handler before it can graduate off polling.
 
-- **PR open/close/merge** → Pattern A for v1 (poll `getTaskPrStatus` for nest hoglets), Pattern C in v2 (the webhook handler already exists, just need to fan it out).
-- **PR review comments + CI status** → Pattern A for v1 (poll via `github-integration/service.ts`). No upstream piece exists yet, so B/C would require new cloud work.
-- **Hedgehog heartbeat** → Local timer in v1. If the hedgehog ever moves cloud-side, use `TaskAutomation` to drive her cron tick (it's literally built for this).
+See [Considered alternatives](#considered-alternatives) for the other event-source patterns evaluated.
 
 ---
 
@@ -159,29 +153,20 @@ Optional `target_metric_id` on the nest: hedgehog watches it via PostHog MCP and
 
 ---
 
-## Main-process services + DI — modularity options
+## Main-process services + DI
 
-Three rungs of isolation, in increasing decoupling:
+All Hedgemony services live under `apps/code/src/main/services/hedgemony/`:
 
-**Option A — Feature folder, shared DI container (recommended for v1).**
-- All services under `apps/code/src/main/services/hedgemony/` (`nest-service.ts`, `hedgehog-service.ts`, `affinity-router.ts`, `pr-graph-service.ts`, `feedback-routing-service.ts`).
-- Register in the existing `apps/code/src/main/di/container.ts` behind a `hedgemonyEnabled` check.
-- Pros: lowest friction, shares logger/db/MCP/PosthogAPIClient bindings.
-- Cons: extraction later means rewiring imports.
+- `nest-service.ts`
+- `hedgehog-service.ts`
+- `affinity-router.ts`
+- `event-source-service.ts`
+- `pr-graph-service.ts`
+- `feedback-routing-service.ts`
 
-**Option B — Feature folder, own DI sub-container.**
-- Same folder structure, but Hedgemony has its own InversifyJS container that gets the main container as a parent.
-- Bindings live in `apps/code/src/main/services/hedgemony/di/container.ts`.
-- Pros: cleaner boundary, easy to swap implementations, easy to disable wholesale.
-- Cons: more ceremony for not much gain at v1 size.
+Registered in the existing `apps/code/src/main/di/container.ts` behind a `hedgemonyEnabled` check, so all services share the main container's bindings (logger, db, MCP, `PosthogAPIClient`). This matches every other feature in the repo and is the lowest-friction wiring.
 
-**Option C — Workspace package (`packages/hedgemony/`).**
-- Hedgemony lives as a sibling to `packages/agent`, `packages/git`, etc.
-- Exposes a single entrypoint that the main process mounts.
-- Pros: fully extractable, easy to deprecate, can be open-sourced or pulled into a different shell.
-- Cons: significant up-front ceremony — workspace setup, build config, dep boundary policing.
-
-**Recommendation**: ship v1 with **Option A**, but follow the discipline of Option C — no imports from outside `services/hedgemony/` reach into Hedgemony, all dependencies on existing posthog-code go through interfaces. If we ever need to extract, we move the folder into `packages/hedgemony/` and update imports. The internal shape doesn't change.
+**Boundary discipline (mandatory).** Nothing outside `services/hedgemony/` may import from inside it. Hedgemony depends on existing posthog-code services through their public interfaces only. If we ever need to extract this feature into its own package or repo, the move is `mv services/hedgemony/ → packages/hedgemony/` plus import-path updates — the internal shape doesn't change. See [Considered alternatives](#considered-alternatives) for the sub-container and workspace-package options that were evaluated and deferred.
 
 ---
 
@@ -212,3 +197,27 @@ v2 wiring for Hedgemony:
 - **Operator → hedgehog commands** (out of band): "pause nest X", "ship all merged PRs from nest X", "spawn ad-hoc hoglet for $thing". Same channel, reverse direction.
 
 Out of v1 scope. The relay primitive is in place so this is purely product/UX work when it's time.
+
+---
+
+## Considered alternatives
+
+Choices we evaluated and didn't ship in v1. Documenting so we don't relitigate them and so we have a reference if v1 assumptions break.
+
+### Event-source patterns
+
+In addition to **local polling** (v1), two cloud-side patterns were considered:
+
+- **Cloud-piggyback poll** — extend the upstream `webhooks.py` handler to write events to a new "events" table; posthog-code polls a new PostHog API endpoint for unconsumed events. Medium latency. Cost: new table + endpoint upstream, new poll in posthog-code. Rejected for v1 because it requires upstream changes and we want a posthog-code-only shipping unit.
+- **Cloud push (SSE)** — extend the existing cloud-task SSE channel (`apps/code/src/main/services/cloud-task/sse-parser.ts`) to relay Hedgemony events from `webhooks.py` straight to the local instance. Low latency. Cost: new event types on the SSE channel + new server-side fanout. The v2 graduation target.
+
+### DI / service isolation
+
+Two stricter modularity options were considered above the chosen "feature folder, shared container":
+
+- **Feature folder, own DI sub-container** — Hedgemony has its own InversifyJS container that gets the main container as a parent. Cleaner boundary, easier to swap implementations. Rejected as ceremony with no v1 payoff. Boundary discipline (mandatory import rule) gives us the same property without the wiring.
+- **Workspace package (`packages/hedgemony/`)** — Hedgemony lives as a sibling to `packages/agent`, `packages/git`. Fully extractable. Rejected for v1 — significant up-front cost (workspace setup, build config, dep policing) for a feature still finding its shape. If extraction becomes a hard requirement later, the migration is mechanical given the boundary discipline.
+
+### Signal ingestion path
+
+We considered extending Inbox's existing autonomy flow (which already auto-starts Tasks from high-priority `SignalReport`s) instead of registering a separate Hedgemony poll. Rejected — keeping the ingestion paths separate makes Hedgemony cleanly disable-able by the feature flag, and avoids surprising Inbox-only users with side effects from Hedgemony's affinity router.

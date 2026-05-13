@@ -55,21 +55,13 @@ All Hedgemony stores live under `features/hedgemony/stores/`. None of them are s
 
 ---
 
-## Map rendering — DOM vs canvas
+## Map rendering
 
-The active design decision. Two options:
+DOM-based. Nests, hoglets, and the holding area are absolutely-positioned React components. Animations via Framer Motion or CSS transitions. Hit-testing via the React event tree.
 
-**A. DOM-based** (recommended for v1):
-- Nests, hoglets, and the holding area are absolutely-positioned React components.
-- Animations via Framer Motion or CSS transitions.
-- Pros: composability with existing Radix UI, easy hit-testing, free accessibility tree, hot-reload friendly.
-- Cons: render budget degrades past ~50–100 hoglets simultaneously.
+Render-budget cap: clamp visible hoglets to N (TBD, prob 50ish) with overflow rolled up into a "+12 more" badge per nest. Stores stay rendering-agnostic — if the budget bites later, a canvas layer can drop in behind the same store shape.
 
-**B. Canvas-based** (`react-konva` or `pixi-react`):
-- Pros: scales to hundreds of units, smoother animations.
-- Cons: extra dep, custom hit testing, accessibility story is bespoke, harder to reuse existing components.
-
-V1 ships with A and a render-budget cap (e.g. clamp hoglet rendering to N visible). If we feel the ceiling, swap the canvas layer in behind the same store shape — stores stay DOM-agnostic.
+See [Considered alternatives](#considered-alternatives) for the canvas option.
 
 ---
 
@@ -137,10 +129,23 @@ Keep telemetry namespaced so it's trivially filterable and can be ripped out cle
 
 ---
 
-## Open frontend decisions
+## Open product decisions
 
-1. **DOM vs canvas** — start DOM, measure, swap if needed.
-2. **Holding-area placement** — left rail (persistent), bottom drawer (collapsible), or floating panel? Affects perceived priority of wild hoglets.
-3. **Hedgehog as a visible unit** — does she render on the map next to her nest, or is she implicit (the nest itself glows when she's active)?
-4. **Map persistence** — is `map_x` / `map_y` operator-placed (drag a nest where you want it) or auto-arranged (force-directed layout)? Open in spec.
-5. **Cross-view linking** — clicking a hoglet should jump to the existing posthog-code task detail view; clicking back returns to the map with state preserved.
+These are real product/UX opens that need owners; not implementation choices.
+
+1. **Holding-area placement** — left rail (persistent), bottom drawer (collapsible), or floating panel. Affects perceived priority of wild hoglets.
+2. **Hedgehog as a visible unit** — does she render on the map next to her nest, or is she implicit (the nest itself glows when she's active)?
+3. **Map persistence** — is `map_x` / `map_y` operator-placed (drag a nest where you want it) or auto-arranged (force-directed)?
+
+Implementation choices locked in v1:
+
+- **Rendering**: DOM (see [Map rendering](#map-rendering)).
+- **Cross-view linking**: clicking a hoglet jumps to the existing posthog-code task detail view; back returns to the map with state preserved (zoom, selection, scroll). Standard router-with-state-preservation pattern.
+
+---
+
+## Considered alternatives
+
+### Canvas-based map rendering
+
+We considered `react-konva` or `pixi-react` for the map layer. Pros: scales to hundreds of units, smoother animations. Cons: extra dep, custom hit-testing, bespoke accessibility, harder to reuse existing Radix components. Rejected for v1 — DOM with a render-budget cap handles the expected hoglet counts. Path to swap is open since stores are rendering-agnostic.
