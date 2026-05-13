@@ -2,12 +2,12 @@ import { HeaderRow } from "@components/HeaderRow";
 import { HedgehogMode } from "@components/HedgehogMode";
 import { KeyboardShortcutsSheet } from "@components/KeyboardShortcutsSheet";
 import { SpaceSwitcher } from "@components/SpaceSwitcher";
-
 import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksView";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
 import { useUsageLimitDetection } from "@features/billing/hooks/useUsageLimitDetection";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
+import { BgmPlayer } from "@features/hedgemony/audio/BgmPlayer";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
@@ -158,6 +158,7 @@ export function MainLayout() {
       <TourOverlay />
       {billingEnabled && <UsageLimitModal />}
       <HedgehogMode />
+      <BgmPlayer />
     </Flex>
   );
 }

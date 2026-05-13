@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useMotionValue } from "framer-motion";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
+import { BgmControl } from "./BgmControl";
 import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
 import { NestSprite } from "./NestSprite";
 
@@ -213,7 +214,11 @@ export function HedgemonyMapSurface({
         <div className="pointer-events-none absolute inset-0">{overlay}</div>
       )}
 
-      <div className="absolute right-3 bottom-3 flex items-center gap-1">
+      <div
+        className="absolute right-3 bottom-3 flex items-center gap-2"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <BgmControl />
         <button
           type="button"
           onClick={resetView}
