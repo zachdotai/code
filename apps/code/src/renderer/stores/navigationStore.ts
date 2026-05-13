@@ -37,7 +37,7 @@ interface TaskInputNavigationOptions {
 
 export type AppMode = "code" | "work";
 
-export type WorkView = "home" | "generate" | "skill-detail";
+export type WorkView = "home" | "generate" | "skill-detail" | "library";
 
 interface ViewState {
   type: ViewType;
@@ -60,6 +60,7 @@ interface NavigationStore {
   navigateToWorkHome: () => void;
   navigateToWorkGenerate: () => void;
   navigateToWorkSkill: (skillId: string) => void;
+  navigateToWorkLibrary: () => void;
   view: ViewState;
   history: ViewState[];
   historyIndex: number;
@@ -148,6 +149,8 @@ export const useNavigationStore = create<NavigationStore>()(
           set({ workView: "generate", workSelectedSkillId: undefined }),
         navigateToWorkSkill: (skillId: string) =>
           set({ workView: "skill-detail", workSelectedSkillId: skillId }),
+        navigateToWorkLibrary: () =>
+          set({ workView: "library", workSelectedSkillId: undefined }),
         view: { type: "task-input" },
         history: [{ type: "task-input" }],
         historyIndex: 0,

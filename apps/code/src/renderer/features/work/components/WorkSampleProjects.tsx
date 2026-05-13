@@ -1,9 +1,9 @@
 import {
+  CalendarCheck,
   ChartLineUp,
-  ChatsTeardrop,
-  Compass,
-  Flask,
+  CurrencyDollar,
   type IconProps,
+  Megaphone,
 } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -18,30 +18,32 @@ interface SampleProject {
 
 const PROJECTS: SampleProject[] = [
   {
+    icon: CalendarCheck,
+    title: "Weekly status",
+    description: "What you shipped, what's next, what's stuck",
+    prompt:
+      "Draft my weekly status update — what I shipped, what's next, what I'm stuck on.",
+  },
+  {
+    icon: Megaphone,
+    title: "Campaign performance",
+    description: "Which channels are converting this week",
+    prompt:
+      "Summarize this week's marketing campaign performance and what's actually converting.",
+  },
+  {
     icon: ChartLineUp,
-    title: "Weekly product update",
-    description: "Narrate metrics for your team every Monday",
-    prompt: "Draft this Monday's product update for my team.",
-  },
-  {
-    icon: Flask,
-    title: "Experiment readouts",
-    description: "Draft a writeup once results reach stat-sig",
-    prompt: "Pick a stat-sig experiment and draft a readout.",
-  },
-  {
-    icon: ChatsTeardrop,
-    title: "Customer feedback themes",
-    description: "Cluster interviews and support into trends",
+    title: "Feature adoption",
+    description: "Which new features are sticking",
     prompt:
-      "Cluster recent support and interview notes into the top themes worth acting on.",
+      "Which recently shipped features are users actually adopting, and which are flat?",
   },
   {
-    icon: Compass,
-    title: "Roadmap brief",
-    description: "Spot signals and propose what to ship next",
+    icon: CurrencyDollar,
+    title: "Pipeline brief",
+    description: "Top deals, risk, and momentum",
     prompt:
-      "Look at signals from the last month and propose what to ship next.",
+      "Pull together this week's pipeline brief — top deals, risk signals, and where momentum is shifting.",
   },
 ];
 

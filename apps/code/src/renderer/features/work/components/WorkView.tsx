@@ -5,6 +5,7 @@ import { WorkGenerateView } from "./WorkGenerateView";
 import { WorkHomePrompt } from "./WorkHomePrompt";
 import { WorkSampleProjects } from "./WorkSampleProjects";
 import { WorkSkillDetailView } from "./WorkSkillDetailView";
+import { WorkSkillsView } from "./WorkSkillsView";
 
 export function WorkView() {
   const workView = useNavigationStore((s) => s.workView);
@@ -15,6 +16,10 @@ export function WorkView() {
 
   if (workView === "skill-detail") {
     return <WorkSkillDetailView />;
+  }
+
+  if (workView === "library") {
+    return <WorkSkillsView />;
   }
 
   return (

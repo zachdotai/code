@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Brain,
   ClockClockwise,
   FolderSimple,
@@ -41,6 +42,9 @@ export function WorkSidebarMenu() {
     (s) => s.navigateToWorkGenerate,
   );
   const navigateToWorkSkill = useNavigationStore((s) => s.navigateToWorkSkill);
+  const navigateToWorkLibrary = useNavigationStore(
+    (s) => s.navigateToWorkLibrary,
+  );
   const skills = useWorkSkillsStore((s) => s.skills);
 
   const handleNewTaskClick = () => {
@@ -50,6 +54,7 @@ export function WorkSidebarMenu() {
 
   const isHomeActive = workView === "home";
   const isGenerateActive = workView === "generate";
+  const isLibraryActive = workView === "library";
 
   return (
     <Box height="100%" position="relative">
@@ -98,6 +103,21 @@ export function WorkSidebarMenu() {
             >
               Skills
             </Text>
+          </Box>
+
+          <Box>
+            <SidebarItem
+              depth={0}
+              icon={
+                <BookOpen
+                  size={16}
+                  weight={isLibraryActive ? "fill" : "regular"}
+                />
+              }
+              label="Library"
+              isActive={isLibraryActive}
+              onClick={navigateToWorkLibrary}
+            />
           </Box>
 
           <Box>
