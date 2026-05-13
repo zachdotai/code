@@ -21,6 +21,7 @@ export const MAIN_TOKENS = Object.freeze({
   ContextMenu: Symbol.for("Platform.ContextMenu"),
   BundledResources: Symbol.for("Platform.BundledResources"),
   ImageProcessor: Symbol.for("Platform.ImageProcessor"),
+  PdfExporter: Symbol.for("Platform.PdfExporter"),
 
   // Stores
   SettingsStore: Symbol.for("Main.SettingsStore"),
@@ -79,4 +80,5 @@ export const MAIN_TOKENS = Object.freeze({
   WorkspaceService: Symbol.for("Main.WorkspaceService"),
   EnrichmentService: Symbol.for("Main.EnrichmentService"),
   FeatureScanService: Symbol.for("Main.FeatureScanService"),
+  CanvasExportService: Symbol.for("Main.CanvasExportService"),
 });
