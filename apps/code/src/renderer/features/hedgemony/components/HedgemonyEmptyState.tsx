@@ -25,7 +25,7 @@ export function HedgemonyEmptyState() {
           mt="1"
           className="text-(--gray-9) text-[13px] leading-[1.35]"
         >
-          Place a nest on the map to declare a goal. Hoglets will gather around
+          Click anywhere on the map to place a nest. Hoglets will gather around
           it to do the work.
         </Text>
       </Flex>

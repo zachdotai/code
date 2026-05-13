@@ -88,6 +88,32 @@ export const authSessions = sqliteTable("auth_sessions", {
   updatedAt: updatedAt(),
 });
 
+export const hedgemonyNests = sqliteTable(
+  "hedgemony_nest",
+  {
+    id: id(),
+    name: text().notNull(),
+    goalPrompt: text().notNull(),
+    mapX: integer().notNull(),
+    mapY: integer().notNull(),
+    status: text({
+      enum: ["active", "dormant", "archived", "needs_attention"],
+    })
+      .notNull()
+      .default("active"),
+    health: text({
+      enum: ["ok", "worktree_missing", "db_inconsistent"],
+    })
+      .notNull()
+      .default("ok"),
+    targetMetricId: text(),
+    loadoutJson: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("hedgemony_nest_status_idx").on(t.status)],
+);
+
 export const authPreferences = sqliteTable(
   "auth_preferences",
   {
