@@ -15,6 +15,7 @@ const log = logger.scope("navigation-store");
 type ViewType =
   | "task-detail"
   | "task-input"
+  | "canvas-input"
   | "folder-settings"
   | "inbox"
   | "archived"
@@ -40,6 +41,7 @@ interface ViewState {
   data?: Task;
   taskId?: string;
   folderId?: string;
+  canvasId?: string;
   taskInputRequestId?: string;
   initialPrompt?: string;
   initialCloudRepository?: string;
@@ -57,6 +59,7 @@ interface NavigationStore {
     folderIdOrOptions?: string | TaskInputNavigationOptions,
   ) => void;
   clearTaskInputReportAssociation: () => void;
+  navigateToCanvasInput: (canvasId: string) => void;
   navigateToFolderSettings: (folderId: string) => void;
   navigateToInbox: () => void;
   navigateToArchived: () => void;
@@ -84,6 +87,9 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
   }
   if (view1.type === "folder-settings" && view2.type === "folder-settings") {
     return view1.folderId === view2.folderId;
+  }
+  if (view1.type === "canvas-input" && view2.type === "canvas-input") {
+    return view1.canvasId === view2.canvasId;
   }
   if (view1.type === "inbox" && view2.type === "inbox") {
     return true;
@@ -255,6 +261,10 @@ export const useNavigationStore = create<NavigationStore>()(
             taskInputReportAssociation: undefined,
             taskInputCloudRepository: undefined,
           });
+        },
+
+        navigateToCanvasInput: (canvasId: string) => {
+          navigate({ type: "canvas-input", canvasId });
         },
 
         navigateToFolderSettings: (folderId: string) => {

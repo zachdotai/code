@@ -153,11 +153,19 @@ async function main() {
   }
   let transformed;
   try {
-    const { code } = Babel.transform(USER_SOURCE, {
+    // Strip ESM import/export syntax before Babel — new Function() can't run it,
+    // and all dependencies are injected into scope as globals.
+    const stripped = USER_SOURCE
+      .replace(/imports+[sS]*?froms+['"][^'"]+['"]s*;?/g, "")
+      .replace(/imports+['"][^'"]+['"]s*;?/g, "")
+      .replace(/exports+defaults+(?=[A-Za-z_{(])/g, "")
+      .replace(/exports+(?=(?:function|class|const|let|var)\b)/g, "")
+      .replace(/exports*{[sS]*?}s*(?:froms*['"][^'"]+['"])?s*;?/g, "");
+    const { code } = Babel.transform(stripped, {
       presets: [["react", { runtime: "classic" }], ["typescript", { allExtensions: true, isTSX: true }]],
       filename: "canvas.tsx",
     });
-    transformed = code;
+    transformed = code.trim();
   } catch (err) {
     renderError("Compile error: " + err.message);
     return;

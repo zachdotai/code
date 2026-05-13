@@ -133,6 +133,7 @@ export interface RenderingCanvas {
   id: string;
   name: string;
   content: string;
+  path: string;
   task: string | null;
   created_by: Schemas.UserBasic;
   created_at: string;

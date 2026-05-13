@@ -11,6 +11,7 @@ import { CommandCenterView } from "@features/command-center/components/CommandCe
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
+import { RenderingCanvas } from "@features/rendering-canvas/RenderingCanvas";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
@@ -120,6 +121,10 @@ export function MainLayout() {
 
           {view.type === "task-detail" && view.data && (
             <TaskDetail key={view.data.id} task={view.data} />
+          )}
+
+          {view.type === "canvas-input" && view.canvasId && (
+            <RenderingCanvas canvasId={view.canvasId} className="h-full" />
           )}
 
           {view.type === "folder-settings" && <FolderSettingsView />}
