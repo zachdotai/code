@@ -1,5 +1,6 @@
 import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { SidebarUsageBar } from "@features/billing/components/SidebarUsageBar";
+import { TestCanvasButton } from "@features/rendering-canvas/TestCanvasButton";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { ArchiveIcon } from "@phosphor-icons/react";
 import { Box, Flex } from "@radix-ui/themes";
@@ -24,6 +25,9 @@ export const SidebarContent: React.FC = () => {
       <UpdateBanner />
       <SidebarUsageBar />
       {activeTab === "files" && <AddFolderButton />}
+      <Box className="shrink-0 border-gray-6 border-t">
+        <TestCanvasButton />
+      </Box>
       {archivedTaskIds.size > 0 && (
         <Box className="shrink-0 border-gray-6 border-t">
           <button

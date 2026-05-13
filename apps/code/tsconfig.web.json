@@ -7,7 +7,7 @@
     "target": "ESNext",
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "exclude": ["src/main/**/*"],
+  "exclude": ["src/main/**/*", "src/renderer/features/rendering-canvas/test-canvas-stub.tsx"],
   "extends": "./tsconfig.json",
   "include": ["src/renderer/**/*", "src/shared/**/*", "src/vite-env.d.ts"]
 }
