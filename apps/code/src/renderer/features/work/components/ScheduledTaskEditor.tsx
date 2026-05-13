@@ -21,7 +21,7 @@ import {
 import type { Schemas } from "@renderer/api/generated";
 import { useNavigationStore } from "@stores/navigationStore";
 import { formatRelativeTimeLong } from "@utils/time";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useOpenLastRun } from "../hooks/useOpenLastRun";
 import {
@@ -31,7 +31,7 @@ import {
   useScheduledTasks,
   useUpdateScheduledTask,
 } from "../hooks/useScheduledTasks";
-import { useWorkStore } from "../stores/workStore";
+import { type PendingEditDraft, useWorkStore } from "../stores/workStore";
 import { describeCron, parseSchedule } from "../utils/parseSchedule";
 import { decodePrompt, encodePrompt } from "../utils/sourcesPrompt";
 import { detectTimezone } from "../utils/timezone";
@@ -71,11 +71,29 @@ function toDraft(automation: Schemas.TaskAutomation | null): Draft {
   };
 }
 
+function applyEditOverride(base: Draft, override: PendingEditDraft): Draft {
+  return {
+    name: override.name ?? base.name,
+    promptBody: override.prompt ?? base.promptBody,
+    sources: override.sources ?? base.sources,
+    scheduleText: override.scheduleText ?? base.scheduleText,
+    enabled: override.enabled ?? base.enabled,
+  };
+}
+
 export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const showList = useNavigationStore((s) => s.navigateToWorkScheduledList);
+  const navigateToMcpServers = useNavigationStore(
+    (s) => s.navigateToMcpServers,
+  );
   const consumePendingCreateDraft = useWorkStore(
     (s) => s.consumePendingCreateDraft,
   );
+  const consumePendingEditDraft = useWorkStore(
+    (s) => s.consumePendingEditDraft,
+  );
+  const setPendingCreateDraft = useWorkStore((s) => s.setPendingCreateDraft);
+  const setPendingEditDraft = useWorkStore((s) => s.setPendingEditDraft);
   const { data: automations } = useScheduledTasks();
 
   const existing = useMemo(
@@ -83,24 +101,47 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
     [automations, editingId],
   );
 
+  // Holds an edit-mode pending draft consumed at mount, to be applied once
+  // `existing` arrives from the server (the automation list may still be
+  // loading on initial render).
+  const pendingEditOverrideRef = useRef<PendingEditDraft | null>(null);
+
   const [draft, setDraft] = useState<Draft>(() => {
+    if (editingId) {
+      pendingEditOverrideRef.current = consumePendingEditDraft(editingId);
+    }
     const base = toDraft(existing);
     if (!existing) {
       const seeded = consumePendingCreateDraft();
       if (seeded) {
         return {
-          ...base,
           name: seeded.name ?? base.name,
           promptBody: seeded.prompt ?? base.promptBody,
+          sources: seeded.sources ?? base.sources,
+          scheduleText: seeded.scheduleText ?? base.scheduleText,
+          enabled: seeded.enabled ?? base.enabled,
         };
       }
+    } else if (pendingEditOverrideRef.current?.id === existing.id) {
+      const override = pendingEditOverrideRef.current;
+      pendingEditOverrideRef.current = null;
+      return applyEditOverride(base, override);
     }
     return base;
   });
 
-  // Sync the draft when the editor is pointed at a different existing automation.
+  // Sync the draft when the editor is pointed at a different existing
+  // automation. If we have a pending edit-mode override for this id, apply it
+  // once and then fall through to normal resync behaviour.
   useEffect(() => {
-    if (existing) setDraft(toDraft(existing));
+    if (!existing) return;
+    if (pendingEditOverrideRef.current?.id === existing.id) {
+      const override = pendingEditOverrideRef.current;
+      pendingEditOverrideRef.current = null;
+      setDraft(applyEditOverride(toDraft(existing), override));
+      return;
+    }
+    setDraft(toDraft(existing));
     // The id is what should trigger a reset — other field changes from polling
     // shouldn't clobber user edits.
   }, [existing?.id, existing]);
@@ -120,6 +161,35 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const parsedSchedule = parseSchedule(draft.scheduleText);
   const missingFields = !nameTrimmed || !promptTrimmed || !parsedSchedule;
   const canSave = !missingFields && !isSaving;
+
+  const handleConnectMore = useCallback(() => {
+    if (isEditing && existing) {
+      setPendingEditDraft({
+        id: existing.id,
+        name: draft.name,
+        prompt: draft.promptBody,
+        sources: draft.sources,
+        scheduleText: draft.scheduleText,
+        enabled: draft.enabled,
+      });
+    } else {
+      setPendingCreateDraft({
+        name: draft.name,
+        prompt: draft.promptBody,
+        sources: draft.sources,
+        scheduleText: draft.scheduleText,
+        enabled: draft.enabled,
+      });
+    }
+    navigateToMcpServers();
+  }, [
+    isEditing,
+    existing,
+    draft,
+    setPendingEditDraft,
+    setPendingCreateDraft,
+    navigateToMcpServers,
+  ]);
 
   const headerContent = useMemo(
     () => (
@@ -166,7 +236,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
           // requires a non-blank `repository`. Send a sentinel until the
           // backend makes the field nullable; the runtime ignores it for
           // PostHog-data skills.
-          repository: "posthog-work",
+          repository: "posthog/posthog-work",
           timezone: detectTimezone(),
           enabled: draft.enabled,
         });
@@ -321,6 +391,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
             <SourcesPicker
               value={draft.sources}
               onChange={(sources) => setDraft((d) => ({ ...d, sources }))}
+              onConnectMore={handleConnectMore}
             />
 
             {isEditing && (
