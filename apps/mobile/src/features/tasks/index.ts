@@ -7,7 +7,13 @@ export { TaskItem } from "./components/TaskItem";
 export { TaskList } from "./components/TaskList";
 export { TaskSessionView } from "./components/TaskSessionView";
 // Hooks
-export { useIntegrations } from "./hooks/useIntegrations";
+export {
+  userGithubIntegrationKeys,
+  useUserGithubBranches,
+  useUserGithubIntegrations,
+  useUserGithubRepositories,
+  useUserRepositoryIntegration,
+} from "./hooks/useIntegrations";
 export {
   taskKeys,
   useCreateTask,

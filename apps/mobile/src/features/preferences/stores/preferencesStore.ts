@@ -7,6 +7,8 @@ interface PreferencesState {
   setAiChatEnabled: (enabled: boolean) => void;
   pingsEnabled: boolean;
   setPingsEnabled: (enabled: boolean) => void;
+  lastUsedCloudRepository: string | null;
+  setLastUsedCloudRepository: (repo: string | null) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -16,6 +18,9 @@ export const usePreferencesStore = create<PreferencesState>()(
       setAiChatEnabled: (enabled) => set({ aiChatEnabled: enabled }),
       pingsEnabled: true,
       setPingsEnabled: (enabled) => set({ pingsEnabled: enabled }),
+      lastUsedCloudRepository: null,
+      setLastUsedCloudRepository: (repo) =>
+        set({ lastUsedCloudRepository: repo }),
     }),
     {
       name: "posthog-preferences",
@@ -23,6 +28,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       partialize: (state) => ({
         aiChatEnabled: state.aiChatEnabled,
         pingsEnabled: state.pingsEnabled,
+        lastUsedCloudRepository: state.lastUsedCloudRepository,
       }),
     },
   ),

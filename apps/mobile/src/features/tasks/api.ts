@@ -3,10 +3,12 @@ import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type {
   CreateTaskOptions,
-  Integration,
+  GithubBranchesPage,
+  GithubRepositoriesPage,
   StoredLogEntry,
   Task,
   TaskRun,
+  UserGitHubIntegration,
 } from "./types";
 
 const log = logger.scope("tasks-api");
@@ -438,13 +440,96 @@ export async function fetchS3Logs(logUrl: string): Promise<string> {
   );
 }
 
-export async function getIntegrations(): Promise<Integration[]> {
+function normalizeGithubRepositories(data: unknown): string[] {
+  const repos =
+    (data as { repositories?: unknown[] }).repositories ??
+    (data as { results?: unknown[] }).results ??
+    (Array.isArray(data) ? data : []);
+
+  return (repos as Array<string | { full_name?: string; name?: string }>)
+    .map((repo) => {
+      if (typeof repo === "string") return repo.toLowerCase();
+      return (repo.full_name ?? repo.name ?? "").toLowerCase();
+    })
+    .filter((name) => name.length > 0);
+}
+
+export async function startGithubUserConnect(): Promise<{
+  install_url: string;
+  connect_flow?: "oauth_authorize" | "oauth_discover" | "app_install";
+}> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
   const headers = getHeaders();
 
   const response = await fetch(
-    `${baseUrl}/api/environments/${projectId}/integrations/`,
+    `${baseUrl}/api/users/@me/integrations/github/start/`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        team_id: projectId,
+        connect_from: "posthog_mobile",
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    log.error("Start GitHub user connect failed", errorText);
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to start GitHub connection",
+    );
+  }
+
+  return await response.json();
+}
+
+export async function getGithubUserIntegrations(): Promise<
+  UserGitHubIntegration[]
+> {
+  const baseUrl = getBaseUrl();
+  const headers = getHeaders();
+
+  const response = await fetch(`${baseUrl}/api/users/@me/integrations/`, {
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch personal GitHub integrations",
+    );
+  }
+
+  const data = (await response.json()) as {
+    results?: UserGitHubIntegration[];
+  };
+  return data.results ?? [];
+}
+
+export async function getGithubUserRepositoriesPage(
+  installationId: string,
+  offset: number,
+  limit: number,
+  search?: string,
+): Promise<GithubRepositoriesPage> {
+  const baseUrl = getBaseUrl();
+  const headers = getHeaders();
+
+  const params = new URLSearchParams({
+    offset: String(offset),
+    limit: String(limit),
+  });
+  if (search?.trim()) {
+    params.set("search", search.trim());
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/users/@me/integrations/github/${installationId}/repos/?${params}`,
     { headers },
   );
 
@@ -452,61 +537,98 @@ export async function getIntegrations(): Promise<Integration[]> {
     throw new HttpError(
       response.status,
       response.statusText,
-      "Failed to fetch integrations",
+      "Failed to fetch personal GitHub repositories",
     );
   }
 
   const data = await response.json();
-  return data.results ?? data ?? [];
+  return {
+    repositories: normalizeGithubRepositories(data),
+    hasMore: data.has_more ?? false,
+  };
 }
 
-const GITHUB_REPOS_PAGE_SIZE = 500;
-
-export async function getGithubRepositories(
-  integrationId: number,
+export async function getGithubUserRepositories(
+  installationId: string,
 ): Promise<string[]> {
-  const baseUrl = getBaseUrl();
-  const projectId = getProjectId();
-  const headers = getHeaders();
-
-  const allRepos: string[] = [];
+  const repositories: string[] = [];
   let offset = 0;
 
   while (true) {
-    const params = new URLSearchParams({
-      limit: String(GITHUB_REPOS_PAGE_SIZE),
-      offset: String(offset),
-    });
-    const response = await fetch(
-      `${baseUrl}/api/environments/${projectId}/integrations/${integrationId}/github_repos/?${params}`,
-      { headers },
+    const page = await getGithubUserRepositoriesPage(
+      installationId,
+      offset,
+      500,
     );
+    repositories.push(...page.repositories);
 
-    if (!response.ok) {
-      throw new HttpError(
-        response.status,
-        response.statusText,
-        "Failed to fetch repositories",
-      );
+    if (!page.hasMore || page.repositories.length === 0) {
+      return repositories;
     }
 
-    const data = await response.json();
-    const repos: Array<string | { full_name?: string; name?: string }> =
-      data.repositories ?? data.results ?? data ?? [];
-
-    const normalized = repos
-      .map((repo) => {
-        if (typeof repo === "string") return repo.toLowerCase();
-        return (repo.full_name ?? repo.name ?? "").toLowerCase();
-      })
-      .filter((name) => name.length > 0);
-
-    allRepos.push(...normalized);
-
-    if (!data.has_more || repos.length === 0) {
-      return allRepos;
-    }
-
-    offset += repos.length;
+    offset += page.repositories.length;
   }
+}
+
+export async function refreshGithubUserRepositories(
+  installationId: string,
+): Promise<string[]> {
+  const baseUrl = getBaseUrl();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/users/@me/integrations/github/${installationId}/repos/refresh/`,
+    { method: "POST", headers },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to refresh personal GitHub repositories",
+    );
+  }
+
+  const data = await response.json();
+  return normalizeGithubRepositories(data);
+}
+
+export async function getGithubUserBranchesPage(
+  installationId: string,
+  repo: string,
+  offset: number,
+  limit: number,
+  search?: string,
+): Promise<GithubBranchesPage> {
+  const baseUrl = getBaseUrl();
+  const headers = getHeaders();
+
+  const params = new URLSearchParams({
+    repo,
+    offset: String(offset),
+    limit: String(limit),
+  });
+  if (search?.trim()) {
+    params.set("search", search.trim());
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/users/@me/integrations/github/${installationId}/branches/?${params}`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch personal GitHub branches",
+    );
+  }
+
+  const data = await response.json();
+  return {
+    branches: data.branches ?? data.results ?? data ?? [],
+    defaultBranch: data.default_branch ?? null,
+    hasMore: data.has_more ?? false,
+  };
 }

@@ -93,9 +93,33 @@ export interface Integration {
   };
 }
 
+export interface UserGitHubIntegration {
+  id: string;
+  kind: "github";
+  installation_id: string;
+  repository_selection?: string | null;
+  account?: {
+    type?: string | null;
+    name?: string | null;
+  } | null;
+  uses_shared_installation?: boolean;
+  created_at?: string;
+}
+
+export interface GithubRepositoriesPage {
+  repositories: string[];
+  hasMore: boolean;
+}
+
+export interface GithubBranchesPage {
+  branches: string[];
+  defaultBranch: string | null;
+  hasMore: boolean;
+}
+
 export interface CreateTaskOptions {
   description: string;
   title?: string;
   repository?: string;
-  github_integration?: number;
+  github_user_integration?: string;
 }

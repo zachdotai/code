@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useAuthStore } from "@/features/auth";
 import { useThemeColors } from "@/lib/theme";
-import { useIntegrations } from "../hooks/useIntegrations";
+import { useUserGithubIntegrations } from "../hooks/useIntegrations";
 import { useTasks } from "../hooks/useTasks";
 import { useArchivedTasksStore } from "../stores/archivedTasksStore";
 import type { Task } from "../types";
@@ -117,8 +117,14 @@ type ListItem =
 
 export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
   const { tasks, isLoading, error, refetch } = useTasks();
-  const { hasGithubIntegration, refetch: refetchIntegrations } =
-    useIntegrations();
+  const {
+    data: githubIntegrations = [],
+    isFetched: integrationsFetched,
+    refetch: refetchIntegrations,
+  } = useUserGithubIntegrations();
+  const hasGithubIntegration = integrationsFetched
+    ? githubIntegrations.length > 0
+    : null;
   const themeColors = useThemeColors();
   const { archivedTasks, archive, unarchive } = useArchivedTasksStore();
   const [archivedExpanded, setArchivedExpanded] = useState(false);
