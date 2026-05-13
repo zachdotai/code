@@ -5,7 +5,7 @@ import {
   House,
   type IconProps,
   Notebook,
-  PlugsConnected,
+  Plugs,
 } from "@phosphor-icons/react";
 import { ScrollArea } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
@@ -25,7 +25,7 @@ const ITEMS: WorkSidebarItemSpec[] = [
   { icon: FolderSimple, label: "Projects" },
   { icon: ClockClockwise, label: "Automations" },
   { icon: Notebook, label: "Artifacts" },
-  { icon: PlugsConnected, label: "MCP" },
+  { icon: Plugs, label: "MCP" },
   { icon: Brain, label: "Memory" },
 ];
 
