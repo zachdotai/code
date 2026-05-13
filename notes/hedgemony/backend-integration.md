@@ -21,11 +21,11 @@ New sqlite tables in posthog-code's existing `better-sqlite3` db. All schemas us
 
 | Table | Purpose |
 |---|---|
-| `hedgemony_nest` | Goal record. Fields: `id`, `name`, `goal_prompt` (freeform), `map_x` / `map_y` (placement), `status` (active/dormant/archived), optional `target_metric_id`, `loadout_json` (skills/MCPs/docs/etc), `hedgehog_task_id` (FK to the orchestrator task). **No `repo` field** — repo membership is derived from a nest's hoglets. |
-| `hedgemony_hoglet` | Sidecar row tying a posthog-code `Task` into the nest world. Fields: `id`, `task_id` (FK to `tasks`), `nest_id` (nullable — null = wild hoglet), `signal_report_id` (nullable — null = ad-hoc), `role` (worker/orchestrator), `created_at`. Tasks without a row here are invisible to Hedgemony. |
+| `hedgemony_nest` | Goal record. Fields: `id`, `name`, `goal_prompt` (freeform), `map_x` / `map_y` (placement), `status` (active/dormant/archived), optional `target_metric_id`, `loadout_json` (skills/MCPs/docs/etc). **No `repo` field** — repo membership is derived from a nest's hoglets. |
+| `hedgemony_hoglet` | Sidecar row tying a posthog-code `Task` into the nest world. Fields: `id`, `task_id` (FK to `tasks`), `nest_id` (nullable — null = wild hoglet), `signal_report_id` (nullable — null = ad-hoc), `created_at`. Tasks without a row here are invisible to Hedgemony. |
 | `hedgemony_pr_dependency` | Edges in the per-nest PR graph. Fields: `id`, `nest_id`, `parent_task_id`, `child_task_id`, `state` (pending/satisfied/broken). |
 | `hedgemony_feedback_event` | Audit log of routed feedback. Fields: `id`, `nest_id`, `hoglet_task_id`, `source` (pr_review/ci/issue), `payload_json`, `injected_at`. Lets the hedgehog avoid double-routing and gives the UI an activity feed. |
-| `hedgemony_hedgehog_state` | Hedgehog's persistent brain. Fields: `nest_id` (PK), `serialized_state_json`, `last_tick_at`. Re-instantiable from this row alone after crash/restart. |
+| `hedgemony_hedgehog_state` | Hedgehog's per-nest scratchpad. Fields: `nest_id` (PK), `scratchpad_json` (small JSON: in-flight decisions, current goal-judgment confidence, notes for next tick), `last_tick_at`, `state` (idle/ticking/proposing-completion). The hedgehog is not a `Task` — see [Hedgehog orchestrator](#hedgehog-orchestrator). |
 
 Long-form context (per-nest notes, accumulated reasoning) lives as markdown files in each nest's worktree, not in sqlite.
 
@@ -40,7 +40,6 @@ A hoglet is a `Task` with a row in `hedgemony_hoglet`. The Task itself is unchan
 - **Spawn flow**: Hedgemony creates a Task via the existing task-creation saga (`apps/code/src/renderer/sagas/task/task-creation.ts`), then inserts a `hedgemony_hoglet` row binding it to a nest (or null = wild) and optionally to a signal report.
 - **Read flow**: "Show me a nest's hoglets" = `JOIN hedgemony_hoglet h ON h.nest_id = ? LEFT JOIN tasks t ON h.task_id = t.id`.
 - **Wild hoglet**: row exists with `nest_id = null`. Adoption = UPDATE that field.
-- **Roles**: `worker` (normal hoglet) vs `orchestrator` (hedgehog). Lets a single query find every nest's hedgehog.
 
 ---
 
@@ -99,19 +98,35 @@ See [Considered alternatives](#considered-alternatives) for the other event-sour
 
 ## Hedgehog orchestrator
 
-She's a long-running `Task` with `hedgemony_hoglet.role = 'orchestrator'`. One per nest.
+**She is not a Task.** She's a stateless function over persisted state — each tick is an ephemeral LLM call dispatched by `HedgehogTickService`.
 
-- **Harness**: orchestration-only — uses claude/codex but with a constrained tool set (spawn/kill hoglets, inspect PRs, route feedback, judge goal). She has no permission to commit code herself.
-- **Scheduling**: tick-driven. Wakes on events relayed by the Hedgemony services (see [Event sources](#event-sources)) plus a periodic heartbeat for goal judgment. v1: local timer. v2 (if she moves cloud-side): drive the heartbeat via `TaskAutomation`'s cron schedule, which is exactly what it's built for.
-- **Persistence**: every tick ends by writing `hedgemony_hedgehog_state.serialized_state_json`. Crash recovery = read the row, resume from last tick.
-- **Tools exposed to her**:
-  - `spawn_hoglet(prompt, signal_report_id?)` → creates Task + hoglet row.
-  - `raise_hoglet(hoglet_id)` → starts the Task's TaskRun.
-  - `kill_hoglet(hoglet_id, reason)` → cancels.
-  - `link_pr_dependency(parent, child)` / `unlink_pr_dependency`.
-  - `rebase_child(child_task_id)` → triggers a rebase via worktree-manager.
-  - `route_feedback(hoglet_id, prompt)` → reuses `sendPromptToAgent` (see Feedback routing).
-  - `mark_nest_complete()` / `propose_completion(summary)`.
+### Runtime model
+
+- One row in `hedgemony_hedgehog_state` per active nest. Her scratchpad lives there; nothing else persists across ticks.
+- A tick is: load state + relevant joined context (current hoglets, PR graph, recent events) → make one Claude API call with the goal prompt + structured state + an event payload + a tool list → parse `tool_use` responses → dispatch each one to the corresponding Hedgemony service method → write `scratchpad_json` + `last_tick_at` → done.
+- No claude-agent-sdk session, no agent harness, no sandbox, no worktree. She doesn't touch files. Tools are service method bindings, not agent SDK tools. Lightweight enough that ticks are bounded in both time and token cost.
+- This is exactly the shape `TaskAutomation` schedules on the cloud side (`automation_service.run_task_automation`) — if she ever moves cloud-side, each tick becomes a Temporal-scheduled `run_task_automation` call. Same code, different scheduler.
+
+### Scheduling
+
+- **Event-driven**: subscribes to the in-process event bus from [Event sources](#event-sources). New event for a nest → fire a tick for that nest.
+- **Heartbeat**: a local timer (configurable per nest, default ~5 min) for goal-judgment checks even when no events fire.
+- **Backpressure**: at most one in-flight tick per nest; concurrent events coalesce into the next tick's input.
+
+### Tools (Claude `tool_use` definitions dispatched to services)
+
+- `spawn_hoglet(prompt, signal_report_id?)` → `NestService.spawnHoglet`. Creates Task + hoglet row.
+- `raise_hoglet(hoglet_id)` → starts the Task's `TaskRun`.
+- `kill_hoglet(hoglet_id, reason)` → cancels.
+- `link_pr_dependency(parent, child)` / `unlink_pr_dependency`.
+- `rebase_child(child_task_id)` → triggers a rebase via worktree-manager.
+- `route_feedback(hoglet_id, prompt)` → reuses `sendPromptToAgent` (see [Feedback routing](#feedback-routing-pr-review--ci)).
+- `propose_completion(summary)` → marks the nest as proposing-completion; operator confirms via the UI.
+- `note(text)` → appends to the scratchpad for next tick's context.
+
+### Why not in-memory continuous-conversation context
+
+A persistent in-conversation hedgehog would need a context-compaction loop (truncate old turns / summarize on threshold) to stay sane over a goal that runs for days. The ephemeral model dodges it entirely: every tick assembles fresh structured context, no transcript grows. Token cost per tick is small and predictable; testing is `(state, event) → decisions`; crash recovery is free because state always lives in sqlite. See [Considered alternatives](#considered-alternatives).
 
 ---
 
@@ -221,3 +236,18 @@ Two stricter modularity options were considered above the chosen "feature folder
 ### Signal ingestion path
 
 We considered extending Inbox's existing autonomy flow (which already auto-starts Tasks from high-priority `SignalReport`s) instead of registering a separate Hedgemony poll. Rejected — keeping the ingestion paths separate makes Hedgemony cleanly disable-able by the feature flag, and avoids surprising Inbox-only users with side effects from Hedgemony's affinity router.
+
+### Hedgehog runtime model
+
+Three shapes were considered; v1 ships the third.
+
+- **Long-running `Task`.** The hedgehog as a single Task whose `TaskRun` never completes; new prompts injected via `sendPromptToAgent` on every event. Rejected — posthog-code's Task lifecycle assumes a definite end (PR ships or fails). An infinite-lived Task pollutes the task list, breaks "completed/failed" semantics, and forces us to design a context-compaction loop on top.
+- **Separate long-running daemon.** A persistent in-process service holding the hedgehog's LLM conversation in memory, with periodic state snapshots to sqlite. Rejected on the same compaction concern — a goal that runs for days produces a growing transcript that needs truncation / summarization, and stateful in-memory orchestrators introduce "is she alive?" failure modes.
+- **Ephemeral per-tick (chosen, v1).** No Task, no persistent process. Each tick is a stateless function over `(scratchpad, joined context, event)`. State always on disk, token cost bounded, testing trivial, cloud-side migration mechanical via `TaskAutomation`.
+
+### Orchestration harness
+
+Two harness-shaped options were considered alongside the chosen "no harness, raw Claude API calls from the service."
+
+- **New `orchestrator` harness** in `packages/agent` wrapping the Claude Agent SDK with a constrained tool list. Rejected — agent SDK overhead (session lifecycle, sandboxing) buys nothing when the hedgehog doesn't touch files. Each tick is a single LLM call with `tool_use`, then service dispatch.
+- **Constrained existing harness** (claude/codex with a tool allowlist passed through). Rejected — posthog-code's harness adapters aren't currently parameterized this way, and even if they were, the per-tick model means we'd be paying session setup cost on every tick.

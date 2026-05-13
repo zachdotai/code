@@ -110,7 +110,7 @@ Visual state derives from posthog-code primitives, no Hedgemony-specific state n
 | Done | `TaskRun.status = completed` and PR merged |
 | Failed | `TaskRun.status = failed` |
 
-The hedgehog's status (active / sleeping / proposing completion) is its own orchestrator task's status plus a `hedgemony_hedgehog_state.last_tick_at` heartbeat.
+The hedgehog is not a Task. Her visual status is read directly from `hedgemony_hedgehog_state.state` (`idle` / `ticking` / `proposing-completion`) plus the `last_tick_at` heartbeat for "alive within recent N min" indicators.
 
 ---
 

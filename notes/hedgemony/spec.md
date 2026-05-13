@@ -2,7 +2,7 @@
 
 **Pitch:** Age of Empires taught a generation to manage cities and the territory between them. Hedgemony teaches Gen Z to manage fleets of agents the same way. Your agents, your signals, one map.
 
-Hedgemony is a third top-level view inside PostHog Code, alongside **Inbox** (signal-driven autopilot list) and **Command Center** (up-to-9 grid of parallel sessions). Inbox is a queue; Command Center is a window manager; Hedgemony is a spatial command surface — nests sit on the map like cities, agents do the work around them.
+Hedgemony is a new view mode inside **Command Center**, sibling to its existing up-to-9 grid of parallel sessions. Command Center is the window manager; Hedgemony is a spatial command surface on top of the same primitives — nests sit on the map like cities, agents do the work around them. **Inbox** (signal-driven autopilot list) remains its own top-level view alongside Command Center.
 
 Inspired by AgentCraft. Hedgemony is the PostHog-Code-native version, grounded in primitives that already exist.
 
