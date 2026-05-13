@@ -1,37 +1,42 @@
-import type { Nest } from "@main/services/hedgemony/schemas";
 import { Tooltip } from "@radix-ui/themes";
-import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
+import explorerHog from "@renderer/assets/images/hedgehogs/explorer-hog.png";
 import { motion } from "framer-motion";
 
-const SPRITE_SIZE = 96;
-const SELECTION_RING_SIZE = SPRITE_SIZE + 22;
+const SPRITE_SIZE = 64;
+const SELECTION_RING_SIZE = SPRITE_SIZE + 18;
 
-interface NestSpriteProps {
-  nest: Nest;
+interface BuilderSpriteProps {
+  x: number;
+  y: number;
   selected?: boolean;
-  onSelect?: (nest: Nest) => void;
+  onSelect?: () => void;
 }
 
-export function NestSprite({ nest, selected, onSelect }: NestSpriteProps) {
+export function BuilderSprite({
+  x,
+  y,
+  selected,
+  onSelect,
+}: BuilderSpriteProps) {
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
       initial={false}
-      animate={{ x: nest.mapX, y: nest.mapY }}
-      transition={{ type: "spring", damping: 26, stiffness: 180, mass: 0.7 }}
+      animate={{ x, y }}
+      transition={{ type: "spring", damping: 22, stiffness: 220, mass: 0.5 }}
     >
-      <Tooltip content={nest.goalPrompt} side="bottom">
+      <Tooltip content="Builder hedgehog · click to select" side="bottom">
         <motion.button
           type="button"
           data-hedgemony-nest
-          aria-label={`Select ${nest.name}`}
+          aria-label="Select builder hedgehog"
           className="-translate-x-1/2 -translate-y-1/2 flex cursor-pointer flex-col items-center border-0 bg-transparent p-0"
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onContextMenu={(event) => event.preventDefault()}
           onClick={(event) => {
             event.stopPropagation();
-            onSelect?.(nest);
+            onSelect?.();
           }}
         >
           <div className="relative">
@@ -48,23 +53,23 @@ export function NestSprite({ nest, selected, onSelect }: NestSpriteProps) {
               />
             )}
             <div
-              className="flex items-center justify-center rounded-full bg-(--gray-2) shadow-md ring-(--accent-7) ring-2"
+              className="flex items-center justify-center rounded-full bg-(--gray-2) shadow-md ring-(--gray-7) ring-2"
               style={{ width: SPRITE_SIZE, height: SPRITE_SIZE }}
             >
               <img
-                src={builderHog}
+                src={explorerHog}
                 alt=""
                 className="pointer-events-none select-none"
                 style={{
-                  width: SPRITE_SIZE * 0.8,
-                  height: SPRITE_SIZE * 0.8,
+                  width: SPRITE_SIZE * 0.78,
+                  height: SPRITE_SIZE * 0.78,
                 }}
                 draggable={false}
               />
             </div>
           </div>
-          <div className="mt-1 max-w-[160px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-12) text-[12px] shadow-sm">
-            {nest.name}
+          <div className="mt-1 max-w-[120px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
+            Builder
           </div>
         </motion.button>
       </Tooltip>
