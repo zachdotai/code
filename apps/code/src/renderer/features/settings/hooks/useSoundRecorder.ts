@@ -1,6 +1,7 @@
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
+import { isMac } from "@utils/platform";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -139,15 +140,17 @@ export function useSoundRecorder(): SoundRecorder {
         toast.error("Microphone access denied", {
           description:
             "Enable microphone access for PostHog Code in System Settings.",
-          action: {
-            label: "Open Settings",
-            onClick: () =>
-              void trpcClient.os.openExternal
-                .mutate({
-                  url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
-                })
-                .catch((err) => log.error("Failed to open settings", err)),
-          },
+          ...(isMac && {
+            action: {
+              label: "Open Settings",
+              onClick: () =>
+                void trpcClient.os.openExternal
+                  .mutate({
+                    url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+                  })
+                  .catch((err) => log.error("Failed to open settings", err)),
+            },
+          }),
         });
       } else {
         toast.error("Could not start recording");
