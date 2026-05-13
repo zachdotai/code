@@ -21,6 +21,8 @@ import { SwipeableTaskItem } from "./SwipeableTaskItem";
 interface TaskListProps {
   onTaskPress?: (taskId: string) => void;
   onCreateTask?: () => void;
+  /** Top inset so the list can scroll behind a floating header. */
+  contentInsetTop?: number;
 }
 
 interface CreateTaskEmptyStateProps {
@@ -87,7 +89,11 @@ const DATE_GROUP_ORDER = [
   "Earlier",
 ];
 
-export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
+export function TaskList({
+  onTaskPress,
+  onCreateTask,
+  contentInsetTop = 0,
+}: TaskListProps) {
   const { tasks, isLoading, error, refetch } = useTasks({
     originProduct: "user_created",
   });
@@ -359,7 +365,10 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
           tintColor={themeColors.accent[9]}
         />
       }
-      contentContainerStyle={{ paddingBottom: 100 }}
+      contentContainerStyle={{
+        paddingTop: contentInsetTop,
+        paddingBottom: 100,
+      }}
     />
   );
 }

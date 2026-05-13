@@ -1,11 +1,10 @@
-import { Text } from "@components/text";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef } from "react";
-import { InteractionManager, Pressable, View } from "react-native";
+import { InteractionManager, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MenuButton } from "@/features/navigation/components/MenuButton";
+import { FloatingNewTaskButton } from "@/features/tasks/components/FloatingNewTaskButton";
+import { FloatingTasksHeader } from "@/features/tasks/components/FloatingTasksHeader";
 import {
-  TaskFilterButton,
   TaskFilterMenu,
   useTaskFilterMenu,
 } from "@/features/tasks/components/TaskFilterMenu";
@@ -48,33 +47,21 @@ export default function TasksScreen() {
     [router],
   );
 
+  // Header occupies insets.top + 6 (top pad) + 44 (button) + 8 (bottom pad),
+  // plus a small visual buffer so the first row isn't hugging the divider.
+  const headerHeight = insets.top + 64;
+
   return (
     <View className="flex-1 bg-background">
-      <View
-        className="border-gray-6 border-b px-3 pb-4"
-        style={{ paddingTop: insets.top + 12 }}
-      >
-        <View className="flex-row items-center gap-2">
-          <MenuButton />
-          <View className="flex-1">
-            <Text className="font-semibold text-[22px] text-gray-12">Code</Text>
-            <Text className="text-[13px] text-gray-11">
-              Your PostHog Code sessions
-            </Text>
-          </View>
-          <TaskFilterButton onPress={filterMenu.show} />
-          <Pressable
-            onPress={handleCreateTask}
-            className="rounded-md bg-accent-9 px-3.5 py-2 active:opacity-80"
-          >
-            <Text className="font-semibold text-[13px] text-accent-contrast">
-              New task
-            </Text>
-          </Pressable>
-        </View>
-      </View>
+      <TaskList
+        onTaskPress={handleTaskPress}
+        onCreateTask={handleCreateTask}
+        contentInsetTop={headerHeight}
+      />
 
-      <TaskList onTaskPress={handleTaskPress} onCreateTask={handleCreateTask} />
+      <FloatingTasksHeader onFilterPress={filterMenu.show} />
+
+      <FloatingNewTaskButton onPress={handleCreateTask} />
 
       <TaskFilterMenu open={filterMenu.open} onClose={filterMenu.hide} />
     </View>
