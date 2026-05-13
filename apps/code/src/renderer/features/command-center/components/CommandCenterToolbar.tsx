@@ -1,7 +1,10 @@
 import { getSessionService } from "@features/sessions/service/service";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import {
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
+  MapTrifold,
+  SquaresFour,
   Stop,
   Trash,
 } from "@phosphor-icons/react";
@@ -11,6 +14,7 @@ import type {
   StatusSummary,
 } from "../hooks/useCommandCenterData";
 import {
+  type CommandCenterViewMode,
   type LayoutPreset,
   useCommandCenterStore,
 } from "../stores/commandCenterStore";
@@ -95,6 +99,14 @@ export function CommandCenterToolbar({
   const zoom = useCommandCenterStore((s) => s.zoom);
   const zoomIn = useCommandCenterStore((s) => s.zoomIn);
   const zoomOut = useCommandCenterStore((s) => s.zoomOut);
+  const viewMode = useCommandCenterStore((s) => s.viewMode);
+  const setViewMode = useCommandCenterStore((s) => s.setViewMode);
+
+  const hedgemonyEnabled =
+    useFeatureFlag("hedgemony-enabled") || import.meta.env.DEV;
+  const effectiveViewMode: CommandCenterViewMode = hedgemonyEnabled
+    ? viewMode
+    : "grid";
 
   const hasActiveAgents = summary.running > 0 || summary.waiting > 0;
 
@@ -110,6 +122,8 @@ export function CommandCenterToolbar({
     }
   };
 
+  const isMap = effectiveViewMode === "map";
+
   return (
     <Flex
       align="center"
@@ -118,71 +132,141 @@ export function CommandCenterToolbar({
       py="2"
       className="no-drag shrink-0 border-gray-6 border-b"
     >
-      <Select.Root
-        value={layout}
-        onValueChange={(v) => setLayout(v as LayoutPreset)}
-      >
-        <Select.Trigger variant="ghost" className="text-[12px]" />
-        <Select.Content position="popper">
-          {LAYOUT_OPTIONS.map((opt) => (
-            <Select.Item key={opt.value} value={opt.value}>
-              <Flex align="center" gap="2">
-                <LayoutIcon cols={opt.cols} rows={opt.rows} />
-                {opt.label}
-              </Flex>
-            </Select.Item>
-          ))}
-        </Select.Content>
-      </Select.Root>
+      {hedgemonyEnabled && (
+        <ViewModeToggle value={effectiveViewMode} onChange={setViewMode} />
+      )}
 
-      <StatusSummaryText summary={summary} />
+      {!isMap && (
+        <>
+          <Select.Root
+            value={layout}
+            onValueChange={(v) => setLayout(v as LayoutPreset)}
+          >
+            <Select.Trigger variant="ghost" className="text-[12px]" />
+            <Select.Content position="popper">
+              {LAYOUT_OPTIONS.map((opt) => (
+                <Select.Item key={opt.value} value={opt.value}>
+                  <Flex align="center" gap="2">
+                    <LayoutIcon cols={opt.cols} rows={opt.rows} />
+                    {opt.label}
+                  </Flex>
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
 
-      <Flex align="center" gap="1">
-        <button
-          type="button"
-          onClick={zoomOut}
-          disabled={zoom <= 0.5}
-          className="flex h-5 w-5 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12 disabled:opacity-40"
-          title="Zoom out"
-        >
-          <MagnifyingGlassMinus size={14} />
-        </button>
-        <Text className="w-8 text-center text-[12px] text-gray-10">
-          {Math.round(zoom * 100)}%
-        </Text>
-        <button
-          type="button"
-          onClick={zoomIn}
-          disabled={zoom >= 1.5}
-          className="flex h-5 w-5 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12 disabled:opacity-40"
-          title="Zoom in"
-        >
-          <MagnifyingGlassPlus size={14} />
-        </button>
-      </Flex>
+          <StatusSummaryText summary={summary} />
+
+          <Flex align="center" gap="1">
+            <button
+              type="button"
+              onClick={zoomOut}
+              disabled={zoom <= 0.5}
+              className="flex h-5 w-5 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12 disabled:opacity-40"
+              title="Zoom out"
+            >
+              <MagnifyingGlassMinus size={14} />
+            </button>
+            <Text className="w-8 text-center text-[12px] text-gray-10">
+              {Math.round(zoom * 100)}%
+            </Text>
+            <button
+              type="button"
+              onClick={zoomIn}
+              disabled={zoom >= 1.5}
+              className="flex h-5 w-5 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12 disabled:opacity-40"
+              title="Zoom in"
+            >
+              <MagnifyingGlassPlus size={14} />
+            </button>
+          </Flex>
+        </>
+      )}
 
       <div className="flex-1" />
 
-      <button
-        type="button"
-        onClick={stopAll}
-        disabled={!hasActiveAgents}
-        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] text-red-10 transition-colors hover:bg-red-3 hover:text-red-11 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-red-10"
-        title="Stop all agents"
-      >
-        <Stop size={12} weight="fill" />
-        Stop All
-      </button>
+      {!isMap && (
+        <>
+          <button
+            type="button"
+            onClick={stopAll}
+            disabled={!hasActiveAgents}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] text-red-10 transition-colors hover:bg-red-3 hover:text-red-11 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-red-10"
+            title="Stop all agents"
+          >
+            <Stop size={12} weight="fill" />
+            Stop All
+          </button>
 
-      <button
-        type="button"
-        onClick={clearAll}
-        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
-        title="Clear all cells"
-      >
-        <Trash size={12} />
-        Clear
-      </button>
+          <button
+            type="button"
+            onClick={clearAll}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+            title="Clear all cells"
+          >
+            <Trash size={12} />
+            Clear
+          </button>
+        </>
+      )}
     </Flex>
+  );
+}
+
+interface ViewModeToggleProps {
+  value: CommandCenterViewMode;
+  onChange: (mode: CommandCenterViewMode) => void;
+}
+
+function ViewModeToggle({ value, onChange }: ViewModeToggleProps) {
+  return (
+    <Flex
+      align="center"
+      className="overflow-hidden rounded-(--radius-2) border border-(--gray-5)"
+    >
+      <ViewModeButton
+        active={value === "grid"}
+        onClick={() => onChange("grid")}
+        title="Grid view"
+      >
+        <SquaresFour size={12} />
+        Grid
+      </ViewModeButton>
+      <ViewModeButton
+        active={value === "map"}
+        onClick={() => onChange("map")}
+        title="Map view"
+      >
+        <MapTrifold size={12} />
+        Map
+      </ViewModeButton>
+    </Flex>
+  );
+}
+
+function ViewModeButton({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`flex h-6 items-center gap-1 px-2 text-[12px] transition-colors ${
+        active
+          ? "bg-(--gray-4) text-(--gray-12)"
+          : "text-(--gray-10) hover:bg-(--gray-3) hover:text-(--gray-12)"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

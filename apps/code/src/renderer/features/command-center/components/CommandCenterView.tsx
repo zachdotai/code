@@ -1,4 +1,6 @@
+import { HedgemonyMapView } from "@features/hedgemony/components/HedgemonyMapView";
 import { useTaskViewed } from "@features/sidebar/hooks/useTaskViewed";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import { Lightning } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
@@ -10,13 +12,20 @@ import { CommandCenterToolbar } from "./CommandCenterToolbar";
 
 export function CommandCenterView() {
   const layout = useCommandCenterStore((s) => s.layout);
+  const viewMode = useCommandCenterStore((s) => s.viewMode);
+  const hedgemonyEnabled =
+    useFeatureFlag("hedgemony-enabled") || import.meta.env.DEV;
+  const isMap = hedgemonyEnabled && viewMode === "map";
+
   const { cells, summary } = useCommandCenterData();
   const { markAsViewed } = useTaskViewed();
 
-  const visibleTaskIdsKey = cells
-    .map((c) => c.taskId)
-    .filter(Boolean)
-    .join(",");
+  const visibleTaskIdsKey = isMap
+    ? ""
+    : cells
+        .map((c) => c.taskId)
+        .filter(Boolean)
+        .join(",");
 
   useEffect(() => {
     if (!visibleTaskIdsKey) return;
@@ -46,7 +55,11 @@ export function CommandCenterView() {
     <Flex direction="column" height="100%">
       <CommandCenterToolbar summary={summary} cells={cells} />
       <Box className="min-h-0 flex-1">
-        <CommandCenterGrid layout={layout} cells={cells} />
+        {isMap ? (
+          <HedgemonyMapView />
+        ) : (
+          <CommandCenterGrid layout={layout} cells={cells} />
+        )}
       </Box>
     </Flex>
   );

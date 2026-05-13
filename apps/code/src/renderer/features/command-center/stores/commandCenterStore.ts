@@ -4,6 +4,8 @@ import { persist } from "zustand/middleware";
 
 export type LayoutPreset = "1x1" | "2x1" | "1x2" | "2x2" | "3x2" | "3x3";
 
+export type CommandCenterViewMode = "grid" | "map";
+
 interface GridDimensions {
   cols: number;
   rows: number;
@@ -21,6 +23,7 @@ function getCellCount(preset: LayoutPreset): number {
 
 interface CommandCenterStoreState {
   layout: LayoutPreset;
+  viewMode: CommandCenterViewMode;
   cells: (string | null)[];
   activeTaskId: string | null;
   activeCellIndex: number | null;
@@ -30,6 +33,7 @@ interface CommandCenterStoreState {
 
 interface CommandCenterStoreActions {
   setLayout: (preset: LayoutPreset) => void;
+  setViewMode: (mode: CommandCenterViewMode) => void;
   setActiveTask: (taskId: string | null) => void;
   setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
@@ -70,6 +74,7 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
   persist(
     (set) => ({
       layout: "2x2",
+      viewMode: "grid",
       cells: [null, null, null, null],
       activeTaskId: null,
       activeCellIndex: null,
@@ -94,6 +99,8 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
             creatingCells: state.creatingCells.filter((i) => i < newCount),
           };
         }),
+
+      setViewMode: (mode) => set({ viewMode: mode }),
 
       setActiveTask: (taskId) => set({ activeTaskId: taskId }),
 
@@ -173,6 +180,7 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
       storage: electronStorage,
       partialize: (state) => ({
         layout: state.layout,
+        viewMode: state.viewMode,
         cells: state.cells,
         activeTaskId: state.activeTaskId,
         activeCellIndex: state.activeCellIndex,
