@@ -1,7 +1,7 @@
 import { Text } from "@components/text";
 import { usePathname, useRouter } from "expo-router";
 import { GearSix, Plus, Tray } from "phosphor-react-native";
-import { useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import {
   Animated,
   Dimensions,
@@ -18,6 +18,32 @@ import { useNavDrawerStore } from "../stores/navDrawerStore";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const DRAWER_WIDTH = Math.min(320, Math.round(SCREEN_WIDTH * 0.85));
+
+interface DrawerItemProps {
+  icon: ReactNode;
+  label: string;
+  active?: boolean;
+  onPress: () => void;
+}
+
+function DrawerItem({ icon, label, active, onPress }: DrawerItemProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className={`flex-row items-center gap-2.5 rounded-md px-2.5 py-2.5 ${active ? "bg-gray-3" : "active:bg-gray-2"}`}
+    >
+      <View className="h-5 w-5 shrink-0 items-center justify-center">
+        {icon}
+      </View>
+      <Text
+        className="flex-1 font-medium text-[14px] text-gray-12"
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
 export function NavDrawer() {
   const isOpen = useNavDrawerStore((s) => s.isOpen);
@@ -59,15 +85,18 @@ export function NavDrawer() {
   };
 
   const handleInbox = () => navigateTo("/inbox");
-
   const handleSettings = () => navigateTo("/settings");
-
   const handleHome = () => navigateTo("/tasks");
 
   const handleTaskPress = (taskId: string) => {
     close();
     router.push(`/task/${taskId}`);
   };
+
+  const iconColor = themeColors.gray[11];
+  const iconColorActive = themeColors.gray[12];
+  const isOnInbox = pathname === "/inbox";
+  const isOnSettings = pathname === "/settings";
 
   return (
     <Modal
@@ -86,7 +115,7 @@ export function NavDrawer() {
         </Animated.View>
 
         <Animated.View
-          className="absolute top-0 bottom-0 left-0 border-gray-6 border-r bg-background"
+          className="absolute top-0 bottom-0 left-0 border-gray-6 border-r bg-gray-2"
           style={{
             width: DRAWER_WIDTH,
             paddingTop: insets.top + 12,
@@ -98,76 +127,86 @@ export function NavDrawer() {
             onPress={handleHome}
             className="px-4 pb-3 active:opacity-60"
           >
-            <Text className="font-bold text-2xl text-gray-12">PostHog</Text>
+            <Text className="font-bold text-[20px] text-gray-12">PostHog</Text>
           </Pressable>
 
-          <View className="gap-1 px-2 pb-2">
-            <Pressable
+          <View className="gap-0.5 px-2 pb-2">
+            <DrawerItem
+              icon={<Plus size={18} color={iconColorActive} weight="bold" />}
+              label="New task"
               onPress={handleNewTask}
-              className="flex-row items-center gap-3 rounded-lg px-3 py-3 active:bg-gray-3"
-            >
-              <Plus size={20} color={themeColors.gray[12]} weight="bold" />
-              <Text className="font-medium text-base text-gray-12">
-                New task
-              </Text>
-            </Pressable>
-
-            <Pressable
+            />
+            <DrawerItem
+              icon={
+                <Tray
+                  size={18}
+                  color={isOnInbox ? iconColorActive : iconColor}
+                  weight={isOnInbox ? "fill" : "regular"}
+                />
+              }
+              label="Inbox"
+              active={isOnInbox}
               onPress={handleInbox}
-              className="flex-row items-center gap-3 rounded-lg px-3 py-3 active:bg-gray-3"
-            >
-              <Tray size={20} color={themeColors.gray[12]} />
-              <Text className="font-medium text-base text-gray-12">Inbox</Text>
-            </Pressable>
+            />
           </View>
 
-          <View className="mx-3 my-1 border-gray-6 border-t" />
+          <View className="mx-3 mb-1 border-gray-6 border-t" />
 
-          <View className="px-4 pt-3 pb-2">
-            <Text className="font-medium text-gray-9 text-xs uppercase tracking-wide">
+          <View className="px-4 pt-3 pb-1.5">
+            <Text
+              className="font-medium text-[11px] text-gray-10 uppercase"
+              style={{ letterSpacing: 0.5 }}
+            >
               Tasks
             </Text>
           </View>
 
           <ScrollView
             className="flex-1"
-            contentContainerStyle={{ paddingBottom: 12 }}
+            contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 12 }}
           >
             {tasks.length === 0 ? (
-              <View className="px-4 py-3">
-                <Text className="text-gray-9 text-sm">No tasks yet</Text>
+              <View className="px-2.5 py-2">
+                <Text className="text-[13px] text-gray-10">No tasks yet</Text>
               </View>
             ) : (
-              tasks.map((task) => (
-                <Pressable
-                  key={task.id}
-                  onPress={() => handleTaskPress(task.id)}
-                  className="px-4 py-3 active:bg-gray-3"
-                >
-                  <Text
-                    className="text-gray-12 text-sm"
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
+              tasks.map((task) => {
+                const taskHref = `/task/${task.id}`;
+                const active = pathname === taskHref;
+                return (
+                  <Pressable
+                    key={task.id}
+                    onPress={() => handleTaskPress(task.id)}
+                    className={`rounded-md px-2.5 py-2 ${active ? "bg-gray-3" : "active:bg-gray-2"}`}
                   >
-                    {task.title}
-                  </Text>
-                </Pressable>
-              ))
+                    <Text
+                      className="text-[14px] text-gray-12"
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {task.title}
+                    </Text>
+                  </Pressable>
+                );
+              })
             )}
           </ScrollView>
 
           <View className="mx-3 mt-1 border-gray-6 border-t" />
 
-          <View className="gap-1 px-2 pt-2">
-            <Pressable
+          <View className="px-2 pt-2">
+            <DrawerItem
+              icon={
+                <GearSix
+                  size={18}
+                  color={isOnSettings ? iconColorActive : iconColor}
+                  weight={isOnSettings ? "fill" : "regular"}
+                />
+              }
+              label="Settings"
+              active={isOnSettings}
               onPress={handleSettings}
-              className="flex-row items-center gap-3 rounded-lg px-3 py-3 active:bg-gray-3"
-            >
-              <GearSix size={20} color={themeColors.gray[12]} />
-              <Text className="font-medium text-base text-gray-12">
-                Settings
-              </Text>
-            </Pressable>
+            />
           </View>
         </Animated.View>
       </View>

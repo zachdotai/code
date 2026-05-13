@@ -63,6 +63,27 @@
           "android": {
             "fonts": [
               {
+                "fontFamily": "Open Runde",
+                "fontDefinitions": [
+                  {
+                    "path": "./assets/fonts/OpenRunde/OpenRunde-Regular.ttf",
+                    "weight": 400
+                  },
+                  {
+                    "path": "./assets/fonts/OpenRunde/OpenRunde-Medium.ttf",
+                    "weight": 500
+                  },
+                  {
+                    "path": "./assets/fonts/OpenRunde/OpenRunde-Semibold.ttf",
+                    "weight": 600
+                  },
+                  {
+                    "path": "./assets/fonts/OpenRunde/OpenRunde-Bold.ttf",
+                    "weight": 700
+                  }
+                ]
+              },
+              {
                 "fontFamily": "JetBrains Mono",
                 "fontDefinitions": [
                   {
@@ -143,6 +164,10 @@
           },
           "ios": {
             "fonts": [
+              "./assets/fonts/OpenRunde/OpenRunde-Regular.ttf",
+              "./assets/fonts/OpenRunde/OpenRunde-Medium.ttf",
+              "./assets/fonts/OpenRunde/OpenRunde-Semibold.ttf",
+              "./assets/fonts/OpenRunde/OpenRunde-Bold.ttf",
               "./assets/fonts/JetBrainsMono-Thin.ttf",
               "./assets/fonts/JetBrainsMono-ThinItalic.ttf",
               "./assets/fonts/JetBrainsMono-ExtraLight.ttf",

@@ -15,7 +15,7 @@ export function OfflineBanner() {
       style={{ top: insets.top }}
     >
       <WifiSlash size={16} color="#fff" weight="bold" />
-      <Text className="font-medium font-mono text-sm text-white">
+      <Text className="font-medium text-sm text-white">
         No internet connection
       </Text>
     </View>

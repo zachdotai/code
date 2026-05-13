@@ -18,8 +18,10 @@ export default function InboxScreen() {
         <View className="flex-row items-center gap-2">
           <MenuButton />
           <View className="flex-1">
-            <Text className="font-bold text-2xl text-gray-12">Inbox</Text>
-            <Text className="text-gray-11 text-sm">
+            <Text className="font-semibold text-[22px] text-gray-12">
+              Inbox
+            </Text>
+            <Text className="text-[13px] text-gray-11">
               Signals and notifications
             </Text>
           </View>
@@ -28,12 +30,12 @@ export default function InboxScreen() {
 
       <View className="flex-1 items-center justify-center p-6">
         <View className="mb-6 h-16 w-16 items-center justify-center rounded-full bg-gray-3">
-          <Tray size={28} color={themeColors.gray[9]} />
+          <Tray size={28} color={themeColors.gray[10]} />
         </View>
-        <Text className="mb-2 text-center font-semibold text-gray-12 text-lg">
+        <Text className="mb-2 text-center font-semibold text-[16px] text-gray-12">
           Inbox coming soon
         </Text>
-        <Text className="text-center text-gray-11 text-sm">
+        <Text className="text-center text-[13px] text-gray-11">
           Signals and notifications will show up here.
         </Text>
       </View>

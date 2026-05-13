@@ -1,7 +1,24 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pnpm exec *)"
+      "Bash(pnpm exec *)",
+      "Bash(xargs cat)",
+      "Bash(PYTHONPATH=/Users/tomowers/Library/Python/3.10/lib/python/site-packages python3 -c \"from fontTools.ttLib import TTFont; import brotli; print\\('ok'\\)\")",
+      "Bash(python3 -c \"import sys; print\\(sys.path\\)\")",
+      "Read(//opt/homebrew/lib/**)",
+      "Bash(python3 -m pip install --user --break-system-packages --quiet fonttools brotli)",
+      "Bash(python3 -c \"from fontTools.ttLib import TTFont; import brotli; print\\('ok', brotli.__version__\\)\")",
+      "Bash(mkdir -p /Users/tomowers/dev/posthog/code/apps/mobile/assets/fonts/OpenRunde)",
+      "Read(//private/tmp/**)",
+      "Bash(cat)",
+      "Bash(python3 /tmp/convert_woff.py)",
+      "Bash(ls -lh /Users/tomowers/dev/posthog/code/apps/mobile/assets/fonts/OpenRunde/ && rm /tmp/convert_woff.py)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 /tmp/normalize_fonts.py)",
+      "Bash(xargs grep -l \"^ Text,\\\\|^ Text$\\\\|, Text,\")"
+    ],
+    "additionalDirectories": [
+      "/private/tmp"
     ]
   }
 }

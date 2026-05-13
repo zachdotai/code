@@ -43,6 +43,7 @@ module.exports = {
         background: "rgb(var(--background) / <alpha-value>)",
       },
       fontFamily: {
+        sans: ["Open Runde"],
         mono: ["JetBrains Mono"],
       },
     },

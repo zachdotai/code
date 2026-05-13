@@ -38,7 +38,7 @@ export default function SettingsScreen() {
         {/* Header */}
         <View className="mb-8 flex-row items-center gap-2">
           <MenuButton className="-ml-2" />
-          <Text className="font-bold text-3xl text-gray-12">Settings</Text>
+          <Text className="font-semibold text-2xl text-gray-12">Settings</Text>
         </View>
 
         {/* Organization */}
