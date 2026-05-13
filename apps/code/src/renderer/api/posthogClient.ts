@@ -2920,6 +2920,28 @@ export class PostHogAPIClient {
     return match?.id ?? null;
   }
 
+  /** Run a HogQL query and return the typed result rows. */
+  async query(
+    hogql: string,
+  ): Promise<{ columns: string[]; results: unknown[][] }> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/query/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ query: { kind: "HogQLQuery", query: hogql } }),
+      },
+    });
+    const json = (await response.json()) as {
+      columns?: string[];
+      results?: unknown[][];
+    };
+    return { columns: json.columns ?? [], results: json.results ?? [] };
+  }
+
   async listRenderingCanvases(options?: {
     limit?: number;
     offset?: number;
