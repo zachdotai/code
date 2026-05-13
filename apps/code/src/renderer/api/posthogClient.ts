@@ -129,6 +129,29 @@ export interface ExternalDataSource {
   schemas?: ExternalDataSourceSchema[] | string;
 }
 
+export interface RenderingCanvas {
+  id: string;
+  name: string;
+  content: string;
+  task: string | null;
+  created_by: Schemas.UserBasic;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RenderingCanvasInput {
+  name: string;
+  content: string;
+  task?: string | null;
+}
+
+export interface PaginatedRenderingCanvases {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: RenderingCanvas[];
+}
+
 export interface TaskArtifactUploadRequest {
   name: string;
   type: "user_attachment";
@@ -2833,6 +2856,75 @@ export class PostHogAPIClient {
     };
     const match = data.results?.find((e) => e.has_content);
     return match?.id ?? null;
+  }
+
+  async listRenderingCanvases(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<PaginatedRenderingCanvases> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/rendering_canvases/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options?.limit != null)
+      url.searchParams.set("limit", String(options.limit));
+    if (options?.offset != null)
+      url.searchParams.set("offset", String(options.offset));
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    return (await response.json()) as PaginatedRenderingCanvases;
+  }
+
+  async getRenderingCanvas(canvasId: string): Promise<RenderingCanvas> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/rendering_canvases/${canvasId}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    return (await response.json()) as RenderingCanvas;
+  }
+
+  async createRenderingCanvas(
+    input: RenderingCanvasInput,
+  ): Promise<RenderingCanvas> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/rendering_canvases/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: { body: JSON.stringify(input) },
+    });
+    return (await response.json()) as RenderingCanvas;
+  }
+
+  async updateRenderingCanvas(
+    canvasId: string,
+    updates: Partial<RenderingCanvasInput>,
+  ): Promise<RenderingCanvas> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/rendering_canvases/${canvasId}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: { body: JSON.stringify(updates) },
+    });
+    return (await response.json()) as RenderingCanvas;
+  }
+
+  async deleteRenderingCanvas(canvasId: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/rendering_canvases/${canvasId}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    await this.api.fetcher.fetch({ method: "delete", url, path: urlPath });
   }
 
   /** Get the presigned content URL for an exported asset (e.g. rasterized recording). */
