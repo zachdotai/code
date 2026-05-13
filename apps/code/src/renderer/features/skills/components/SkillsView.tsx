@@ -10,7 +10,13 @@ import { useSkillsSidebarStore } from "../stores/skillsSidebarStore";
 import { SkillSection, SOURCE_CONFIG } from "./SkillCard";
 import { SkillDetailPanel } from "./SkillDetailPanel";
 
-const SOURCE_ORDER: SkillSource[] = ["user", "marketplace", "repo", "bundled"];
+const SOURCE_ORDER: SkillSource[] = [
+  "team",
+  "user",
+  "marketplace",
+  "repo",
+  "bundled",
+];
 
 export function SkillsView() {
   const trpcReact = useTRPC();

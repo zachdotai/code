@@ -9,6 +9,7 @@ import {
 import { listSkillsOutput } from "../../services/agent/skill-schemas";
 import type { FoldersService } from "../../services/folders/service";
 import type { PosthogPluginService } from "../../services/posthog-plugin/service";
+import type { TeamSkillsService } from "../../services/team-skills/service";
 import { publicProcedure, router } from "../trpc";
 
 const getPluginService = () =>
@@ -17,11 +18,15 @@ const getPluginService = () =>
 const getFoldersService = () =>
   container.get<FoldersService>(MAIN_TOKENS.FoldersService);
 
+const getTeamSkillsService = () =>
+  container.get<TeamSkillsService>(MAIN_TOKENS.TeamSkillsService);
+
 export const skillsRouter = router({
   list: publicProcedure.output(listSkillsOutput).query(async () => {
     const pluginPath = getPluginService().getPluginPath();
     const folders = await getFoldersService().getFolders();
     const marketplacePaths = await getMarketplaceInstallPaths();
+    const teamSkillsDir = getTeamSkillsService().skillsDir;
 
     const results = await Promise.all([
       readSkillMetadataFromDir(path.join(pluginPath, "skills"), "bundled"),
@@ -29,6 +34,7 @@ export const skillsRouter = router({
         path.join(os.homedir(), ".claude", "skills"),
         "user",
       ),
+      readSkillMetadataFromDir(teamSkillsDir, "team"),
       ...folders.map((f) =>
         readSkillMetadataFromDir(
           path.join(f.path, ".claude", "skills"),

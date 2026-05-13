@@ -63,7 +63,7 @@ export function SkillDetailPanel({ skill, onClose }: SkillDetailPanelProps) {
               {skill.repoName}
             </Badge>
           )}
-          {skill.source !== "bundled" && (
+          {skill.source !== "bundled" && skill.source !== "team" && (
             <ExternalAppsOpener targetPath={skill.path} />
           )}
         </Flex>

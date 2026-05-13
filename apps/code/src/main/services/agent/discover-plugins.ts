@@ -28,15 +28,17 @@ interface InstalledPluginsFile {
 export async function discoverExternalPlugins(
   options: DiscoverPluginsOptions,
 ): Promise<SdkPluginConfig[]> {
-  const [globalSkills, marketplacePlugins, repoSkills] = await Promise.all([
-    discoverUserSkills(options.userDataDir),
-    discoverMarketplacePlugins(),
-    options.repoPath
-      ? discoverRepoSkills(options.userDataDir, options.repoPath)
-      : Promise.resolve([]),
-  ]);
+  const [globalSkills, teamSkills, marketplacePlugins, repoSkills] =
+    await Promise.all([
+      discoverUserSkills(options.userDataDir),
+      discoverTeamSkills(options.userDataDir),
+      discoverMarketplacePlugins(),
+      options.repoPath
+        ? discoverRepoSkills(options.userDataDir, options.repoPath)
+        : Promise.resolve([]),
+    ]);
 
-  return [...globalSkills, ...marketplacePlugins, ...repoSkills];
+  return [...globalSkills, ...teamSkills, ...marketplacePlugins, ...repoSkills];
 }
 
 async function discoverUserSkills(
@@ -47,6 +49,17 @@ async function discoverUserSkills(
     path.join(userDataDir, "plugins", "user-skills"),
     "user-skills",
     "User Claude skills",
+  );
+}
+
+async function discoverTeamSkills(
+  userDataDir: string,
+): Promise<SdkPluginConfig[]> {
+  return buildSyntheticPlugin(
+    path.join(userDataDir, "team-skills"),
+    path.join(userDataDir, "plugins", "team-skills"),
+    "team-skills",
+    "PostHog team skills",
   );
 }
 
