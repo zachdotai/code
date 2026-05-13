@@ -43,30 +43,40 @@ A hoglet is a `Task` with a row in `hedgemony_hoglet`. The Task itself is unchan
 
 ---
 
-## Signal ingestion + auto-spawn
+## Signal ingestion — defer to autonomy, adopt after
 
-Reuse `apps/code/src/renderer/api/posthogClient.ts` (`PosthogAPIClient.getSignalReports()`). Hedgemony registers its own polling tick (separate from Inbox autonomy — keeps the feature self-contained and easier to disable):
+PostHog's existing **autonomy** system (`products/signals/`) already auto-starts a `Task` from high-priority `SignalReport`s. Hedgemony does **not** duplicate that ingestion path — it would race with autonomy and create twin tasks for the same report. Instead, Hedgemony watches for autonomy-created tasks and *adopts* them into the nest world:
 
-1. Fetches new `SignalReport`s.
-2. Skips reports already routed (check `hedgemony_hoglet.signal_report_id`).
-3. For each new report, builds an initial task prompt from `title + summary + findings + suggested_reviewers` and creates a `Task` in `not_started`.
-4. Inserts a `hedgemony_hoglet` row with `signal_report_id` set; `nest_id` decided by the affinity router (next section).
-5. Hedgehog of the matched nest sees a new idle hoglet and decides raise / hold / release.
+1. Hedgemony polls (reuses `PosthogAPIClient.getSignalReports()`) for reports whose `implementation_pr_url` or linked `TaskRun` indicates autonomy spawned a Task — i.e. autonomy already did the heavy lifting.
+2. Skip reports already adopted (check `hedgemony_hoglet.signal_report_id` uniqueness).
+3. For each newly autonomy-started Task tied to a not-yet-adopted report, insert a `hedgemony_hoglet` row with `task_id` (existing Task) + `signal_report_id` set. `nest_id` decided by the [affinity router](#affinity-router--goal-based-not-repo-based).
+4. The hoglet's status (idle / running) is whatever autonomy already set on its `TaskRun`. The hedgehog observes and decides whether to raise it (if still idle), hold, or kill (if she thinks it's misdirected).
+5. **Adoption race**: `hedgemony_hoglet (signal_report_id)` has a uniqueness constraint with null handling; insert-or-ignore semantics so two adoption attempts can't both succeed.
+
+For reports autonomy *didn't* auto-start (lower priority, or autonomy disabled), Hedgemony can optionally spawn a hoglet directly via the existing task-creation saga — flagged off in v1 to avoid overlap surprises.
 
 ---
 
 ## Affinity router — goal-based, not repo-based
 
-A nest has no repo field. Routing is semantic match against the nest's `goal_prompt`.
+A nest has no repo field. Routing is semantic match against the nest's `goal_prompt`, computed entirely server-side via existing PostHog primitives — no new SDK dependency.
 
 **v1 implementation:**
-1. For each active nest, embed `goal_prompt` once (cache embedding in `hedgemony_nest`).
-2. Embed each incoming `SignalReport` summary.
-3. Cosine similarity → highest-scoring nest above threshold wins.
-4. Tiebreak / weighting bumps for: `source_products` overlap with nest's recent hoglet sources, recent activity in the same area.
+
+PostHog already exposes `embedText('text', model?)` as a HogQL function (`posthog/hogql/functions/embed_text.py` → `posthog.api.embedding_worker.generate_embedding`) and a `DocumentSimilarityQuery` query type (already in `apps/code/src/renderer/api/generated.ts`) for nearest-neighbor search against the `document_embeddings` table where signal reports are already embedded by the signals pipeline.
+
+Routing flow:
+
+1. New `SignalReport` arrives. We have its `id` (= an `EmbeddedDocument` in PostHog's table).
+2. For each active nest, issue a HogQL query: `embedText(nest.goal_prompt) <-> SignalReport.embedding` and rank distance.
+   - In v1 batch all active nests in one query rather than N round-trips.
+3. Highest-scoring nest above threshold wins → that becomes `hedgemony_hoglet.nest_id`.
+4. Tiebreak / weighting bumps for: `source_products` overlap with the nest's recent hoglet sources, recent activity in the same area.
 5. No match above threshold → `nest_id = null` (wild hoglet, lands in the holding area).
 
-**v2:** LLM judge for borderline cases; learned routing from operator adoptions.
+The `goal_prompt` does **not** need to be persisted server-side. `embedText()` embeds on-the-fly per query, so changing a nest's goal just changes future routing — no migration.
+
+**v2:** LLM judge for borderline cases; learned routing from operator adoptions; cache goal-prompt embeddings client-side or in the hibernacula to skip the per-query embed call when goals are stable.
 
 Repo affinity emerges naturally — a nest whose goal is "improve checkout conversion" will accumulate hoglets that touch checkout-related repos, which feeds back into the source_products weighting. Repo is derived, never declared.
 
@@ -154,9 +164,14 @@ posthog-code already has the entire mechanism, currently driven by user click. H
 
 **What's genuinely new**: nothing upstream currently handles `pull_request_review` or `pull_request_review_comment` GitHub events. Today's "Fix with agent" flow is purely user-click-driven. The hedgehog automating this is a real new capability, not a re-wiring of something existing.
 
-**Hedgemony wiring**: a `FeedbackRoutingService` (main process, follows the services-over-hooks pattern in CLAUDE.md) consumes events per [Event sources](#event-sources) — v1 polls via the existing github-integration service; v2 can graduate to a new upstream webhook handler + SSE push. New comment or failure → build a prompt with the existing builders → call `sendPromptToAgent` → log an entry in `hedgemony_feedback_event` to avoid double-routing.
+**Hedgemony wiring**: a `FeedbackRoutingService` (main process, follows the services-over-hooks pattern in CLAUDE.md) consumes events per [Event sources](#event-sources) — v1 polls via the existing github-integration service; v2 can graduate to a new upstream webhook handler + SSE push.
 
-The hedgehog has visibility into this log so she can decide whether to also intervene (e.g. spawn a sibling hoglet for context, mark a hoglet stuck and reassign).
+For each new comment or failure, the routing path depends on hoglet state:
+
+- **Hoglet has an active, connected session** (`session.status === "connected"`): build a prompt with the existing builders → call `sendPromptToAgent(task_id, prompt)` → log an entry in `hedgemony_feedback_event`. Same flow today's manual "Fix with agent" button uses.
+- **Hoglet's session is closed / disconnected / completed** (PR merged, task ended): cannot inject — `sendPromptToAgent` requires an active session (see `useFixWithAgent`). Instead, **spawn a follow-up hoglet** in the same nest with a prompt like *"review comment on PR X (already merged): [comment]. Open a follow-up PR addressing this."* The follow-up hoglet is linked to the original via `parent_task_id` in `hedgemony_pr_dependency` (state = `pending`) so the hedgehog tracks them together.
+
+The hedgehog has visibility into `hedgemony_feedback_event` so she can decide whether to also intervene (e.g. spawn a sibling hoglet for context, mark a hoglet stuck and reassign).
 
 ---
 
@@ -182,6 +197,23 @@ All Hedgemony services live under `apps/code/src/main/services/hedgemony/`:
 Registered in the existing `apps/code/src/main/di/container.ts` behind a `hedgemonyEnabled` check, so all services share the main container's bindings (logger, db, MCP, `PosthogAPIClient`). This matches every other feature in the repo and is the lowest-friction wiring.
 
 **Boundary discipline (mandatory).** Nothing outside `services/hedgemony/` may import from inside it. Hedgemony depends on existing posthog-code services through their public interfaces only. If we ever need to extract this feature into its own package or repo, the move is `mv services/hedgemony/ → packages/hedgemony/` plus import-path updates — the internal shape doesn't change. See [Considered alternatives](#considered-alternatives) for the sub-container and workspace-package options that were evaluated and deferred.
+
+---
+
+## v1 safety caps
+
+Hedgemony autonomy needs guardrails before shipping. A misbehaving hedgehog could spawn hundreds of hoglets in a tick or burn through tokens. v1 ships with conservative caps; tune up later with data.
+
+| Cap | v1 default | Where enforced |
+|---|---|---|
+| Max active hoglets per nest | 10 | `NestService.spawnHoglet` checks before insert; returns `error: nest_capacity` to the hedgehog |
+| Max hoglet spawns per tick | 3 | `HedgehogTickService` post-processes tool calls; trims and logs `spawns_capped` |
+| Min seconds between ticks per nest | 30s | `HedgehogTickService` debounces event-driven ticks |
+| Max ticks per nest per hour | 60 | Rolling counter on `hedgemony_hedgehog_state`; over-cap ticks no-op with a log entry |
+| Max LLM tokens per tick | 8k input + 2k output | Prompt assembly trims oldest scratchpad entries; output cap via Claude API param |
+| Max wild hoglets in holding area | 25 | Oldest evicted (with audit row) when exceeded — forces operator to triage |
+
+All caps surfaced in `settingsStore` so power users can raise them per-machine; cloud-side overrides come in v2. When a cap fires, log to telemetry under `hedgemony.cap_*` so we can tell whether defaults are too tight in practice.
 
 ---
 
