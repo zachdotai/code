@@ -617,6 +617,18 @@ export class PostHogAPIClient {
     });
   }
 
+  async createFileSystem(body: {
+    path: string;
+    type: string;
+    meta?: Record<string, unknown>;
+  }) {
+    const projectId = String(await this.getTeamId());
+    return this.api.post("/api/projects/{project_id}/file_system/", {
+      path: { project_id: projectId },
+      body: body as unknown as Schemas.FileSystem,
+    });
+  }
+
   async getGithubLogin(): Promise<string | null> {
     const data = (await this.api.get("/api/users/{uuid}/github_login/", {
       path: { uuid: "@me" },

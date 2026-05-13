@@ -10,6 +10,7 @@ import { encryptionRouter } from "./routers/encryption";
 import { enrichmentRouter } from "./routers/enrichment";
 import { environmentRouter } from "./routers/environment";
 import { externalAppsRouter } from "./routers/external-apps";
+import { featureScanRouter } from "./routers/feature-scan";
 import { fileWatcherRouter } from "./routers/file-watcher";
 import { focusRouter } from "./routers/focus";
 import { foldersRouter } from "./routers/folders";
@@ -50,6 +51,7 @@ export const trpcRouter = router({
   environment: environmentRouter,
   encryption: encryptionRouter,
   externalApps: externalAppsRouter,
+  featureScan: featureScanRouter,
   fileWatcher: fileWatcherRouter,
   focus: focusRouter,
   folders: foldersRouter,

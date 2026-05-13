@@ -1,8 +1,17 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
+import { useFolders } from "@features/folders/hooks/useFolders";
+import { useFeatureScanStore } from "@features/sidebar/stores/featureScanStore";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
-import { CaretDown, CaretRight, Folder } from "@phosphor-icons/react";
+import {
+  CaretDown,
+  CaretRight,
+  Folder,
+  MagicWand,
+} from "@phosphor-icons/react";
 import { ScrollArea } from "@posthog/quill";
-import { Flex } from "@radix-ui/themes";
+import { Button, Flex, Select } from "@radix-ui/themes";
+import { trpcClient } from "@renderer/trpc/client";
+import { toast } from "@utils/toast";
 import { useMemo, useState } from "react";
 import { SidebarItem } from "./SidebarItem";
 
@@ -101,6 +110,40 @@ export function ProjectTreeView() {
     (client) => client.getFileSystem({ limit: 200 }),
   );
 
+  const { folders } = useFolders();
+  const [selectedFolderId, setSelectedFolderId] = useState<string | undefined>(
+    undefined,
+  );
+
+  const isScanning = useFeatureScanStore((s) =>
+    Object.values(s.state).some((v) => v === "scanning"),
+  );
+
+  const activeFolderId =
+    selectedFolderId ??
+    [...folders].sort(
+      (a, b) =>
+        new Date(b.lastAccessed).getTime() - new Date(a.lastAccessed).getTime(),
+    )[0]?.id;
+
+  const handleScanClick = async () => {
+    if (!activeFolderId) {
+      toast.error("No folder connected", {
+        description: "Connect a folder first via onboarding or task creation.",
+      });
+      return;
+    }
+    try {
+      await trpcClient.folders.triggerFeatureScan.mutate({
+        folderId: activeFolderId,
+      });
+    } catch (err) {
+      toast.error("Failed to trigger scan", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
   const tree = useMemo(() => {
     const results = (data?.results ?? []) as FileSystemResult[];
     const folders = results.filter((r) => r.type === "folder");
@@ -121,7 +164,48 @@ export function ProjectTreeView() {
 
   return (
     <ScrollArea className="h-full overflow-y-auto overflow-x-hidden">
-      <Flex direction="column" py="2" px="2" gap="1px">
+      <Flex direction="column" py="2" px="2" gap="2">
+        {folders.length > 0 && (
+          <Flex
+            direction="column"
+            gap="1"
+            px="2"
+            py="2"
+            className="rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2)"
+          >
+            <Select.Root
+              size="1"
+              value={activeFolderId}
+              onValueChange={setSelectedFolderId}
+            >
+              <Select.Trigger placeholder="Select folder" />
+              <Select.Content>
+                {folders.map((f) => (
+                  <Select.Item key={f.id} value={f.id}>
+                    {f.name}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+            <Button
+              size="1"
+              variant="soft"
+              onClick={handleScanClick}
+              disabled={isScanning || !activeFolderId}
+            >
+              <MagicWand size={12} />
+              {isScanning ? "Scanning…" : "Scan for features"}
+            </Button>
+          </Flex>
+        )}
+        {isScanning && (
+          <SidebarItem
+            depth={0}
+            icon={<DotsCircleSpinner size={12} className="text-gray-10" />}
+            label="Scanning repository…"
+            disabled
+          />
+        )}
         {isLoading ? (
           <SidebarItem
             depth={0}
@@ -129,7 +213,7 @@ export function ProjectTreeView() {
             label="Loading folders..."
             disabled
           />
-        ) : tree.length === 0 ? (
+        ) : tree.length === 0 && !isScanning ? (
           <SidebarItem depth={0} label="No folders" disabled />
         ) : (
           tree.map((node) => (

@@ -14,6 +14,7 @@ import { useAuthSession } from "@features/auth/hooks/useAuthSession";
 import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
+import { useFeatureScanSubscription } from "@features/sidebar/hooks/useFeatureScanSubscription";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { initializeConnectivityToast } from "@renderer/features/connectivity/connectivityToast";
 import { initializeConnectivityStore } from "@renderer/stores/connectivityStore";
@@ -139,6 +140,8 @@ function App() {
       },
     }),
   );
+
+  useFeatureScanSubscription();
 
   useSubscription(
     trpcReact.agent.onAgentFileActivity.subscriptionOptions(undefined, {

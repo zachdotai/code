@@ -9,7 +9,10 @@ import {
   repositoryLookupResult,
   updateFolderAccessedInput,
 } from "../../services/folders/schemas";
-import type { FoldersService } from "../../services/folders/service";
+import {
+  type FoldersService,
+  FoldersServiceEvent,
+} from "../../services/folders/service";
 import { publicProcedure, router } from "../trpc";
 
 const getService = () =>
@@ -57,4 +60,20 @@ export const foldersRouter = router({
     .query(() => {
       return getService().getMostRecentlyAccessedRepository();
     }),
+
+  triggerFeatureScan: publicProcedure
+    .input(updateFolderAccessedInput)
+    .mutation(({ input }) => {
+      return getService().triggerFeatureScan(input.folderId);
+    }),
+
+  onNewRepository: publicProcedure.subscription(async function* (opts) {
+    const service = getService();
+    const iterable = service.toIterable(FoldersServiceEvent.NewRepository, {
+      signal: opts.signal,
+    });
+    for await (const data of iterable) {
+      yield data;
+    }
+  }),
 });

@@ -15,13 +15,22 @@ import type { IWorkspaceRepository } from "../../db/repositories/workspace-repos
 import type { IWorktreeRepository } from "../../db/repositories/worktree-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
+import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import { getWorktreeLocation } from "../settingsStore";
 import type { RegisteredFolder } from "./schemas";
 
 const log = logger.scope("folders-service");
 
+export const FoldersServiceEvent = {
+  NewRepository: "newRepository",
+} as const;
+
+export interface FoldersServiceEvents {
+  newRepository: { id: string; path: string };
+}
+
 @injectable()
-export class FoldersService {
+export class FoldersService extends TypedEventEmitter<FoldersServiceEvents> {
   constructor(
     @inject(MAIN_TOKENS.RepositoryRepository)
     private readonly repositoryRepo: IRepositoryRepository,
@@ -32,6 +41,7 @@ export class FoldersService {
     @inject(MAIN_TOKENS.Dialog)
     private readonly dialog: IDialog,
   ) {
+    super();
     this.initialize().catch((err) => {
       log.error("Folders initialization failed", err);
     });
@@ -169,6 +179,14 @@ export class FoldersService {
         path: folderPath,
         remoteUrl: repoKey ?? undefined,
       });
+      log.info("Emitting newRepository event", {
+        id: repo.id,
+        path: repo.path,
+      });
+      this.emit(FoldersServiceEvent.NewRepository, {
+        id: repo.id,
+        path: repo.path,
+      });
     }
 
     return {
@@ -221,6 +239,21 @@ export class FoldersService {
 
   async updateFolderAccessed(folderId: string): Promise<void> {
     this.repositoryRepo.updateLastAccessed(folderId);
+  }
+
+  async triggerFeatureScan(folderId: string): Promise<void> {
+    const repo = this.repositoryRepo.findById(folderId);
+    if (!repo) {
+      throw new Error(`Repository ${folderId} not found`);
+    }
+    log.info("Manually triggering feature scan", {
+      id: repo.id,
+      path: repo.path,
+    });
+    this.emit(FoldersServiceEvent.NewRepository, {
+      id: repo.id,
+      path: repo.path,
+    });
   }
 
   async cleanupOrphanedWorktrees(mainRepoPath: string): Promise<void> {
