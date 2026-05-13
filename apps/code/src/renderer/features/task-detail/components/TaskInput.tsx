@@ -19,6 +19,7 @@ import type { EditorHandle } from "@features/message-editor/types";
 import { resolveAndAttachDroppedFiles } from "@features/message-editor/utils/persistFile";
 import { DropZoneOverlay } from "@features/sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "@features/sessions/components/ReasoningLevelSelector";
+import { TryInPostHogWorkBanner } from "@features/sessions/components/TryInPostHogWorkBanner";
 import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModelSelector";
 import { getCurrentModeFromConfigOptions } from "@features/sessions/stores/sessionStore";
 import type { AgentAdapter } from "@features/settings/stores/settingsStore";
@@ -101,6 +102,24 @@ export function TaskInput({
 
   const [editorIsEmpty, setEditorIsEmpty] = useState(true);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [showPostHogWorkBanner, setShowPostHogWorkBanner] = useState(false);
+  const [postHogWorkBannerDismissed, setPostHogWorkBannerDismissed] =
+    useState(false);
+
+  const handlePromptTextChange = useCallback(
+    (text: string) => {
+      if (postHogWorkBannerDismissed) return;
+      if (/pineapple/i.test(text)) {
+        setShowPostHogWorkBanner(true);
+      }
+    },
+    [postHogWorkBannerDismissed],
+  );
+
+  const handleDismissPostHogWorkBanner = useCallback(() => {
+    setShowPostHogWorkBanner(false);
+    setPostHogWorkBannerDismissed(true);
+  }, []);
   const [isCreatingBranch, setIsCreatingBranch] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [cloudRepoSearchQuery, setCloudRepoSearchQuery] = useState("");
@@ -741,8 +760,14 @@ export function TaskInput({
           </Flex>
 
           <Flex direction="column" gap="0">
+            {showPostHogWorkBanner && (
+              <TryInPostHogWorkBanner
+                onDismiss={handleDismissPostHogWorkBanner}
+              />
+            )}
             <PromptInput
               ref={editorRef}
+              onTextChange={handlePromptTextChange}
               sessionId={promptSessionId}
               placeholder={`What do you want to ship? ${hints}`}
               editorHeight="large"

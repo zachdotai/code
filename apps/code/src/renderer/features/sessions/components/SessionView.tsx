@@ -42,6 +42,7 @@ import { ModelSelector } from "./ModelSelector";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
 import { RawLogsView } from "./raw-logs/RawLogsView";
+import { TryInPostHogWorkBanner } from "./TryInPostHogWorkBanner";
 
 interface SessionViewProps {
   events: AcpMessage[];
@@ -250,8 +251,26 @@ export function SessionView({
   );
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [showPostHogWorkBanner, setShowPostHogWorkBanner] = useState(false);
+  const [postHogWorkBannerDismissed, setPostHogWorkBannerDismissed] =
+    useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
   const dragCounterRef = useRef(0);
+
+  const handlePromptTextChange = useCallback(
+    (text: string) => {
+      if (postHogWorkBannerDismissed) return;
+      if (/pineapple/i.test(text)) {
+        setShowPostHogWorkBanner(true);
+      }
+    },
+    [postHogWorkBannerDismissed],
+  );
+
+  const handleDismissPostHogWorkBanner = useCallback(() => {
+    setShowPostHogWorkBanner(false);
+    setPostHogWorkBannerDismissed(true);
+  }, []);
 
   const firstPendingPermission = useMemo(() => {
     const entries = Array.from(pendingPermissions.entries());
@@ -615,8 +634,14 @@ export function SessionView({
                             : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
                         }
                       >
+                        {showPostHogWorkBanner && (
+                          <TryInPostHogWorkBanner
+                            onDismiss={handleDismissPostHogWorkBanner}
+                          />
+                        )}
                         <PromptInput
                           ref={editorRef}
+                          onTextChange={handlePromptTextChange}
                           sessionId={sessionId}
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}

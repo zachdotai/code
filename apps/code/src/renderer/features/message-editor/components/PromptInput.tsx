@@ -52,6 +52,7 @@ export interface PromptInputProps {
   onCancel?: () => void;
   onAttachFiles?: (files: File[]) => void;
   onEmptyChange?: (isEmpty: boolean) => void;
+  onTextChange?: (text: string) => void;
   onFocus?: () => void;
   onBlur?: () => void;
   // manual submit override (for flows like new-task that submit outside the editor hook)
@@ -90,6 +91,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onCancel,
       onAttachFiles,
       onEmptyChange,
+      onTextChange,
       onFocus,
       onBlur,
       onSubmitClick,
@@ -138,6 +140,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onBashCommand,
       onBashModeChange,
       onEmptyChange,
+      onTextChange,
       onFocus,
       onBlur,
     });

@@ -48,6 +48,7 @@ export interface UseTiptapEditorOptions {
   onBashCommand?: (command: string) => void;
   onBashModeChange?: (isBashMode: boolean) => void;
   onEmptyChange?: (isEmpty: boolean) => void;
+  onTextChange?: (text: string) => void;
   onFocus?: () => void;
   onBlur?: () => void;
 }
@@ -198,6 +199,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     onBashCommand,
     onBashModeChange,
     onEmptyChange,
+    onTextChange,
     onFocus,
     onBlur,
   } = options;
@@ -214,6 +216,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     onBashCommand,
     onBashModeChange,
     onEmptyChange,
+    onTextChange,
     onFocus,
     onBlur,
   });
@@ -223,6 +226,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     onBashCommand,
     onBashModeChange,
     onEmptyChange,
+    onTextChange,
     onFocus,
     onBlur,
   };
@@ -496,6 +500,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
       },
       onUpdate: ({ editor: e }) => {
         const text = e.getText();
+        callbackRefs.current.onTextChange?.(text);
         const newBashMode = enableBashMode && text.trimStart().startsWith("!");
 
         if (newBashMode !== prevBashModeRef.current) {
