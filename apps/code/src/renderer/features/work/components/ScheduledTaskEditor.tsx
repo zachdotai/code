@@ -133,6 +133,9 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   // Sync the draft when the editor is pointed at a different existing
   // automation. If we have a pending edit-mode override for this id, apply it
   // once and then fall through to normal resync behaviour.
+  // The id is what should trigger a reset — other field changes from polling
+  // shouldn't clobber user edits.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see comment above
   useEffect(() => {
     if (!existing) return;
     if (pendingEditOverrideRef.current?.id === existing.id) {
@@ -142,9 +145,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
       return;
     }
     setDraft(toDraft(existing));
-    // The id is what should trigger a reset — other field changes from polling
-    // shouldn't clobber user edits.
-  }, [existing?.id, existing]);
+  }, [existing?.id]);
 
   const createScheduledTask = useCreateScheduledTask();
   const updateScheduledTask = useUpdateScheduledTask();

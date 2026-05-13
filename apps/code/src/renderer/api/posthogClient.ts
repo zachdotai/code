@@ -1078,7 +1078,10 @@ export class PostHogAPIClient {
       `/api/projects/{project_id}/task_automations/{id}/run/`,
       {
         path: { project_id: teamId.toString(), id: automationId },
-        body: {} as unknown as Schemas.TaskAutomation,
+        // The generated client requires a TaskAutomation body, but the run
+        // endpoint ignores its body. Fix in the OpenAPI spec, then remove this.
+        // @ts-expect-error generated body type is incorrect for /run/
+        body: undefined,
       },
     );
     return data;
