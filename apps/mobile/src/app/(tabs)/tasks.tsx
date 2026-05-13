@@ -1,7 +1,7 @@
 import { Text } from "@components/text";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef } from "react";
-import { InteractionManager, Pressable, View } from "react-native";
+import { InteractionManager, View } from "react-native";
 import { TaskList } from "@/features/tasks";
 
 export default function TasksScreen() {
@@ -43,22 +43,10 @@ export default function TasksScreen() {
     <View className="flex-1 bg-background">
       {/* Header */}
       <View className="border-gray-6 border-b px-4 pt-16 pb-4">
-        <View className="flex-row items-center justify-between">
-          <View>
-            <Text className="font-bold text-2xl text-gray-12">Code</Text>
-            <Text className="text-gray-11 text-sm">
-              Your PostHog Code sessions
-            </Text>
-          </View>
-          <Pressable
-            onPress={handleCreateTask}
-            className="rounded-lg bg-accent-9 px-4 py-2"
-          >
-            <Text className="font-semibold text-accent-contrast text-sm">
-              New task
-            </Text>
-          </Pressable>
-        </View>
+        <Text className="font-bold text-2xl text-gray-12">Code</Text>
+        <Text className="text-gray-11 text-sm">
+          Your PostHog Code sessions
+        </Text>
       </View>
 
       {/* Task List */}
