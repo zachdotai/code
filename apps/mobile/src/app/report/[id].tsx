@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { getReportRepository } from "@/features/inbox/api";
 import { useInboxReport } from "@/features/inbox/hooks/useInboxReports";
 import type {
@@ -246,14 +247,8 @@ export default function ReportDetailScreen() {
 
         {/* Summary */}
         {report.summary && (
-          <View className="mb-4">
-            <SectionHeader title="Summary" />
-            <Text
-              className="text-[14px] text-gray-12 leading-relaxed"
-              style={{ opacity: isReady ? 1 : 0.7 }}
-            >
-              {report.summary}
-            </Text>
+          <View className="mb-4" style={{ opacity: isReady ? 1 : 0.7 }}>
+            <MarkdownText content={report.summary} />
           </View>
         )}
 

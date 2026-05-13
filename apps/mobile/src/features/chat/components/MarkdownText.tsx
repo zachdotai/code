@@ -227,7 +227,7 @@ function renderInline(text: string): React.ReactNode[] {
     } else if (match[4]) {
       // Bold
       nodes.push(
-        <Text key={match.index} className="font-bold">
+        <Text key={match.index} className="font-bold text-accent-11">
           {match[4]}
         </Text>,
       );
@@ -304,7 +304,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
             return (
               <Text
                 key={key}
-                className={`font-bold text-gray-12 ${
+                className={`font-bold text-accent-11 ${
                   block.level === 1
                     ? "text-[16px]"
                     : block.level === 2
