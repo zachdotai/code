@@ -69,27 +69,12 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
       <Stack.Screen name="auth" options={{ headerShown: false }} />
       <Stack.Screen name="index" options={{ headerShown: false }} />
 
-      {/* Chat routes - only registered when AI chat feature is enabled */}
+      {/* Chat routes - only registered when AI chat feature is enabled.
+          Screens use a FloatingBackButton instead of the native header. */}
       {aiChatEnabled && (
         <>
-          <Stack.Screen
-            name="chat/index"
-            options={{
-              headerShown: true,
-              headerBackTitle: "",
-              headerStyle: { backgroundColor: themeColors.background },
-              headerTintColor: themeColors.gray[12],
-            }}
-          />
-          <Stack.Screen
-            name="chat/[id]"
-            options={{
-              headerShown: true,
-              headerBackTitle: "Back",
-              headerStyle: { backgroundColor: themeColors.background },
-              headerTintColor: themeColors.gray[12],
-            }}
-          />
+          <Stack.Screen name="chat/index" options={{ headerShown: false }} />
+          <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
         </>
       )}
 
@@ -104,25 +89,14 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
         }}
       />
 
-      {/* Task routes - modal presentation */}
+      {/* Task routes - modal presentation, no native header. */}
       <Stack.Screen
         name="task/index"
-        options={{
-          presentation: "modal",
-          headerShown: true,
-          title: "New task",
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.accent[9],
-        }}
+        options={{ presentation: "modal", headerShown: false }}
       />
       <Stack.Screen
         name="task/[id]"
-        options={{
-          presentation: "modal",
-          headerShown: true,
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.gray[12],
-        }}
+        options={{ presentation: "modal", headerShown: false }}
       />
       <Stack.Screen
         name="automation/index"

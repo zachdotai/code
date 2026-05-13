@@ -25,6 +25,7 @@ import {
 } from "react-native-keyboard-controller";
 import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
 import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
@@ -277,40 +278,24 @@ export default function NewTaskScreen() {
 
   if (hasGithubIntegration === false) {
     return (
-      <>
-        <Stack.Screen
-          options={{
-            headerShown: true,
-            headerTitle: "New task",
-            headerStyle: { backgroundColor: themeColors.background },
-            headerTintColor: themeColors.gray[12],
-            presentation: "modal",
-          }}
-        />
-        <View className="flex-1 bg-background">
+      <View className="flex-1 bg-background">
+        <FloatingBackButton />
+        <View style={{ paddingTop: insets.top + 56 }} className="flex-1">
           <GitHubConnectionPrompt
             onConnected={refetch}
             title="Connect GitHub to continue"
             description="You need to connect your GitHub account before creating tasks. This allows PostHog to work on your repositories."
           />
         </View>
-      </>
+      </View>
     );
   }
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerTitle: "New task",
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.gray[12],
-          presentation: "modal",
-        }}
-      />
       <View className="flex-1 bg-background">
         <DotBackground />
+        <FloatingBackButton />
 
         <Animated.View style={[{ flex: 1 }, containerStyle]}>
           <View className="flex-1 items-stretch justify-center px-3">

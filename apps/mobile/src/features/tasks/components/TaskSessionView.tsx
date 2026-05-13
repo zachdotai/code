@@ -714,25 +714,22 @@ export function TaskSessionView({
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
   const themeColors = useThemeColors();
   const flatListRef = useRef<FlatList>(null);
-  const buttonRef = useRef<View>(null);
-  const isScrolledRef = useRef(false);
+  // Inverted FlatList: scrollY is the distance from the visual bottom, so
+  // any non-trivial value means the user has scrolled up from the latest
+  // message. Use a small threshold to ignore iOS bounce.
+  const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
 
   const scrollToBottom = useCallback(() => {
+    // Optimistically hide the button — the scroll animation will fire
+    // onScroll events too, but the throttle can leave the button visible
+    // for a beat after tap if we rely on those alone.
+    setScrolledFromBottom(false);
     flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
 
   const handleScroll = useCallback(
     (e: { nativeEvent: { contentOffset: { y: number } } }) => {
-      const scrolled = e.nativeEvent.contentOffset.y > 0;
-      if (scrolled !== isScrolledRef.current) {
-        isScrolledRef.current = scrolled;
-        buttonRef.current?.setNativeProps({
-          style: {
-            opacity: scrolled ? 1 : 0,
-            pointerEvents: scrolled ? "auto" : "none",
-          },
-        });
-      }
+      setScrolledFromBottom(e.nativeEvent.contentOffset.y > 100);
     },
     [],
   );
@@ -856,15 +853,10 @@ export function TaskSessionView({
           ) : null}
         </View>
       )}
-      <View
-        ref={buttonRef}
-        className="absolute right-4 bottom-32"
-        style={{ opacity: 0 }}
-        pointerEvents="none"
-      >
+      {scrolledFromBottom && (
         <Pressable
           onPress={scrollToBottom}
-          className="h-10 w-10 items-center justify-center rounded-full bg-gray-3"
+          className="absolute right-4 bottom-4 h-10 w-10 items-center justify-center rounded-full bg-gray-3"
           style={{
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 2 },
@@ -875,7 +867,7 @@ export function TaskSessionView({
         >
           <ArrowDown size={18} color={themeColors.gray[11]} />
         </Pressable>
-      </View>
+      )}
     </View>
   );
 }

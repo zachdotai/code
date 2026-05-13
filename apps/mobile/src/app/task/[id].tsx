@@ -1,7 +1,7 @@
 import { Text } from "@components/text";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActionSheetIOS,
@@ -13,9 +13,10 @@ import {
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { getTask, runTaskInCloud } from "@/features/tasks/api";
+import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
-import { DotBackground } from "@/features/tasks/composer/DotBackground";
 import {
   DEFAULT_EXECUTION_MODE,
   DEFAULT_MODEL,
@@ -403,145 +404,120 @@ export default function TaskDetailScreen() {
 
   if (error || (!task && !loading)) {
     return (
-      <>
-        <Stack.Screen
-          options={{
-            headerShown: true,
-            headerTransparent: false,
-            headerTitle: "Error",
-            headerStyle: { backgroundColor: themeColors.background },
-            headerTintColor: themeColors.gray[12],
-            presentation: "modal",
-          }}
-        />
-        <View className="flex-1 items-center justify-center bg-background px-4">
-          <Text className="mb-4 text-center text-status-error">
-            {error || "Task not found"}
-          </Text>
-          <Pressable
-            onPress={() => router.back()}
-            className="rounded-lg bg-gray-3 px-4 py-2"
-          >
-            <Text className="text-gray-12">Go back</Text>
-          </Pressable>
-        </View>
-      </>
+      <View className="flex-1 items-center justify-center bg-background px-4">
+        <FloatingBackButton />
+        <Text className="mb-4 text-center text-status-error">
+          {error || "Task not found"}
+        </Text>
+        <Pressable
+          onPress={() => router.back()}
+          className="rounded-lg bg-gray-3 px-4 py-2"
+        >
+          <Text className="text-gray-12">Go back</Text>
+        </Pressable>
+      </View>
     );
   }
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerTransparent: false,
-          headerTitle: loading ? "Loading..." : task?.title || "Task",
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.gray[12],
-          headerTitleStyle: {
-            fontWeight: "600",
-          },
-          presentation: "modal",
-          headerRight: isLocal
-            ? () => (
-                <Pressable
-                  onPress={() =>
-                    ActionSheetIOS.showActionSheetWithOptions(
-                      {
-                        options: ["Keep locally", "Move to Cloud"],
-                        cancelButtonIndex: 0,
-                        title: isStale
-                          ? "Desktop may be offline"
-                          : "Running on your desktop",
-                      },
-                      (index) => {
-                        if (index === 1) handleContinueInCloud();
-                      },
-                    )
-                  }
-                  className="rounded-full bg-gray-4 px-3 py-1"
-                >
-                  <Text className="font-medium text-gray-11 text-xs">
-                    Local
-                  </Text>
-                </Pressable>
-              )
-            : undefined,
-        }}
-      />
-      <View className="flex-1 bg-background">
-        {/* Subtle dotted background — matches the new-task screen. Sits below
-            the translated content so it stays put when the keyboard opens. */}
-        <DotBackground />
-        <Animated.View className="flex-1" style={contentPosition}>
-          {showAutomationContext && automationContextLabel && (
-            <View className="absolute inset-x-3 top-3 z-10 rounded-lg border border-accent-6 bg-accent-2 px-3 py-2">
-              <Text className="text-accent-11 text-xs">
-                {automationName
-                  ? `Started from automation: ${automationName}`
-                  : automationContextLabel}
-              </Text>
-            </View>
-          )}
-
-          {/* Always render TaskSessionView so the FlatList can layout behind
-              the loading overlay. This prevents the "flash of messages" when
-              switching from loading spinner to rendered content. */}
-          <TaskSessionView
-            events={session?.events ?? []}
-            isConnecting={isConnecting}
-            isThinking={isThinking}
-            terminalStatus={retrying ? undefined : session?.terminalStatus}
-            lastError={retrying ? undefined : session?.lastError}
-            onRetry={
-              !retrying && session?.terminalStatus ? handleRetry : undefined
-            }
-            onOpenTask={handleOpenTask}
-            onSendPermissionResponse={handleSendPermissionResponse}
-            contentContainerStyle={{
-              paddingTop:
-                session?.terminalStatus && !retrying
-                  ? 16 + (showAutomationContext ? 44 : 0)
-                  : 80 + insets.bottom + (showAutomationContext ? 44 : 0),
-              paddingBottom: 16,
-            }}
-          />
-
-          {/* Loading overlay — covers the list while it does initial layout */}
-          {loading && (
-            <View className="absolute inset-0 items-center justify-center bg-background">
-              <ActivityIndicator size="large" color={themeColors.accent[9]} />
-              <Text className="mt-4 text-gray-11">
-                {task?.latest_run ? "Connecting..." : "Loading task..."}
-              </Text>
-            </View>
-          )}
-
-          {/* Fixed composer at bottom — stays visible even on terminal runs so
-              the user can send a follow-up message that resumes the task. */}
-          <Animated.View
-            className="absolute inset-x-0 bottom-0"
-            style={inputContainerStyle}
-          >
-            <TaskChatComposer
-              onSend={handleSendPrompt}
-              onStop={handleStop}
-              isUserTurn={!(session?.isPromptPending ?? true)}
-              placeholder={
-                session?.terminalStatus
-                  ? "Resume this task..."
-                  : "Ask a question"
+    <View className="flex-1 bg-background">
+      <FloatingTaskHeader
+        title={loading ? "Loading..." : task?.title || "Task"}
+        subtitle={task?.repository ?? undefined}
+        rightSlot={
+          isLocal ? (
+            <Pressable
+              onPress={() =>
+                ActionSheetIOS.showActionSheetWithOptions(
+                  {
+                    options: ["Keep locally", "Move to Cloud"],
+                    cancelButtonIndex: 0,
+                    title: isStale
+                      ? "Desktop may be offline"
+                      : "Running on your desktop",
+                  },
+                  (index) => {
+                    if (index === 1) handleContinueInCloud();
+                  },
+                )
               }
-              mode={composerMode}
-              model={composerModel}
-              reasoning={composerReasoning}
-              onModeChange={handleModeChange}
-              onModelChange={handleModelChange}
-              onReasoningChange={handleReasoningChange}
-            />
-          </Animated.View>
+              className="rounded-full bg-gray-4 px-2.5 py-1"
+            >
+              <Text className="font-medium text-gray-11 text-xs">Local</Text>
+            </Pressable>
+          ) : null
+        }
+      />
+      <Animated.View className="flex-1" style={contentPosition}>
+        {showAutomationContext && automationContextLabel && (
+          <View
+            className="absolute inset-x-3 z-10 rounded-lg border border-accent-6 bg-accent-2 px-3 py-2"
+            style={{ top: insets.top + 56 }}
+          >
+            <Text className="text-accent-11 text-xs">
+              {automationName
+                ? `Started from automation: ${automationName}`
+                : automationContextLabel}
+            </Text>
+          </View>
+        )}
+
+        {/* Always render TaskSessionView so the FlatList can layout behind
+            the loading overlay. This prevents the "flash of messages" when
+            switching from loading spinner to rendered content. The FlatList
+            takes the available space above the composer (flex-1), so we
+            don't need to reserve composer height as paddingTop — only the
+            top header's space (paddingBottom in an inverted list) plus a
+            small visual buffer at the bottom. */}
+        <TaskSessionView
+          events={session?.events ?? []}
+          isConnecting={isConnecting}
+          isThinking={isThinking}
+          terminalStatus={retrying ? undefined : session?.terminalStatus}
+          lastError={retrying ? undefined : session?.lastError}
+          onRetry={
+            !retrying && session?.terminalStatus ? handleRetry : undefined
+          }
+          onOpenTask={handleOpenTask}
+          onSendPermissionResponse={handleSendPermissionResponse}
+          contentContainerStyle={{
+            paddingTop: 8,
+            paddingBottom:
+              insets.top + 72 + (showAutomationContext ? 44 : 0),
+          }}
+        />
+
+        {/* Loading overlay — covers the list while it does initial layout */}
+        {loading && (
+          <View className="absolute inset-0 items-center justify-center bg-background">
+            <ActivityIndicator size="large" color={themeColors.accent[9]} />
+            <Text className="mt-4 text-gray-11">
+              {task?.latest_run ? "Connecting..." : "Loading task..."}
+            </Text>
+          </View>
+        )}
+
+        {/* Composer below the list in flex flow — its real height
+            determines how much vertical space the list above gets, so the
+            last message can never sit behind the input. Stays visible on
+            terminal runs so the user can send a follow-up that resumes. */}
+        <Animated.View style={inputContainerStyle}>
+          <TaskChatComposer
+            onSend={handleSendPrompt}
+            onStop={handleStop}
+            isUserTurn={!(session?.isPromptPending ?? true)}
+            placeholder={
+              session?.terminalStatus ? "Resume this task..." : "Ask a question"
+            }
+            mode={composerMode}
+            model={composerModel}
+            reasoning={composerReasoning}
+            onModeChange={handleModeChange}
+            onModelChange={handleModelChange}
+            onReasoningChange={handleReasoningChange}
+          />
         </Animated.View>
-      </View>
-    </>
+      </Animated.View>
+    </View>
   );
 }
