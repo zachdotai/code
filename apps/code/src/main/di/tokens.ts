@@ -68,6 +68,7 @@ export const MAIN_TOKENS = Object.freeze({
   SleepService: Symbol.for("Main.SleepService"),
   ShellService: Symbol.for("Main.ShellService"),
   PosthogPluginService: Symbol.for("Main.PosthogPluginService"),
+  TeamSkillsService: Symbol.for("Main.TeamSkillsService"),
   UIService: Symbol.for("Main.UIService"),
   UpdatesService: Symbol.for("Main.UpdatesService"),
   TaskLinkService: Symbol.for("Main.TaskLinkService"),

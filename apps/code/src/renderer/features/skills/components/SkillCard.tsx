@@ -1,4 +1,10 @@
-import { Folder, Package, Storefront, User } from "@phosphor-icons/react";
+import {
+  Folder,
+  Package,
+  Storefront,
+  User,
+  UsersThree,
+} from "@phosphor-icons/react";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import type { SkillInfo, SkillSource } from "@shared/types/skills";
 
@@ -7,6 +13,7 @@ export const SOURCE_CONFIG: Record<
   { icon: typeof Package; label: string; sectionTitle: string }
 > = {
   user: { icon: User, label: "User", sectionTitle: "Your skills" },
+  team: { icon: UsersThree, label: "Team", sectionTitle: "Team skills" },
   bundled: {
     icon: Package,
     label: "PostHog Code",

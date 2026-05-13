@@ -26,6 +26,7 @@ import {
 import type { PosthogPluginService } from "./services/posthog-plugin/service";
 import type { SuspensionService } from "./services/suspension/service";
 import type { TaskLinkService } from "./services/task-link/service";
+import type { TeamSkillsService } from "./services/team-skills/service";
 import type { UpdatesService } from "./services/updates/service";
 import type { WorkspaceService } from "./services/workspace/service";
 import { ensureClaudeConfigDir } from "./utils/env";
@@ -151,6 +152,7 @@ async function initializeServices(): Promise<void> {
   container.get<GitHubIntegrationService>(MAIN_TOKENS.GitHubIntegrationService);
   container.get<ExternalAppsService>(MAIN_TOKENS.ExternalAppsService);
   container.get<PosthogPluginService>(MAIN_TOKENS.PosthogPluginService);
+  container.get<TeamSkillsService>(MAIN_TOKENS.TeamSkillsService);
 
   await authService.initialize();
 

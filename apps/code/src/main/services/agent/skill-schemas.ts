@@ -2,7 +2,13 @@ import { z } from "zod";
 
 export type { SkillInfo, SkillSource } from "@shared/types/skills";
 
-export const skillSource = z.enum(["bundled", "user", "repo", "marketplace"]);
+export const skillSource = z.enum([
+  "bundled",
+  "user",
+  "repo",
+  "marketplace",
+  "team",
+]);
 
 export const skillInfo = z.object({
   name: z.string(),
