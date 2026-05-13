@@ -152,11 +152,11 @@ const config: ForgeConfig = {
     appBundleId: "com.posthog.array",
     appCategoryType: "public.app-category.productivity",
     extraResource: existsSync("build/Assets.car") ? ["build/Assets.car"] : [],
-    extendInfo: existsSync("build/Assets.car")
-      ? {
-          CFBundleIconName: "Icon",
-        }
-      : {},
+    extendInfo: {
+      NSMicrophoneUsageDescription:
+        "PostHog Code uses the microphone to let you record a custom completion sound.",
+      ...(existsSync("build/Assets.car") ? { CFBundleIconName: "Icon" } : {}),
+    },
     ...(osxSignConfig
       ? {
           osxSign: osxSignConfig,

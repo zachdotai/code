@@ -18,6 +18,7 @@ import { ElectronDialog } from "../platform-adapters/electron-dialog";
 import { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
 import { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
 import { ElectronMainWindow } from "../platform-adapters/electron-main-window";
+import { ElectronMediaAccess } from "../platform-adapters/electron-media-access";
 import { ElectronNotifier } from "../platform-adapters/electron-notifier";
 import { ElectronPowerManager } from "../platform-adapters/electron-power-manager";
 import { ElectronSecureStorage } from "../platform-adapters/electron-secure-storage";
@@ -86,6 +87,7 @@ container.bind(MAIN_TOKENS.Notifier).to(ElectronNotifier);
 container.bind(MAIN_TOKENS.ContextMenu).to(ElectronContextMenu);
 container.bind(MAIN_TOKENS.BundledResources).to(ElectronBundledResources);
 container.bind(MAIN_TOKENS.ImageProcessor).to(ElectronImageProcessor);
+container.bind(MAIN_TOKENS.MediaAccess).to(ElectronMediaAccess);
 
 container.bind(MAIN_TOKENS.DatabaseService).to(DatabaseService);
 container

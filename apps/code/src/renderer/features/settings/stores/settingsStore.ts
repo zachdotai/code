@@ -20,7 +20,8 @@ export type CompletionSound =
   | "shoot"
   | "slide"
   | "switch"
-  | "wilhelm";
+  | "wilhelm"
+  | "custom";
 export type AgentAdapter = "claude" | "codex";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DefaultInitialTaskMode = "plan" | "last_used";
@@ -47,6 +48,7 @@ interface SettingsStore {
 
   autoConvertLongText: AutoConvertLongText;
   completionSound: CompletionSound;
+  customCompletionSound: string | null;
   completionVolume: number;
   sendMessagesWith: SendMessagesWith;
   allowBypassPermissions: boolean;
@@ -65,6 +67,7 @@ interface SettingsStore {
   markHintLearned: (key: string) => void;
 
   setCompletionSound: (sound: CompletionSound) => void;
+  setCustomCompletionSound: (dataUrl: string | null) => void;
   setCompletionVolume: (volume: number) => void;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
@@ -112,6 +115,7 @@ export const useSettingsStore = create<SettingsStore>()(
       dockBadgeNotifications: true,
       dockBounceNotifications: false,
       completionSound: "none",
+      customCompletionSound: null,
       completionVolume: 80,
 
       autoConvertLongText: "2500",
@@ -154,6 +158,8 @@ export const useSettingsStore = create<SettingsStore>()(
         }),
 
       setCompletionSound: (sound) => set({ completionSound: sound }),
+      setCustomCompletionSound: (dataUrl) =>
+        set({ customCompletionSound: dataUrl }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
@@ -222,6 +228,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
         autoConvertLongText: state.autoConvertLongText,
         completionSound: state.completionSound,
+        customCompletionSound: state.customCompletionSound,
         completionVolume: state.completionVolume,
         sendMessagesWith: state.sendMessagesWith,
         allowBypassPermissions: state.allowBypassPermissions,

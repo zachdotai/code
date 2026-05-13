@@ -4,6 +4,7 @@ import path from "node:path";
 import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { DialogSeverity, IDialog } from "@posthog/platform/dialog";
 import type { IImageProcessor } from "@posthog/platform/image-processor";
+import type { IMediaAccess } from "@posthog/platform/media-access";
 import type { IUrlLauncher } from "@posthog/platform/url-launcher";
 import { IMAGE_MIME_TYPES } from "@shared/constants/image";
 import { z } from "zod";
@@ -20,6 +21,8 @@ const getDialog = () => container.get<IDialog>(MAIN_TOKENS.Dialog);
 const getAppMeta = () => container.get<IAppMeta>(MAIN_TOKENS.AppMeta);
 const getImageProcessor = () =>
   container.get<IImageProcessor>(MAIN_TOKENS.ImageProcessor);
+const getMediaAccess = () =>
+  container.get<IMediaAccess>(MAIN_TOKENS.MediaAccess);
 
 const messageBoxOptionsSchema = z.object({
   type: z.enum(["none", "info", "error", "question", "warning"]).optional(),
@@ -272,6 +275,24 @@ export const osRouter = router({
    * Get the worktree base location (e.g., ~/.posthog-code)
    */
   getWorktreeLocation: publicProcedure.query(() => getWorktreeLocation()),
+
+  /**
+   * Get the macOS microphone permission status.
+   * Returns "not-determined" | "granted" | "denied" | "restricted" | "unknown".
+   * On non-macOS platforms returns "granted".
+   */
+  getMicrophoneAccessStatus: publicProcedure
+    .output(z.string())
+    .query(() => getMediaAccess().getMicrophoneStatus()),
+
+  /**
+   * Trigger the macOS microphone permission prompt (or return existing decision).
+   * Resolves to true if access is granted, false otherwise.
+   * On non-macOS platforms always returns true.
+   */
+  requestMicrophoneAccess: publicProcedure
+    .output(z.boolean())
+    .mutation(() => getMediaAccess().requestMicrophoneAccess()),
 
   /**
    * Read a file and return it as a base64 data URL

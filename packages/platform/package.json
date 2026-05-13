@@ -63,6 +63,10 @@
     "./image-processor": {
       "types": "./dist/image-processor.d.ts",
       "import": "./dist/image-processor.js"
+    },
+    "./media-access": {
+      "types": "./dist/media-access.d.ts",
+      "import": "./dist/media-access.js"
     }
   },
   "scripts": {

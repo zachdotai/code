@@ -21,6 +21,7 @@ export const MAIN_TOKENS = Object.freeze({
   ContextMenu: Symbol.for("Platform.ContextMenu"),
   BundledResources: Symbol.for("Platform.BundledResources"),
   ImageProcessor: Symbol.for("Platform.ImageProcessor"),
+  MediaAccess: Symbol.for("Platform.MediaAccess"),
 
   // Stores
   SettingsStore: Symbol.for("Main.SettingsStore"),

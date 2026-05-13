@@ -1,5 +1,6 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { SettingRow } from "@features/settings/components/SettingRow";
+import { useSoundRecorder } from "@features/settings/hooks/useSoundRecorder";
 import {
   type AutoConvertLongText,
   type CompletionSound,
@@ -8,7 +9,7 @@ import {
   type SendMessagesWith,
   useSettingsStore,
 } from "@features/settings/stores/settingsStore";
-import { ArrowSquareOut } from "@phosphor-icons/react";
+import { ArrowSquareOut, Trash } from "@phosphor-icons/react";
 import {
   Button,
   Flex,
@@ -153,6 +154,8 @@ export function GeneralSettings() {
   const handleTestSound = useCallback(() => {
     playCompletionSound(completionSound, completionVolume);
   }, [completionSound, completionVolume]);
+
+  const recorder = useSoundRecorder();
 
   const handleAutoConvertLongTextChange = useCallback(
     (value: AutoConvertLongText) => {
@@ -310,7 +313,7 @@ export function GeneralSettings() {
         description="Play a sound when the agent finishes a task or needs your input"
         noBorder={completionSound === "none"}
       >
-        <Flex align="center" gap="2">
+        <Flex align="center" gap="2" wrap="wrap" justify="end">
           <Select.Root
             value={completionSound}
             onValueChange={(value) =>
@@ -333,10 +336,59 @@ export function GeneralSettings() {
               <Select.Item value="slide">Slide</Select.Item>
               <Select.Item value="switch">Switch</Select.Item>
               <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
+              <Select.Item value="custom">Custom recording</Select.Item>
             </Select.Content>
           </Select.Root>
+          {completionSound === "custom" &&
+            (recorder.isRecording ? (
+              <Flex align="center" gap="2">
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-(--red-9)" />
+                <Text color="gray" className="text-[13px]">
+                  Recording…
+                </Text>
+                <Button
+                  variant="soft"
+                  color="red"
+                  size="1"
+                  onClick={recorder.stop}
+                >
+                  Stop
+                </Button>
+              </Flex>
+            ) : (
+              <>
+                <Button
+                  variant="soft"
+                  size="1"
+                  onClick={() => {
+                    void recorder.start();
+                  }}
+                >
+                  {recorder.hasRecording ? "Re-record" : "Record"}
+                </Button>
+                {recorder.hasRecording && (
+                  <Button
+                    variant="soft"
+                    color="gray"
+                    size="1"
+                    onClick={recorder.clear}
+                    aria-label="Clear recording"
+                  >
+                    <Trash size={12} />
+                  </Button>
+                )}
+              </>
+            ))}
           {completionSound !== "none" && (
-            <Button variant="soft" size="1" onClick={handleTestSound}>
+            <Button
+              variant="soft"
+              size="1"
+              onClick={handleTestSound}
+              disabled={
+                completionSound === "custom" &&
+                (!recorder.hasRecording || recorder.isRecording)
+              }
+            >
               Test
             </Button>
           )}
