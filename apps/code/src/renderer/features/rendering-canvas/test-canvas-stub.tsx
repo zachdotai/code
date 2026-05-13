@@ -5,7 +5,8 @@
 // PolarArea, Bubble, Scatter.
 // You must export a component named `App` (or default).
 
-function _App() {
+// biome-ignore lint/correctness/noUnusedVariables: consumed as raw text by the canvas iframe runtime
+function App() {
   const [count, setCount] = useState(0);
 
   const data = {
