@@ -25,6 +25,7 @@ import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
 import { useTourStore } from "@features/tour/stores/tourStore";
 import { createFirstTaskTour } from "@features/tour/tours/createFirstTaskTour";
+import { WorkView } from "@features/work/components/WorkView";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
@@ -45,6 +46,8 @@ export function MainLayout() {
     taskInputReportAssociation,
     taskInputCloudRepository,
   } = useNavigationStore();
+  const mode = useNavigationStore((s) => s.mode);
+  const isCodeMode = mode === "code";
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -105,46 +108,55 @@ export function MainLayout() {
         <MainSidebar />
 
         <Box flexGrow="1" overflow="hidden">
-          {view.type === "task-input" && (
-            <TaskInput
-              initialPrompt={view.initialPrompt}
-              initialPromptKey={view.taskInputRequestId}
-              initialCloudRepository={
-                view.initialCloudRepository ?? taskInputCloudRepository
-              }
-              reportAssociation={
-                view.reportAssociation ?? taskInputReportAssociation
-              }
-            />
+          {isCodeMode ? (
+            <>
+              {view.type === "task-input" && (
+                <TaskInput
+                  initialPrompt={view.initialPrompt}
+                  initialPromptKey={view.taskInputRequestId}
+                  initialCloudRepository={
+                    view.initialCloudRepository ?? taskInputCloudRepository
+                  }
+                  reportAssociation={
+                    view.reportAssociation ?? taskInputReportAssociation
+                  }
+                />
+              )}
+
+              {view.type === "task-detail" && view.data && (
+                <TaskDetail key={view.data.id} task={view.data} />
+              )}
+
+              {view.type === "folder-settings" && <FolderSettingsView />}
+
+              {view.type === "inbox" && <InboxView />}
+
+              {view.type === "archived" && <ArchivedTasksView />}
+
+              {view.type === "command-center" && <CommandCenterView />}
+
+              {view.type === "skills" && <SkillsView />}
+
+              {view.type === "mcp-servers" && <McpServersView />}
+
+              {view.type === "setup" && <SetupView />}
+            </>
+          ) : (
+            <WorkView />
           )}
-
-          {view.type === "task-detail" && view.data && (
-            <TaskDetail key={view.data.id} task={view.data} />
-          )}
-
-          {view.type === "folder-settings" && <FolderSettingsView />}
-
-          {view.type === "inbox" && <InboxView />}
-
-          {view.type === "archived" && <ArchivedTasksView />}
-
-          {view.type === "command-center" && <CommandCenterView />}
-
-          {view.type === "skills" && <SkillsView />}
-
-          {view.type === "mcp-servers" && <McpServersView />}
-          {view.type === "setup" && <SetupView />}
         </Box>
       </Flex>
 
-      <SpaceSwitcher
-        tasks={visualTaskOrder}
-        activeTaskId={activeTaskId}
-        allTasks={tasks ?? []}
-        isOnNewTask={view.type === "task-input"}
-        onNavigateToTask={navigateToTask}
-        onNewTask={navigateToTaskInput}
-      />
+      {isCodeMode && (
+        <SpaceSwitcher
+          tasks={visualTaskOrder}
+          activeTaskId={activeTaskId}
+          allTasks={tasks ?? []}
+          isOnNewTask={view.type === "task-input"}
+          onNavigateToTask={navigateToTask}
+          onNewTask={navigateToTaskInput}
+        />
+      )}
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <KeyboardShortcutsSheet
         open={shortcutsSheetOpen}

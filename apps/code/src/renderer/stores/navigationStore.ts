@@ -35,6 +35,8 @@ interface TaskInputNavigationOptions {
   reportAssociation?: TaskInputReportAssociation;
 }
 
+export type AppMode = "code" | "work";
+
 interface ViewState {
   type: ViewType;
   data?: Task;
@@ -47,6 +49,8 @@ interface ViewState {
 }
 
 interface NavigationStore {
+  mode: AppMode;
+  setMode: (mode: AppMode) => void;
   view: ViewState;
   history: ViewState[];
   historyIndex: number;
@@ -123,6 +127,8 @@ export const useNavigationStore = create<NavigationStore>()(
       };
 
       return {
+        mode: "code",
+        setMode: (mode: AppMode) => set({ mode }),
         view: { type: "task-input" },
         history: [{ type: "task-input" }],
         historyIndex: 0,
@@ -338,6 +344,7 @@ export const useNavigationStore = create<NavigationStore>()(
       name: "navigation-storage",
       storage: electronStorage,
       partialize: (state) => ({
+        mode: state.mode,
         view: {
           type: state.view.type,
           taskId: state.view.taskId,
