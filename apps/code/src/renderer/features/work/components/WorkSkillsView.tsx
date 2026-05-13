@@ -93,6 +93,13 @@ const SKILLS: Record<SkillScope, { active: Skill[]; library: Skill[] }> = {
         description: "Turns yesterday's threads into a clean morning brief",
         tags: ["reporting"],
       },
+      {
+        icon: ChatsTeardrop,
+        title: "Overnight Slack triage",
+        description:
+          "Surfaces high-signal Slack messages from overnight — mentions, thread replies, urgent priority-channel pings",
+        tags: ["reporting"],
+      },
     ],
   },
   team: {
@@ -600,6 +607,47 @@ export function WorkSkillsView() {
             </button>
           )}
         </Flex>
+
+        {scope === "user" && (
+          <button
+            type="button"
+            onClick={() => openPersonality("you")}
+            className="flex items-center gap-3 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-2.5 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
+          >
+            <img
+              src={personalYou.hog}
+              alt=""
+              className="h-10 w-10 shrink-0 select-none object-contain"
+              draggable={false}
+            />
+            <Box className="min-w-0 flex-1">
+              <Text
+                as="div"
+                className="text-(--gray-10) text-[11px] uppercase tracking-wide"
+              >
+                You are
+              </Text>
+              <Flex align="baseline" gap="2" wrap="wrap">
+                <Text
+                  as="span"
+                  weight="medium"
+                  className="text-(--gray-12) text-[14px]"
+                >
+                  {personalYou.name}
+                </Text>
+                <Text as="span" className="text-(--gray-11) text-[12px] italic">
+                  {personalYou.tagline}
+                </Text>
+              </Flex>
+            </Box>
+            <Text
+              as="span"
+              className="shrink-0 text-(--gray-10) text-[12px] underline-offset-2"
+            >
+              See why
+            </Text>
+          </button>
+        )}
 
         {scope === "team" && (
           <button

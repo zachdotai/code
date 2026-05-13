@@ -45,7 +45,9 @@ export type WorkView =
   | "library"
   | "scheduled-list"
   | "scheduled-edit"
-  | "data-sources";
+  | "data-sources"
+  | "projects"
+  | "project-detail";
 
 export type ChatView = "home" | "conversation";
 
@@ -68,6 +70,7 @@ interface NavigationStore {
   workView: WorkView;
   workSelectedSkillId?: string;
   workScheduledEditId?: string;
+  workSelectedProjectId?: string;
   navigateToWorkHome: () => void;
   navigateToWorkGenerate: () => void;
   navigateToWorkSkill: (skillId: string) => void;
@@ -76,6 +79,8 @@ interface NavigationStore {
   navigateToWorkScheduledCreate: () => void;
   navigateToWorkScheduledEdit: (scheduledId: string) => void;
   navigateToWorkDataSources: () => void;
+  navigateToWorkProjects: () => void;
+  navigateToWorkProjectDetail: (projectId: string) => void;
   chatView: ChatView;
   activeChatId: string | null;
   navigateToChatHome: () => void;
@@ -217,6 +222,20 @@ export const useNavigationStore = create<NavigationStore>()(
             workView: "data-sources",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+          }),
+        navigateToWorkProjects: () =>
+          set({
+            workView: "projects",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+            workSelectedProjectId: undefined,
+          }),
+        navigateToWorkProjectDetail: (projectId: string) =>
+          set({
+            workView: "project-detail",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+            workSelectedProjectId: projectId,
           }),
         chatView: "home",
         activeChatId: null,
@@ -462,6 +481,7 @@ export const useNavigationStore = create<NavigationStore>()(
         workView: state.workView,
         workSelectedSkillId: state.workSelectedSkillId,
         workScheduledEditId: state.workScheduledEditId,
+        workSelectedProjectId: state.workSelectedProjectId,
         chatView: state.chatView,
         activeChatId: state.activeChatId,
         view: {

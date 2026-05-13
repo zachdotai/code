@@ -4,6 +4,8 @@ import { ScheduledTaskEditor } from "./ScheduledTaskEditor";
 import { ScheduledTasksList } from "./ScheduledTasksList";
 import { WorkGenerateView } from "./WorkGenerateView";
 import { WorkHome } from "./WorkHome";
+import { WorkProjectDetailView } from "./WorkProjectDetailView";
+import { WorkProjectsView } from "./WorkProjectsView";
 import { WorkSkillDetailView } from "./WorkSkillDetailView";
 import { WorkSkillsView } from "./WorkSkillsView";
 
@@ -33,6 +35,14 @@ export function WorkView() {
 
   if (workView === "data-sources") {
     return <McpServersView />;
+  }
+
+  if (workView === "projects") {
+    return <WorkProjectsView />;
+  }
+
+  if (workView === "project-detail") {
+    return <WorkProjectDetailView />;
   }
 
   return <WorkHome />;

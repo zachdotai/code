@@ -22,20 +22,10 @@ interface WorkSkillsStoreActions {
 
 type WorkSkillsStore = WorkSkillsStoreState & WorkSkillsStoreActions;
 
-const SEED_SKILLS: WorkSkill[] = [
-  {
-    id: "seed-slack-overnight",
-    name: "Check important Slack messages from overnight",
-    prompt:
-      "Each morning, surface high-signal Slack messages from overnight: mentions, replies in threads I'm in, and any messages in priority channels that look urgent.",
-    isSeed: true,
-  },
-];
-
 export const useWorkSkillsStore = create<WorkSkillsStore>()(
   persist(
     (set, get) => ({
-      skills: SEED_SKILLS,
+      skills: [],
       addSkill: (skill) =>
         set((state) => ({ skills: [...state.skills, skill] })),
       updateSkill: (id, updates) =>
@@ -52,14 +42,10 @@ export const useWorkSkillsStore = create<WorkSkillsStore>()(
       partialize: (state) => ({ skills: state.skills }),
       merge: (persisted, current) => {
         const persistedState = persisted as Partial<WorkSkillsStoreState>;
-        const persistedSkills = persistedState?.skills ?? [];
-        const merged = [...SEED_SKILLS];
-        for (const skill of persistedSkills) {
-          if (!merged.some((s) => s.id === skill.id)) {
-            merged.push(skill);
-          }
-        }
-        return { ...current, skills: merged };
+        const persistedSkills = (persistedState?.skills ?? []).filter(
+          (s) => s.id !== "seed-slack-overnight",
+        );
+        return { ...current, skills: persistedSkills };
       },
     },
   ),

@@ -4,7 +4,6 @@ import {
   ClockClockwise,
   FolderSimple,
   type IconProps,
-  Lightbulb,
   Notebook,
   Plugs,
   Plus,
@@ -12,7 +11,6 @@ import {
 import { ScrollArea } from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigationStore, type WorkView } from "@stores/navigationStore";
-import { useWorkSkillsStore } from "@stores/workSkillsStore";
 import type { ComponentType } from "react";
 import { NewTaskItem } from "../../sidebar/components/items/HomeItem";
 import { SidebarItem } from "../../sidebar/components/SidebarItem";
@@ -38,12 +36,10 @@ const STATIC_ITEMS: WorkSidebarItemSpec[] = [
 
 export function WorkSidebarMenu() {
   const workView = useNavigationStore((s) => s.workView);
-  const selectedSkillId = useNavigationStore((s) => s.workSelectedSkillId);
   const navigateToWorkHome = useNavigationStore((s) => s.navigateToWorkHome);
   const navigateToWorkGenerate = useNavigationStore(
     (s) => s.navigateToWorkGenerate,
   );
-  const navigateToWorkSkill = useNavigationStore((s) => s.navigateToWorkSkill);
   const navigateToWorkLibrary = useNavigationStore(
     (s) => s.navigateToWorkLibrary,
   );
@@ -53,7 +49,9 @@ export function WorkSidebarMenu() {
   const navigateToWorkDataSources = useNavigationStore(
     (s) => s.navigateToWorkDataSources,
   );
-  const skills = useWorkSkillsStore((s) => s.skills);
+  const navigateToWorkProjects = useNavigationStore(
+    (s) => s.navigateToWorkProjects,
+  );
 
   const isHomeActive = workView === "home";
   const isGenerateActive = workView === "generate";
@@ -61,6 +59,7 @@ export function WorkSidebarMenu() {
   const isScheduledActive =
     workView === "scheduled-list" || workView === "scheduled-edit";
   const isDataSourcesActive = workView === "data-sources";
+  const isProjectsActive = workView === "projects";
 
   return (
     <Box height="100%" position="relative">
@@ -78,14 +77,18 @@ export function WorkSidebarMenu() {
             const Icon = item.icon;
             const isScheduled = item.workView === "scheduled-section";
             const isDataSources = item.label === "Data sources";
+            const isProjects = item.label === "Projects";
             const isActive =
               (isScheduled && isScheduledActive) ||
-              (isDataSources && isDataSourcesActive);
+              (isDataSources && isDataSourcesActive) ||
+              (isProjects && isProjectsActive);
             const onClick = isScheduled
               ? navigateToWorkScheduledList
               : isDataSources
                 ? navigateToWorkDataSources
-                : undefined;
+                : isProjects
+                  ? navigateToWorkProjects
+                  : undefined;
             return (
               <Box key={item.label}>
                 <SidebarItem
@@ -134,27 +137,6 @@ export function WorkSidebarMenu() {
               onClick={navigateToWorkGenerate}
             />
           </Box>
-
-          {skills.map((skill) => {
-            const isSkillActive =
-              selectedSkillId === skill.id && workView === "skill-detail";
-            return (
-              <Box key={skill.id}>
-                <SidebarItem
-                  depth={0}
-                  icon={
-                    <Lightbulb
-                      size={16}
-                      weight={isSkillActive ? "fill" : "regular"}
-                    />
-                  }
-                  label={skill.name}
-                  isActive={isSkillActive}
-                  onClick={() => navigateToWorkSkill(skill.id)}
-                />
-              </Box>
-            );
-          })}
         </Flex>
       </ScrollArea>
     </Box>
