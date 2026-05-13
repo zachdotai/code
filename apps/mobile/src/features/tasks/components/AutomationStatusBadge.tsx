@@ -1,41 +1,23 @@
 import { Text } from "@components/text";
 import { View } from "react-native";
+import type { TaskRun } from "../types";
+import { getAutomationStatusPresentation } from "../utils/automationStatus";
 
 interface AutomationStatusBadgeProps {
   enabled: boolean;
   lastRunStatus: string | null;
-}
-
-function renderRunStatus(lastRunStatus: string | null) {
-  switch (lastRunStatus) {
-    case "running":
-      return {
-        label: "Running",
-        className: "bg-status-info/20 text-status-info",
-      };
-    case "success":
-      return {
-        label: "Success",
-        className: "bg-status-success/20 text-status-success",
-      };
-    case "failed":
-      return {
-        label: "Failed",
-        className: "bg-status-error/20 text-status-error",
-      };
-    default:
-      return {
-        label: "Never run",
-        className: "bg-gray-4 text-gray-11",
-      };
-  }
+  lastTaskRunStatus?: TaskRun["status"] | null;
 }
 
 export function AutomationStatusBadge({
   enabled,
   lastRunStatus,
+  lastTaskRunStatus,
 }: AutomationStatusBadgeProps) {
-  const runStatus = renderRunStatus(lastRunStatus);
+  const runStatus = getAutomationStatusPresentation({
+    lastRunStatus,
+    lastTaskRunStatus,
+  });
 
   return (
     <View className="flex-row flex-wrap gap-2">

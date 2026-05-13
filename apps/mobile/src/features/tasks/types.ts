@@ -39,7 +39,14 @@ export interface TaskRun {
   branch: string | null;
   stage?: string | null;
   environment?: "local" | "cloud";
-  status: "started" | "in_progress" | "completed" | "failed";
+  status:
+    | "not_started"
+    | "queued"
+    | "started"
+    | "in_progress"
+    | "completed"
+    | "failed"
+    | "cancelled";
   log_url: string;
   error_message: string | null;
   output: Record<string, unknown> | null;
@@ -129,8 +136,6 @@ export interface CreateTaskOptions {
   title?: string;
   repository?: string;
   github_integration?: number;
-  signal_report?: string;
-  signal_report_task_relationship?: string;
 }
 
 export interface CreateTaskAutomationOptions {

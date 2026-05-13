@@ -30,6 +30,7 @@ vi.mock("../api", () => ({
 
 import {
   automationKeys,
+  getAutomationPollingInterval,
   useAutomations,
   useCreateTaskAutomation,
   useUpdateTaskAutomation,
@@ -157,6 +158,27 @@ describe("useAutomations", () => {
       automationPayload,
     ]);
     unmount();
+  });
+
+  it("only polls automation queries while a run is still active", () => {
+    expect(getAutomationPollingInterval(undefined)).toBe(false);
+    expect(getAutomationPollingInterval(automationPayload)).toBe(false);
+    expect(
+      getAutomationPollingInterval({
+        ...automationPayload,
+        last_run_status: "running",
+      }),
+    ).toBe(5_000);
+    expect(
+      getAutomationPollingInterval([
+        automationPayload,
+        {
+          ...automationPayload,
+          id: "automation-2",
+          last_run_status: "running",
+        },
+      ]),
+    ).toBe(5_000);
   });
 
   it("invalidates automation and task lists after create", async () => {

@@ -17,6 +17,7 @@ import type {
 import { taskKeys } from "./useTasks";
 
 const log = logger.scope("automations-mutations");
+const ACTIVE_AUTOMATION_POLLING_INTERVAL_MS = 5_000;
 
 export const automationKeys = {
   all: ["task-automations"] as const,
@@ -25,6 +26,26 @@ export const automationKeys = {
   details: () => [...automationKeys.all, "detail"] as const,
   detail: (id: string) => [...automationKeys.details(), id] as const,
 };
+
+export function getAutomationPollingInterval(
+  automationData: TaskAutomation | TaskAutomation[] | undefined,
+): number | false {
+  if (!automationData) {
+    return false;
+  }
+
+  if (Array.isArray(automationData)) {
+    return automationData.some(
+      (automation) => automation.last_run_status === "running",
+    )
+      ? ACTIVE_AUTOMATION_POLLING_INTERVAL_MS
+      : false;
+  }
+
+  return automationData.last_run_status === "running"
+    ? ACTIVE_AUTOMATION_POLLING_INTERVAL_MS
+    : false;
+}
 
 function invalidateAutomationAndTaskLists(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -40,6 +61,10 @@ export function useAutomations() {
     queryKey: automationKeys.list(),
     queryFn: getTaskAutomations,
     enabled: !!projectId && !!oauthAccessToken,
+    refetchInterval: (query) =>
+      getAutomationPollingInterval(
+        query.state.data as TaskAutomation[] | undefined,
+      ),
   });
 
   return {
@@ -57,6 +82,10 @@ export function useAutomation(automationId: string) {
     queryKey: automationKeys.detail(automationId),
     queryFn: () => getTaskAutomation(automationId),
     enabled: !!projectId && !!oauthAccessToken && !!automationId,
+    refetchInterval: (query) =>
+      getAutomationPollingInterval(
+        query.state.data as TaskAutomation | undefined,
+      ),
   });
 }
 

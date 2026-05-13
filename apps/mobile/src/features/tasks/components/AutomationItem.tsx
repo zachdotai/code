@@ -2,16 +2,21 @@ import { Text } from "@components/text";
 import { format, formatDistanceToNow } from "date-fns";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
-import type { TaskAutomation } from "../types";
+import type { TaskAutomation, TaskRun } from "../types";
 import { formatAutomationScheduleSummary } from "../utils/automationSchedule";
 import { AutomationStatusBadge } from "./AutomationStatusBadge";
 
 interface AutomationItemProps {
   automation: TaskAutomation;
   onPress: (automation: TaskAutomation) => void;
+  lastTaskRunStatus?: TaskRun["status"] | null;
 }
 
-function AutomationItemComponent({ automation, onPress }: AutomationItemProps) {
+function AutomationItemComponent({
+  automation,
+  onPress,
+  lastTaskRunStatus,
+}: AutomationItemProps) {
   const lastRunDisplay = automation.last_run_at
     ? new Date(automation.last_run_at).getTime() >
       Date.now() - 24 * 60 * 60 * 1000
@@ -40,6 +45,7 @@ function AutomationItemComponent({ automation, onPress }: AutomationItemProps) {
         <AutomationStatusBadge
           enabled={automation.enabled}
           lastRunStatus={automation.last_run_status}
+          lastTaskRunStatus={lastTaskRunStatus}
         />
       </View>
 

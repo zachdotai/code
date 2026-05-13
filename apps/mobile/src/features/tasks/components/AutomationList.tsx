@@ -9,6 +9,7 @@ import {
 import { useThemeColors } from "@/lib/theme";
 import { useAutomations } from "../hooks/useAutomations";
 import { useIntegrations } from "../hooks/useIntegrations";
+import { useTasks } from "../hooks/useTasks";
 import type { TaskAutomation } from "../types";
 import { AutomationItem } from "./AutomationItem";
 import { GitHubConnectionPrompt } from "./GitHubConnectionPrompt";
@@ -51,6 +52,9 @@ export function AutomationList({
   onCreateAutomation,
 }: AutomationListProps) {
   const { automations, isLoading, error, refetch } = useAutomations();
+  const { allTasks: automationTasks } = useTasks({
+    originProduct: "automation",
+  });
   const {
     error: integrationsError,
     hasGithubIntegration,
@@ -65,6 +69,10 @@ export function AutomationList({
   const handleAutomationPress = (automation: TaskAutomation) => {
     onAutomationPress?.(automation.id);
   };
+
+  const taskStatusById = new Map(
+    automationTasks.map((task) => [task.id, task.latest_run?.status ?? null]),
+  );
 
   const isInitialLoading =
     (isLoading && automations.length === 0) ||
@@ -122,7 +130,15 @@ export function AutomationList({
       data={automations}
       keyExtractor={(item) => item.id}
       renderItem={({ item }) => (
-        <AutomationItem automation={item} onPress={handleAutomationPress} />
+        <AutomationItem
+          automation={item}
+          onPress={handleAutomationPress}
+          lastTaskRunStatus={
+            item.last_task_id
+              ? (taskStatusById.get(item.last_task_id) ?? null)
+              : null
+          }
+        />
       )}
       refreshControl={
         <RefreshControl

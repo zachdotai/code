@@ -19,6 +19,7 @@ import {
   useRunTaskAutomation,
   useUpdateTaskAutomation,
 } from "@/features/tasks/hooks/useAutomations";
+import { useTask } from "@/features/tasks/hooks/useTasks";
 import { useThemeColors } from "@/lib/theme";
 
 export default function AutomationDetailScreen() {
@@ -26,6 +27,7 @@ export default function AutomationDetailScreen() {
   const router = useRouter();
   const themeColors = useThemeColors();
   const { data: automation, isLoading, error } = useAutomation(id);
+  const { data: lastTask } = useTask(automation?.last_task_id ?? "");
   const updateAutomation = useUpdateTaskAutomation();
   const deleteAutomation = useDeleteTaskAutomation();
   const runAutomation = useRunTaskAutomation();
@@ -139,6 +141,7 @@ export default function AutomationDetailScreen() {
           ) : (
             <AutomationDetail
               automation={automation}
+              lastTaskRunStatus={lastTask?.latest_run?.status ?? null}
               isWorking={runAutomation.isPending || updateAutomation.isPending}
               onEdit={() => setIsEditing(true)}
               onToggleEnabled={async () => {

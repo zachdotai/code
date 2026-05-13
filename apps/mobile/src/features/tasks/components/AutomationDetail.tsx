@@ -1,11 +1,12 @@
 import { Text } from "@components/text";
 import { ActivityIndicator, Pressable, View } from "react-native";
-import type { TaskAutomation } from "../types";
+import type { TaskAutomation, TaskRun } from "../types";
 import { formatAutomationScheduleSummary } from "../utils/automationSchedule";
 import { AutomationStatusBadge } from "./AutomationStatusBadge";
 
 interface AutomationDetailProps {
   automation: TaskAutomation;
+  lastTaskRunStatus?: TaskRun["status"] | null;
   isWorking?: boolean;
   onRunNow: () => void;
   onToggleEnabled: () => void;
@@ -15,6 +16,7 @@ interface AutomationDetailProps {
 
 export function AutomationDetail({
   automation,
+  lastTaskRunStatus,
   isWorking = false,
   onRunNow,
   onToggleEnabled,
@@ -31,6 +33,7 @@ export function AutomationDetail({
           <AutomationStatusBadge
             enabled={automation.enabled}
             lastRunStatus={automation.last_run_status}
+            lastTaskRunStatus={lastTaskRunStatus}
           />
         </View>
 

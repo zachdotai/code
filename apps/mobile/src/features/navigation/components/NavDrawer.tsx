@@ -12,8 +12,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { OFFLINE_BANNER_HEIGHT } from "@/components/OfflineBanner";
 import { TaskStatusIcon } from "@/features/tasks/components/TaskStatusIcon";
 import { useTasks } from "@/features/tasks/hooks/useTasks";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useThemeColors } from "@/lib/theme";
 import { useNavDrawerStore } from "../stores/navDrawerStore";
 
@@ -53,6 +55,7 @@ export function NavDrawer() {
   const pathname = usePathname();
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
+  const { isConnected } = useNetworkStatus();
   const { tasks } = useTasks();
 
   const navigateTo = (target: string) => {
@@ -104,6 +107,8 @@ export function NavDrawer() {
   const isOnInbox = pathname === "/inbox";
   const isOnAutomations = pathname === "/automations";
   const isOnSettings = pathname === "/settings";
+  const drawerTop = isConnected ? 0 : insets.top + OFFLINE_BANNER_HEIGHT;
+  const drawerPaddingTop = isConnected ? insets.top + 12 : 12;
 
   return (
     <View
@@ -124,8 +129,9 @@ export function NavDrawer() {
       <Animated.View
         className="absolute top-0 bottom-0 left-0 border-gray-6 border-r bg-gray-2"
         style={{
+          top: drawerTop,
           width: DRAWER_WIDTH,
-          paddingTop: insets.top + 12,
+          paddingTop: drawerPaddingTop,
           paddingBottom: insets.bottom,
           transform: [{ translateX }],
         }}
