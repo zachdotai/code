@@ -1,6 +1,7 @@
 import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { SidebarUsageBar } from "@features/billing/components/SidebarUsageBar";
 import { ModeSwitcher } from "@features/mode-switcher/components/ModeSwitcher";
+import { WorkSidebarMenu } from "@features/work/components/WorkSidebarMenu";
 import { ArchiveIcon } from "@phosphor-icons/react";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -21,7 +22,7 @@ export const SidebarContent: React.FC = () => {
     <Flex direction="column" height="100%">
       <ModeSwitcher />
       <Box flexGrow="1" overflow="hidden">
-        {isCodeMode && <SidebarMenu />}
+        {isCodeMode ? <SidebarMenu /> : <WorkSidebarMenu />}
       </Box>
       <UpdateBanner />
       <SidebarUsageBar />
