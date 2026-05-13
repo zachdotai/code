@@ -22,7 +22,11 @@
       "Bash(grep -E \"\\\\.\\(tsx?\\)$\")",
       "Bash(git -C /Users/tomowers/dev/posthog/code status)",
       "Bash(npx tsc *)",
-      "Bash(git -C /Users/tomowers/dev/posthog/code add apps/mobile/src/app/task/index.tsx)"
+      "Bash(git -C /Users/tomowers/dev/posthog/code add apps/mobile/src/app/task/index.tsx)",
+      "Bash(git -C /Users/tomowers/dev/posthog/code diff apps/mobile/src/features/tasks/stores/taskStore.ts apps/mobile/src/app/task/index.tsx)",
+      "Bash(git -C /Users/tomowers/dev/posthog/code status -s)",
+      "Bash(git -C /Users/tomowers/dev/posthog/code diff --stat HEAD apps/mobile)",
+      "Bash(npx biome *)"
     ],
     "additionalDirectories": [
       "/private/tmp"

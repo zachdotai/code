@@ -13,11 +13,21 @@ import {
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Composer } from "@/features/chat";
 import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
+import { DotBackground } from "@/features/tasks/composer/DotBackground";
+import {
+  DEFAULT_EXECUTION_MODE,
+  DEFAULT_MODEL,
+  DEFAULT_REASONING,
+  type ExecutionMode,
+  modelSupportsReasoning,
+  type ReasoningEffort,
+} from "@/features/tasks/composer/options";
+import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
+import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
@@ -49,6 +59,7 @@ export default function TaskDetailScreen() {
     sendPrompt,
     cancelPrompt,
     sendPermissionResponse,
+    setConfigOption,
     getSessionForTask,
     setFocusedTaskId,
   } = useTaskSessionStore();
@@ -61,6 +72,19 @@ export default function TaskDetailScreen() {
 
   const session = taskId ? getSessionForTask(taskId) : undefined;
 
+  // Per-task composer pill values. Persisted in taskStore so reopening the
+  // task keeps the user's choices; defaults fall back to the same constants
+  // the new-task composer uses.
+  const composerConfig = useTaskStore((s) =>
+    taskId ? s.composerConfigByTaskId[taskId] : undefined,
+  );
+  const setComposerConfig = useTaskStore((s) => s.setComposerConfig);
+  const composerMode: ExecutionMode =
+    composerConfig?.mode ?? DEFAULT_EXECUTION_MODE;
+  const composerModel = composerConfig?.model ?? DEFAULT_MODEL;
+  const composerReasoning: ReasoningEffort =
+    composerConfig?.reasoning ?? DEFAULT_REASONING;
+
   const { height } = useReanimatedKeyboardAnimation();
 
   // useReanimatedKeyboardAnimation returns negative height values
@@ -72,8 +96,11 @@ export default function TaskDetailScreen() {
   }, []);
 
   const inputContainerStyle = useAnimatedStyle(() => {
+    // contentPosition already translates the whole content up by the keyboard
+    // height, so the composer sits at the keyboard top — no extra gap needed
+    // when open. Closed state keeps a comfortable bottom inset.
     return {
-      marginBottom: height.value < 0 ? 26 : Math.max(insets.bottom, 50),
+      marginBottom: height.value < 0 ? 0 : Math.max(insets.bottom, 50),
     };
   }, [insets.bottom]);
 
@@ -133,28 +160,6 @@ export default function TaskDetailScreen() {
     };
   }, [taskId, task, loading, session, connectToTask, retrying]);
 
-  const handleSendPrompt = useCallback(
-    (text: string) => {
-      if (!taskId) return;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      sendPrompt(taskId, text).catch((err) => {
-        log.error("Failed to send prompt", err);
-        Alert.alert(
-          "Failed to send",
-          "Your message could not be delivered. Please try again.",
-        );
-      });
-    },
-    [taskId, sendPrompt],
-  );
-
-  const handleStop = useCallback(() => {
-    if (!taskId) return;
-    // cancelPrompt returns false on failure — no need to alert,
-    // the agent may have already finished or the sandbox expired.
-    cancelPrompt(taskId).catch(() => {});
-  }, [taskId, cancelPrompt]);
-
   const updateTaskInCache = useCallback(
     (updated: Task) => {
       // Directly patch the task in all list query caches so the task list
@@ -166,6 +171,108 @@ export default function TaskDetailScreen() {
     },
     [queryClient],
   );
+
+  // Resume a terminal (completed/failed) run with a new user prompt. Mirrors
+  // the desktop "send on a finished task continues the conversation" UX —
+  // creates a fresh run that resumes from the previous one and queues the
+  // message as pending_user_message.
+  const handleSendAfterTerminal = useCallback(
+    async (text: string) => {
+      if (!taskId || !task) return;
+      try {
+        setRetrying(true);
+        disconnectFromTask(taskId);
+
+        const supportsReasoning = modelSupportsReasoning(composerModel);
+        const updatedTask = await runTaskInCloud(taskId, {
+          resumeFromRunId: task.latest_run?.id,
+          pendingUserMessage: text,
+          runtimeAdapter: "claude",
+          model: composerModel,
+          reasoningEffort: supportsReasoning ? composerReasoning : undefined,
+          initialPermissionMode: composerMode,
+        });
+        setTask(updatedTask);
+        await connectToTask(updatedTask);
+        updateTaskInCache(updatedTask);
+      } catch (err) {
+        log.error("Failed to send after terminal", err);
+        setRetrying(false);
+        Alert.alert(
+          "Failed to send",
+          "Could not continue this task. Please try again.",
+        );
+      }
+    },
+    [
+      taskId,
+      task,
+      disconnectFromTask,
+      connectToTask,
+      updateTaskInCache,
+      composerMode,
+      composerModel,
+      composerReasoning,
+    ],
+  );
+
+  const handleSendPrompt = useCallback(
+    (text: string) => {
+      if (!taskId) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      if (session?.terminalStatus) {
+        handleSendAfterTerminal(text);
+        return;
+      }
+
+      sendPrompt(taskId, text).catch((err) => {
+        log.error("Failed to send prompt", err);
+        Alert.alert(
+          "Failed to send",
+          "Your message could not be delivered. Please try again.",
+        );
+      });
+    },
+    [taskId, sendPrompt, session?.terminalStatus, handleSendAfterTerminal],
+  );
+
+  const handleModeChange = useCallback(
+    (value: ExecutionMode) => {
+      if (!taskId) return;
+      setComposerConfig(taskId, { mode: value });
+      // Push to the live cloud session so the next turn uses the new mode.
+      // Silently ignore failures — value is already persisted locally and
+      // will be replayed if the user resumes from a terminal state.
+      setConfigOption(taskId, "mode", value).catch(() => {});
+    },
+    [taskId, setComposerConfig, setConfigOption],
+  );
+
+  const handleModelChange = useCallback(
+    (value: string) => {
+      if (!taskId) return;
+      setComposerConfig(taskId, { model: value });
+      setConfigOption(taskId, "model", value).catch(() => {});
+    },
+    [taskId, setComposerConfig, setConfigOption],
+  );
+
+  const handleReasoningChange = useCallback(
+    (value: ReasoningEffort) => {
+      if (!taskId) return;
+      setComposerConfig(taskId, { reasoning: value });
+      setConfigOption(taskId, "effort", value).catch(() => {});
+    },
+    [taskId, setComposerConfig, setConfigOption],
+  );
+
+  const handleStop = useCallback(() => {
+    if (!taskId) return;
+    // cancelPrompt returns false on failure — no need to alert,
+    // the agent may have already finished or the sandbox expired.
+    cancelPrompt(taskId).catch(() => {});
+  }, [taskId, cancelPrompt]);
 
   const handleRetry = useCallback(async () => {
     if (!taskId || !task) return;
@@ -258,8 +365,6 @@ export default function TaskDetailScreen() {
     }
   }, [taskId, task, disconnectFromTask, connectToTask, updateTaskInCache]);
 
-  const environment = task?.latest_run?.environment;
-
   const visibleAgentTypes = [
     "agent_message_chunk",
     "agent_message",
@@ -337,103 +442,106 @@ export default function TaskDetailScreen() {
             fontWeight: "600",
           },
           presentation: "modal",
-          headerRight: environment
+          headerRight: isLocal
             ? () => (
                 <Pressable
-                  onPress={
-                    isLocal
-                      ? () =>
-                          ActionSheetIOS.showActionSheetWithOptions(
-                            {
-                              options: ["Keep locally", "Move to Cloud"],
-                              cancelButtonIndex: 0,
-                              title: isStale
-                                ? "Desktop may be offline"
-                                : "Running on your desktop",
-                            },
-                            (index) => {
-                              if (index === 1) handleContinueInCloud();
-                            },
-                          )
-                      : undefined
+                  onPress={() =>
+                    ActionSheetIOS.showActionSheetWithOptions(
+                      {
+                        options: ["Keep locally", "Move to Cloud"],
+                        cancelButtonIndex: 0,
+                        title: isStale
+                          ? "Desktop may be offline"
+                          : "Running on your desktop",
+                      },
+                      (index) => {
+                        if (index === 1) handleContinueInCloud();
+                      },
+                    )
                   }
-                  className={`rounded-full px-3 py-1 ${
-                    environment === "cloud" ? "bg-accent-3" : "bg-gray-4"
-                  }`}
+                  className="rounded-full bg-gray-4 px-3 py-1"
                 >
-                  <Text
-                    className={`font-medium text-xs ${
-                      environment === "cloud"
-                        ? "text-accent-11"
-                        : "text-gray-11"
-                    }`}
-                  >
-                    {environment === "cloud" ? "Cloud" : "Local"}
+                  <Text className="font-medium text-gray-11 text-xs">
+                    Local
                   </Text>
                 </Pressable>
               )
             : undefined,
         }}
       />
-      <Animated.View className="flex-1 bg-background" style={contentPosition}>
-        {showAutomationContext && automationContextLabel && (
-          <View className="absolute inset-x-3 top-3 z-10 rounded-lg border border-accent-6 bg-accent-2 px-3 py-2">
-            <Text className="text-accent-11 text-xs">
-              {automationName
-                ? `Started from automation: ${automationName}`
-                : automationContextLabel}
-            </Text>
-          </View>
-        )}
+      <View className="flex-1 bg-background">
+        {/* Subtle dotted background — matches the new-task screen. Sits below
+            the translated content so it stays put when the keyboard opens. */}
+        <DotBackground />
+        <Animated.View className="flex-1" style={contentPosition}>
+          {showAutomationContext && automationContextLabel && (
+            <View className="absolute inset-x-3 top-3 z-10 rounded-lg border border-accent-6 bg-accent-2 px-3 py-2">
+              <Text className="text-accent-11 text-xs">
+                {automationName
+                  ? `Started from automation: ${automationName}`
+                  : automationContextLabel}
+              </Text>
+            </View>
+          )}
 
-        {/* Always render TaskSessionView so the FlatList can layout behind
-            the loading overlay. This prevents the "flash of messages" when
-            switching from loading spinner to rendered content. */}
-        <TaskSessionView
-          events={session?.events ?? []}
-          isConnecting={isConnecting}
-          isThinking={isThinking}
-          terminalStatus={retrying ? undefined : session?.terminalStatus}
-          lastError={retrying ? undefined : session?.lastError}
-          onRetry={
-            !retrying && session?.terminalStatus ? handleRetry : undefined
-          }
-          onOpenTask={handleOpenTask}
-          onSendPermissionResponse={handleSendPermissionResponse}
-          contentContainerStyle={{
-            paddingTop:
-              session?.terminalStatus && !retrying
-                ? 16 + (showAutomationContext ? 44 : 0)
-                : 80 + insets.bottom + (showAutomationContext ? 44 : 0),
-            paddingBottom: 16,
-          }}
-        />
+          {/* Always render TaskSessionView so the FlatList can layout behind
+              the loading overlay. This prevents the "flash of messages" when
+              switching from loading spinner to rendered content. */}
+          <TaskSessionView
+            events={session?.events ?? []}
+            isConnecting={isConnecting}
+            isThinking={isThinking}
+            terminalStatus={retrying ? undefined : session?.terminalStatus}
+            lastError={retrying ? undefined : session?.lastError}
+            onRetry={
+              !retrying && session?.terminalStatus ? handleRetry : undefined
+            }
+            onOpenTask={handleOpenTask}
+            onSendPermissionResponse={handleSendPermissionResponse}
+            contentContainerStyle={{
+              paddingTop:
+                session?.terminalStatus && !retrying
+                  ? 16 + (showAutomationContext ? 44 : 0)
+                  : 80 + insets.bottom + (showAutomationContext ? 44 : 0),
+              paddingBottom: 16,
+            }}
+          />
 
-        {/* Loading overlay — covers the list while it does initial layout */}
-        {loading && (
-          <View className="absolute inset-0 items-center justify-center bg-background">
-            <ActivityIndicator size="large" color={themeColors.accent[9]} />
-            <Text className="mt-4 text-gray-11">
-              {task?.latest_run ? "Connecting..." : "Loading task..."}
-            </Text>
-          </View>
-        )}
+          {/* Loading overlay — covers the list while it does initial layout */}
+          {loading && (
+            <View className="absolute inset-0 items-center justify-center bg-background">
+              <ActivityIndicator size="large" color={themeColors.accent[9]} />
+              <Text className="mt-4 text-gray-11">
+                {task?.latest_run ? "Connecting..." : "Loading task..."}
+              </Text>
+            </View>
+          )}
 
-        {/* Fixed input at bottom — hidden when run is terminal */}
-        {!session?.terminalStatus && (
+          {/* Fixed composer at bottom — stays visible even on terminal runs so
+              the user can send a follow-up message that resumes the task. */}
           <Animated.View
             className="absolute inset-x-0 bottom-0"
             style={inputContainerStyle}
           >
-            <Composer
+            <TaskChatComposer
               onSend={handleSendPrompt}
               onStop={handleStop}
               isUserTurn={!(session?.isPromptPending ?? true)}
-              placeholder={"Ask a question"}
+              placeholder={
+                session?.terminalStatus
+                  ? "Resume this task..."
+                  : "Ask a question"
+              }
+              mode={composerMode}
+              model={composerModel}
+              reasoning={composerReasoning}
+              onModeChange={handleModeChange}
+              onModelChange={handleModelChange}
+              onReasoningChange={handleReasoningChange}
             />
           </Animated.View>
-        )}
-      </Animated.View>
+        </Animated.View>
+      </View>
     </>
   );
 }

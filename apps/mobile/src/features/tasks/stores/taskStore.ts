@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import type { ExecutionMode, ReasoningEffort } from "../composer/options";
 import type { RepositorySelection, Task } from "../types";
 
 export type OrganizeMode = "by-project" | "chronological";
@@ -11,6 +12,14 @@ const EMPTY_REPOSITORY_SELECTION: RepositorySelection = {
   repository: null,
 };
 
+/** Per-task chat composer pill values. Persisted so reopening a task keeps
+ *  the mode/model/reasoning the user last selected for it. */
+export interface TaskComposerConfig {
+  mode?: ExecutionMode;
+  model?: string;
+  reasoning?: ReasoningEffort;
+}
+
 interface TaskUIState {
   selectedTaskId: string | null;
   organizeMode: OrganizeMode;
@@ -20,6 +29,7 @@ interface TaskUIState {
   /** Most-recently-used repository for the new-task composer. Pre-fills the
    *  repo pill so users don't have to re-pick the same repo every time. */
   lastRepository: RepositorySelection;
+  composerConfigByTaskId: Record<string, TaskComposerConfig>;
 
   selectTask: (taskId: string | null) => void;
   setOrganizeMode: (mode: OrganizeMode) => void;
@@ -27,6 +37,10 @@ interface TaskUIState {
   setShowInternal: (showInternal: boolean) => void;
   setFilter: (filter: string) => void;
   setLastRepository: (selection: RepositorySelection) => void;
+  setComposerConfig: (
+    taskId: string,
+    config: Partial<TaskComposerConfig>,
+  ) => void;
 }
 
 export const useTaskStore = create<TaskUIState>()(
@@ -38,6 +52,7 @@ export const useTaskStore = create<TaskUIState>()(
       showInternal: false,
       filter: "",
       lastRepository: EMPTY_REPOSITORY_SELECTION,
+      composerConfigByTaskId: {},
 
       selectTask: (selectedTaskId) => set({ selectedTaskId }),
       setOrganizeMode: (organizeMode) => set({ organizeMode }),
@@ -45,6 +60,16 @@ export const useTaskStore = create<TaskUIState>()(
       setShowInternal: (showInternal) => set({ showInternal }),
       setFilter: (filter) => set({ filter }),
       setLastRepository: (lastRepository) => set({ lastRepository }),
+      setComposerConfig: (taskId, config) =>
+        set((state) => ({
+          composerConfigByTaskId: {
+            ...state.composerConfigByTaskId,
+            [taskId]: {
+              ...state.composerConfigByTaskId[taskId],
+              ...config,
+            },
+          },
+        })),
     }),
     {
       name: "posthog-task-ui",
@@ -54,6 +79,7 @@ export const useTaskStore = create<TaskUIState>()(
         sortMode: state.sortMode,
         showInternal: state.showInternal,
         lastRepository: state.lastRepository,
+        composerConfigByTaskId: state.composerConfigByTaskId,
       }),
     },
   ),

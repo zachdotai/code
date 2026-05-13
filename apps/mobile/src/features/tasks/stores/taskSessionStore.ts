@@ -154,6 +154,11 @@ interface TaskSessionStore {
     },
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
+  setConfigOption: (
+    taskId: string,
+    configId: string,
+    value: string,
+  ) => Promise<void>;
   getSessionForTask: (taskId: string) => TaskSession | undefined;
 
   _startCloudPolling: (taskRunId: string, logUrl: string) => void;
@@ -533,6 +538,35 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             },
           },
         };
+      });
+      throw err;
+    }
+  },
+
+  // Update an agent-side config option on the running cloud session
+  // (e.g. mode, model, effort). No-op when there is no live session — the
+  // caller is expected to persist the value locally so it can be replayed
+  // on the next resume run.
+  setConfigOption: async (taskId, configId, value) => {
+    const session = get().getSessionForTask(taskId);
+    if (!session || session.terminalStatus) return;
+
+    try {
+      await sendCloudCommand(taskId, session.taskRunId, "set_config_option", {
+        configId,
+        value,
+      });
+      logger.debug("Sent set_config_option", {
+        taskId,
+        runId: session.taskRunId,
+        configId,
+        value,
+      });
+    } catch (err) {
+      logger.warn("Failed to send set_config_option", {
+        taskId,
+        configId,
+        error: err,
       });
       throw err;
     }
