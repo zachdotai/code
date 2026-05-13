@@ -15,7 +15,9 @@
       "Bash(ls -lh /Users/tomowers/dev/posthog/code/apps/mobile/assets/fonts/OpenRunde/ && rm /tmp/convert_woff.py)",
       "Bash(python3 -c ' *)",
       "Bash(python3 /tmp/normalize_fonts.py)",
-      "Bash(xargs grep -l \"^ Text,\\\\|^ Text$\\\\|, Text,\")"
+      "Bash(xargs grep -l \"^ Text,\\\\|^ Text$\\\\|, Text,\")",
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(node -e \"const p = require\\('phosphor-react-native'\\); console.log\\(Object.keys\\(p\\).filter\\(k => /[Cc]ircle/.test\\(k\\)\\).slice\\(0, 30\\).join\\(', '\\)\\)\")"
     ],
     "additionalDirectories": [
       "/private/tmp"

@@ -1,6 +1,6 @@
 import { Text } from "@components/text";
 import * as WebBrowser from "expo-web-browser";
-import { CaretRight } from "phosphor-react-native";
+import { CaretRight, GitBranch } from "phosphor-react-native";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -113,7 +113,16 @@ function CreateTaskEmptyState({ onCreateTask }: CreateTaskEmptyStateProps) {
 
 type ListItem =
   | { type: "task"; task: Task; isArchived: boolean }
+  | { type: "repo-header"; repoLabel: string; count: number }
   | { type: "archived-header"; count: number; expanded: boolean };
+
+const NO_REPO_LABEL = "No repository";
+
+function repoSortKey(task: Task): number {
+  // Most recent activity first within a group.
+  const ts = task.latest_run?.updated_at ?? task.updated_at ?? task.created_at;
+  return -new Date(ts).getTime();
+}
 
 export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
   const { tasks, isLoading, error, refetch } = useTasks();
@@ -149,11 +158,41 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
       (a, b) => (archivedTasks[a.id] ?? 0) - (archivedTasks[b.id] ?? 0),
     );
 
-    const items: ListItem[] = active.map((task) => ({
-      type: "task",
-      task,
-      isArchived: false,
-    }));
+    // Group active tasks by repository.
+    const groups = new Map<string, Task[]>();
+    for (const task of active) {
+      const key = task.repository?.trim() || NO_REPO_LABEL;
+      const bucket = groups.get(key);
+      if (bucket) {
+        bucket.push(task);
+      } else {
+        groups.set(key, [task]);
+      }
+    }
+
+    // Sort each group's tasks by most-recent activity.
+    for (const tasksInRepo of groups.values()) {
+      tasksInRepo.sort((a, b) => repoSortKey(a) - repoSortKey(b));
+    }
+
+    // Order groups: most-recently-active repo first; "No repository" last.
+    const groupEntries = Array.from(groups.entries()).sort((a, b) => {
+      if (a[0] === NO_REPO_LABEL) return 1;
+      if (b[0] === NO_REPO_LABEL) return -1;
+      return repoSortKey(a[1][0]) - repoSortKey(b[1][0]);
+    });
+
+    const items: ListItem[] = [];
+    for (const [repoLabel, tasksInRepo] of groupEntries) {
+      items.push({
+        type: "repo-header",
+        repoLabel,
+        count: tasksInRepo.length,
+      });
+      for (const task of tasksInRepo) {
+        items.push({ type: "task", task, isArchived: false });
+      }
+    }
 
     if (archived.length > 0) {
       items.push({
@@ -214,12 +253,32 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
     <FlatList
       scrollEnabled={scrollEnabled}
       data={listItems}
-      keyExtractor={(item) =>
-        item.type === "archived-header"
-          ? "__archived_header__"
-          : `${item.task.id}-${item.isArchived ? "a" : "v"}`
-      }
+      keyExtractor={(item) => {
+        switch (item.type) {
+          case "archived-header":
+            return "__archived_header__";
+          case "repo-header":
+            return `__repo__${item.repoLabel}`;
+          case "task":
+            return `${item.task.id}-${item.isArchived ? "a" : "v"}`;
+        }
+      }}
       renderItem={({ item }) => {
+        if (item.type === "repo-header") {
+          return (
+            <View className="flex-row items-center gap-2 bg-gray-2 px-3 py-2">
+              <GitBranch size={14} color={themeColors.gray[10]} />
+              <Text
+                className="flex-1 font-medium text-[12px] text-gray-11"
+                numberOfLines={1}
+              >
+                {item.repoLabel}
+              </Text>
+              <Text className="text-[11px] text-gray-9">{item.count}</Text>
+            </View>
+          );
+        }
+
         if (item.type === "archived-header") {
           return (
             <Pressable
