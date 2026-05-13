@@ -5,7 +5,13 @@ import * as Haptics from "expo-haptics";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Lightning, Play, Warning } from "phosphor-react-native";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getReportRepository } from "@/features/inbox/api";
 import { useInboxReport } from "@/features/inbox/hooks/useInboxReports";
@@ -287,29 +293,41 @@ export default function ReportDetailScreen() {
           style={{ bottom: insets.bottom + 16 }}
           pointerEvents="box-none"
         >
-          <GlassContainer spacing={0} style={{ borderRadius: 28 }}>
+          {Platform.OS === "ios" ? (
+            <GlassContainer spacing={0} style={{ borderRadius: 28 }}>
+              <Pressable
+                onPress={handleStartTask}
+                style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+              >
+                <GlassView
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    paddingHorizontal: 24,
+                    paddingVertical: 14,
+                    borderRadius: 28,
+                  }}
+                  isInteractive
+                >
+                  <Play size={18} color={themeColors.accent[9]} weight="fill" />
+                  <Text className="font-semibold text-[15px] text-gray-12">
+                    Start task
+                  </Text>
+                </GlassView>
+              </Pressable>
+            </GlassContainer>
+          ) : (
             <Pressable
               onPress={handleStartTask}
-              style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+              className="elevation-4 flex-row items-center gap-2 rounded-full border border-gray-6 bg-gray-2 px-6 py-3.5 shadow-lg active:opacity-80"
             >
-              <GlassView
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                  paddingHorizontal: 24,
-                  paddingVertical: 14,
-                  borderRadius: 28,
-                }}
-                isInteractive
-              >
-                <Play size={18} color={themeColors.accent[9]} weight="fill" />
-                <Text className="font-semibold text-[15px] text-gray-12">
-                  Start task
-                </Text>
-              </GlassView>
+              <Play size={18} color={themeColors.accent[9]} weight="fill" />
+              <Text className="font-semibold text-[15px] text-gray-12">
+                Start task
+              </Text>
             </Pressable>
-          </GlassContainer>
+          )}
         </View>
       )}
     </>
