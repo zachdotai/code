@@ -1,29 +1,50 @@
 import { Tooltip } from "@radix-ui/themes";
-import explorerHog from "@renderer/assets/images/hedgehogs/explorer-hog.png";
 import { motion } from "framer-motion";
+import { AnimatedHedgehog } from "./AnimatedHedgehog";
 
-const SPRITE_SIZE = 64;
+const SPRITE_SIZE = 72;
 const SELECTION_RING_SIZE = SPRITE_SIZE + 18;
+
+export type BuilderAnimation = "idle" | "walking" | "building";
+
+const ANIMATION_KEYS: Record<BuilderAnimation, string> = {
+  idle: "skins/default/idle/tile",
+  walking: "skins/default/walk/tile",
+  building: "skins/default/action/tile",
+};
+
+const ANIMATION_FPS: Record<BuilderAnimation, number> = {
+  idle: 8,
+  walking: 14,
+  building: 12,
+};
 
 interface BuilderSpriteProps {
   x: number;
   y: number;
   selected?: boolean;
+  animation: BuilderAnimation;
+  facing: "left" | "right";
   onSelect?: () => void;
+  onArrive?: () => void;
 }
 
 export function BuilderSprite({
   x,
   y,
   selected,
+  animation,
+  facing,
   onSelect,
+  onArrive,
 }: BuilderSpriteProps) {
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
       initial={false}
       animate={{ x, y }}
-      transition={{ type: "spring", damping: 22, stiffness: 220, mass: 0.5 }}
+      transition={{ type: "spring", damping: 24, stiffness: 90, mass: 0.7 }}
+      onAnimationComplete={() => onArrive?.()}
     >
       <Tooltip content="Builder hedgehog · click to select" side="bottom">
         <motion.button
@@ -52,21 +73,12 @@ export function BuilderSprite({
                 transition={{ duration: 0.18, ease: "easeOut" }}
               />
             )}
-            <div
-              className="flex items-center justify-center rounded-full bg-(--gray-2) shadow-md ring-(--gray-7) ring-2"
-              style={{ width: SPRITE_SIZE, height: SPRITE_SIZE }}
-            >
-              <img
-                src={explorerHog}
-                alt=""
-                className="pointer-events-none select-none"
-                style={{
-                  width: SPRITE_SIZE * 0.78,
-                  height: SPRITE_SIZE * 0.78,
-                }}
-                draggable={false}
-              />
-            </div>
+            <AnimatedHedgehog
+              animation={ANIMATION_KEYS[animation]}
+              fps={ANIMATION_FPS[animation]}
+              facing={facing}
+              size={SPRITE_SIZE}
+            />
           </div>
           <div className="mt-1 max-w-[120px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
             Builder

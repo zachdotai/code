@@ -2,13 +2,14 @@ import type { Nest } from "@main/services/hedgemony/schemas";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import { AnimatePresence } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   initializeNestStore,
   selectNests,
   useNestStore,
 } from "../stores/nestStore";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
+import type { BuilderAnimation } from "./BuilderSprite";
 import { HedgemonyEmptyState } from "./HedgemonyEmptyState";
 import { HedgemonyMapSurface, type MoveMarker } from "./HedgemonyMapSurface";
 import { NestDetailPanel } from "./NestDetailPanel";
@@ -16,7 +17,14 @@ import { PlaceNestDialog } from "./PlaceNestDialog";
 
 const log = logger.scope("hedgemony-map-view");
 
+const BUILD_ANIMATION_MS = 1500;
+
 type Selection = { type: "nest"; id: string } | { type: "builder" } | null;
+
+type BuilderState =
+  | { kind: "idle" }
+  | { kind: "walking"; onArrive: "idle" | "build" }
+  | { kind: "building" };
 
 export function HedgemonyMapView() {
   const nests = useNestStore(selectNests);
@@ -28,11 +36,22 @@ export function HedgemonyMapView() {
   } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [builderPos, setBuilderPos] = useState({ x: 0, y: 0 });
+  const [builderFacing, setBuilderFacing] = useState<"left" | "right">("right");
+  const [builderState, setBuilderState] = useState<BuilderState>({
+    kind: "idle",
+  });
   const [buildMode, setBuildMode] = useState(false);
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
+  const buildingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return initializeNestStore();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (buildingTimerRef.current) clearTimeout(buildingTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -75,6 +94,44 @@ export function HedgemonyMapView() {
     [],
   );
 
+  const enterBuilding = useCallback(() => {
+    if (buildingTimerRef.current) clearTimeout(buildingTimerRef.current);
+    setBuilderState({ kind: "building" });
+    buildingTimerRef.current = setTimeout(() => {
+      setBuilderState({ kind: "idle" });
+      buildingTimerRef.current = null;
+    }, BUILD_ANIMATION_MS);
+  }, []);
+
+  const startWalk = useCallback(
+    (target: { x: number; y: number }, onArrive: "idle" | "build") => {
+      if (buildingTimerRef.current) {
+        clearTimeout(buildingTimerRef.current);
+        buildingTimerRef.current = null;
+      }
+      if (target.x === builderPos.x && target.y === builderPos.y) {
+        if (onArrive === "build") enterBuilding();
+        else setBuilderState({ kind: "idle" });
+        return;
+      }
+      setBuilderFacing(target.x >= builderPos.x ? "right" : "left");
+      setBuilderPos(target);
+      setBuilderState({ kind: "walking", onArrive });
+    },
+    [builderPos.x, builderPos.y, enterBuilding],
+  );
+
+  const handleBuilderArrive = useCallback(() => {
+    setBuilderState((current) => {
+      if (current.kind !== "walking") return current;
+      if (current.onArrive === "build") {
+        enterBuilding();
+        return { kind: "building" };
+      }
+      return { kind: "idle" };
+    });
+  }, [enterBuilding]);
+
   const handleMapClick = (x: number, y: number) => {
     if (buildMode) {
       setBuildMode(false);
@@ -103,7 +160,7 @@ export function HedgemonyMapView() {
     }
 
     flashMoveMarker(targetX, targetY);
-    setBuilderPos({ x: targetX, y: targetY });
+    startWalk({ x: targetX, y: targetY }, "idle");
   };
 
   const showEmptyState = loaded && nests.length === 0;
@@ -113,6 +170,13 @@ export function HedgemonyMapView() {
       : null;
   const builderSelected = selection?.type === "builder";
 
+  const builderAnimation: BuilderAnimation =
+    builderState.kind === "walking"
+      ? "walking"
+      : builderState.kind === "building"
+        ? "building"
+        : "idle";
+
   return (
     <>
       <HedgemonyMapSurface
@@ -121,6 +185,8 @@ export function HedgemonyMapView() {
         builderX={builderPos.x}
         builderY={builderPos.y}
         builderSelected={builderSelected}
+        builderAnimation={builderAnimation}
+        builderFacing={builderFacing}
         buildMode={buildMode}
         moveMarker={moveMarker}
         overlay={showEmptyState ? <HedgemonyEmptyState /> : null}
@@ -128,6 +194,7 @@ export function HedgemonyMapView() {
         onMapRightClick={handleMapRightClick}
         onNestSelect={(nest) => setSelection({ type: "nest", id: nest.id })}
         onBuilderSelect={() => setSelection({ type: "builder" })}
+        onBuilderArrive={handleBuilderArrive}
       />
       {activeNest && (
         <NestDetailPanel nest={activeNest} onClose={() => setSelection(null)} />
@@ -145,6 +212,7 @@ export function HedgemonyMapView() {
         mapX={pendingPlacement?.x ?? 0}
         mapY={pendingPlacement?.y ?? 0}
         onClose={() => setPendingPlacement(null)}
+        onCreated={(mapX, mapY) => startWalk({ x: mapX, y: mapY }, "build")}
       />
     </>
   );

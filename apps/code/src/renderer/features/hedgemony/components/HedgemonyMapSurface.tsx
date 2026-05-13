@@ -4,7 +4,7 @@ import { AnimatePresence, motion, useMotionValue } from "framer-motion";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
-import { BuilderSprite } from "./BuilderSprite";
+import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
 import { NestSprite } from "./NestSprite";
 
 const ZOOM_WHEEL_STEP = 0.0015;
@@ -23,6 +23,8 @@ interface HedgemonyMapSurfaceProps {
   builderX: number;
   builderY: number;
   builderSelected: boolean;
+  builderAnimation: BuilderAnimation;
+  builderFacing: "left" | "right";
   buildMode: boolean;
   moveMarker: MoveMarker | null;
   children?: ReactNode;
@@ -33,6 +35,7 @@ interface HedgemonyMapSurfaceProps {
   onMapRightClick?: (worldX: number, worldY: number) => void;
   onNestSelect?: (nest: Nest) => void;
   onBuilderSelect?: () => void;
+  onBuilderArrive?: () => void;
 }
 
 export function HedgemonyMapSurface({
@@ -41,6 +44,8 @@ export function HedgemonyMapSurface({
   builderX,
   builderY,
   builderSelected,
+  builderAnimation,
+  builderFacing,
   buildMode,
   moveMarker,
   children,
@@ -49,6 +54,7 @@ export function HedgemonyMapSurface({
   onMapRightClick,
   onNestSelect,
   onBuilderSelect,
+  onBuilderArrive,
 }: HedgemonyMapSurfaceProps) {
   const panX = useHedgemonyViewStore((s) => s.panX);
   const panY = useHedgemonyViewStore((s) => s.panY);
@@ -166,7 +172,10 @@ export function HedgemonyMapSurface({
           x={builderX}
           y={builderY}
           selected={builderSelected}
+          animation={builderAnimation}
+          facing={builderFacing}
           onSelect={onBuilderSelect}
+          onArrive={onBuilderArrive}
         />
         {buildMode && buildPointer && (
           <div

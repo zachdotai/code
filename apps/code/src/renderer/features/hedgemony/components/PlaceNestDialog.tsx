@@ -19,6 +19,7 @@ export interface PlaceNestDialogProps {
   mapX: number;
   mapY: number;
   onClose: () => void;
+  onCreated?: (mapX: number, mapY: number) => void;
 }
 
 export function PlaceNestDialog({
@@ -26,6 +27,7 @@ export function PlaceNestDialog({
   mapX,
   mapY,
   onClose,
+  onCreated,
 }: PlaceNestDialogProps) {
   const [name, setName] = useState("");
   const [goalPrompt, setGoalPrompt] = useState("");
@@ -66,6 +68,7 @@ export function PlaceNestDialog({
       // Insert locally so the sprite renders immediately and the store's
       // diff effect opens a watch subscription for it.
       useNestStore.getState().upsert(created);
+      onCreated?.(created.mapX, created.mapY);
       onClose();
     } catch (e) {
       log.error("Failed to create nest", { error: e });
