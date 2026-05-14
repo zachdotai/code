@@ -74,14 +74,14 @@ export function FileTile({
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >
-      <Box className="h-full">
+      <Box className="flex h-full min-h-0 flex-col">
         <textarea
           value={contents}
           onChange={(e) => setContents(e.target.value)}
           onBlur={commitContents}
           readOnly={!onUpdate}
           placeholder="# New file"
-          className="block h-full min-h-[120px] w-full resize-none bg-transparent px-3 py-2 font-mono text-(--gray-12) text-[12px] leading-relaxed outline-none placeholder:text-(--gray-9)"
+          className="block min-h-0 w-full flex-1 resize-none bg-transparent px-3 py-2 font-mono text-(--gray-12) text-[12px] leading-relaxed outline-none placeholder:text-(--gray-9)"
         />
       </Box>
     </TileFrame>

@@ -135,14 +135,14 @@ export function NoteTile({
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >
-      <Flex className={`h-full ${TONE_SOFT_BG[tone]}`}>
+      <Flex className={`h-full min-h-0 ${TONE_SOFT_BG[tone]}`}>
         <Box className={`w-[3px] shrink-0 ${TONE_STRIPE[tone]}`} />
         <textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onBlur={commit}
           placeholder="Capture a thought…"
-          className="block h-full min-h-[80px] w-full resize-none bg-transparent px-3 py-2 text-(--gray-12) text-[13px] leading-snug outline-none placeholder:text-(--gray-9)"
+          className="block h-full min-h-0 w-full resize-none bg-transparent px-3 py-2 text-(--gray-12) text-[13px] leading-snug outline-none placeholder:text-(--gray-9)"
           readOnly={!onUpdate}
         />
       </Flex>

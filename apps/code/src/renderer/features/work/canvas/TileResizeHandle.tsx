@@ -5,12 +5,24 @@ import { useCanvasGrid } from "./CanvasGridContext";
 interface TileResizeHandleProps {
   currentSize: GridSize;
   onResize: (size: GridSize) => void;
-  /** Called continuously during drag for live preview. */
+  /** Called continuously during drag with the snapped target size, or
+   *  `null` when the drag ends. The parent renders the tile at this size
+   *  for live feedback without committing to the server. */
   onPreview?: (size: GridSize | null) => void;
 }
 
-/** Bottom-right corner handle. Drag to resize the tile in grid cells.
- *  Snaps live as the cursor crosses cell boundaries. */
+/**
+ * Bottom-right corner handle. Drag to resize the tile in grid cells; snaps
+ * to whole cells as the cursor crosses each boundary.
+ *
+ * Implementation notes:
+ * - Hit area is intentionally larger (20×20) than the visible glyph (12×12)
+ *   so the user doesn't have to be pixel-precise on the corner.
+ * - The handle is hover-visible by default and stays visible while dragging
+ *   (so users can re-grip without re-hovering precisely).
+ * - Listeners are removed on `mouseup` AND on unmount (e.g. tile removed
+ *   mid-drag) so no global handler can leak.
+ */
 export function TileResizeHandle({
   currentSize,
   onResize,
@@ -35,8 +47,12 @@ export function TileResizeHandle({
       const dy = e.clientY - start.y;
       const cellStrideX = start.metrics.cellWidth + start.metrics.gap;
       const cellStrideY = start.metrics.cellHeight + start.metrics.gap;
-      const deltaCols = Math.round(dx / cellStrideX);
-      const deltaRows = Math.round(dy / cellStrideY);
+      // Use floor + a 0.4 cell threshold for snappier feel — the next cell
+      // commits when the cursor crosses ~40% of the way to it, not 50%. This
+      // matches expectations: users perceive "snap" as the moment the size
+      // changes feel inevitable, not when the math is exactly halfway.
+      const deltaCols = Math.floor((dx + cellStrideX * 0.4) / cellStrideX);
+      const deltaRows = Math.floor((dy + cellStrideY * 0.4) / cellStrideY);
       const nextCols = Math.max(1, Math.min(12, start.cols + deltaCols));
       const nextRows = Math.max(1, Math.min(4, start.rows + deltaRows));
       const next = { cols: nextCols, rows: nextRows };
@@ -65,8 +81,6 @@ export function TileResizeHandle({
     }
   }, [currentSize, handleMouseMove, onPreview, onResize]);
 
-  // Always clean up listeners on unmount so a tile removed mid-drag doesn't
-  // leak a global mouse handler.
   useEffect(
     () => () => {
       document.removeEventListener("mousemove", handleMouseMove);
@@ -104,22 +118,22 @@ export function TileResizeHandle({
       type="button"
       aria-label="Resize tile"
       onMouseDown={handleMouseDown}
-      className={`-bottom-px -right-px absolute z-10 h-3.5 w-3.5 cursor-nwse-resize rounded-tl-[3px] bg-transparent text-(--gray-9) opacity-0 transition-opacity duration-100 hover:text-(--gray-12) group-hover/tile:opacity-100 ${
-        dragging ? "!opacity-100" : ""
-      }`}
       title="Drag to resize"
+      className={`absolute right-0 bottom-0 z-10 flex h-5 w-5 cursor-nwse-resize items-end justify-end p-0.5 text-(--gray-9) transition-opacity duration-100 hover:text-(--accent-9) group-hover/tile:opacity-100 ${
+        dragging ? "text-(--accent-9) opacity-100" : "opacity-0"
+      }`}
     >
       <svg
         viewBox="0 0 12 12"
-        className="h-full w-full"
+        className="h-3 w-3"
         role="presentation"
         aria-hidden="true"
       >
         <title>Resize</title>
         <path
-          d="M 1 11 L 11 1 M 5 11 L 11 5 M 9 11 L 11 9"
+          d="M 11 4 L 4 11 M 11 8 L 8 11"
           stroke="currentColor"
-          strokeWidth={1.25}
+          strokeWidth={1.5}
           fill="none"
           strokeLinecap="round"
         />

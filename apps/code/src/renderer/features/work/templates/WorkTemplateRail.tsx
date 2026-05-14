@@ -10,10 +10,10 @@ import { createProjectFromTemplate } from "../canvas/useProjectCanvas";
 import { TemplateGallery } from "./TemplateGallery";
 
 const FEATURED_IDS = [
-  "funnel-audit",
-  "monday-brief",
-  "replay-digest",
-  "voice-of-customer",
+  "product-market-fit-check",
+  "competitor-intel",
+  "power-users-to-interview",
+  "weekly-slack-digest",
 ];
 
 export function WorkTemplateRail() {

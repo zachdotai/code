@@ -68,17 +68,17 @@ function SortableTile({
     id,
     index,
     group: "project-canvas-tiles",
-    transition: { duration: 200, easing: "ease" },
+    transition: { duration: 160, easing: "ease-out" },
   });
 
   return (
     <Box
       ref={ref}
-      className="h-full min-w-0"
-      style={{
-        opacity: isDragging ? 0.5 : 1,
-        cursor: isDragging ? "grabbing" : undefined,
-      }}
+      data-dragging={isDragging ? "true" : undefined}
+      // `cursor-grab` reads as a drag affordance on the tile chrome (header,
+      // border, padding); textareas/inputs/buttons inside naturally override
+      // with their own cursors so this doesn't fight text editing.
+      className="group/sortable relative h-full min-w-0 cursor-grab transition-[transform,box-shadow] duration-100 data-[dragging=true]:z-20 data-[dragging=true]:scale-[1.015] data-[dragging=true]:cursor-grabbing data-[dragging=true]:opacity-90 data-[dragging=true]:shadow-lg data-[dragging=true]:ring-(--accent-7) data-[dragging=true]:ring-1"
     >
       {children}
     </Box>
@@ -111,6 +111,12 @@ export function ProjectCanvas({
   // Stored as React state so the affected tile re-renders with the preview
   // span classes mid-drag without committing to the server.
   const [previewById, setPreviewById] = useState<Record<string, GridSize>>({});
+
+  // True while ANY tile is being resized (corner-drag). Used to suppress
+  // framer-motion's per-tile `layout` animation during the drag — otherwise
+  // every cell-tick triggers a 120ms layout animation on every neighbor and
+  // the canvas wobbles. The user wants snap-feedback.
+  const isResizing = Object.keys(previewById).length > 0;
 
   const gridRef = useRef<HTMLElement | null>(null);
 
@@ -176,6 +182,10 @@ export function ProjectCanvas({
                 className="grid grid-cols-12 gap-3"
                 style={{
                   gridAutoRows: `${ROW_HEIGHT_PX}px`,
+                  // Dense packing: smaller tiles backfill gaps left when
+                  // larger tiles wrap to the next row. Keeps the bento
+                  // grid feeling solid, not sparse.
+                  gridAutoFlow: "row dense",
                 }}
               >
                 <AnimatePresence mode="popLayout" initial={false}>
@@ -183,17 +193,24 @@ export function ProjectCanvas({
                     const effectiveSize =
                       previewById[tile.id] ?? resolveGridSize(tile);
                     const spanClass = spanClassFor(effectiveSize);
+                    const isThisResizing = !!previewById[tile.id];
                     return (
                       <motion.div
                         key={tile.id}
-                        layout="position"
+                        // Skip framer-motion's layout animation while a resize
+                        // is in flight (anywhere on the canvas) — otherwise
+                        // every cell-tick triggers a layout dance on every
+                        // neighbor and the canvas wobbles. CSS grid handles
+                        // the snap instantly; that's what the user wants.
+                        layout={isResizing ? false : "position"}
                         initial={{ opacity: 0, scale: 0.96 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.92 }}
                         transition={{
-                          duration: 0.18,
+                          duration: 0.14,
                           ease: [0.32, 0.72, 0, 1],
                         }}
+                        data-resizing={isThisResizing ? "true" : undefined}
                         className={`${spanClass} group/tile relative min-w-0`}
                       >
                         <SortableTile id={tile.id} index={index}>

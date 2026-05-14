@@ -107,8 +107,10 @@ export function TileFrame({
 
   return (
     <Box
-      className={`group relative flex h-full min-w-0 flex-col overflow-hidden rounded-(--radius-3) border bg-(--gray-1) ${
-        isPending ? "border-(--accent-7) border-dashed" : "border-(--gray-5)"
+      className={`group relative flex h-full min-w-0 flex-col overflow-hidden rounded-(--radius-3) border bg-(--gray-1) transition-colors duration-100 ${
+        isPending
+          ? "border-(--accent-7) border-dashed"
+          : "border-(--gray-5) group-data-[resizing=true]/tile:border-(--accent-8) group-data-[resizing=true]/tile:ring-(--accent-7) group-data-[resizing=true]/tile:ring-1"
       }`}
     >
       {pendingLabel && (
