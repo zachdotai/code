@@ -1,9 +1,43 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
 import beachHog from "@renderer/assets/images/hedgehogs/beach-hog.png";
+import { useMemo } from "react";
 import { WorkHomePrompt } from "./WorkHomePrompt";
 import { WorkSampleProjects } from "./WorkSampleProjects";
 
+const GREETINGS = [
+  "Hello",
+  "Howdy",
+  "Greetings",
+  "Salutations",
+  "Ahoy",
+  "Yo",
+  "Sup",
+  "Oi",
+  "Hark",
+  "Behold",
+  "Well met",
+  "Wotcher",
+  "Bonjour",
+  "Hola",
+  "Ciao",
+  "Aloha",
+  "G'day",
+  "Heya",
+  "Hiya",
+  "Konnichiwa",
+  "Top of the morning",
+  "Howdy-do",
+  "Yoo-hoo",
+  "Ahoy-hoy",
+  "Greetings and salutations",
+];
+
 export function WorkHome() {
+  const greeting = useMemo(
+    () => GREETINGS[Math.floor(Math.random() * GREETINGS.length)],
+    [],
+  );
+
   return (
     <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
       <Flex
@@ -30,7 +64,7 @@ export function WorkHome() {
               weight="medium"
               className="text-(--gray-12) text-[22px]"
             >
-              Hello normie, what can I do for you today?
+              {greeting} normie, what can I do for you today?
             </Text>
           </Box>
         </Flex>
