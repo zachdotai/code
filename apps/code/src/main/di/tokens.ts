@@ -36,6 +36,7 @@ export const MAIN_TOKENS = Object.freeze({
   SuspensionRepository: Symbol.for("Main.SuspensionRepository"),
   NestRepository: Symbol.for("Main.NestRepository"),
   NestMessageRepository: Symbol.for("Main.NestMessageRepository"),
+  HogletRepository: Symbol.for("Main.HogletRepository"),
 
   // Services
   AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),
@@ -81,4 +82,5 @@ export const MAIN_TOKENS = Object.freeze({
   EnrichmentService: Symbol.for("Main.EnrichmentService"),
   NestService: Symbol.for("Main.NestService"),
   NestChatService: Symbol.for("Main.NestChatService"),
+  HogletService: Symbol.for("Main.HogletService"),
 });

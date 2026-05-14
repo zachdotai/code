@@ -446,7 +446,14 @@ export const ANALYTICS_EVENTS = {
   // Subscription events
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
+
+  // Hedgemony events
+  HEDGEMONY_HOGLET_SPAWNED: "hedgemony.hoglet_spawned",
 } as const;
+
+export interface HedgemonyHogletSpawnedProperties {
+  source: "adhoc";
+}
 
 // Event property mapping
 export type EventPropertyMap = {
@@ -533,4 +540,7 @@ export type EventPropertyMap = {
   // Subscription events
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
+
+  // Hedgemony events
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED]: HedgemonyHogletSpawnedProperties;
 };

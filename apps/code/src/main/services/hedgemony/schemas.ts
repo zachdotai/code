@@ -96,8 +96,49 @@ export const nestWatchEvent = z.discriminatedUnion("kind", [
 ]);
 export type NestWatchEvent = z.infer<typeof nestWatchEvent>;
 
+export const hoglet = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  nestId: z.string().nullable(),
+  signalReportId: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  deletedAt: z.string().nullable(),
+});
+export type Hoglet = z.infer<typeof hoglet>;
+
+export const recordAdhocHogletInput = z.object({
+  taskId: z.string().min(1),
+});
+export type RecordAdhocHogletInput = z.infer<typeof recordAdhocHogletInput>;
+
+export const listHogletsInput = z.object({
+  wildOnly: z.boolean().optional(),
+  nestId: z.string().optional(),
+});
+export type ListHogletsInput = z.infer<typeof listHogletsInput>;
+
+export const listHogletsOutput = z.array(hoglet);
+
+export const hogletWatchScope = z.union([
+  z.object({ kind: z.literal("wild") }),
+  z.object({ kind: z.literal("nest"), nestId: z.string() }),
+]);
+export type HogletWatchScope = z.infer<typeof hogletWatchScope>;
+
+/**
+ * Discriminated event yielded by `hoglets.watch`. Future event kinds
+ * (e.g. adoption transfers) join this union when the relevant slices land.
+ */
+export const hogletWatchEvent = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("upsert"), hoglet }),
+  z.object({ kind: z.literal("removed"), hogletId: z.string() }),
+]);
+export type HogletWatchEvent = z.infer<typeof hogletWatchEvent>;
+
 export const HedgemonyEvent = {
   NestChanged: "nest-changed",
+  HogletChanged: "hoglet-changed",
 } as const;
 
 /**
@@ -109,6 +150,16 @@ export interface NestChangedEvent {
   event: NestWatchEvent;
 }
 
+/**
+ * Internal service-bus event for hoglet roster changes. `nestId = null`
+ * means the hoglet is wild (no nest, no signal report).
+ */
+export interface HogletChangedEvent {
+  nestId: string | null;
+  event: HogletWatchEvent;
+}
+
 export interface HedgemonyEvents {
   [HedgemonyEvent.NestChanged]: NestChangedEvent;
+  [HedgemonyEvent.HogletChanged]: HogletChangedEvent;
 }

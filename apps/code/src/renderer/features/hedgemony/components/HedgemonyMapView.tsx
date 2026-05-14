@@ -8,12 +8,15 @@ import {
   selectNests,
   useNestStore,
 } from "../stores/nestStore";
+import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import type { BuilderAnimation } from "./BuilderSprite";
 import { HedgemonyEmptyState } from "./HedgemonyEmptyState";
+import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import { HedgemonyMapSurface, type MoveMarker } from "./HedgemonyMapSurface";
 import { NestDetailPanel } from "./NestDetailPanel";
 import { PlaceNestDialog } from "./PlaceNestDialog";
+import { SpawnHogletDialog } from "./SpawnHogletDialog";
 
 const log = logger.scope("hedgemony-map-view");
 
@@ -43,6 +46,8 @@ export function HedgemonyMapView() {
   const [buildMode, setBuildMode] = useState(false);
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
   const buildingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spawnHogletOpen = useSpawnDialogStore((s) => s.spawnHogletOpen);
+  const closeSpawnHoglet = useSpawnDialogStore((s) => s.closeSpawnHoglet);
 
   useEffect(() => {
     return initializeNestStore();
@@ -214,6 +219,8 @@ export function HedgemonyMapView() {
         onClose={() => setPendingPlacement(null)}
         onCreated={(mapX, mapY) => startWalk({ x: mapX, y: mapY }, "build")}
       />
+      <HedgemonyHoldingPanel />
+      <SpawnHogletDialog open={spawnHogletOpen} onClose={closeSpawnHoglet} />
     </>
   );
 }

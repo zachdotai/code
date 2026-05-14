@@ -57,6 +57,13 @@
       "when": 1778710589937,
       "tag": "0007_tiresome_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1778715107485,
+      "tag": "0008_yielding_stellaris",
+      "breakpoints": true
     }
   ]
 }

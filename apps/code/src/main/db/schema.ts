@@ -115,6 +115,22 @@ export const hedgemonyNests = sqliteTable(
   (t) => [index("hedgemony_nest_status_idx").on(t.status)],
 );
 
+export const hedgemonyHoglets = sqliteTable(
+  "hedgemony_hoglet",
+  {
+    id: id(),
+    taskId: text().notNull().unique(),
+    nestId: text().references(() => hedgemonyNests.id, {
+      onDelete: "set null",
+    }),
+    signalReportId: text().unique(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: text(),
+  },
+  (t) => [index("hedgemony_hoglet_nest_id_idx").on(t.nestId)],
+);
+
 export const hedgemonyNestMessages = sqliteTable(
   "hedgemony_nest_message",
   {

@@ -1,9 +1,11 @@
+import { useSpawnDialogStore } from "@features/hedgemony/stores/spawnDialogStore";
 import { getSessionService } from "@features/sessions/service/service";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import {
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
   MapTrifold,
+  Plus,
   SquaresFour,
   Stop,
   Trash,
@@ -123,6 +125,7 @@ export function CommandCenterToolbar({
   };
 
   const isMap = effectiveViewMode === "map";
+  const openSpawnHoglet = useSpawnDialogStore((s) => s.openSpawnHoglet);
 
   return (
     <Flex
@@ -184,6 +187,18 @@ export function CommandCenterToolbar({
       )}
 
       <div className="flex-1" />
+
+      {isMap && (
+        <button
+          type="button"
+          onClick={openSpawnHoglet}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-(--gray-11) text-[12px] transition-colors hover:bg-(--gray-4) hover:text-(--gray-12)"
+          title="Spawn an ad-hoc wild hoglet"
+        >
+          <Plus size={12} weight="bold" />
+          Spawn hoglet
+        </button>
+      )}
 
       {!isMap && (
         <>
