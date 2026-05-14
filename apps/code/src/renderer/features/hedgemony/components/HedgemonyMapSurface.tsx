@@ -88,6 +88,12 @@ export interface MapSurfaceHandle {
 interface HedgemonyMapSurfaceProps {
   nests: Nest[];
   selectedNestId: string | null;
+  /**
+   * Nests considered "in focus" via the current selection — used to highlight
+   * the parent nest of a selected hoglet and dim the rest of the map. `null`
+   * means there is no nest-scoped selection; render every nest normally.
+   */
+  affiliatedNestIds?: ReadonlySet<string> | null;
   relocatingNestId: string | null;
   builderPath: Vec2[];
   builderPos: Vec2;
@@ -117,6 +123,7 @@ function HedgemonyMapSurfaceImpl(
   {
     nests,
     selectedNestId,
+    affiliatedNestIds,
     relocatingNestId,
     builderPath,
     builderPos,
@@ -582,16 +589,24 @@ function HedgemonyMapSurfaceImpl(
           selected={hedgehouseSelected}
           onSelect={onHedgehouseSelect}
         />
-        {nests.map((nest) => (
-          <NestSprite
-            key={nest.id}
-            nest={nest}
-            selected={nest.id === selectedNestId}
-            dimmed={nest.id === relocatingNestId}
-            onSelect={onNestSelect}
-            onFocus={focusNest}
-          />
-        ))}
+        {nests.map((nest) => {
+          const isAffiliated = affiliatedNestIds?.has(nest.id) ?? false;
+          // When there's an affiliation set, anything outside it dims so the
+          // user can see at a glance which nest the selected hoglet belongs to.
+          const dimmedByAffiliation =
+            affiliatedNestIds != null && !isAffiliated;
+          return (
+            <NestSprite
+              key={nest.id}
+              nest={nest}
+              selected={nest.id === selectedNestId}
+              affiliated={isAffiliated && nest.id !== selectedNestId}
+              dimmed={nest.id === relocatingNestId || dimmedByAffiliation}
+              onSelect={onNestSelect}
+              onFocus={focusNest}
+            />
+          );
+        })}
         {pendingNest && builderAnimation === "building" && (
           <NestConstructionSite
             key={pendingNest.id}

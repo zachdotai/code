@@ -24,11 +24,13 @@ import { WildHoglet } from "./WildHoglet";
 
 interface WildHogletFlockProps {
   selectedHogletIds: ReadonlySet<string>;
+  dimmed?: boolean;
   onHogletSelect: (hogletId: string, additive: boolean) => void;
 }
 
 export function WildHogletFlock({
   selectedHogletIds,
+  dimmed,
   onHogletSelect,
 }: WildHogletFlockProps) {
   const hoglets = useHogletStore(selectWildHoglets);
@@ -73,6 +75,7 @@ export function WildHogletFlock({
             x={x}
             y={y}
             selected={selectedHogletIds.has(hoglet.id)}
+            dimmed={dimmed && !selectedHogletIds.has(hoglet.id)}
             onSelect={onHogletSelect}
           />
         );

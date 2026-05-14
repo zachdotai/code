@@ -793,6 +793,47 @@ export function HedgemonyMapView() {
       ? selection.ids[0]
       : null;
   const activeHoglet = useHogletStore(selectHogletById(singleSelectedHogletId));
+  const hogletBuckets = useHogletStore((s) => s.byBucket);
+
+  // Selection-sync focus: when the user picks a nest, that nest's brood stays
+  // bright and everything else dims; when they pick a hoglet, its parent nest
+  // is highlighted alongside the hoglet so the relationship is obvious. A
+  // `null` affiliation set means "no focus, render everything at full opacity".
+  const { affiliatedNestIds, dimWildFlock } = useMemo(() => {
+    if (selection?.type === "nest") {
+      return {
+        affiliatedNestIds: new Set<string>([
+          selection.id,
+        ]) as ReadonlySet<string>,
+        dimWildFlock: true,
+      };
+    }
+    if (selection?.type === "hoglets") {
+      const parents = new Set<string>();
+      let hasWildSelected = false;
+      for (const id of selection.ids) {
+        let nestIdForHoglet: string | null | undefined;
+        for (const bucket of Object.values(hogletBuckets)) {
+          const found = bucket.find((h) => h.id === id);
+          if (found) {
+            nestIdForHoglet = found.nestId;
+            break;
+          }
+        }
+        if (nestIdForHoglet === undefined) continue;
+        if (nestIdForHoglet === null) hasWildSelected = true;
+        else parents.add(nestIdForHoglet);
+      }
+      return {
+        affiliatedNestIds: parents as ReadonlySet<string>,
+        dimWildFlock: !hasWildSelected,
+      };
+    }
+    return {
+      affiliatedNestIds: null as ReadonlySet<string> | null,
+      dimWildFlock: false,
+    };
+  }, [selection, hogletBuckets]);
   const buildMode = mode.kind === "placingNest";
   const relocatingNestId = mode.kind === "relocatingNest" ? mode.nestId : null;
 
@@ -859,6 +900,7 @@ export function HedgemonyMapView() {
         ref={surfaceRef}
         nests={nests}
         selectedNestId={activeNest?.id ?? null}
+        affiliatedNestIds={affiliatedNestIds}
         relocatingNestId={relocatingNestId}
         builderPath={builder.path}
         builderPos={builder.pos}
@@ -898,11 +940,15 @@ export function HedgemonyMapView() {
             key={nest.id}
             nest={nest}
             selectedHogletIds={selectedHogletIds}
+            dimmed={
+              affiliatedNestIds != null && !affiliatedNestIds.has(nest.id)
+            }
             onHogletSelect={handleHogletSelect}
           />
         ))}
         <WildHogletFlock
           selectedHogletIds={selectedHogletIds}
+          dimmed={dimWildFlock}
           onHogletSelect={handleHogletSelect}
         />
         <DyingHogletLayer />

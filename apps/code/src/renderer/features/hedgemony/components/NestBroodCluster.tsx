@@ -13,12 +13,14 @@ import { BroodHoglet } from "./BroodHoglet";
 interface NestBroodClusterProps {
   nest: Nest;
   selectedHogletIds: ReadonlySet<string>;
+  dimmed?: boolean;
   onHogletSelect: (hogletId: string, additive: boolean) => void;
 }
 
 export function NestBroodCluster({
   nest,
   selectedHogletIds,
+  dimmed,
   onHogletSelect,
 }: NestBroodClusterProps) {
   const hoglets = useHogletStore(selectNestHoglets(nest.id));
@@ -71,6 +73,7 @@ export function NestBroodCluster({
             x={position.x}
             y={position.y}
             selected={selectedHogletIds.has(hoglet.id)}
+            dimmed={dimmed && !selectedHogletIds.has(hoglet.id)}
             onSelect={onHogletSelect}
           />
         );
