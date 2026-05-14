@@ -1,10 +1,15 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
 import { Tooltip } from "@radix-ui/themes";
-import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
-import { motion } from "framer-motion";
+import { animate, motion, useMotionValue } from "framer-motion";
+import { useEffect, useState } from "react";
+import { AnimatedHedgehog } from "./AnimatedHedgehog";
 
 const SPRITE_SIZE = 96;
 const SELECTION_RING_SIZE = SPRITE_SIZE + 22;
+const NEST_SPEED = 100;
+const NEST_EASE = [0.4, 0, 0.2, 1] as const;
+const WALK_ANIMATION = "skins/default/walk/tile";
+const IDLE_ANIMATION = "skins/default/idle/tile";
 
 interface NestSpriteProps {
   nest: Nest;
@@ -32,13 +37,45 @@ export function NestSprite({
   dimmed,
   onSelect,
 }: NestSpriteProps) {
+  const motionX = useMotionValue(nest.mapX);
+  const motionY = useMotionValue(nest.mapY);
+  const [isMoving, setIsMoving] = useState(false);
+  const [facing, setFacing] = useState<"left" | "right">("right");
+
+  useEffect(() => {
+    const fromX = motionX.get();
+    const fromY = motionY.get();
+    const dx = nest.mapX - fromX;
+    const dy = nest.mapY - fromY;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.5) {
+      motionX.set(nest.mapX);
+      motionY.set(nest.mapY);
+      return;
+    }
+    if (dx > 0) setFacing("right");
+    else if (dx < 0) setFacing("left");
+    setIsMoving(true);
+    const duration = dist / NEST_SPEED;
+    const xControls = animate(motionX, nest.mapX, {
+      duration,
+      ease: NEST_EASE,
+    });
+    const yControls = animate(motionY, nest.mapY, {
+      duration,
+      ease: NEST_EASE,
+      onComplete: () => setIsMoving(false),
+    });
+    return () => {
+      xControls.stop();
+      yControls.stop();
+    };
+  }, [nest.mapX, nest.mapY, motionX, motionY]);
+
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
-      initial={false}
-      animate={{ x: nest.mapX, y: nest.mapY }}
-      transition={{ type: "spring", damping: 26, stiffness: 180, mass: 0.7 }}
-      style={{ opacity: dimmed ? 0.42 : 1 }}
+      style={{ x: motionX, y: motionY, opacity: dimmed ? 0.42 : 1 }}
     >
       <Tooltip content={nest.goalPrompt} side="bottom">
         <motion.button
@@ -79,15 +116,11 @@ export function NestSprite({
               className="flex items-center justify-center rounded-full bg-(--gray-2) shadow-md ring-(--accent-7) ring-2"
               style={{ width: SPRITE_SIZE, height: SPRITE_SIZE }}
             >
-              <img
-                src={builderHog}
-                alt=""
-                className="pointer-events-none select-none"
-                style={{
-                  width: SPRITE_SIZE * 0.8,
-                  height: SPRITE_SIZE * 0.8,
-                }}
-                draggable={false}
+              <AnimatedHedgehog
+                animation={isMoving ? WALK_ANIMATION : IDLE_ANIMATION}
+                fps={isMoving ? 14 : 8}
+                facing={facing}
+                size={SPRITE_SIZE * 0.8}
               />
             </div>
           </div>
