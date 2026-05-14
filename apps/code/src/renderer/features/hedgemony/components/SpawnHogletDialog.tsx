@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { playSfx } from "../audio/sfx";
 import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
+import { preventCloseOnQuillPortalInteraction } from "./preventCloseOnQuillPortalInteraction";
 
 const log = logger.scope("spawn-hoglet-dialog");
 
@@ -133,18 +134,8 @@ export function SpawnHogletDialog({ open, onClose }: SpawnHogletDialogProps) {
       <Dialog.Content
         maxWidth="480px"
         size="2"
-        onPointerDownOutside={(e) => {
-          const target = e.detail.originalEvent.target as HTMLElement | null;
-          if (target?.closest("[data-quill-portal]")) {
-            e.preventDefault();
-          }
-        }}
-        onInteractOutside={(e) => {
-          const target = e.detail.originalEvent.target as HTMLElement | null;
-          if (target?.closest("[data-quill-portal]")) {
-            e.preventDefault();
-          }
-        }}
+        onPointerDownOutside={preventCloseOnQuillPortalInteraction}
+        onInteractOutside={preventCloseOnQuillPortalInteraction}
       >
         <Dialog.Title size="3">Spawn an ad-hoc hoglet</Dialog.Title>
         <Dialog.Description size="2" color="gray">
