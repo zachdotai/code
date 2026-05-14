@@ -38,9 +38,11 @@ export function FloatingTaskHeader({
   // on iOS and fall back to the real inset on Android.
   const topInset = Platform.OS === "ios" ? 6 : insets.top;
 
-  // Fade height extends past the row so content scrolling up behind the title
-  // softens out instead of slamming into a hard edge.
-  const fadeHeight = topInset + 52;
+  // Fade height extends well past the title row so content scrolling up
+  // behind the header gets a long, gentle transition instead of crashing
+  // into the subtitle. Header row content sits in roughly the first
+  // (topInset + 44)pt; the rest is pure fade.
+  const fadeHeight = topInset + 96;
 
   return (
     <View
@@ -52,10 +54,11 @@ export function FloatingTaskHeader({
         pointerEvents="none"
         colors={[
           toRgba(themeColors.background, 1),
-          toRgba(themeColors.background, 0.92),
+          toRgba(themeColors.background, 1),
+          toRgba(themeColors.background, 0.85),
           toRgba(themeColors.background, 0),
         ]}
-        locations={[0, 0.65, 1]}
+        locations={[0, 0.5, 0.75, 1]}
         style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
       />
 
