@@ -144,6 +144,17 @@ export const workProject = z.object({
    *  the `set_next_steps` canvas tool. The renderer renders these as clickable
    *  chips below the chat. Replaced each turn. */
   nextSteps: z.array(z.string()).optional(),
+  /** ISO timestamp when the user pinned the project. Sortable. When set, the
+   *  project appears in the sidebar's pinned subtree and the home "Pinned"
+   *  rail. */
+  pinnedAt: z.string().optional(),
+  /** ISO timestamp set when the user triggers a delete with undo. While set,
+   *  the project is hidden from `list()` and from project-changed
+   *  subscriptions. After the undo grace period elapses (handled by the
+   *  renderer toast), the project is hard-committed via `commitDelete`. On
+   *  app boot, any project with `pendingDeletionAt` older than 30s is
+   *  auto-committed (recovery from crashes during the grace window). */
+  pendingDeletionAt: z.string().optional(),
 });
 export type WorkProject = z.infer<typeof workProject>;
 

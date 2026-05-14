@@ -13,9 +13,11 @@ import { ScrollArea } from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useNavigationStore, type WorkView } from "@stores/navigationStore";
-import { type ComponentType, useState } from "react";
+import { type ComponentType, useMemo, useState } from "react";
 import { NewTaskItem } from "../../sidebar/components/items/HomeItem";
 import { SidebarItem } from "../../sidebar/components/SidebarItem";
+import { PROJECT_ICON_MAP } from "../canvas/icons";
+import { useWorkProjects } from "../canvas/useProjectCanvas";
 import { useWorkThreadTasks } from "../hooks/useWorkThreadTasks";
 import { useWorkThreadParticipantsStore } from "../stores/workThreadParticipantsStore";
 
@@ -68,6 +70,24 @@ export function WorkSidebarMenu() {
     (s) => s.navigateToWorkMemory,
   );
   const navigateToWorkTask = useNavigationStore((s) => s.navigateToWorkTask);
+  const navigateToWorkProjectDetail = useNavigationStore(
+    (s) => s.navigateToWorkProjectDetail,
+  );
+  const workSelectedProjectId = useNavigationStore(
+    (s) => s.workSelectedProjectId,
+  );
+  const isProjectDetailActive = workView === "project-detail";
+
+  const { data: allProjects } = useWorkProjects();
+  const pinnedProjects = useMemo(() => {
+    const arr = (allProjects ?? []).filter((p) => p.pinnedAt);
+    arr.sort(
+      (a, b) =>
+        new Date(b.pinnedAt ?? 0).getTime() -
+        new Date(a.pinnedAt ?? 0).getTime(),
+    );
+    return arr.slice(0, 8);
+  }, [allProjects]);
 
   const { data: threadTasks } = useWorkThreadTasks();
   const participantsByTask = useWorkThreadParticipantsStore(
@@ -143,6 +163,35 @@ export function WorkSidebarMenu() {
                   isActive={isActive}
                   onClick={onClick}
                 />
+                {isProjects && pinnedProjects.length > 0 && (
+                  <Flex direction="column" gap="1px">
+                    {pinnedProjects.map((project) => {
+                      const ProjectIcon =
+                        PROJECT_ICON_MAP[project.iconId] ??
+                        PROJECT_ICON_MAP.lightbulb;
+                      const isProjectActive =
+                        isProjectDetailActive &&
+                        workSelectedProjectId === project.id;
+                      return (
+                        <SidebarItem
+                          key={project.id}
+                          depth={1}
+                          icon={
+                            <ProjectIcon
+                              size={14}
+                              weight={isProjectActive ? "fill" : "regular"}
+                            />
+                          }
+                          label={project.name}
+                          isActive={isProjectActive}
+                          onClick={() =>
+                            navigateToWorkProjectDetail(project.id)
+                          }
+                        />
+                      );
+                    })}
+                  </Flex>
+                )}
               </Box>
             );
           })}

@@ -9,10 +9,10 @@ import {
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type { ProjectMember, WorkProject } from "@shared/types/work-projects";
 import { useNavigationStore } from "@stores/navigationStore";
-import { toast } from "@utils/toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PROJECT_ICON_MAP } from "../canvas/icons";
-import { createProject, useWorkProjects } from "../canvas/useProjectCanvas";
+import { useWorkProjects } from "../canvas/useProjectCanvas";
+import { TemplateGallery } from "../templates/TemplateGallery";
 
 type SortKey = "recent" | "name" | "tiles";
 
@@ -249,24 +249,15 @@ function SearchField({
 
 export function WorkProjectsView() {
   const { data: projects, isLoading } = useWorkProjects();
-  const navigateToWorkProjectDetail = useNavigationStore(
-    (s) => s.navigateToWorkProjectDetail,
-  );
 
   const [sortKey, setSortKey] = useState<SortKey>("recent");
   const [search, setSearch] = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
-  const handleNewProject = useCallback(async () => {
-    try {
-      const project = await createProject({});
-      navigateToWorkProjectDetail(project.id);
-    } catch (error) {
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error("Could not create project", { description });
-    }
-  }, [navigateToWorkProjectDetail]);
+  const handleNewProject = useCallback(() => {
+    setGalleryOpen(true);
+  }, []);
 
   const filteredSorted = useMemo(() => {
     const all = projects ?? [];
@@ -347,6 +338,7 @@ export function WorkProjectsView() {
           </Box>
         )}
       </Flex>
+      <TemplateGallery open={galleryOpen} onOpenChange={setGalleryOpen} />
     </Box>
   );
 }

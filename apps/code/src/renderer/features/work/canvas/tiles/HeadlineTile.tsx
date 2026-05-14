@@ -6,6 +6,7 @@ import type {
   TileSize,
 } from "@shared/types/work-projects";
 import { openUrlInBrowser } from "@utils/browser";
+import { memo } from "react";
 import { TileFrame } from "../TileFrame";
 
 interface TrendsResult {
@@ -100,7 +101,7 @@ interface HeadlineTileProps {
   onRejectPending?: () => void;
 }
 
-export function HeadlineTile({
+function HeadlineTileImpl({
   tile,
   onRemove,
   onResize,
@@ -214,3 +215,11 @@ export function HeadlineTile({
     </TileFrame>
   );
 }
+
+// Headline tile fires a PostHog query — memoize so we don't refetch on every
+// unrelated parent re-render. Compare by tile identity + state; callbacks may
+// change identity but the tile content is what drives the expensive work.
+export const HeadlineTile = memo(
+  HeadlineTileImpl,
+  (prev, next) => prev.tile === next.tile,
+);

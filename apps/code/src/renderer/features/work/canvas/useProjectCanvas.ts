@@ -1,4 +1,5 @@
 import { trpcClient, useTRPC } from "@renderer/trpc";
+import { toast } from "@renderer/utils/toast";
 import type {
   NewTileInput,
   TileSize,
@@ -7,6 +8,19 @@ import type {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback } from "react";
+
+/**
+ * Canvas mutation hook with optimistic updates.
+ *
+ * Every mutation:
+ * 1. Snapshots the current cached project.
+ * 2. Applies the mutation to the cache synchronously (UI updates instantly).
+ * 3. Fires the tRPC mutation.
+ * 4. On error: rolls back to the snapshot and toasts.
+ *
+ * The subscription's `onData` is now a passive correctness backstop — the UI
+ * already reflects the optimistic state by the time the server confirms.
+ */
 
 export function useWorkProjects() {
   const trpc = useTRPC();
@@ -54,15 +68,43 @@ export function useProjectCanvas(projectId: string | undefined) {
     ),
   );
 
-  const invalidate = useCallback(() => {
-    if (!projectId) return;
-    queryClient.invalidateQueries({
-      queryKey: trpc.workProjects.get.queryKey({ projectId }),
-    });
-    queryClient.invalidateQueries({
-      queryKey: trpc.workProjects.list.queryKey(),
-    });
-  }, [projectId, queryClient, trpc]);
+  // The optimistic engine: snapshot → patch cache → call → rollback on error.
+  const runOptimistic = useCallback(
+    async (
+      label: string,
+      patch: (project: WorkProject) => WorkProject,
+      call: () => Promise<unknown>,
+    ): Promise<void> => {
+      if (!projectId) return;
+      const key = trpc.workProjects.get.queryKey({ projectId });
+      const listKey = trpc.workProjects.list.queryKey();
+      const prev = queryClient.getQueryData<WorkProject>(key);
+      const prevList = queryClient.getQueryData<WorkProject[]>(listKey);
+
+      if (prev) {
+        const next = patch(prev);
+        queryClient.setQueryData<WorkProject>(key, next);
+        if (prevList) {
+          queryClient.setQueryData<WorkProject[]>(
+            listKey,
+            prevList.map((p) => (p.id === projectId ? next : p)),
+          );
+        }
+      }
+
+      try {
+        await call();
+      } catch (err) {
+        if (prev) queryClient.setQueryData<WorkProject>(key, prev);
+        if (prevList)
+          queryClient.setQueryData<WorkProject[]>(listKey, prevList);
+        toast.error(`${label} failed`, {
+          description: err instanceof Error ? err.message : "Please try again.",
+        });
+      }
+    },
+    [projectId, queryClient, trpc],
+  );
 
   const addTile = useCallback(
     async (
@@ -73,126 +115,248 @@ export function useProjectCanvas(projectId: string | undefined) {
       } = {},
     ): Promise<WorkProject | null> => {
       if (!projectId) return null;
-      const result = await trpcClient.workProjects.addTile.mutate({
-        projectId,
-        tile,
-        state: options.state ?? "live",
-        origin: options.origin ?? "user",
-      });
-      invalidate();
-      return result;
+      // We don't have a tile id locally until the server returns one, so just
+      // fire the call and let the subscription update the cache. This is the
+      // only mutation that creates server-assigned ids.
+      try {
+        return await trpcClient.workProjects.addTile.mutate({
+          projectId,
+          tile,
+          state: options.state ?? "live",
+          origin: options.origin ?? "user",
+        });
+      } catch (err) {
+        toast.error("Add tile failed", {
+          description: err instanceof Error ? err.message : "Please try again.",
+        });
+        return null;
+      }
     },
-    [projectId, invalidate],
+    [projectId],
   );
 
   const removeTile = useCallback(
-    async (tileId: string): Promise<void> => {
-      if (!projectId) return;
-      await trpcClient.workProjects.removeTile.mutate({ projectId, tileId });
-      invalidate();
+    (tileId: string): Promise<void> => {
+      return runOptimistic(
+        "Delete tile",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.filter((t) => t.id !== tileId),
+        }),
+        () =>
+          trpcClient.workProjects.removeTile.mutate({
+            projectId: projectId!,
+            tileId,
+          }),
+      );
     },
-    [projectId, invalidate],
+    [projectId, runOptimistic],
   );
 
   const resizeTile = useCallback(
-    async (tileId: string, size: TileSize): Promise<void> => {
-      if (!projectId) return;
-      await trpcClient.workProjects.resizeTile.mutate({
-        projectId,
-        tileId,
-        size,
-      });
-      invalidate();
+    (tileId: string, size: TileSize): Promise<void> => {
+      return runOptimistic(
+        "Resize tile",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.map((t) =>
+            t.id === tileId ? ({ ...t, size } as typeof t) : t,
+          ),
+        }),
+        () =>
+          trpcClient.workProjects.resizeTile.mutate({
+            projectId: projectId!,
+            tileId,
+            size,
+          }),
+      );
     },
-    [projectId, invalidate],
+    [projectId, runOptimistic],
   );
 
   const moveTile = useCallback(
-    async (tileId: string, toIndex: number): Promise<void> => {
-      if (!projectId) return;
-      await trpcClient.workProjects.moveTile.mutate({
-        projectId,
-        tileId,
-        toIndex,
-      });
-      invalidate();
+    (tileId: string, toIndex: number): Promise<void> => {
+      return runOptimistic(
+        "Reorder tile",
+        (project) => {
+          const fromIndex = project.tiles.findIndex((t) => t.id === tileId);
+          if (fromIndex < 0) return project;
+          const clamped = Math.max(
+            0,
+            Math.min(toIndex, project.tiles.length - 1),
+          );
+          if (fromIndex === clamped) return project;
+          const tiles = project.tiles.slice();
+          const [moved] = tiles.splice(fromIndex, 1);
+          tiles.splice(clamped, 0, moved);
+          return { ...project, tiles };
+        },
+        () =>
+          trpcClient.workProjects.moveTile.mutate({
+            projectId: projectId!,
+            tileId,
+            toIndex,
+          }),
+      );
     },
-    [projectId, invalidate],
+    [projectId, runOptimistic],
   );
 
   const updateTitleTile = useCallback(
-    async (patch: {
+    (patch: {
       name?: string;
       tagline?: string;
       iconId?: WorkProject["iconId"];
     }): Promise<void> => {
-      if (!projectId) return;
-      await trpcClient.workProjects.updateTitleTile.mutate({
-        projectId,
-        ...patch,
-      });
-      invalidate();
+      return runOptimistic(
+        "Update project",
+        (project) => {
+          const tiles = project.tiles.map((t) => {
+            if (t.type !== "title") return t;
+            return {
+              ...t,
+              ...(patch.name !== undefined ? { name: patch.name } : {}),
+              ...(patch.tagline !== undefined
+                ? { tagline: patch.tagline }
+                : {}),
+              ...(patch.iconId !== undefined ? { iconId: patch.iconId } : {}),
+            };
+          });
+          return {
+            ...project,
+            ...(patch.name !== undefined ? { name: patch.name } : {}),
+            ...(patch.tagline !== undefined ? { tagline: patch.tagline } : {}),
+            ...(patch.iconId !== undefined ? { iconId: patch.iconId } : {}),
+            tiles,
+          };
+        },
+        () =>
+          trpcClient.workProjects.updateTitleTile.mutate({
+            projectId: projectId!,
+            ...patch,
+          }),
+      );
     },
-    [projectId, invalidate],
+    [projectId, runOptimistic],
   );
 
   const updateNoteTile = useCallback(
-    async (
+    (
       tileId: string,
       patch: {
         body?: string;
         tone?: "yellow" | "blue" | "green" | "pink" | "neutral";
       },
     ): Promise<void> => {
-      if (!projectId) return;
-      await trpcClient.workProjects.updateNoteTile.mutate({
-        projectId,
-        tileId,
-        ...patch,
-      });
-      invalidate();
+      return runOptimistic(
+        "Update note",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.map((t) => {
+            if (t.id !== tileId || t.type !== "note") return t;
+            return {
+              ...t,
+              ...(patch.body !== undefined ? { body: patch.body } : {}),
+              ...(patch.tone !== undefined ? { tone: patch.tone } : {}),
+            };
+          }),
+        }),
+        () =>
+          trpcClient.workProjects.updateNoteTile.mutate({
+            projectId: projectId!,
+            tileId,
+            ...patch,
+          }),
+      );
     },
-    [projectId, invalidate],
+    [projectId, runOptimistic],
   );
 
   const updateFileTile = useCallback(
-    async (
+    (
       tileId: string,
       patch: { filename?: string; contents?: string },
     ): Promise<void> => {
-      if (!projectId) return;
-      await trpcClient.workProjects.updateFileTile.mutate({
-        projectId,
-        tileId,
-        ...patch,
-      });
-      invalidate();
+      return runOptimistic(
+        "Update file",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.map((t) => {
+            if (t.id !== tileId || t.type !== "file") return t;
+            return {
+              ...t,
+              ...(patch.filename !== undefined
+                ? { filename: patch.filename }
+                : {}),
+              ...(patch.contents !== undefined
+                ? { contents: patch.contents }
+                : {}),
+            };
+          }),
+        }),
+        () =>
+          trpcClient.workProjects.updateFileTile.mutate({
+            projectId: projectId!,
+            tileId,
+            ...patch,
+          }),
+      );
     },
-    [projectId, invalidate],
+    [projectId, runOptimistic],
   );
 
   const applyPending = useCallback(
-    async (tileId: string): Promise<void> => {
-      if (!projectId) return;
-      await trpcClient.workProjects.applyPendingTile.mutate({
-        projectId,
-        tileId,
-      });
-      invalidate();
+    (tileId: string): Promise<void> => {
+      return runOptimistic(
+        "Accept tile",
+        (project) => ({
+          ...project,
+          tiles: project.tiles
+            .map((t) => {
+              if (t.id !== tileId) return t;
+              if (t.state === "pending_remove") return null;
+              if (t.state === "pending_add" || t.state === "pending_edit") {
+                return { ...t, state: "live" as const };
+              }
+              return t;
+            })
+            .filter((t): t is NonNullable<typeof t> => t !== null),
+        }),
+        () =>
+          trpcClient.workProjects.applyPendingTile.mutate({
+            projectId: projectId!,
+            tileId,
+          }),
+      );
     },
-    [projectId, invalidate],
+    [projectId, runOptimistic],
   );
 
   const rejectPending = useCallback(
-    async (tileId: string): Promise<void> => {
-      if (!projectId) return;
-      await trpcClient.workProjects.rejectPendingTile.mutate({
-        projectId,
-        tileId,
-      });
-      invalidate();
+    (tileId: string): Promise<void> => {
+      return runOptimistic(
+        "Reject tile",
+        (project) => ({
+          ...project,
+          tiles: project.tiles
+            .map((t) => {
+              if (t.id !== tileId) return t;
+              if (t.state === "pending_add") return null;
+              if (t.state === "pending_remove" || t.state === "pending_edit") {
+                return { ...t, state: "live" as const };
+              }
+              return t;
+            })
+            .filter((t): t is NonNullable<typeof t> => t !== null),
+        }),
+        () =>
+          trpcClient.workProjects.rejectPendingTile.mutate({
+            projectId: projectId!,
+            tileId,
+          }),
+      );
     },
-    [projectId, invalidate],
+    [projectId, runOptimistic],
   );
 
   return {
@@ -216,4 +380,12 @@ export async function createProject(input: {
   fromPrompt?: string;
 }): Promise<WorkProject> {
   return await trpcClient.workProjects.create.mutate(input);
+}
+
+export async function createProjectFromTemplate(
+  templateId: string,
+): Promise<WorkProject> {
+  return await trpcClient.workProjects.createFromTemplate.mutate({
+    templateId,
+  });
 }

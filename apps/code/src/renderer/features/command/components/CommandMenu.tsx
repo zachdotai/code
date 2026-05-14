@@ -3,6 +3,8 @@ import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
+import { PROJECT_ICON_MAP } from "@features/work/canvas/icons";
+import { useWorkProjects } from "@features/work/canvas/useProjectCanvas";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -51,6 +53,10 @@ type CommandSection = { label: string; items: Command[] };
 
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const { navigateToTaskInput } = useNavigationStore();
+  const navigateToWorkProjectDetail = useNavigationStore(
+    (s) => s.navigateToWorkProjectDetail,
+  );
+  const { data: workProjects } = useWorkProjects();
   const openSettingsDialog = useSettingsDialogStore((state) => state.open);
   const closeSettingsDialog = useSettingsDialogStore((state) => state.close);
   const { folders } = useFolders();
@@ -203,11 +209,43 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       });
     }
 
+    if (workProjects && workProjects.length > 0) {
+      // Pinned first, then most-recently-updated.
+      const sorted = [...workProjects].sort((a, b) => {
+        const aPin = a.pinnedAt ? 1 : 0;
+        const bPin = b.pinnedAt ? 1 : 0;
+        if (aPin !== bPin) return bPin - aPin;
+        return (
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+      });
+      out.push({
+        label: "Projects",
+        items: sorted.map((project) => {
+          const Icon =
+            PROJECT_ICON_MAP[project.iconId] ?? PROJECT_ICON_MAP.lightbulb;
+          return {
+            id: `project-${project.id}`,
+            label: project.name,
+            keywords: `${project.tagline} ${project.pinnedAt ? "pinned" : ""}`,
+            icon: <Icon className="h-3 w-3 text-gray-11" />,
+            action: "navigate-project",
+            onRun: () => {
+              closeSettingsDialog();
+              navigateToWorkProjectDetail(project.id);
+            },
+          };
+        }),
+      });
+    }
+
     return out;
   }, [
     folders,
     themeOptions,
+    workProjects,
     navigateToTaskInput,
+    navigateToWorkProjectDetail,
     openSettingsDialog,
     closeSettingsDialog,
     toggleLeftSidebar,

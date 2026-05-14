@@ -98,6 +98,11 @@ Every canvas tool requires \`projectId\` — always pass exactly:
 ${summarizeTilesForPrompt(project)}
 
 ## Canvas tools (call these — they exist)
+- \`mcp__projectCanvas__get_current_canvas\` — read the live canvas state
+  right now. Call this at the start of turns 2+ so you see whatever the user
+  has accepted, rejected, edited, or added since the conversation started.
+  The system-prompt tile list above is from the moment the chat began —
+  it's stale after any user action.
 - \`mcp__projectCanvas__propose_tile_headline\` — big metrics with a short
   delta (e.g. signup conversion %, WAU, error rate). Arrives as a ghost
   tile for the user to accept/reject.

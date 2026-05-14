@@ -1,4 +1,11 @@
-import { ArrowLeft, DotsThree, Hash, TrashSimple } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  DotsThree,
+  Hash,
+  PushPin,
+  PushPinSlash,
+  TrashSimple,
+} from "@phosphor-icons/react";
 import { Box, Flex } from "@radix-ui/themes";
 import type {
   ProjectIconId,
@@ -18,6 +25,7 @@ interface ProjectHeaderProps {
     iconId?: ProjectIconId;
   }) => Promise<void> | void;
   onDelete: () => Promise<void> | void;
+  onTogglePin: (pinned: boolean) => Promise<void> | void;
 }
 
 export function ProjectHeader({
@@ -25,7 +33,9 @@ export function ProjectHeader({
   onBack,
   onUpdateTitle,
   onDelete,
+  onTogglePin,
 }: ProjectHeaderProps) {
+  const isPinned = !!project.pinnedAt;
   const Icon = PROJECT_ICON_MAP[project.iconId] ?? PROJECT_ICON_MAP.lightbulb;
 
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
@@ -121,14 +131,8 @@ export function ProjectHeader({
 
   const handleDelete = useCallback(() => {
     setMenuOpen(false);
-    if (
-      window.confirm(
-        `Delete "${project.name}"? This removes the project and all its tiles.`,
-      )
-    ) {
-      void onDelete();
-    }
-  }, [onDelete, project.name]);
+    void onDelete();
+  }, [onDelete]);
 
   return (
     <Flex
@@ -252,6 +256,21 @@ export function ProjectHeader({
         </button>
         {menuOpen && (
           <Box className="absolute top-9 right-0 z-20 w-52 overflow-hidden rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) shadow-lg">
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                void onTogglePin(!isPinned);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-(--gray-12) text-[12px] hover:bg-(--gray-3)"
+            >
+              {isPinned ? (
+                <PushPinSlash size={12} weight="bold" />
+              ) : (
+                <PushPin size={12} weight="bold" />
+              )}
+              {isPinned ? "Unpin from sidebar" : "Pin to sidebar"}
+            </button>
             <button
               type="button"
               onClick={handleCopyShare}

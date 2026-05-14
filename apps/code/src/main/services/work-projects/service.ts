@@ -34,12 +34,25 @@ keys: "name" (≤3 words, Title Case), "tagline" (≤8 words, sentence case, no
 trailing period), "iconId" (one of: rocket, microphone, megaphone, lightbulb,
 compass, target, flask — pick the closest match for the topic).`;
 
-interface WorkProjectsStoreSchema {
+/** Persisted snapshot: single key so reads/writes are atomic. */
+interface WorkProjectsState {
   seeded: boolean;
   projects: Record<string, WorkProject>;
   /** Stable ordering of project ids (newest first when user-created). */
   order: string[];
 }
+
+interface WorkProjectsStoreSchema {
+  /** New single-key state (atomic). */
+  state?: WorkProjectsState;
+  /** Legacy keys, migrated to `state` on first read after upgrade. */
+  seeded?: boolean;
+  projects?: Record<string, WorkProject>;
+  order?: string[];
+}
+
+/** Grace window after which a `pendingDeletionAt` is hard-committed on boot. */
+const STALE_DELETION_MS = 30_000;
 
 function newId(prefix: string): string {
   const rand =
@@ -77,10 +90,74 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     this.store = new Store<WorkProjectsStoreSchema>({
       name: "work-projects",
       cwd: getUserDataDir(),
-      defaults: { seeded: false, projects: {}, order: [] },
+      defaults: {},
     });
 
+    this.migrateLegacyKeysIfNeeded();
     this.ensureSeeded();
+    this.recoverStaleDeletions();
+  }
+
+  /** One-time migration: collapse legacy `seeded`/`projects`/`order` keys
+   *  into the new atomic `state` key. */
+  private migrateLegacyKeysIfNeeded(): void {
+    if (this.store.get("state")) return;
+    const legacyProjects = this.store.get("projects");
+    const legacyOrder = this.store.get("order");
+    const legacySeeded = this.store.get("seeded");
+    if (legacyProjects || legacyOrder || legacySeeded !== undefined) {
+      const state: WorkProjectsState = {
+        seeded: legacySeeded ?? false,
+        projects: legacyProjects ?? {},
+        order: legacyOrder ?? [],
+      };
+      this.store.set("state", state);
+      this.store.delete("projects" as never);
+      this.store.delete("order" as never);
+      this.store.delete("seeded" as never);
+      log.info("Migrated legacy work-projects keys to atomic state");
+    }
+  }
+
+  /** Read snapshot — returned object is a fresh copy callers can mutate. */
+  private readState(): WorkProjectsState {
+    const current = this.store.get("state");
+    if (!current) {
+      return { seeded: false, projects: {}, order: [] };
+    }
+    return {
+      seeded: current.seeded,
+      projects: { ...current.projects },
+      order: [...current.order],
+    };
+  }
+
+  /** Atomic write. Single `store.set` call. */
+  private writeState(state: WorkProjectsState): void {
+    this.store.set("state", state);
+  }
+
+  /** On boot, commit any project whose pendingDeletionAt has aged past the
+   *  grace window. This handles app crashes during the 5s undo window. */
+  private recoverStaleDeletions(): void {
+    const state = this.readState();
+    const now = Date.now();
+    let changed = false;
+    for (const id of [...state.order]) {
+      const project = state.projects[id];
+      if (!project?.pendingDeletionAt) continue;
+      const at = Date.parse(project.pendingDeletionAt);
+      if (Number.isFinite(at) && now - at >= STALE_DELETION_MS) {
+        delete state.projects[id];
+        state.order = state.order.filter((x) => x !== id);
+        changed = true;
+        log.info("Recovered stale pending deletion", { projectId: id });
+      }
+    }
+    if (changed) {
+      this.writeState(state);
+      this.emit("projects-changed", undefined);
+    }
   }
 
   private async deriveProjectMeta(fromPrompt: string): Promise<{
@@ -133,33 +210,15 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
   }
 
   private ensureSeeded(): void {
-    if (this.store.get("seeded")) return;
-    const projects: Record<string, WorkProject> = {};
-    const order: string[] = [];
+    const state = this.readState();
+    if (state.seeded) return;
     for (const p of SEED_PROJECTS) {
-      projects[p.id] = p;
-      order.push(p.id);
+      state.projects[p.id] = p;
+      state.order.push(p.id);
     }
-    this.store.set("projects", projects);
-    this.store.set("order", order);
-    this.store.set("seeded", true);
-    log.info("Seeded work projects", { count: order.length });
-  }
-
-  private getProjects(): Record<string, WorkProject> {
-    return this.store.get("projects");
-  }
-
-  private getOrder(): string[] {
-    return this.store.get("order");
-  }
-
-  private persist(
-    projects: Record<string, WorkProject>,
-    order: string[],
-  ): void {
-    this.store.set("projects", projects);
-    this.store.set("order", order);
+    state.seeded = true;
+    this.writeState(state);
+    log.info("Seeded work projects", { count: state.order.length });
   }
 
   private emitProjectChanged(projectId: string): void {
@@ -167,14 +226,22 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     this.emit("projects-changed", undefined);
   }
 
+  /** Synchronous read-modify-write under a single atomic store write.
+   *  JS is single-threaded so two synchronous mutators can't interleave;
+   *  combined with the single-key write, this is race-free. */
   private mutateProject(
     projectId: string,
     mutator: (project: WorkProject) => WorkProject | null,
   ): WorkProject | null {
-    const projects = { ...this.getProjects() };
-    const current = projects[projectId];
+    const state = this.readState();
+    const current = state.projects[projectId];
     if (!current) {
       log.warn("Project not found", { projectId });
+      return null;
+    }
+    // Hidden (pending deletion) projects are not mutable from external paths.
+    if (current.pendingDeletionAt) {
+      log.warn("Project is pending deletion, mutation skipped", { projectId });
       return null;
     }
     const next = mutator(current);
@@ -183,20 +250,24 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
       ...next,
       updatedAt: new Date().toISOString(),
     };
-    projects[projectId] = stamped;
-    this.persist(projects, this.getOrder());
+    state.projects[projectId] = stamped;
+    this.writeState(state);
     this.emitProjectChanged(projectId);
     return stamped;
   }
 
   list(): WorkProject[] {
-    const projects = this.getProjects();
-    const order = this.getOrder();
-    return order.map((id) => projects[id]).filter((p): p is WorkProject => !!p);
+    const state = this.readState();
+    return state.order
+      .map((id) => state.projects[id])
+      .filter((p): p is WorkProject => !!p && !p.pendingDeletionAt);
   }
 
   get(projectId: string): WorkProject | null {
-    return this.getProjects()[projectId] ?? null;
+    const state = this.readState();
+    const project = state.projects[projectId];
+    if (!project || project.pendingDeletionAt) return null;
+    return project;
   }
 
   async create(input: CreateProjectInput): Promise<WorkProject> {
@@ -243,11 +314,113 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
       ...(trimmedPrompt ? { pendingPrompt: trimmedPrompt } : {}),
     };
 
-    const projects = { ...this.getProjects(), [id]: project };
-    const order = [id, ...this.getOrder()];
-    this.persist(projects, order);
+    const state = this.readState();
+    state.projects[id] = project;
+    state.order = [id, ...state.order];
+    this.writeState(state);
     this.emitProjectChanged(id);
     return project;
+  }
+
+  /** Create a project from a built-in template: instantiates the prebuilt
+   *  tiles, sets meta from the template, and stamps the opening prompt as
+   *  `pendingPrompt` so the chat panel auto-fires it on mount. */
+  createFromTemplate(template: {
+    name: string;
+    tagline: string;
+    iconId: ProjectIconId;
+    tiles: NewTileInput[];
+    openingPrompt: string;
+  }): WorkProject {
+    const id = newId("project");
+    const now = new Date().toISOString();
+    const titleTile: Tile = {
+      id: newId("tile"),
+      type: "title",
+      size: "full",
+      state: "live",
+      origin: "seed",
+      iconId: template.iconId,
+      name: template.name,
+      tagline: template.tagline,
+    };
+    const contentTiles: Tile[] = template.tiles.map(
+      (t) =>
+        ({
+          ...t,
+          id: newId("tile"),
+          size: t.size ?? defaultSizeFor(t.type),
+          state: "live",
+          origin: "seed",
+        }) as Tile,
+    );
+    const project: WorkProject = {
+      id,
+      name: template.name,
+      tagline: template.tagline,
+      iconId: template.iconId,
+      members: [],
+      tiles: [titleTile, ...contentTiles],
+      createdAt: now,
+      updatedAt: now,
+      pendingPrompt: template.openingPrompt,
+    };
+    const state = this.readState();
+    state.projects[id] = project;
+    state.order = [id, ...state.order];
+    this.writeState(state);
+    this.emitProjectChanged(id);
+    return project;
+  }
+
+  /** Mark a project as pending deletion. Removes it from `list()` and
+   *  hides it from project-changed subscribers, but keeps the data so an
+   *  undo can restore it. */
+  softDelete(projectId: string): WorkProject | null {
+    return this.mutateProject(projectId, (project) => ({
+      ...project,
+      pendingDeletionAt: new Date().toISOString(),
+    }));
+  }
+
+  /** Restore a soft-deleted project. */
+  undoDelete(projectId: string): WorkProject | null {
+    const state = this.readState();
+    const current = state.projects[projectId];
+    if (!current || !current.pendingDeletionAt) return null;
+    const { pendingDeletionAt: _drop, ...restored } = current;
+    state.projects[projectId] = {
+      ...(restored as WorkProject),
+      updatedAt: new Date().toISOString(),
+    };
+    this.writeState(state);
+    this.emitProjectChanged(projectId);
+    return state.projects[projectId];
+  }
+
+  /** Permanently remove a soft-deleted project. */
+  commitDelete(projectId: string): void {
+    const state = this.readState();
+    if (!state.projects[projectId]) return;
+    delete state.projects[projectId];
+    state.order = state.order.filter((id) => id !== projectId);
+    this.writeState(state);
+    this.emit("projects-changed", undefined);
+  }
+
+  pinProject(projectId: string): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      if (project.pinnedAt) return null;
+      return { ...project, pinnedAt: new Date().toISOString() };
+    });
+  }
+
+  unpinProject(projectId: string): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      if (!project.pinnedAt) return null;
+      const { pinnedAt: _drop, ...rest } = project;
+      return rest as WorkProject;
+    });
   }
 
   setNextSteps(projectId: string, prompts: string[]): WorkProject | null {
@@ -281,13 +454,10 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     });
   }
 
+  /** Legacy hard-delete entry point (kept for compatibility with the tRPC
+   *  `delete` mutation, which routes through `commitDelete` now). */
   delete(projectId: string): void {
-    const projects = { ...this.getProjects() };
-    if (!projects[projectId]) return;
-    delete projects[projectId];
-    const order = this.getOrder().filter((id) => id !== projectId);
-    this.persist(projects, order);
-    this.emit("projects-changed", undefined);
+    this.commitDelete(projectId);
   }
 
   addTile(

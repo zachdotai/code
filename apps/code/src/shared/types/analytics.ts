@@ -39,7 +39,8 @@ export type CommandMenuAction =
   | "logout"
   | "toggle-theme"
   | "toggle-left-sidebar"
-  | "open-review-panel";
+  | "open-review-panel"
+  | "navigate-project";
 
 // Event property interfaces
 export interface TaskListViewProperties {

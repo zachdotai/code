@@ -64,6 +64,41 @@ function RecentCard({ project }: { project: WorkProject }) {
   );
 }
 
+export function WorkPinnedProjects() {
+  const { data: projects } = useWorkProjects();
+
+  const pinned = useMemo(() => {
+    const all = projects ?? [];
+    return all
+      .filter((p) => p.pinnedAt)
+      .sort(
+        (a, b) =>
+          new Date(b.pinnedAt ?? 0).getTime() -
+          new Date(a.pinnedAt ?? 0).getTime(),
+      )
+      .slice(0, RAIL_LIMIT);
+  }, [projects]);
+
+  if (pinned.length === 0) return null;
+
+  return (
+    <Box className="w-full">
+      <Text
+        as="div"
+        weight="medium"
+        className="mb-2 text-(--gray-12) text-[13px]"
+      >
+        Pinned
+      </Text>
+      <Box className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {pinned.map((p) => (
+          <RecentCard key={p.id} project={p} />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 export function WorkRecentProjects() {
   const { data: projects } = useWorkProjects();
   const navigateToWorkProjects = useNavigationStore(
@@ -72,8 +107,9 @@ export function WorkRecentProjects() {
 
   const recent = useMemo(() => {
     const all = projects ?? [];
+    // Exclude pinned — they're shown separately in WorkPinnedProjects.
     return all
-      .slice()
+      .filter((p) => !p.pinnedAt)
       .sort(
         (a, b) =>
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -87,7 +123,7 @@ export function WorkRecentProjects() {
     <Box className="w-full">
       <Flex align="center" justify="between" className="mb-2">
         <Text as="div" weight="medium" className="text-(--gray-12) text-[13px]">
-          Pick up where you left off
+          Recent projects
         </Text>
         <button
           type="button"

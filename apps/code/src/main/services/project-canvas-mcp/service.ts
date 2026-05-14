@@ -409,6 +409,74 @@ export class ProjectCanvasMcpService {
     );
 
     server.tool(
+      "get_current_canvas",
+      "Read the live state of the project canvas right now — including any tiles the user has accepted, rejected, edited, or removed since the conversation started. Use this whenever you want fresh ground truth before proposing changes or claiming what's on the canvas.",
+      {
+        projectId: projectIdField,
+      },
+      async (args) => {
+        log.info("Tool call: get_current_canvas", {
+          projectId: args.projectId,
+        });
+        const project = this.workProjects.get(args.projectId);
+        if (!project) {
+          return toolText(`Project ${args.projectId} not found.`);
+        }
+        const snapshot = {
+          id: project.id,
+          name: project.name,
+          tagline: project.tagline,
+          iconId: project.iconId,
+          pinned: !!project.pinnedAt,
+          nextSteps: project.nextSteps ?? [],
+          tiles: project.tiles.map((t) => {
+            const base = { id: t.id, type: t.type, state: t.state };
+            if (t.type === "title") {
+              return { ...base, name: t.name, tagline: t.tagline };
+            }
+            if (t.type === "headline") {
+              return {
+                ...base,
+                label: t.label,
+                value: t.fallbackValue,
+                delta: t.fallbackDelta,
+                ...(t.posthogUrl ? { posthogUrl: t.posthogUrl } : {}),
+              };
+            }
+            if (t.type === "insight") {
+              return {
+                ...base,
+                title: t.title,
+                description: t.description,
+                url: t.url,
+              };
+            }
+            if (t.type === "file") {
+              return {
+                ...base,
+                filename: t.filename,
+                preview: t.contents.slice(0, 200),
+              };
+            }
+            if (t.type === "note") {
+              return { ...base, body: t.body, tone: t.tone };
+            }
+            if (t.type === "skill_output") {
+              return {
+                ...base,
+                skillName: t.skillName,
+                lastRunAt: t.lastRunAt,
+                preview: t.lastRunOutput?.slice(0, 200),
+              };
+            }
+            return base;
+          }),
+        };
+        return toolText(JSON.stringify(snapshot, null, 2));
+      },
+    );
+
+    server.tool(
       "set_next_steps",
       "Set the 2–3 suggested next-step prompts shown below the chat as clickable chips. Call this at the END of every turn. Each prompt should be short and imperative (≤80 chars), e.g. 'Segment funnel by traffic source'.",
       {

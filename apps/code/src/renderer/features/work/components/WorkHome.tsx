@@ -1,8 +1,9 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
 import beachHog from "@renderer/assets/images/hedgehogs/beach-hog.png";
 import { useMemo } from "react";
+import { WorkTemplateRail } from "../templates/WorkTemplateRail";
 import { WorkHomePrompt } from "./WorkHomePrompt";
-import { WorkRecentProjects } from "./WorkRecentProjects";
+import { WorkPinnedProjects, WorkRecentProjects } from "./WorkRecentProjects";
 import { WorkSampleProjects } from "./WorkSampleProjects";
 
 const GREETINGS = [
@@ -75,6 +76,14 @@ export function WorkHome() {
         </Box>
 
         <Box className="work-enter work-enter-3 w-full">
+          <WorkPinnedProjects />
+        </Box>
+
+        <Box className="work-enter work-enter-3 w-full">
+          <WorkTemplateRail />
+        </Box>
+
+        <Box className="work-enter work-enter-4 w-full">
           <WorkRecentProjects />
         </Box>
 
@@ -83,7 +92,7 @@ export function WorkHome() {
             as="div"
             className="mb-2 text-center text-(--gray-10) text-[11px] uppercase tracking-wide"
           >
-            Or start with a stretch goal
+            Or fire a quick task
           </Text>
           <WorkSampleProjects />
         </Box>

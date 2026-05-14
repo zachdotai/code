@@ -11,6 +11,7 @@ import type {
   Tile,
   TileSize,
 } from "@shared/types/work-projects";
+import { AnimatePresence, motion } from "framer-motion";
 import { type ReactNode, useCallback, useMemo } from "react";
 import { AddTileMenu } from "./AddTileMenu";
 import { SIZE_TO_COLSPAN } from "./TileFrame";
@@ -95,16 +96,16 @@ export function ProjectCanvas({
     [tiles],
   );
 
-  const handleDragOver: DragDropEvents["dragover"] = useCallback(
+  // Only fire the actual reorder on drop, NOT on every dragover. dnd-kit's
+  // sortable still gives smooth visual feedback during drag via CSS transforms;
+  // we only persist the move once the user commits.
+  const handleDragEnd: DragDropEvents["dragend"] = useCallback(
     (event) => {
       const sourceId = event.operation.source?.id;
       const targetId = event.operation.target?.id;
       if (!sourceId || !targetId || sourceId === targetId) return;
-      // Move indices are computed against the full tiles array so the service
-      // stays consistent with title-tile position.
-      const sourceIndex = tiles.findIndex((t) => t.id === String(sourceId));
       const targetIndex = tiles.findIndex((t) => t.id === String(targetId));
-      if (sourceIndex < 0 || targetIndex < 0) return;
+      if (targetIndex < 0) return;
       void onMoveTile(String(sourceId), targetIndex);
     },
     [tiles, onMoveTile],
@@ -128,7 +129,7 @@ export function ProjectCanvas({
           <EmptyState onAdd={onAddTile} />
         ) : (
           <DragDropProvider
-            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
             sensors={[
               {
                 plugin: PointerSensor,
@@ -139,48 +140,58 @@ export function ProjectCanvas({
             ]}
           >
             <Box className="grid auto-rows-min grid-cols-12 gap-3">
-              {renderedTiles.map((tile, index) => (
-                <Box
-                  key={tile.id}
-                  className={`${SIZE_TO_COLSPAN[tile.size]} min-w-0`}
-                >
-                  <SortableTile id={tile.id} index={index}>
-                    <TileRenderer
-                      tile={tile}
-                      members={members}
-                      onRemove={() => {
-                        void onRemoveTile(tile.id);
-                      }}
-                      onResize={(size) => {
-                        void onResizeTile(tile.id, size);
-                      }}
-                      onApplyPending={
-                        tile.state !== "live"
-                          ? () => {
-                              void onApplyPending(tile.id);
-                            }
-                          : undefined
-                      }
-                      onRejectPending={
-                        tile.state !== "live"
-                          ? () => {
-                              void onRejectPending(tile.id);
-                            }
-                          : undefined
-                      }
-                      onUpdateTitleTile={(patch) => {
-                        void onUpdateTitleTile(patch);
-                      }}
-                      onUpdateNoteTile={(patch) => {
-                        void onUpdateNoteTile(tile.id, patch);
-                      }}
-                      onUpdateFileTile={(patch) => {
-                        void onUpdateFileTile(tile.id, patch);
-                      }}
-                    />
-                  </SortableTile>
-                </Box>
-              ))}
+              <AnimatePresence mode="popLayout" initial={false}>
+                {renderedTiles.map((tile, index) => (
+                  <motion.div
+                    key={tile.id}
+                    layout="position"
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.92 }}
+                    transition={{
+                      duration: 0.18,
+                      ease: [0.32, 0.72, 0, 1],
+                    }}
+                    className={`${SIZE_TO_COLSPAN[tile.size]} min-w-0`}
+                  >
+                    <SortableTile id={tile.id} index={index}>
+                      <TileRenderer
+                        tile={tile}
+                        members={members}
+                        onRemove={() => {
+                          void onRemoveTile(tile.id);
+                        }}
+                        onResize={(size) => {
+                          void onResizeTile(tile.id, size);
+                        }}
+                        onApplyPending={
+                          tile.state !== "live"
+                            ? () => {
+                                void onApplyPending(tile.id);
+                              }
+                            : undefined
+                        }
+                        onRejectPending={
+                          tile.state !== "live"
+                            ? () => {
+                                void onRejectPending(tile.id);
+                              }
+                            : undefined
+                        }
+                        onUpdateTitleTile={(patch) => {
+                          void onUpdateTitleTile(patch);
+                        }}
+                        onUpdateNoteTile={(patch) => {
+                          void onUpdateNoteTile(tile.id, patch);
+                        }}
+                        onUpdateFileTile={(patch) => {
+                          void onUpdateFileTile(tile.id, patch);
+                        }}
+                      />
+                    </SortableTile>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </Box>
           </DragDropProvider>
         )}
