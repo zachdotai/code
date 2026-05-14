@@ -84,14 +84,15 @@ export function NestDetailPanel({
     void loadMessages(nest.id);
   }, [nest, loadMessages]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on nest open and once messages finish loading
   useEffect(() => {
-    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
-      "[data-radix-scroll-area-viewport]",
-    );
-    if (viewport) {
+    const viewport = scrollAreaRef.current;
+    if (!viewport) return;
+    const raf = requestAnimationFrame(() => {
       viewport.scrollTop = viewport.scrollHeight;
-    }
-  }, []);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [nest.id, loadingMessages, messages.length]);
 
   const handleSendChat = async () => {
     const body = chatDraft.trim();
