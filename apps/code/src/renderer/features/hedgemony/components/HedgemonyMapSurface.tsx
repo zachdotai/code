@@ -39,7 +39,6 @@ interface HedgemonyMapSurfaceProps {
   buildMode: boolean;
   moveMarker: MoveMarker | null;
   children?: ReactNode;
-  overlay?: ReactNode;
   /** Left-click on empty map at world coords. */
   onMapClick?: (worldX: number, worldY: number) => void;
   /** Right-click on empty map at world coords. */
@@ -62,7 +61,6 @@ export function HedgemonyMapSurface({
   buildMode,
   moveMarker,
   children,
-  overlay,
   onMapClick,
   onMapRightClick,
   onNestSelect,
@@ -299,10 +297,6 @@ export function HedgemonyMapSurface({
         </AnimatePresence>
         {children}
       </motion.div>
-
-      {overlay && (
-        <div className="pointer-events-none absolute inset-0">{overlay}</div>
-      )}
 
       <div
         className="absolute right-3 bottom-3 flex items-center gap-2"

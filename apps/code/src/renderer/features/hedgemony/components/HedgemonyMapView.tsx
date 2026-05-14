@@ -19,7 +19,6 @@ import {
 } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
-import { HedgemonyEmptyState } from "./HedgemonyEmptyState";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import { HedgemonyMapSurface, type MoveMarker } from "./HedgemonyMapSurface";
 import { NestBroodCluster } from "./NestBroodCluster";
@@ -45,7 +44,6 @@ type ViewMode =
 
 export function HedgemonyMapView() {
   const nests = useNestStore(selectNests);
-  const loaded = useNestStore((s) => s.loaded);
 
   const [mode, setMode] = useState<ViewMode>({ kind: "browsing" });
   const [pendingPlacement, setPendingPlacement] = useState<{
@@ -158,7 +156,6 @@ export function HedgemonyMapView() {
     flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
   };
 
-  const showEmptyState = loaded && nests.length === 0;
   const activeNest =
     selection?.type === "nest"
       ? (nests.find((nest) => nest.id === selection.id) ?? null)
@@ -250,11 +247,6 @@ export function HedgemonyMapView() {
         builderAnimation={builder.animation}
         buildMode={buildMode}
         moveMarker={moveMarker}
-        overlay={
-          showEmptyState && !buildMode ? (
-            <HedgemonyEmptyState onBuildFirstNest={beginBuildNest} />
-          ) : null
-        }
         onMapClick={handleMapClick}
         onMapRightClick={handleMapRightClick}
         onNestSelect={(nest) => setSelection({ type: "nest", id: nest.id })}
