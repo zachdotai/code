@@ -3,24 +3,34 @@ import { motion } from "framer-motion";
 import type { CSSProperties, ReactNode } from "react";
 
 /**
- * Bottom-anchored "command console" used by every hedgemony floating panel
- * (Builder, Hedgehouse, Nest, Hoglet, Spawn). One wrapper handles the slide-up
+ * Floating "command console" used by every hedgemony floating panel
+ * (Builder, Hedgehouse, Nest, Hoglet, Spawn). One wrapper handles the slide-in
  * animation, the chamfered Starcraft-style chrome, and the consistent
  * header/body/footer layout — so every panel reads as part of the same HUD.
+ *
+ * `placement="bottom"` (default) anchors at bottom-center and slides up — the
+ * legacy layout used by command-bar style panels. `placement="right"` anchors
+ * as a full-height drawer on the right edge and slides in from the right —
+ * used by the nest panel so its tall editor + hoglet list doesn't cover the
+ * bottom-center brood orbits.
  */
 
-const SLIDE_UP_TRANSITION = {
+const SLIDE_TRANSITION = {
   type: "spring" as const,
   damping: 26,
   stiffness: 280,
   mass: 0.6,
 };
 
+type Placement = "bottom" | "right";
+
 interface CommandConsoleProps {
   /** Logical width preset. `wide` for detail panels, `compact` for command bars. */
   size?: "compact" | "wide" | "auto";
   /** Override max width (e.g. for variable detail panels). */
   width?: number | string;
+  /** Anchoring side. `bottom` (default) for command bars, `right` for tall drawers. */
+  placement?: Placement;
   /** Used as motion.div key so AnimatePresence transitions between instances. */
   consoleKey?: string;
   className?: string;
@@ -37,9 +47,16 @@ const WIDTH_CLASS = {
   auto: "",
 } as const;
 
+const PLACEMENT_CLASS: Record<Placement, string> = {
+  bottom: "-translate-x-1/2 absolute bottom-3 left-1/2 z-10 flex flex-col",
+  right:
+    "absolute top-3 right-3 bottom-3 z-10 flex w-[min(420px,38vw)] flex-col",
+};
+
 export function CommandConsole({
   size = "auto",
   width,
+  placement = "bottom",
   consoleKey,
   className,
   style,
@@ -47,21 +64,34 @@ export function CommandConsole({
   onContextMenuCapture,
   children,
 }: CommandConsoleProps) {
+  const initial =
+    placement === "right" ? { x: 120, opacity: 0 } : { y: 120, opacity: 0 };
+  const exit =
+    placement === "right" ? { x: 120, opacity: 0 } : { y: 120, opacity: 0 };
+  const animate =
+    placement === "right" ? { x: 0, opacity: 1 } : { y: 0, opacity: 1 };
+  const widthClass = placement === "right" ? "" : WIDTH_CLASS[size];
+  // The rail accent runs along the side the panel slides in from: a top rail
+  // for bottom-anchored panels, a left-edge vertical rail for right drawers.
+  const railClass =
+    placement === "right"
+      ? "-translate-y-1/2 absolute top-1/2 left-0 h-[70%] w-px"
+      : "-translate-x-1/2 absolute top-0 left-1/2 h-px w-[70%]";
   return (
     <motion.div
       key={consoleKey}
-      initial={{ y: 120, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: 120, opacity: 0 }}
-      transition={SLIDE_UP_TRANSITION}
+      initial={initial}
+      animate={animate}
+      exit={exit}
+      transition={SLIDE_TRANSITION}
       onPointerDown={onPointerDown}
       onContextMenuCapture={onContextMenuCapture}
-      className={`-translate-x-1/2 absolute bottom-3 left-1/2 z-10 flex flex-col ${WIDTH_CLASS[size]} ${className ?? ""}`}
+      className={`${PLACEMENT_CLASS[placement]} ${widthClass} ${className ?? ""}`}
       style={{ width, ...style }}
     >
       <div className="command-console-bevel-outer flex min-h-0 flex-auto flex-col">
         <div className="command-console-bevel-inner relative flex min-h-0 flex-auto flex-col">
-          <div className="-translate-x-1/2 absolute top-0 left-1/2 h-px w-[70%]">
+          <div className={railClass}>
             <div className="command-console-rail h-full w-full" />
           </div>
           {children}

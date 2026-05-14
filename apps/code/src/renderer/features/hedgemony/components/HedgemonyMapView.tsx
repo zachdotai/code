@@ -967,6 +967,15 @@ export function HedgemonyMapView() {
               setSelection(null);
             }}
             onRelocate={() => beginRelocateNest(activeNest.id)}
+            onFocusHoglet={(hogletId) => {
+              playSfx("select");
+              playVoice("hoglet:select");
+              setSelection({ type: "hoglets", ids: [hogletId] });
+              // Pan camera to the hoglet so it's visible behind the panel.
+              const positions = collectLiveHogletPositions();
+              const pos = positions.find((p) => p.hogletId === hogletId);
+              if (pos) surfaceRef.current?.centerOnPoint(pos.x, pos.y);
+            }}
           />
         )}
       </AnimatePresence>
