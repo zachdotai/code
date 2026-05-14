@@ -241,6 +241,11 @@ export function HedgemonyMapSurface({
         style={{ x, y, scale: zoom }}
         className="absolute inset-0 origin-center"
       >
+        {/* Infinite ground — extends well beyond the detailed MapBackdrop so edges are never visible */}
+        <div
+          className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2"
+          style={{ width: 20000, height: 20000, backgroundColor: "#2b4a2a" }}
+        />
         <MapBackdrop nests={nests} />
         {nests.map((nest) => (
           <NestSprite
