@@ -2,6 +2,10 @@ import { inject, injectable } from "inversify";
 import { z } from "zod";
 import type {
   ExecutionMode,
+  SignalReport,
+  SignalReportArtefactsResponse,
+  SignalReportsQueryParams,
+  SignalReportsResponse,
   Task,
   TaskRun,
   TaskRunStatus,
@@ -122,6 +126,34 @@ const integrationReposResponseSchema = z
   })
   .passthrough();
 
+const signalReportSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+  })
+  .passthrough();
+
+const signalReportsResponseSchema = z
+  .object({
+    results: z.array(signalReportSchema).optional(),
+    count: z.number().optional(),
+  })
+  .passthrough();
+
+const signalReportArtefactSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    type: z.string().min(1).max(64),
+  })
+  .passthrough();
+
+const signalReportArtefactsResponseSchema = z
+  .object({
+    results: z.array(signalReportArtefactSchema).optional(),
+    count: z.number().optional(),
+    unavailableReason: z.string().optional(),
+  })
+  .passthrough();
+
 /**
  * Reject `apiHost` values that would let the cloud API base URL escape into a
  * path component or non-HTTPS scheme. Auth state is the source of truth for
@@ -155,6 +187,8 @@ interface CreateTaskRunOptions {
   reasoningEffort?: HedgemonyReasoningEffort;
   initialPermissionMode?: ExecutionMode;
   prAuthorshipMode?: "user" | "bot";
+  runSource?: string;
+  signalReportId?: string | null;
 }
 
 interface StartTaskRunOptions {
@@ -194,6 +228,8 @@ export class CloudTaskClient {
     originProduct?: string;
     githubIntegration?: number | null;
     githubUserIntegration?: string | null;
+    signalReport?: string | null;
+    signalReportTaskRelationship?: string | null;
   }): Promise<Task> {
     const { apiHost, teamId } = await this.resolveContext();
     const body: Record<string, unknown> = {
@@ -207,6 +243,15 @@ export class CloudTaskClient {
     }
     if (input.githubUserIntegration !== undefined) {
       body.github_user_integration = input.githubUserIntegration;
+    }
+    if (input.signalReport !== undefined && input.signalReport !== null) {
+      body.signal_report = input.signalReport;
+    }
+    if (
+      input.signalReportTaskRelationship !== undefined &&
+      input.signalReportTaskRelationship !== null
+    ) {
+      body.signal_report_task_relationship = input.signalReportTaskRelationship;
     }
     const response = await this.auth.authenticatedFetch(
       fetch,
@@ -293,6 +338,15 @@ export class CloudTaskClient {
     }
     if (options.prAuthorshipMode !== undefined) {
       body.pr_authorship_mode = options.prAuthorshipMode;
+    }
+    if (options.runSource !== undefined) {
+      body.run_source = options.runSource;
+    }
+    if (
+      options.signalReportId !== undefined &&
+      options.signalReportId !== null
+    ) {
+      body.signal_report_id = options.signalReportId;
     }
 
     const response = await this.auth.authenticatedFetch(
@@ -391,6 +445,71 @@ export class CloudTaskClient {
       response,
       taskRunSchema,
     )) as unknown as TaskRun;
+  }
+
+  async listSignalReports(
+    params: SignalReportsQueryParams = {},
+  ): Promise<SignalReportsResponse> {
+    const { apiHost, teamId } = await this.resolveContext();
+    const url = new URL(`${apiHost}/api/projects/${teamId}/signals/reports/`);
+    if (params.limit != null)
+      url.searchParams.set("limit", String(params.limit));
+    if (params.offset != null) {
+      url.searchParams.set("offset", String(params.offset));
+    }
+    if (params.status) url.searchParams.set("status", params.status);
+    if (params.ordering) url.searchParams.set("ordering", params.ordering);
+    if (params.source_product) {
+      url.searchParams.set("source_product", params.source_product);
+    }
+    if (params.suggested_reviewers) {
+      url.searchParams.set("suggested_reviewers", params.suggested_reviewers);
+    }
+
+    const response = await this.auth.authenticatedFetch(fetch, url.toString());
+    if (!response.ok) {
+      throw new Error(`list_signal_reports_failed: HTTP ${response.status}`);
+    }
+    const data = await parseJsonResponse(
+      "GET /signals/reports/",
+      response,
+      signalReportsResponseSchema,
+    );
+    return {
+      results: (data.results ?? []) as unknown as SignalReport[],
+      count: data.count ?? data.results?.length ?? 0,
+    };
+  }
+
+  async getSignalReportArtefacts(
+    reportId: string,
+  ): Promise<SignalReportArtefactsResponse> {
+    const { apiHost, teamId } = await this.resolveContext();
+    const url = `${apiHost}/api/projects/${teamId}/signals/reports/${encodeURIComponent(reportId)}/artefacts/`;
+    const response = await this.auth.authenticatedFetch(fetch, url);
+    if (!response.ok) {
+      const unavailableReason =
+        response.status === 403
+          ? "forbidden"
+          : response.status === 404
+            ? "not_found"
+            : "request_failed";
+      log.warn("Signal report artefacts unavailable", {
+        reportId,
+        status: response.status,
+      });
+      return { results: [], count: 0, unavailableReason };
+    }
+    const data = await parseJsonResponse(
+      "GET /signals/reports/{id}/artefacts/",
+      response,
+      signalReportArtefactsResponseSchema,
+    );
+    return {
+      results: (data.results ??
+        []) as unknown as SignalReportArtefactsResponse["results"],
+      count: data.count ?? data.results?.length ?? 0,
+    };
   }
 
   /**

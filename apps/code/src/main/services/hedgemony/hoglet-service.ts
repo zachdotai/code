@@ -214,6 +214,85 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     return created;
   }
 
+  /**
+   * Spawns a brand-new cloud Task from a signal report's prompt, then writes
+   * the local hoglet sidecar via {@link recordSignalBacked} (which handles
+   * affinity routing into a nest or the wild bucket). Idempotent on
+   * `signalReportId`: returns the existing hoglet without spawning a new
+   * cloud task if one already exists.
+   *
+   * Owned by {@link SignalIngestionService}'s polling loop — operators don't
+   * call this directly. Title is derived from the report (truncated to 120
+   * chars), description carries the full prompt. The cloud task is tagged
+   * with `origin_product=signal_report` so the upstream API records the link.
+   */
+  async spawnSignalBacked(input: {
+    prompt: string;
+    signalReportId: string;
+    reportTitle: string | null;
+  }): Promise<Hoglet> {
+    const existing = this.hoglets.findBySignalReportId(input.signalReportId);
+    if (existing) {
+      log.info("spawnSignalBacked skipped — hoglet already exists", {
+        signalReportId: input.signalReportId,
+        hogletId: existing.id,
+      });
+      return existing;
+    }
+
+    const runtime = resolveHogletRuntime({}, readUserTaskPreferences());
+    const title = (
+      input.reportTitle?.trim() || truncateTitle(input.prompt)
+    ).slice(0, 255);
+
+    let createdTaskId: string | null = null;
+    try {
+      const task = await this.cloudTasks.createTask({
+        title,
+        description: input.prompt,
+        originProduct: "signal_report",
+        signalReport: input.signalReportId,
+        signalReportTaskRelationship: "implementation",
+      });
+      createdTaskId = task.id;
+      const run = await this.cloudTasks.createTaskRun(task.id, {
+        environment: runtime.environment,
+        mode: "background",
+        runtimeAdapter: runtime.runtimeAdapter,
+        model: runtime.model,
+        reasoningEffort: runtime.reasoningEffort,
+        initialPermissionMode: runtime.executionMode,
+        prAuthorshipMode: "bot",
+        runSource: "signal_report",
+        signalReportId: input.signalReportId,
+      });
+      await this.ensureCloudWorkspace(task.id, run.branch ?? null);
+      await this.cloudTasks.startTaskRun(task.id, run.id, {
+        pendingUserMessage: input.prompt,
+      });
+      return await this.recordSignalBacked({
+        taskId: task.id,
+        signalReportId: input.signalReportId,
+      });
+    } catch (error) {
+      if (createdTaskId !== null) {
+        // Best-effort cloud rollback so the signal report doesn't end up
+        // permanently linked to an orphaned task on the API side.
+        await this.cloudTasks.deleteTask(createdTaskId).catch((rollbackError) =>
+          log.warn("spawnSignalBacked rollback (deleteTask) failed", {
+            taskId: createdTaskId,
+            signalReportId: input.signalReportId,
+            error:
+              rollbackError instanceof Error
+                ? rollbackError.message
+                : String(rollbackError),
+          }),
+        );
+      }
+      throw error;
+    }
+  }
+
   async recordSignalBacked(
     input: RecordSignalBackedHogletInput,
   ): Promise<Hoglet> {

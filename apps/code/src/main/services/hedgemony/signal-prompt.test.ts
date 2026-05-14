@@ -1,6 +1,6 @@
-import type { SignalReportArtefactsResponse } from "@shared/types";
 import { describe, expect, it } from "vitest";
-import { buildSignalPrompt } from "./signalPrompt";
+import type { SignalReportArtefactsResponse } from "../../../shared/types";
+import { buildSignalPrompt } from "./signal-prompt";
 
 type Artefact = SignalReportArtefactsResponse["results"][number];
 

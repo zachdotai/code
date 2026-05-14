@@ -93,4 +93,5 @@ export const MAIN_TOKENS = Object.freeze({
   FeedbackRoutingService: Symbol.for("Main.FeedbackRoutingService"),
   PrGraphService: Symbol.for("Main.PrGraphService"),
   CloudTaskClient: Symbol.for("Main.CloudTaskClient"),
+  SignalIngestionService: Symbol.for("Main.SignalIngestionService"),
 });

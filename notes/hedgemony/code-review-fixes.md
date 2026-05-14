@@ -159,7 +159,7 @@ every hoglet in every flock/cluster.
 `useHogletPositionStore(s => s.positions[hogletId])`. Parent components should
 not subscribe to the full positions map.
 
-### 12. `useSignalIngestion` violates store/service boundary
+### 12. `useSignalIngestion` violates store/service boundary — DONE
 
 **File:** `hooks/useSignalIngestion.ts` (~line 100-155)
 

@@ -61,6 +61,7 @@ import { HogletService } from "../services/hedgemony/hoglet-service";
 import { NestChatService } from "../services/hedgemony/nest-chat-service";
 import { NestService } from "../services/hedgemony/nest-service";
 import { PrGraphService } from "../services/hedgemony/pr-graph-service";
+import { SignalIngestionService } from "../services/hedgemony/signal-ingestion-service";
 import { InboxLinkService } from "../services/inbox-link/service";
 import { LinearIntegrationService } from "../services/linear-integration/service";
 import { LlmGatewayService } from "../services/llm-gateway/service";
@@ -174,5 +175,6 @@ container.bind(MAIN_TOKENS.CloudTaskClient).to(CloudTaskClient);
 container.bind(MAIN_TOKENS.PrGraphService).to(PrGraphService);
 container.bind(MAIN_TOKENS.HedgehogTickService).to(HedgehogTickService);
 container.bind(MAIN_TOKENS.FeedbackRoutingService).to(FeedbackRoutingService);
+container.bind(MAIN_TOKENS.SignalIngestionService).to(SignalIngestionService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

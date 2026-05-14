@@ -26,6 +26,7 @@ import {
   goalDraftResponse,
   HedgemonyEvent,
   hoglet,
+  hogletIngestedEventPayload,
   hogletWatchEvent,
   hogletWatchScope,
   injectPromptEventPayload,
@@ -60,6 +61,10 @@ import {
   unlinkPrDependencyInput,
   updateNestInput,
 } from "../../services/hedgemony/schemas";
+import {
+  SignalIngestionEvent,
+  type SignalIngestionService,
+} from "../../services/hedgemony/signal-ingestion-service";
 import { publicProcedure, router } from "../trpc";
 
 const getService = () => container.get<NestService>(MAIN_TOKENS.NestService);
@@ -77,6 +82,8 @@ const getFeedbackEventRepository = () =>
   container.get<FeedbackEventRepository>(MAIN_TOKENS.FeedbackEventRepository);
 const getPrGraphService = () =>
   container.get<PrGraphService>(MAIN_TOKENS.PrGraphService);
+const getSignalIngestionService = () =>
+  container.get<SignalIngestionService>(MAIN_TOKENS.SignalIngestionService);
 
 export const hedgemonyRouter = router({
   goalDraft: router({
@@ -370,5 +377,40 @@ export const hedgemonyRouter = router({
       .input(recordRebaseOutcomeInput)
       .output(prDependency)
       .mutation(({ input }) => getPrGraphService().recordRebaseOutcome(input)),
+  }),
+  signalIngestion: router({
+    /**
+     * Idempotent start of the main-side signal ingestion poll loop. The
+     * renderer calls this when the Hedgemony map view mounts. The loop
+     * survives renderer unmount — only `cancel` (an explicit operator
+     * action) stops it.
+     */
+    start: publicProcedure.output(z.void()).mutation(() => {
+      getSignalIngestionService().start();
+    }),
+
+    /** Explicit operator override — not invoked on renderer unmount. */
+    cancel: publicProcedure.output(z.void()).mutation(() => {
+      getSignalIngestionService().cancel();
+    }),
+
+    isRunning: publicProcedure
+      .output(z.boolean())
+      .query(() => getSignalIngestionService().isRunning()),
+
+    /**
+     * Live stream of `hogletIngested` events. The renderer subscribes once
+     * on map mount to fire analytics + play the arrival voice when a new
+     * signal-backed hoglet appears on the map.
+     */
+    onIngested: publicProcedure.subscription(async function* ({ signal }) {
+      const service = getSignalIngestionService();
+      const iterable = service.toIterable(SignalIngestionEvent.HogletIngested, {
+        signal,
+      });
+      for await (const data of iterable) {
+        yield hogletIngestedEventPayload.parse(data);
+      }
+    }),
   }),
 });

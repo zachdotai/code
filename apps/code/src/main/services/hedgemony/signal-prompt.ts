@@ -2,19 +2,15 @@ import type {
   SignalReport,
   SignalReportArtefactsResponse,
   SuggestedReviewer,
-} from "@shared/types";
+} from "../../../shared/types";
 
 type Artefact = SignalReportArtefactsResponse["results"][number];
 
 /**
- * Builds the markdown prompt sent to a fresh cloud Task spawned from a
- * Signals Inbox report. The shape mirrors what an operator would write when
- * clicking "Run agent" on an Inbox card: short title-style first line, then
- * the report summary, the per-signal findings discovered by the agentic
- * report, and (when present) the suggested reviewers.
- *
- * Defensive: every field is optional and missing values collapse silently —
- * an operator who tags a report with only a title still gets a usable prompt.
+ * Builds the markdown prompt sent to a fresh cloud Task spawned from a Signals
+ * Inbox report. Title / summary / per-signal findings / suggested reviewers,
+ * each one optional and collapsing silently when missing — same shape an
+ * operator would write when clicking "Run agent" on an Inbox card.
  */
 export interface SignalPromptInputs {
   report: Pick<SignalReport, "id" | "title" | "summary">;

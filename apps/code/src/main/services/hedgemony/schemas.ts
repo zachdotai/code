@@ -497,6 +497,15 @@ export const hogletWatchScope = z.union([
 ]);
 export type HogletWatchScope = z.infer<typeof hogletWatchScope>;
 
+export const hogletIngestedEventPayload = z.object({
+  signalReportId: z.string().min(1),
+  taskId: z.string().min(1),
+  hogletId: z.string().min(1),
+});
+export type HogletIngestedEventPayload = z.infer<
+  typeof hogletIngestedEventPayload
+>;
+
 /**
  * Discriminated event yielded by `hoglets.watch`. Future event kinds
  * (e.g. adoption transfers) join this union when the relevant slices land.
