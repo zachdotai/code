@@ -1,5 +1,6 @@
 import { type MotionValue, useMotionValue, useTransform } from "framer-motion";
 import { useEffect, useRef } from "react";
+import { sceneTicker } from "../runtime/SceneTicker";
 import {
   clearHogletVisualPosition,
   writeHogletVisualPosition,
@@ -45,7 +46,7 @@ interface Entity {
 }
 
 const entities = new Map<string, Entity>();
-let rafHandle: number | null = null;
+let tickerUnsubscribe: (() => void) | null = null;
 
 const PASSES = 4;
 const EPS = 0.001;
@@ -123,12 +124,17 @@ function tick(): void {
       writeHogletVisualPosition(p.e.visualRegistryId, { x: p.x, y: p.y });
     }
   }
-
-  rafHandle = entities.size > 0 ? requestAnimationFrame(tick) : null;
 }
 
 function ensureRunning(): void {
-  if (rafHandle === null) rafHandle = requestAnimationFrame(tick);
+  if (tickerUnsubscribe !== null) return;
+  tickerUnsubscribe = sceneTicker.on(() => tick());
+}
+
+function stopIfIdle(): void {
+  if (entities.size > 0 || tickerUnsubscribe === null) return;
+  tickerUnsubscribe();
+  tickerUnsubscribe = null;
 }
 
 interface UseCollisionResolvedOptions {
@@ -194,6 +200,7 @@ export function useCollisionResolvedPosition(
       offsetY.set(0);
       if (visualRegistryId !== null)
         clearHogletVisualPosition(visualRegistryId);
+      stopIfIdle();
     };
   }, [id, motionX, motionY, offsetX, offsetY, radius, visualRegistryId]);
 
@@ -207,9 +214,9 @@ export function getCollisionEntityCountForTest(): number {
 }
 export function clearCollisionEntitiesForTest(): void {
   entities.clear();
-  if (rafHandle !== null) {
-    cancelAnimationFrame(rafHandle);
-    rafHandle = null;
+  if (tickerUnsubscribe !== null) {
+    tickerUnsubscribe();
+    tickerUnsubscribe = null;
   }
 }
 export function stepCollisionResolutionForTest(): void {
