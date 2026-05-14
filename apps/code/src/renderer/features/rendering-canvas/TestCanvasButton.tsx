@@ -1,28 +1,11 @@
 import { useAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { CanvasRenderer } from "@features/rendering-canvas/CanvasRenderer";
+import { buildClientResolver } from "@features/rendering-canvas/clientResolver";
 import TEST_CANVAS from "@features/rendering-canvas/test-canvas-stub.tsx?raw";
 import { useExportCanvasPdf } from "@features/rendering-canvas/useExportCanvasPdf";
 import { FilePdf, SparkleIcon } from "@phosphor-icons/react";
 import { Button, Dialog, Flex } from "@radix-ui/themes";
-import type { PostHogAPIClient } from "@renderer/api/posthogClient";
 import { useMemo, useState } from "react";
-
-function buildClientResolver(client: PostHogAPIClient) {
-  return async (path: string, args: unknown[]) => {
-    const segments = path.split(".");
-    let target: unknown = client;
-    for (const segment of segments) {
-      if (target == null || typeof target !== "object") {
-        throw new Error(`"${path}" is not callable on the client`);
-      }
-      target = (target as Record<string, unknown>)[segment];
-    }
-    if (typeof target !== "function") {
-      throw new Error(`"${path}" is not a function on the client`);
-    }
-    return await (target as (...a: unknown[]) => unknown).apply(client, args);
-  };
-}
 
 const TEST_CANVAS_NAME = "Test canvas";
 
