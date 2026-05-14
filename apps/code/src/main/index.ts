@@ -14,6 +14,7 @@ import type { AppLifecycleService } from "./services/app-lifecycle/service";
 import type { AuthService } from "./services/auth/service";
 import type { ExternalAppsService } from "./services/external-apps/service";
 import type { GitHubIntegrationService } from "./services/github-integration/service";
+import type { HedgehogTickService } from "./services/hedgemony/hedgehog-tick-service";
 import type { InboxLinkService } from "./services/inbox-link/service";
 import type { NotificationService } from "./services/notification/service";
 import type { OAuthService } from "./services/oauth/service";
@@ -164,6 +165,13 @@ async function initializeServices(): Promise<void> {
     MAIN_TOKENS.SuspensionService,
   );
   suspensionService.startInactivityChecker();
+
+  // Boot the per-nest hedgehog scheduler. The service is inert when there are
+  // no active nests, so this is safe even when the Hedgemony flag is off.
+  const hedgehogTickService = container.get<HedgehogTickService>(
+    MAIN_TOKENS.HedgehogTickService,
+  );
+  hedgehogTickService.start();
 
   // Track app started event
   trackAppEvent(ANALYTICS_EVENTS.APP_STARTED);

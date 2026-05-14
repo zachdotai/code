@@ -1,6 +1,7 @@
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
 import type { GoalSpecDraftService } from "../../services/hedgemony/goal-spec-draft-service";
+import type { HedgehogTickService } from "../../services/hedgemony/hedgehog-tick-service";
 import type { HogletService } from "../../services/hedgemony/hoglet-service";
 import type { NestChatService } from "../../services/hedgemony/nest-chat-service";
 import type { NestService } from "../../services/hedgemony/nest-service";
@@ -27,6 +28,7 @@ import {
   recordBootstrapHandoffInput,
   recordSignalBackedHogletInput,
   releaseHogletInput,
+  sendNestMessageInput,
   updateNestInput,
 } from "../../services/hedgemony/schemas";
 import { publicProcedure, router } from "../trpc";
@@ -38,6 +40,8 @@ const getGoalSpecDraftService = () =>
   container.get<GoalSpecDraftService>(MAIN_TOKENS.GoalSpecDraftService);
 const getHogletService = () =>
   container.get<HogletService>(MAIN_TOKENS.HogletService);
+const getHedgehogTickService = () =>
+  container.get<HedgehogTickService>(MAIN_TOKENS.HedgehogTickService);
 
 export const hedgemonyRouter = router({
   goalDraft: router({
@@ -114,9 +118,22 @@ export const hedgemonyRouter = router({
     recordBootstrapHandoff: publicProcedure
       .input(recordBootstrapHandoffInput)
       .output(nestMessage)
-      .mutation(({ input }) =>
-        getNestChatService().recordBootstrapHandoff(input),
-      ),
+      .mutation(({ input }) => {
+        const message = getNestChatService().recordBootstrapHandoff(input);
+        getService().emitMessageAppended(message);
+        return message;
+      }),
+
+    send: publicProcedure
+      .input(sendNestMessageInput)
+      .output(nestMessage)
+      .mutation(({ input }) => {
+        const message = getNestChatService().send(input);
+        getService().emitMessageAppended(message);
+        // Operator chat is a tick trigger per the spec; fire-and-forget.
+        getHedgehogTickService().enqueueTick(input.nestId, "operator_chat");
+        return message;
+      }),
   }),
   hoglets: router({
     recordAdhoc: publicProcedure

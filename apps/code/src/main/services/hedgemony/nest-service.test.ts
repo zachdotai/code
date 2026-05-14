@@ -21,7 +21,7 @@ import type { FoldersService } from "../folders/service";
 import type { GitService } from "../git/service";
 import type { NestChatService } from "./nest-chat-service";
 import { NestService } from "./nest-service";
-import { HedgemonyEvent, type Nest } from "./schemas";
+import { HedgemonyEvent, type Nest, type NestMessage } from "./schemas";
 
 type NestPatch = Parameters<NestRepository["update"]>[1];
 type CreateNestData = Parameters<NestRepository["create"]>[0];
@@ -81,12 +81,26 @@ function createMockNestRepository() {
   return repo as typeof repo & NestRepository;
 }
 
+function makeMessage(overrides: Partial<NestMessage> = {}): NestMessage {
+  return {
+    id: crypto.randomUUID(),
+    nestId: "nest-1",
+    kind: "audit",
+    visibility: "summary",
+    sourceTaskId: null,
+    body: "msg",
+    payloadJson: null,
+    createdAt: "2026-05-13T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 function createMockNestChatService() {
   return {
-    recordCreationContext: vi.fn(),
-    recordBootstrapHandoff: vi.fn(),
-    recordCompletionContext: vi.fn(),
-    forgetCompletedContext: vi.fn(),
+    recordCreationContext: vi.fn(() => [makeMessage(), makeMessage()]),
+    recordBootstrapHandoff: vi.fn(() => makeMessage()),
+    recordCompletionContext: vi.fn(() => makeMessage()),
+    forgetCompletedContext: vi.fn(() => makeMessage()),
   } as unknown as NestChatService & {
     recordCreationContext: ReturnType<typeof vi.fn>;
     recordBootstrapHandoff: ReturnType<typeof vi.fn>;

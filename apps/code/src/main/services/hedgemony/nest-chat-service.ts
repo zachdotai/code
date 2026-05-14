@@ -10,6 +10,7 @@ import type {
   Nest,
   NestMessage,
   RecordBootstrapHandoffInput,
+  SendNestMessageInput,
 } from "./schemas";
 import { SPEC_DRIVEN_DEVELOPMENT_METHOD } from "./spec-driven-development";
 
@@ -28,13 +29,13 @@ export class NestChatService {
     return messages.filter((message) => message.visibility === "summary");
   }
 
-  recordCreationContext(nest: Nest, input: CreateNestInput): void {
+  recordCreationContext(nest: Nest, input: CreateNestInput): NestMessage[] {
     const creationTranscript =
       input.creationTranscript && input.creationTranscript.length > 0
         ? input.creationTranscript
         : buildFallbackTranscript(input);
 
-    this.messages.create({
+    const transcriptMessage = this.messages.create({
       nestId: nest.id,
       kind: "user_message",
       body: formatCreationContext(input, creationTranscript),
@@ -48,7 +49,7 @@ export class NestChatService {
       }),
     });
 
-    this.messages.create({
+    const auditMessage = this.messages.create({
       nestId: nest.id,
       kind: "audit",
       body: `Nest created at (${nest.mapX}, ${nest.mapY}).`,
@@ -58,6 +59,8 @@ export class NestChatService {
         status: nest.status,
       }),
     });
+
+    return [transcriptMessage, auditMessage];
   }
 
   recordBootstrapHandoff(input: RecordBootstrapHandoffInput): NestMessage {
@@ -88,10 +91,10 @@ export class NestChatService {
     });
   }
 
-  recordCompletionContext(nest: Nest, input: CompleteNestInput): void {
+  recordCompletionContext(nest: Nest, input: CompleteNestInput): NestMessage {
     const compaction = this.messages.compactCompletedContext(nest.id);
 
-    this.messages.create({
+    return this.messages.create({
       nestId: nest.id,
       kind: "audit",
       body: formatCompletionContext(input, compaction),
@@ -109,10 +112,10 @@ export class NestChatService {
   forgetCompletedContext(
     nest: Nest,
     input: ForgetCompletedNestContextInput,
-  ): void {
+  ): NestMessage {
     const compaction = this.messages.compactCompletedContext(nest.id);
 
-    this.messages.create({
+    return this.messages.create({
       nestId: nest.id,
       kind: "audit",
       body: formatForgetCompletedContext(input, compaction),
@@ -121,6 +124,47 @@ export class NestChatService {
         reason: input.reason ?? null,
         compaction,
       }),
+    });
+  }
+
+  /**
+   * Writes an operator chat message (`kind: "user_message"`) to a nest.
+   * Returned message is emitted as a `message_appended` event by the caller
+   * via NestService so live subscribers see it without a separate watch.
+   */
+  send(input: SendNestMessageInput): NestMessage {
+    return this.messages.create({
+      nestId: input.nestId,
+      kind: "user_message",
+      visibility: "summary",
+      body: input.body,
+      payloadJson: JSON.stringify({ source: "operator_chat" }),
+    });
+  }
+
+  /**
+   * Generic writer used by HedgehogTickService for `hedgehog_message`,
+   * `audit`, and `tool_result` rows. The caller (tick service) owns emission
+   * of `message_appended` through NestService after this returns.
+   */
+  recordHedgehogMessage(input: {
+    nestId: string;
+    kind: "hedgehog_message" | "audit" | "tool_result";
+    body: string;
+    payloadJson?: Record<string, unknown> | null;
+    visibility?: "summary" | "detail";
+    sourceTaskId?: string | null;
+  }): NestMessage {
+    return this.messages.create({
+      nestId: input.nestId,
+      kind: input.kind,
+      visibility: input.visibility ?? "summary",
+      body: input.body,
+      sourceTaskId: input.sourceTaskId ?? null,
+      payloadJson:
+        input.payloadJson === undefined || input.payloadJson === null
+          ? null
+          : JSON.stringify(input.payloadJson),
     });
   }
 }

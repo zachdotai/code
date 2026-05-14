@@ -12,9 +12,13 @@ import {
   type AnthropicErrorResponse,
   type AnthropicMessagesRequest,
   type AnthropicMessagesResponse,
+  type AnthropicToolChoice,
+  type AnthropicToolDefinition,
+  type AnthropicToolUseBlock,
   type LlmGatewayEffortLevel,
   type LlmMessage,
   type PromptOutput,
+  type PromptWithToolsOutput,
   type UsageOutput,
   usageOutput,
 } from "./schemas";
@@ -141,7 +145,7 @@ export class LlmGatewayService {
     const data = (await response.json()) as AnthropicMessagesResponse;
 
     const textContent = data.content.find((c) => c.type === "text");
-    const content = textContent?.text || "";
+    const content = textContent?.type === "text" ? textContent.text : "";
 
     log.debug("LLM gateway response received", {
       model: data.model,
@@ -152,6 +156,141 @@ export class LlmGatewayService {
 
     return {
       content,
+      model: data.model,
+      stopReason: data.stop_reason,
+      usage: {
+        inputTokens: data.usage.input_tokens,
+        outputTokens: data.usage.output_tokens,
+      },
+    };
+  }
+
+  /**
+   * Like `prompt` but with Claude tool calling. Returns parsed text + tool_use
+   * blocks separately so the caller can dispatch tools without re-walking the
+   * content array.
+   */
+  async promptWithTools(
+    messages: LlmMessage[],
+    options: {
+      system?: string;
+      maxTokens?: number;
+      model?: string;
+      tools: AnthropicToolDefinition[];
+      toolChoice?: AnthropicToolChoice;
+    },
+  ): Promise<PromptWithToolsOutput> {
+    const {
+      system,
+      maxTokens,
+      model = DEFAULT_GATEWAY_MODEL,
+      tools,
+      toolChoice,
+    } = options;
+
+    const auth = await this.authService.getValidAccessToken();
+    const gatewayUrl = getLlmGatewayUrl(auth.apiHost);
+    const messagesUrl = `${gatewayUrl}/v1/messages`;
+
+    const requestBody: AnthropicMessagesRequest = {
+      model,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      stream: false,
+      tools,
+    };
+
+    if (maxTokens !== undefined) {
+      requestBody.max_tokens = maxTokens;
+    }
+
+    if (system) {
+      requestBody.system = system;
+    }
+
+    if (toolChoice) {
+      requestBody.tool_choice = toolChoice;
+    }
+
+    log.debug("Sending tools request to LLM gateway", {
+      url: messagesUrl,
+      model,
+      messageCount: messages.length,
+      toolCount: tools.length,
+    });
+
+    const response = await this.authService.authenticatedFetch(
+      fetch,
+      messagesUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      },
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      let errorData: AnthropicErrorResponse | null = null;
+
+      try {
+        errorData = JSON.parse(errorBody) as AnthropicErrorResponse;
+      } catch {
+        log.error("Failed to parse error response", {
+          errorBody,
+          status: response.status,
+        });
+      }
+
+      const errorMessage =
+        errorData?.error?.message ||
+        `HTTP ${response.status}: ${response.statusText}`;
+      const errorType = errorData?.error?.type || "unknown_error";
+      const errorCode = errorData?.error?.code;
+
+      log.error("LLM gateway tools request failed", {
+        status: response.status,
+        errorType,
+        errorMessage,
+      });
+
+      throw new LlmGatewayError(
+        errorMessage,
+        errorType,
+        errorCode,
+        response.status,
+      );
+    }
+
+    const data = (await response.json()) as AnthropicMessagesResponse;
+
+    const textBlocks: string[] = [];
+    const toolUseBlocks: AnthropicToolUseBlock[] = [];
+    for (const block of data.content) {
+      if (block.type === "text") {
+        textBlocks.push(block.text);
+      } else if (block.type === "tool_use") {
+        toolUseBlocks.push({
+          id: block.id,
+          name: block.name,
+          input: block.input,
+        });
+      }
+    }
+
+    log.debug("LLM gateway tools response received", {
+      model: data.model,
+      stopReason: data.stop_reason,
+      textBlocks: textBlocks.length,
+      toolUseBlocks: toolUseBlocks.length,
+      inputTokens: data.usage.input_tokens,
+      outputTokens: data.usage.output_tokens,
+    });
+
+    return {
+      textBlocks,
+      toolUseBlocks,
       model: data.model,
       stopReason: data.stop_reason,
       usage: {

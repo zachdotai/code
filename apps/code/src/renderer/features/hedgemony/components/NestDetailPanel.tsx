@@ -1,5 +1,9 @@
-import type { Nest } from "@main/services/hedgemony/schemas";
-import { Archive, FloppyDisk, X } from "@phosphor-icons/react";
+import type {
+  Nest,
+  NestMessage,
+  NestMessageKind,
+} from "@main/services/hedgemony/schemas";
+import { Archive, FloppyDisk, PaperPlaneRight, X } from "@phosphor-icons/react";
 import {
   Button,
   Flex,
@@ -10,10 +14,10 @@ import {
 } from "@radix-ui/themes";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { selectNestMessages, useNestChatStore } from "../stores/nestChatStore";
-import { useNestStore } from "../stores/nestStore";
+import { selectHedgehogState, useNestStore } from "../stores/nestStore";
 
 const log = logger.scope("nest-detail-panel");
 
@@ -42,14 +46,47 @@ export function NestDetailPanel({
     (s) => s.loadingByNestId[nest.id] ?? false,
   );
   const loadMessages = useNestChatStore((s) => s.load);
+  const hedgehogState = useNestStore(selectHedgehogState(nest.id));
+
+  const [chatDraft, setChatDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
 
   useEffect(() => {
     setName(nest.name);
     setGoalPrompt(nest.goalPrompt);
     setDefinitionOfDone(nest.definitionOfDone ?? "");
     setError(null);
+    setChatDraft("");
+    setChatError(null);
     void loadMessages(nest.id);
   }, [nest, loadMessages]);
+
+  const handleSendChat = async () => {
+    const body = chatDraft.trim();
+    if (!body || sending) return;
+    setSending(true);
+    setChatError(null);
+    try {
+      await trpcClient.hedgemony.nestChat.send.mutate({
+        nestId: nest.id,
+        body,
+      });
+      setChatDraft("");
+    } catch (e) {
+      log.error("Failed to send nest chat", { nestId: nest.id, error: e });
+      setChatError(e instanceof Error ? e.message : "Failed to send message");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleChatKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void handleSendChat();
+    }
+  };
 
   const canSave = name.trim().length > 0 && goalPrompt.trim().length > 0;
 
@@ -186,46 +223,99 @@ export function NestDetailPanel({
 
           <div className="border-(--gray-5) border-t pt-4">
             <Flex direction="column" gap="2">
-              <Text size="2" weight="medium">
-                Creation context
-              </Text>
+              <div className="flex items-center justify-between">
+                <Text size="2" weight="medium">
+                  Nest chat
+                </Text>
+                {hedgehogState?.state === "ticking" && (
+                  <span className="flex items-center gap-1 rounded-full bg-(--amber-3) px-2 py-0.5 text-(--amber-11) text-[11px]">
+                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-(--amber-9)" />
+                    Hedgehog ticking…
+                  </span>
+                )}
+              </div>
               {loadingMessages && messages.length === 0 ? (
                 <Text size="2" color="gray">
                   Loading context...
                 </Text>
               ) : messages.length === 0 ? (
                 <Text size="2" color="gray">
-                  No creation context recorded.
+                  No messages yet — talk to the hedgehog below.
                 </Text>
               ) : (
                 messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className="rounded-(--radius-2) border border-(--gray-4) bg-(--gray-2) p-2"
-                  >
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <Text size="1" color="gray" weight="medium">
-                        {message.kind === "audit" ? "Audit" : "Prompt"}
-                      </Text>
-                      <Text size="1" color="gray">
-                        {new Date(message.createdAt).toLocaleString()}
-                      </Text>
-                    </div>
-                    <Text
-                      as="p"
-                      size="2"
-                      className="whitespace-pre-wrap text-(--gray-12)"
-                    >
-                      {message.body}
-                    </Text>
-                  </div>
+                  <NestChatMessage key={message.id} message={message} />
                 ))
               )}
             </Flex>
           </div>
         </Flex>
       </ScrollArea>
+
+      <div className="border-(--gray-5) border-t bg-(--gray-1) p-3">
+        <Flex direction="column" gap="2">
+          <TextField.Root
+            placeholder="Message the hedgehog…"
+            value={chatDraft}
+            onChange={(e) => setChatDraft(e.target.value)}
+            onKeyDown={handleChatKeyDown}
+            disabled={sending}
+          />
+          {chatError && (
+            <Text size="1" color="red">
+              {chatError}
+            </Text>
+          )}
+          <Flex justify="end">
+            <Button
+              onClick={handleSendChat}
+              disabled={!chatDraft.trim() || sending}
+              loading={sending}
+              size="2"
+            >
+              <PaperPlaneRight size={14} />
+              Send
+            </Button>
+          </Flex>
+        </Flex>
+      </div>
     </aside>
+  );
+}
+
+const KIND_LABEL: Record<NestMessageKind, string> = {
+  user_message: "You",
+  hedgehog_message: "Hedgehog",
+  audit: "Audit",
+  tool_result: "Tool result",
+  hoglet_summary: "Hoglet",
+};
+
+const KIND_ACCENT: Record<NestMessageKind, string> = {
+  user_message: "text-(--gray-12)",
+  hedgehog_message: "text-(--amber-11)",
+  audit: "text-(--gray-10)",
+  tool_result: "text-(--blue-11)",
+  hoglet_summary: "text-(--gray-11)",
+};
+
+function NestChatMessage({ message }: { message: NestMessage }) {
+  const label = KIND_LABEL[message.kind] ?? message.kind;
+  const accent = KIND_ACCENT[message.kind] ?? "text-(--gray-11)";
+  return (
+    <div className="rounded-(--radius-2) border border-(--gray-4) bg-(--gray-2) p-2">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <Text size="1" weight="medium" className={accent}>
+          {label}
+        </Text>
+        <Text size="1" color="gray">
+          {new Date(message.createdAt).toLocaleString()}
+        </Text>
+      </div>
+      <Text as="p" size="2" className="whitespace-pre-wrap text-(--gray-12)">
+        {message.body}
+      </Text>
+    </div>
   );
 }
 

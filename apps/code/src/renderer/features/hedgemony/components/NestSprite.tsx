@@ -4,6 +4,7 @@ import { Tooltip } from "@radix-ui/themes";
 import nestImage from "@renderer/assets/images/hedgemony/nest.png";
 import { animate, motion, useMotionValue } from "framer-motion";
 import { useEffect, useState } from "react";
+import { selectHedgehogState, useNestStore } from "../stores/nestStore";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 
 const NEST_SIZE = 140;
@@ -18,6 +19,19 @@ const NEST_SPEED = 100;
 const NEST_EASE = [0.4, 0, 0.2, 1] as const;
 const WALK_ANIMATION = "walk" as const;
 const IDLE_ANIMATION = "idle" as const;
+const TICKING_ANIMATION = "action" as const;
+
+function residentAnimation({
+  isMoving,
+  isTicking,
+}: {
+  isMoving: boolean;
+  isTicking: boolean;
+}): "walk" | "idle" | "action" {
+  if (isMoving) return WALK_ANIMATION;
+  if (isTicking) return TICKING_ANIMATION;
+  return IDLE_ANIMATION;
+}
 
 interface NestSpriteProps {
   nest: Nest;
@@ -51,6 +65,8 @@ export function NestSprite({
   const motionY = useMotionValue(nest.mapY);
   const [isMoving, setIsMoving] = useState(false);
   const [facing, setFacing] = useState<"left" | "right">("right");
+  const hedgehogState = useNestStore(selectHedgehogState(nest.id));
+  const isTicking = hedgehogState?.state === "ticking";
 
   const { ref: dropRef, isDropTarget } = useDroppable({
     id: `nest-drop-${nest.id}`,
@@ -134,6 +150,29 @@ export function NestSprite({
                 filter: isDropTarget ? "saturate(1.6) brightness(1.1)" : "none",
               }}
             />
+            {isTicking && (
+              <motion.div
+                aria-hidden
+                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full"
+                style={{
+                  width: TERRITORY_SIZE_SELECTED,
+                  height: TERRITORY_SIZE_SELECTED,
+                  background:
+                    "radial-gradient(circle, rgba(253, 224, 71, 0.40) 0%, rgba(253, 224, 71, 0.18) 50%, transparent 78%)",
+                  mixBlendMode: "screen",
+                }}
+                initial={{ opacity: 0.55, scale: 0.9 }}
+                animate={{
+                  opacity: [0.55, 0.95, 0.55],
+                  scale: [0.9, 1.05, 0.9],
+                }}
+                transition={{
+                  duration: 1.6,
+                  repeat: Number.POSITIVE_INFINITY,
+                  ease: "easeInOut",
+                }}
+              />
+            )}
             {isDropTarget && (
               <motion.span
                 className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full border-(--accent-9) border-2 border-dashed"
@@ -180,8 +219,8 @@ export function NestSprite({
                 transition={{ duration: 0.2, ease: "easeOut" }}
               >
                 <AnimatedHedgehog
-                  animation={isMoving ? WALK_ANIMATION : IDLE_ANIMATION}
-                  fps={isMoving ? 14 : 8}
+                  animation={residentAnimation({ isMoving, isTicking })}
+                  fps={isMoving ? 14 : isTicking ? 10 : 8}
                   facing={facing}
                   size={isMoving ? HOG_SIZE_MOVING : HOG_SIZE_IDLE}
                 />

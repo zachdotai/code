@@ -18,10 +18,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..");
 const SCRIPT_PATH = join(REPO_ROOT, "notes/hedgemony/voice-lines.json");
-const OUT_DIR = join(
-  REPO_ROOT,
-  "apps/code/src/renderer/assets/sounds/voice",
-);
+const OUT_DIR = join(REPO_ROOT, "apps/code/src/renderer/assets/sounds/voice");
 
 const TAKES_PER_LINE = 3;
 const FORCE = process.argv.includes("--force");

@@ -71,6 +71,13 @@
       "when": 1778727272752,
       "tag": "0009_cloudy_valeria_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1778728818146,
+      "tag": "0010_big_viper",
+      "breakpoints": true
     }
   ]
 }

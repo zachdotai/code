@@ -193,16 +193,36 @@ export type ListNestChatInput = z.infer<typeof listNestChatInput>;
 export const listNestChatOutput = z.array(nestMessage);
 
 /**
- * Discriminated event yielded by `nests.watch(id)`. Future event kinds
- * (hoglet roster changes, hedgehog tick completion) join this union as the
- * relevant services come online.
+ * Renderer-visible projection of `hedgemony_hedgehog_state`. Drives the
+ * "ticking" sprite glow and any future per-nest hedgehog UI. `state` enum
+ * mirrors the sqlite column.
+ */
+export const hedgehogStateView = z.object({
+  state: z.enum(["idle", "ticking", "proposing_completion"]),
+  lastTickAt: z.string().nullable(),
+});
+export type HedgehogStateView = z.infer<typeof hedgehogStateView>;
+
+/**
+ * Discriminated event yielded by `nests.watch(id)`. Status/completed/archived
+ * come from `NestService` CRUD; `hedgehog_tick` comes from the tick service;
+ * `message_appended` carries newly-written nest chat rows so the renderer
+ * doesn't need a separate `nestChat.watch` subscription.
  */
 export const nestWatchEvent = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("status"), nest }),
   z.object({ kind: z.literal("completed"), nest }),
   z.object({ kind: z.literal("archived"), nest }),
+  z.object({ kind: z.literal("hedgehog_tick"), state: hedgehogStateView }),
+  z.object({ kind: z.literal("message_appended"), message: nestMessage }),
 ]);
 export type NestWatchEvent = z.infer<typeof nestWatchEvent>;
+
+export const sendNestMessageInput = z.object({
+  nestId: z.string().min(1),
+  body: z.string().trim().min(1).max(4000),
+});
+export type SendNestMessageInput = z.infer<typeof sendNestMessageInput>;
 
 export const hoglet = z.object({
   id: z.string(),

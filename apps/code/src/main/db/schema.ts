@@ -168,6 +168,21 @@ export const hedgemonyNestMessages = sqliteTable(
   ],
 );
 
+export const hedgemonyHedgehogState = sqliteTable("hedgemony_hedgehog_state", {
+  nestId: text()
+    .primaryKey()
+    .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+  state: text({
+    enum: ["idle", "ticking", "proposing_completion"],
+  })
+    .notNull()
+    .default("idle"),
+  lastTickAt: text(),
+  serializedStateJson: text(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 export const authPreferences = sqliteTable(
   "auth_preferences",
   {

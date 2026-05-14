@@ -1,5 +1,6 @@
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
+import { useNestChatStore } from "../stores/nestChatStore";
 import { useNestStore } from "../stores/nestStore";
 
 const log = logger.scope("nest-subscription-service");
@@ -7,19 +8,30 @@ const log = logger.scope("nest-subscription-service");
 type WatchHandle = { unsubscribe: () => void };
 
 /**
- * Subscribes to a single nest's watch stream. Updates the store on each
- * event and detaches itself when the nest archives.
+ * Subscribes to a single nest's watch stream. The watch channel multiplexes
+ * five event kinds — status/completed/archived (nest CRUD), hedgehog_tick
+ * (sprite glow state), and message_appended (live chat append).
  */
 function watchNest(id: string): WatchHandle {
   return trpcClient.hedgemony.nests.watch.subscribe(
     { id },
     {
       onData: (event) => {
-        const store = useNestStore.getState();
-        if (event.kind === "archived") {
-          store.remove(event.nest.id);
-        } else {
-          store.upsert(event.nest);
+        const nestStore = useNestStore.getState();
+        switch (event.kind) {
+          case "archived":
+            nestStore.remove(event.nest.id);
+            return;
+          case "status":
+          case "completed":
+            nestStore.upsert(event.nest);
+            return;
+          case "hedgehog_tick":
+            nestStore.setHedgehogState(id, event.state);
+            return;
+          case "message_appended":
+            useNestChatStore.getState().append(id, event.message);
+            return;
         }
       },
       onError: (error) =>

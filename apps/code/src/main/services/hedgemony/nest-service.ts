@@ -12,10 +12,12 @@ import {
   type CompleteNestInput,
   type CreateNestInput,
   type ForgetCompletedNestContextInput,
+  type HedgehogStateView,
   HedgemonyEvent,
   type HedgemonyEvents,
   type Nest,
   type NestIdInput,
+  type NestMessage,
   type NestWatchEvent,
   type UpdateNestInput,
 } from "./schemas";
@@ -59,9 +61,15 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
       mapX: input.mapX,
       mapY: input.mapY,
     });
-    this.nestChat.recordCreationContext(created, input);
+    const creationMessages = this.nestChat.recordCreationContext(
+      created,
+      input,
+    );
+    for (const message of creationMessages) {
+      this.emitMessageAppended(message);
+    }
     if (input.creationBootstrap) {
-      this.nestChat.recordBootstrapHandoff(
+      const handoffMessage = this.nestChat.recordBootstrapHandoff(
         await buildLocalBootstrapHandoff(
           created.id,
           input.creationBootstrap,
@@ -80,6 +88,7 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
           },
         ),
       );
+      this.emitMessageAppended(handoffMessage);
     }
     log.info("Nest created", { id: created.id, name: created.name });
     this.emitChange(created, { kind: "status", nest: created });
@@ -119,7 +128,11 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     if (!completed) {
       throw new Error(`Nest not found: ${input.id}`);
     }
-    this.nestChat.recordCompletionContext(completed, input);
+    const completionMessage = this.nestChat.recordCompletionContext(
+      completed,
+      input,
+    );
+    this.emitMessageAppended(completionMessage);
     log.info("Nest completed", { id: completed.id });
     this.emitChange(completed, { kind: "completed", nest: completed });
     return completed;
@@ -134,7 +147,8 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
       throw new Error("nest_must_be_dormant_to_forget_context");
     }
 
-    this.nestChat.forgetCompletedContext(nest, input);
+    const forgetMessage = this.nestChat.forgetCompletedContext(nest, input);
+    this.emitMessageAppended(forgetMessage);
     log.info("Completed nest context forgotten", { id: nest.id });
     this.emitChange(nest, { kind: "status", nest });
     return nest;
@@ -148,6 +162,30 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     log.info("Nest unarchived", { id: restored.id });
     this.emitChange(restored, { kind: "status", nest: restored });
     return restored;
+  }
+
+  /**
+   * Public emit helper used by services that write to nest chat outside the
+   * NestService body (the new `nestChat.send` mutation, HedgehogTickService).
+   * Centralizes the wrap-into-NestWatchEvent step so subscribers stay on a
+   * single channel.
+   */
+  emitMessageAppended(message: NestMessage): void {
+    this.emit(HedgemonyEvent.NestChanged, {
+      nestId: message.nestId,
+      event: { kind: "message_appended", message },
+    });
+  }
+
+  /**
+   * Emitted by HedgehogTickService at tick boundaries. Drives the
+   * "ticking" sprite glow in the renderer.
+   */
+  emitHedgehogTick(nestId: string, state: HedgehogStateView): void {
+    this.emit(HedgemonyEvent.NestChanged, {
+      nestId,
+      event: { kind: "hedgehog_tick", state },
+    });
   }
 
   private emitChange(nest: Nest, event: NestWatchEvent): void {

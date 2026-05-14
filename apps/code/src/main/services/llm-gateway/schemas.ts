@@ -34,6 +34,21 @@ export const promptOutput = z.object({
 
 export type PromptOutput = z.infer<typeof promptOutput>;
 
+export interface AnthropicToolDefinition {
+  name: string;
+  description: string;
+  input_schema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export type AnthropicToolChoice =
+  | { type: "auto" }
+  | { type: "any" }
+  | { type: "tool"; name: string };
+
 export interface AnthropicMessagesRequest {
   model: string;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
@@ -43,18 +58,41 @@ export interface AnthropicMessagesRequest {
   output_config?: {
     effort?: LlmGatewayEffortLevel;
   };
+  tools?: AnthropicToolDefinition[];
+  tool_choice?: AnthropicToolChoice;
 }
+
+export type AnthropicContentBlock =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: unknown };
 
 export interface AnthropicMessagesResponse {
   id: string;
   type: "message";
   role: "assistant";
-  content: Array<{ type: "text"; text: string }>;
+  content: AnthropicContentBlock[];
   model: string;
   stop_reason: string | null;
   usage: {
     input_tokens: number;
     output_tokens: number;
+  };
+}
+
+export interface AnthropicToolUseBlock {
+  id: string;
+  name: string;
+  input: unknown;
+}
+
+export interface PromptWithToolsOutput {
+  textBlocks: string[];
+  toolUseBlocks: AnthropicToolUseBlock[];
+  model: string;
+  stopReason: string | null;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
   };
 }
 

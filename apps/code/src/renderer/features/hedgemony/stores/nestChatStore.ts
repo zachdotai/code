@@ -14,6 +14,11 @@ interface NestChatStoreActions {
   setMessages: (nestId: string, messages: NestMessage[]) => void;
   setLoading: (nestId: string, loading: boolean) => void;
   load: (nestId: string) => Promise<void>;
+  /**
+   * Append a message coming in from a live `message_appended` event.
+   * Idempotent on `id` so re-deliveries are safe.
+   */
+  append: (nestId: string, message: NestMessage) => void;
 }
 
 type NestChatStore = NestChatStoreState & NestChatStoreActions;
@@ -45,6 +50,20 @@ export const useNestChatStore = create<NestChatStore>()((set, get) => ({
       get().setLoading(nestId, false);
     }
   },
+
+  append: (nestId, message) =>
+    set((state) => {
+      const existing = state.messagesByNestId[nestId] ?? [];
+      if (existing.some((m) => m.id === message.id)) {
+        return state;
+      }
+      return {
+        messagesByNestId: {
+          ...state.messagesByNestId,
+          [nestId]: [...existing, message],
+        },
+      };
+    }),
 }));
 
 export const selectNestMessages =
