@@ -103,7 +103,7 @@ export function TileFrame({
 
   return (
     <Box
-      className={`group relative flex h-full min-w-0 flex-col overflow-hidden rounded-(--radius-3) border bg-(--gray-1) transition-colors duration-100 ${
+      className={`group relative flex h-full min-w-0 flex-col overflow-hidden rounded-(--radius-3) border bg-(--gray-2) transition-colors duration-100 ${
         isPending
           ? "border-(--accent-7) border-dashed"
           : "border-(--gray-5) group-data-[resizing=true]/tile:border-(--accent-8) group-data-[resizing=true]/tile:ring-(--accent-7) group-data-[resizing=true]/tile:ring-1"
@@ -146,7 +146,7 @@ export function TileFrame({
                     setMenuOpen((v) => !v);
                   }}
                   aria-label="Tile options"
-                  className="flex h-6 w-6 items-center justify-center rounded-(--radius-2) text-(--gray-10) opacity-0 transition-opacity hover:bg-(--gray-3) hover:text-(--gray-12) group-hover/tile:opacity-100"
+                  className="flex h-6 w-6 items-center justify-center rounded-(--radius-2) text-(--gray-10) transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
                 >
                   <DotsThree size={14} weight="bold" />
                 </button>
@@ -210,14 +210,14 @@ export function TileFrame({
           </Flex>
         </Flex>
       )}
-      {/* Body renders light-themed regardless of app appearance so the tile
-       *  contents match embedded PostHog insights (which render light). Radix's
-       *  gray scale flips inside this Theme: bg-white shows through, text
-       *  tokens like --gray-12 become near-black. */}
+      {/* Body renders light-themed regardless of app appearance so the chrome
+       *  matches embedded PostHog insights. The `light-theme` class is load-
+       *  bearing: globals.css forces `--color-background: #131316` on every
+       *  `.radix-themes` inside `.dark` that lacks `.light` / `.light-theme`,
+       *  which would otherwise clobber this nested Theme back to dark. */}
       <Theme
         appearance="light"
-        hasBackground={false}
-        className="min-h-0 flex-1 overflow-auto bg-white"
+        className="light-theme min-h-0 flex-1 overflow-auto bg-(--color-background)"
       >
         {children}
       </Theme>

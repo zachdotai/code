@@ -1,5 +1,4 @@
 import {
-  ChartLineUp,
   FileText,
   GaugeIcon,
   GithubLogo,
@@ -53,22 +52,9 @@ const POSTHOG_OPTIONS: TileTypeOption[] = [
     factory: () => ({
       type: "headline",
       label: "Headline metric",
-      fallbackValue: "—",
+      fallbackValue: "–",
       fallbackDelta: "Set a target",
       fallbackSparkline: [0, 0, 0, 0, 0],
-      size: "md",
-    }),
-  },
-  {
-    type: "insight",
-    label: "Dashboard",
-    description: "Pin a PostHog dashboard or insight.",
-    icon: ChartLineUp,
-    factory: () => ({
-      type: "insight",
-      posthogProjectId: 2,
-      title: "New dashboard",
-      url: "https://us.posthog.com/project/2",
       size: "md",
     }),
   },

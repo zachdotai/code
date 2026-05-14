@@ -10,13 +10,11 @@ export function TryInPostHogWorkBanner({
   onDismiss,
 }: TryInPostHogWorkBannerProps) {
   const setMode = useNavigationStore((s) => s.setMode);
-  const navigateToWorkGenerate = useNavigationStore(
-    (s) => s.navigateToWorkGenerate,
-  );
+  const navigateToWorkHome = useNavigationStore((s) => s.navigateToWorkHome);
 
   const goToNewTask = () => {
     setMode("work");
-    navigateToWorkGenerate();
+    navigateToWorkHome();
   };
 
   return (

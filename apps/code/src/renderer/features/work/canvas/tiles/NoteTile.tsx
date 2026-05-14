@@ -6,7 +6,39 @@ import type {
   NoteTile as NoteTileType,
 } from "@shared/types/work-projects";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Components } from "react-markdown";
 import { TileFrame } from "../TileFrame";
+
+const NoteHeading = ({ children }: { children: React.ReactNode }) => (
+  <Text as="p" mb="3" className="text-(--gray-12) text-sm">
+    <strong>{children}</strong>
+  </Text>
+);
+
+const noteMarkdownComponents: Partial<Components> = {
+  h1: ({ children }) => <NoteHeading>{children}</NoteHeading>,
+  h2: ({ children }) => <NoteHeading>{children}</NoteHeading>,
+  h3: ({ children }) => <NoteHeading>{children}</NoteHeading>,
+  h4: ({ children }) => <NoteHeading>{children}</NoteHeading>,
+  h5: ({ children }) => <NoteHeading>{children}</NoteHeading>,
+  h6: ({ children }) => <NoteHeading>{children}</NoteHeading>,
+  strong: ({ children }) => (
+    <strong className="text-(--gray-12)">{children}</strong>
+  ),
+  ul: ({ children }) => (
+    <ul className="mt-2 mb-3 list-outside list-disc pl-4 text-[13px] marker:text-(--gray-10)">
+      {children}
+    </ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="mt-2 mb-3 list-outside list-decimal pl-6 text-[13px] marker:text-(--gray-10)">
+      {children}
+    </ol>
+  ),
+  li: ({ children }) => (
+    <li className="mb-1 text-(--gray-12) text-[13px]">{children}</li>
+  ),
+};
 
 type NoteTone = NonNullable<NoteTileType["tone"]>;
 
@@ -180,7 +212,10 @@ export function NoteTile({
           >
             {value.trim() ? (
               <Box className="note-tile-markdown">
-                <MarkdownRenderer content={value} />
+                <MarkdownRenderer
+                  content={value}
+                  componentsOverride={noteMarkdownComponents}
+                />
               </Box>
             ) : (
               <Text as="span" className="text-(--gray-9) text-[13px] italic">
