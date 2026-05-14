@@ -4,11 +4,37 @@ import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { toast } from "sonner";
+import { sonnerToastSink } from "../adapters/sonnerToastSink";
+import { trpcHogletRemoteService } from "../adapters/trpcHogletRemoteService";
+import { zustandHogletPositionRepository } from "../adapters/zustandHogletPositionRepository";
+import { zustandHogletRepository } from "../adapters/zustandHogletRepository";
+import { zustandNestRepository } from "../adapters/zustandNestRepository";
 import { WILD_BUCKET } from "../constants/buckets";
+import type { HogletPositionRepository } from "../domain/HogletPositionRepository";
+import type { HogletRemoteService } from "../domain/HogletRemoteService";
+import type { HogletRepository } from "../domain/HogletRepository";
+import type { NestRepository } from "../domain/NestRepository";
+import type { ToastSink } from "../domain/ToastSink";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { useHogletStore } from "../stores/hogletStore";
 
 const log = logger.scope("hoglet-mutations");
+
+export interface HogletMutationDeps {
+  hoglets: HogletRepository;
+  nests?: NestRepository;
+  positions: HogletPositionRepository;
+  remote: HogletRemoteService;
+  toast?: ToastSink;
+}
+
+export const defaultHogletMutationDeps: HogletMutationDeps = {
+  hoglets: zustandHogletRepository,
+  nests: zustandNestRepository,
+  positions: zustandHogletPositionRepository,
+  remote: trpcHogletRemoteService,
+  toast: sonnerToastSink,
+};
 
 export interface HogletDragSource {
   type?: string;
@@ -31,9 +57,9 @@ export async function adoptHoglet(
   hogletId: string,
   nestId: string,
   trackSource: "wild" | "signal",
+  deps: HogletMutationDeps = defaultHogletMutationDeps,
 ): Promise<void> {
-  const store = useHogletStore.getState();
-  const original = store.byBucket[WILD_BUCKET]?.find((h) => h.id === hogletId);
+  const original = deps.hoglets.findInBucket(WILD_BUCKET, hogletId);
   if (!original) {
     log.warn("Adopt: source hoglet not found in wild bucket", { hogletId });
     return;
@@ -44,23 +70,19 @@ export async function adoptHoglet(
     nestId,
     updatedAt: new Date().toISOString(),
   };
-  store.remove(WILD_BUCKET, hogletId);
-  store.upsert(nestId, optimistic);
-  useHogletPositionStore.getState().clearPosition(hogletId);
+  deps.hoglets.remove(WILD_BUCKET, hogletId);
+  deps.hoglets.upsert(nestId, optimistic);
+  deps.positions.clearPosition(hogletId);
 
   try {
-    const updated = await trpcClient.hedgemony.hoglets.adopt.mutate({
-      hogletId,
-      nestId,
-    });
-    useHogletStore.getState().upsert(nestId, updated);
+    const updated = await deps.remote.adopt({ hogletId, nestId });
+    deps.hoglets.upsert(nestId, updated);
     track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED, { source: trackSource });
   } catch (error) {
     log.error("Failed to adopt hoglet", { hogletId, nestId, error });
-    const current = useHogletStore.getState();
-    current.remove(nestId, hogletId);
-    current.upsert(WILD_BUCKET, original);
-    toast.error("Could not adopt hoglet");
+    deps.hoglets.remove(nestId, hogletId);
+    deps.hoglets.upsert(WILD_BUCKET, original);
+    deps.toast?.error("Could not adopt hoglet");
   }
 }
 
