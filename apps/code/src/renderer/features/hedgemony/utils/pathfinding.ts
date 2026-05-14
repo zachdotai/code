@@ -119,6 +119,22 @@ export function snapGoal(
   return nearestFreePointOnLine(from, to, infl);
 }
 
+// Pushes a point out of every inflated obstacle it's inside, iteratively, so
+// the result sits on (or just outside) the nearest perimeter. Used by callers
+// to self-heal a unit's "current position" before passing it to findPath:
+// without this, a stale or HMR-preserved position inside an obstacle would
+// flow into findPath, which prepends the blocked `from` as path[0] — making
+// the sprite visibly snap to the inside-obstacle position before the escape
+// segment plays.
+export function clampOutsideObstacles(
+  point: Vec2,
+  obstacles: Obstacle[],
+  agentRadius: number = DEFAULT_AGENT_RADIUS,
+): Vec2 {
+  const infl = inflate(obstacles, agentRadius);
+  return pushOutOf(point, infl);
+}
+
 // Returns a nearby free perimeter point when a plan starts inside an
 // inflated obstacle. This happens naturally with rapid re-orders: a sprite can
 // be close enough to a unit/building that its center is inside the avoidance

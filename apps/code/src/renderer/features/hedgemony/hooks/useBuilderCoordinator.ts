@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import {
+  clampOutsideObstacles,
   findPath,
   type Obstacle,
   snapGoal,
@@ -112,6 +113,25 @@ export function useBuilderCoordinator({
     };
   }, []);
 
+  // Self-heal a stranded builder. Runs on mount and whenever the obstacle set
+  // (the nest list) changes: if visualPosRef has somehow landed inside an
+  // obstacle — Vite Fast Refresh preserving a pre-fix motionX/Y, a nest being
+  // built right on top of the builder, etc. — push it to the nearest
+  // perimeter and emit a single-waypoint path so BuilderSprite snaps motionX/Y
+  // there. Without this, the builder can sit visibly inside a building at rest
+  // until the user manually clicks somewhere.
+  useEffect(() => {
+    const obstacles = worldObstacles(nests, {
+      pendingNest: pendingBuildRef.current,
+    });
+    const rawFrom = visualPosRef.current;
+    const safe = clampOutsideObstacles(rawFrom, obstacles);
+    if (safe.x === rawFrom.x && safe.y === rawFrom.y) return;
+    visualPosRef.current = safe;
+    setPath([safe]);
+    setLastReachedIndex(0);
+  }, [nests]);
+
   const commitPendingBuild = useCallback(() => {
     const pending = pendingBuildRef.current;
     if (!pending) return;
@@ -153,7 +173,24 @@ export function useBuilderCoordinator({
         }
         setPending(buildingFor);
       }
-      const from = visualPosRef.current;
+      const pendingObstacle = buildingFor ?? pendingBuildRef.current;
+      const obstacles = [
+        ...worldObstacles(nests, { pendingNest: pendingObstacle }),
+        ...extraObstacles,
+      ];
+      // Self-heal a stranded visual position. Vite Fast Refresh / HMR can
+      // leave motionX/motionY (and therefore visualPosRef) stuck at a stale
+      // point inside an obstacle from a previous buggy build. If we hand
+      // that point straight to findPath, the planner correctly escapes —
+      // but it prepends the original blocked `from` as path[0], and the
+      // sprite snaps motionX/Y to path[0] on the next render, *committing*
+      // the visual to the inside-obstacle position. Push the position to
+      // the nearest perimeter first so path[0] is always safe.
+      const rawFrom = visualPosRef.current;
+      const from = clampOutsideObstacles(rawFrom, obstacles);
+      if (from.x !== rawFrom.x || from.y !== rawFrom.y) {
+        visualPosRef.current = from;
+      }
       const dxFromTarget = target.x - from.x;
       const dyFromTarget = target.y - from.y;
       if (dxFromTarget * dxFromTarget + dyFromTarget * dyFromTarget < 0.01) {
@@ -165,11 +202,6 @@ export function useBuilderCoordinator({
         else setState({ kind: "idle" });
         return from;
       }
-      const pendingObstacle = buildingFor ?? pendingBuildRef.current;
-      const obstacles = [
-        ...worldObstacles(nests, { pendingNest: pendingObstacle }),
-        ...extraObstacles,
-      ];
       const snapped = snapGoal(from, target, obstacles);
       const plan = findPath(from, snapped, obstacles);
       const resolvedGoal = plan[plan.length - 1] ?? snapped;
