@@ -51,7 +51,7 @@ uncaught error instead of silently ignoring the duplicate.
 on the insert statement, or catch the sqlite constraint violation error and
 treat it as a successful no-op.
 
-### 4. `raise-hoglet-handler` lacks rollback on partial failure
+### 4. `raise-hoglet-handler` lacks rollback on partial failure — DONE
 
 **File:** `raise-hoglet-handler.ts` (~line 63-78)
 

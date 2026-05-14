@@ -55,11 +55,13 @@ export const raiseHogletHandler: HedgehogToolHandler = {
       };
     }
 
+    const runtime = resolveHogletRuntime(
+      ctx.loadout,
+      readUserTaskPreferences(),
+    );
+
+    let createdRunId: string | null = null;
     try {
-      const runtime = resolveHogletRuntime(
-        ctx.loadout,
-        readUserTaskPreferences(),
-      );
       const run = await deps.cloudTasks.createTaskRun(entry.hoglet.taskId, {
         environment: runtime.environment,
         mode: "background",
@@ -69,6 +71,7 @@ export const raiseHogletHandler: HedgehogToolHandler = {
         initialPermissionMode: runtime.executionMode,
         prAuthorshipMode: "bot",
       });
+      createdRunId = run.id;
       await deps.hogletService.ensureCloudWorkspace(
         entry.hoglet.taskId,
         run.branch ?? null,
@@ -93,6 +96,33 @@ export const raiseHogletHandler: HedgehogToolHandler = {
         scratchpadSummary: `Raised hoglet ${args.hoglet_id}`,
       };
     } catch (error) {
+      if (createdRunId !== null) {
+        // Roll back the cloud TaskRun we already created so it doesn't sit
+        // orphaned in `not_started`. Spawn uses a Saga for the same effect;
+        // raise is simple enough that an inline cleanup is clearer.
+        try {
+          await deps.cloudTasks.updateTaskRun(
+            entry.hoglet.taskId,
+            createdRunId,
+            {
+              status: "cancelled",
+              errorMessage: "Cancelled after Hedgemony raise failed",
+            },
+          );
+        } catch (rollbackError) {
+          deps.writeNestMessage(ctx.nest.id, {
+            kind: "audit",
+            body: `Failed to roll back orphaned task run ${createdRunId} on raise failure: ${stringifyError(rollbackError)}.`,
+            payloadJson: {
+              type: "raise_rollback_failed",
+              hogletId: args.hoglet_id,
+              taskId: entry.hoglet.taskId,
+              taskRunId: createdRunId,
+              error: stringifyError(rollbackError),
+            },
+          });
+        }
+      }
       deps.writeNestMessage(ctx.nest.id, {
         kind: "audit",
         body: `Failed to raise hoglet ${args.hoglet_id}: ${stringifyError(error)}.`,
@@ -100,6 +130,7 @@ export const raiseHogletHandler: HedgehogToolHandler = {
           type: "raise_failed",
           hogletId: args.hoglet_id,
           error: stringifyError(error),
+          rolledBackTaskRunId: createdRunId,
         },
       });
       return {
