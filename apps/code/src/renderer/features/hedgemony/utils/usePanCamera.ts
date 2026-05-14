@@ -77,12 +77,57 @@ export function usePanCamera({
     let rafId = 0;
     let commitTimer: ReturnType<typeof setTimeout> | null = null;
 
+    // Cache the edge-pan exclusion zones so we don't re-query the DOM each
+    // frame at 60fps. A MutationObserver invalidates the cache when the
+    // surface's subtree changes.
+    let exclusionsCache: Element[] | null = null;
+    const getExclusions = (): Element[] => {
+      if (exclusionsCache === null) {
+        exclusionsCache = Array.from(el.querySelectorAll("[data-no-edge-pan]"));
+      }
+      return exclusionsCache;
+    };
+    const observer = new MutationObserver(() => {
+      exclusionsCache = null;
+    });
+    observer.observe(el, {
+      childList: true,
+      subtree: true,
+      attributeFilter: ["data-no-edge-pan"],
+    });
+
+    const isPointerNearEdge = (): boolean => {
+      if (!pointerInside || !pointerLocal) return false;
+      const rect = el.getBoundingClientRect();
+      const { x: lx, y: ly } = pointerLocal;
+      return (
+        lx < EDGE_ZONE_PX ||
+        lx > rect.width - EDGE_ZONE_PX ||
+        ly < EDGE_ZONE_PX ||
+        ly > rect.height - EDGE_ZONE_PX
+      );
+    };
+
     const scheduleCommit = () => {
       if (commitTimer) return;
       commitTimer = setTimeout(() => {
         commitTimer = null;
         onCommitRef.current(panX.get(), panY.get());
       }, COMMIT_DEBOUNCE_MS);
+    };
+
+    const stopLoop = () => {
+      if (rafId !== 0) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      lastTs = null;
+    };
+
+    const startLoop = () => {
+      if (rafId !== 0) return;
+      lastTs = null;
+      rafId = requestAnimationFrame(tick);
     };
 
     const tick = (ts: number) => {
@@ -119,9 +164,8 @@ export function usePanCamera({
 
         const px = rect.left + lx;
         const py = rect.top + ly;
-        const exclusions = el.querySelectorAll("[data-no-edge-pan]");
         let excluded = false;
-        for (const zone of exclusions) {
+        for (const zone of getExclusions()) {
           const zr = zone.getBoundingClientRect();
           if (
             px >= zr.left - EDGE_ZONE_PX &&
@@ -154,12 +198,18 @@ export function usePanCamera({
         panX.set(panX.get() + dx * speed * dt);
         panY.set(panY.get() + dy * speed * dt);
         scheduleCommit();
+        rafId = requestAnimationFrame(tick);
+        return;
       }
 
-      rafId = requestAnimationFrame(tick);
+      // No movement this frame. Stop the loop unless something might still
+      // trigger panning next frame — held pan keys, or cursor near an edge.
+      if (pressed.size > 0 || isPointerNearEdge()) {
+        rafId = requestAnimationFrame(tick);
+        return;
+      }
+      stopLoop();
     };
-
-    rafId = requestAnimationFrame(tick);
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.shiftKey) boost = true;
@@ -168,6 +218,7 @@ export function usePanCamera({
       if (isTypingTarget(document.activeElement)) return;
       pressed.add(e.code);
       e.preventDefault();
+      startLoop();
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
@@ -182,6 +233,7 @@ export function usePanCamera({
       pointerLocal = { x: lx, y: ly };
       pointerInside =
         lx >= 0 && lx <= rect.width && ly >= 0 && ly <= rect.height;
+      if (pointerInside && isPointerNearEdge()) startLoop();
     };
 
     const onWindowBlur = () => {
@@ -218,6 +270,7 @@ export function usePanCamera({
         y: Math.max(0, Math.min(rect.height, ly)),
       };
       pointerInside = true;
+      startLoop();
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -227,7 +280,8 @@ export function usePanCamera({
     document.addEventListener("pointerout", onPointerLeaveDoc);
 
     return () => {
-      cancelAnimationFrame(rafId);
+      stopLoop();
+      observer.disconnect();
       if (commitTimer) {
         clearTimeout(commitTimer);
         onCommitRef.current(panX.get(), panY.get());

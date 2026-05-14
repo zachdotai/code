@@ -196,7 +196,7 @@ animation starts. Rapid bookmark clicks stack multiple competing timeouts.
 **Fix:** Store the timeout handle in a ref. Clear it at the start of each new
 `animateToView` call and in the component's cleanup function.
 
-### 15. `usePanCamera` runs continuous RAF with DOM queries
+### 15. `usePanCamera` runs continuous RAF with DOM queries — DONE
 
 **File:** `usePanCamera.ts` (~line 158)
 
