@@ -92,14 +92,20 @@ export function HedgemonyMapView() {
 
   // Keep the store flag in sync with the DOM's actual fullscreen state — the
   // OS may exit fullscreen via its own controls (Esc from the browser, the
-  // window's traffic-light, etc.) without us hearing about it otherwise.
+  // window's traffic-light, etc.) without us hearing about it otherwise. When
+  // the OS exits, also drop in-app fullscreen so the two stay coupled.
   useEffect(() => {
     const handler = () => {
-      setOsFullscreen(Boolean(document.fullscreenElement));
+      const isOs = Boolean(document.fullscreenElement);
+      const wasOs = useHedgemonyViewStore.getState().osFullscreen;
+      setOsFullscreen(isOs);
+      if (wasOs && !isOs) {
+        setFullscreen(false);
+      }
     };
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
-  }, [setOsFullscreen]);
+  }, [setOsFullscreen, setFullscreen]);
 
   // Always tear down OS fullscreen when the map unmounts so we don't strand
   // the user in fullscreen on another view.
@@ -121,8 +127,19 @@ export function HedgemonyMapView() {
     }
   }, []);
 
-  const enterFullscreen = useCallback(() => {
+  const enterFullscreen = useCallback(async () => {
     setFullscreen(true);
+    // Always try OS fullscreen too: on macOS, in-app fullscreen still has the
+    // OS-drawn traffic lights bleeding through the top-left of the map. OS
+    // fullscreen is the only way to genuinely hide them and give the user a
+    // Starcraft/AoE-style experience.
+    if (!document.fullscreenElement) {
+      try {
+        await document.documentElement.requestFullscreen();
+      } catch (error) {
+        log.warn("Failed to enter OS fullscreen", { error });
+      }
+    }
   }, [setFullscreen]);
 
   const exitFullscreen = useCallback(() => {
@@ -134,23 +151,19 @@ export function HedgemonyMapView() {
     if (fullscreen) {
       exitFullscreen();
     } else {
-      enterFullscreen();
+      void enterFullscreen();
     }
   }, [fullscreen, enterFullscreen, exitFullscreen]);
 
-  const toggleOsFullscreen = useCallback(async () => {
-    if (document.fullscreenElement) {
-      await exitOsFullscreen();
-      return;
+  // Advanced toggle: in-app overlay only, no OS fullscreen. For users who
+  // want to keep their menu bar / dock visible while still hiding app chrome.
+  const toggleInAppFullscreen = useCallback(() => {
+    if (fullscreen) {
+      exitFullscreen();
+    } else {
+      setFullscreen(true);
     }
-    // Enter the in-app overlay too so chrome is hidden underneath.
-    if (!fullscreen) setFullscreen(true);
-    try {
-      await document.documentElement.requestFullscreen();
-    } catch (error) {
-      log.warn("Failed to enter OS fullscreen", { error });
-    }
-  }, [exitOsFullscreen, fullscreen, setFullscreen]);
+  }, [fullscreen, exitFullscreen, setFullscreen]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -182,8 +195,8 @@ export function HedgemonyMapView() {
     enabled: !dialogOpen,
   } as const;
 
-  useHotkeys("f", toggleFullscreen, mapHotkeyOptions);
-  useHotkeys("shift+f, f11", toggleOsFullscreen, mapHotkeyOptions);
+  useHotkeys("f, f11", toggleFullscreen, mapHotkeyOptions);
+  useHotkeys("shift+f", toggleInAppFullscreen, mapHotkeyOptions);
 
   const recallBookmark = useCallback(
     (slot: BookmarkSlot) => {
@@ -510,9 +523,18 @@ export function HedgemonyMapView() {
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
             {mapContent}
+            <button
+              type="button"
+              onClick={exitFullscreen}
+              title="Exit fullscreen (Esc / F)"
+              aria-label="Exit fullscreen"
+              className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full border border-(--gray-6) bg-(--gray-2)/80 text-(--gray-11) text-[16px] backdrop-blur-sm transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+            >
+              ×
+            </button>
             <div className="-translate-x-1/2 pointer-events-none absolute bottom-3 left-1/2 rounded-(--radius-2) border border-(--gray-6) bg-(--gray-2)/85 px-3 py-1 text-(--gray-11) text-[11px] backdrop-blur-sm">
-              F · fullscreen &nbsp;·&nbsp; Shift+F · OS &nbsp;·&nbsp; 1/2/3
-              recall &nbsp;·&nbsp; Shift+1/2/3 save &nbsp;·&nbsp; Esc exit
+              F · fullscreen &nbsp;·&nbsp; 1/2/3 recall &nbsp;·&nbsp;
+              Shift+1/2/3 save &nbsp;·&nbsp; Esc exit
             </div>
             <FullscreenVignette />
           </motion.div>,
