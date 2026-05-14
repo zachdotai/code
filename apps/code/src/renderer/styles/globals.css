@@ -306,6 +306,27 @@
   animation: zen-float 3.5s ease-in-out infinite;
 }
 
+/* Gentle bob for the Work-home hedgehog + greeting, like floating in a pool.
+   Duration, amplitude, and delay are driven by CSS custom properties so each
+   mount can randomize the motion. */
+@keyframes pool-float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(var(--pool-y, -5px));
+  }
+}
+
+.pool-float {
+  animation-name: pool-float;
+  animation-duration: var(--pool-duration, 3.5s);
+  animation-timing-function: ease-in-out;
+  animation-delay: var(--pool-delay, 0s);
+  animation-iteration-count: infinite;
+}
+
 /* Work-mode home entrance — staggered fade + lift */
 @keyframes work-enter {
   0% {
