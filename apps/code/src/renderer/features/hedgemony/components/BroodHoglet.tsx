@@ -10,6 +10,7 @@ import { logger } from "@utils/logger";
 import { motion } from "framer-motion";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import { AnimatedHedgehog, type HedgehogAnimation } from "./AnimatedHedgehog";
+import { HogletHammer } from "./HogletHammer";
 
 const log = logger.scope("brood-hoglet");
 
@@ -124,6 +125,11 @@ export function BroodHoglet({ hoglet, nestId, index, x, y }: BroodHogletProps) {
               fps={fps}
               size={SPRITE_SIZE}
             />
+            {status === "in_progress" && (
+              <span className="-bottom-1 absolute left-0">
+                <HogletHammer size={18} />
+              </span>
+            )}
             {prState && (
               <span
                 aria-hidden
