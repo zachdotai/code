@@ -73,6 +73,64 @@ interface PropInstance {
   flip: boolean;
 }
 
+/**
+ * Sorted [threshold, type] pairs: walk in order, return the first whose
+ * threshold the roll falls under. The trailing default catches `roll ≥` the
+ * last threshold so every cell picks something. Tweaking the visual mix is a
+ * matter of edit-the-table; the prior ternary cascades made that surgery.
+ */
+type PropWeights = readonly [number, PropType][];
+
+const PROPS_IN_WILDS: PropWeights = [
+  [0.42, "oak"],
+  [0.68, "pine"],
+  [0.82, "bushLg"],
+  [0.9, "bush"],
+  [0.95, "boulder"],
+];
+const PROPS_IN_WILDS_DEFAULT: PropType = "stump";
+
+const PROPS_IN_STAGING: PropWeights = [
+  [0.28, "boulder"],
+  [0.5, "boulderLg"],
+  [0.68, "pine"],
+  [0.82, "oak"],
+  [0.92, "stump"],
+];
+const PROPS_IN_STAGING_DEFAULT: PropType = "mushroom";
+
+const PROPS_IN_ACTIVE: PropWeights = [
+  [0.32, "wildflower"],
+  [0.55, "bush"],
+  [0.72, "bushLg"],
+  [0.86, "oak"],
+  [0.94, "mushroom"],
+];
+const PROPS_IN_ACTIVE_DEFAULT: PropType = "stump";
+
+const PROPS_DEFAULT: PropWeights = [
+  [0.3, "oak"],
+  [0.54, "pine"],
+  [0.7, "bushLg"],
+  [0.8, "bush"],
+  [0.87, "boulder"],
+  [0.92, "boulderLg"],
+  [0.96, "stump"],
+  [0.99, "wildflower"],
+];
+const PROPS_DEFAULT_DEFAULT: PropType = "mushroom";
+
+function pickProp(
+  roll: number,
+  weights: PropWeights,
+  fallback: PropType,
+): PropType {
+  for (const [threshold, type] of weights) {
+    if (roll < threshold) return type;
+  }
+  return fallback;
+}
+
 function makeRng(seed: number) {
   let state = seed >>> 0;
   return () => {
@@ -114,66 +172,13 @@ function scatterProps(nests: Nest[]): PropInstance[] {
       const inWilds = insideEllipse(x, y, -1220, 860, 440, 260);
       const inStaging = insideEllipse(x, y, 1180, -820, 450, 270);
       const roll = rng();
-      let type: PropType;
-      if (inWilds) {
-        type =
-          roll < 0.42
-            ? "oak"
-            : roll < 0.68
-              ? "pine"
-              : roll < 0.82
-                ? "bushLg"
-                : roll < 0.9
-                  ? "bush"
-                  : roll < 0.95
-                    ? "boulder"
-                    : "stump";
-      } else if (inStaging) {
-        type =
-          roll < 0.28
-            ? "boulder"
-            : roll < 0.5
-              ? "boulderLg"
-              : roll < 0.68
-                ? "pine"
-                : roll < 0.82
-                  ? "oak"
-                  : roll < 0.92
-                    ? "stump"
-                    : "mushroom";
-      } else if (inActive) {
-        type =
-          roll < 0.32
-            ? "wildflower"
-            : roll < 0.55
-              ? "bush"
-              : roll < 0.72
-                ? "bushLg"
-                : roll < 0.86
-                  ? "oak"
-                  : roll < 0.94
-                    ? "mushroom"
-                    : "stump";
-      } else {
-        type =
-          roll < 0.3
-            ? "oak"
-            : roll < 0.54
-              ? "pine"
-              : roll < 0.7
-                ? "bushLg"
-                : roll < 0.8
-                  ? "bush"
-                  : roll < 0.87
-                    ? "boulder"
-                    : roll < 0.92
-                      ? "boulderLg"
-                      : roll < 0.96
-                        ? "stump"
-                        : roll < 0.99
-                          ? "wildflower"
-                          : "mushroom";
-      }
+      const type = inWilds
+        ? pickProp(roll, PROPS_IN_WILDS, PROPS_IN_WILDS_DEFAULT)
+        : inStaging
+          ? pickProp(roll, PROPS_IN_STAGING, PROPS_IN_STAGING_DEFAULT)
+          : inActive
+            ? pickProp(roll, PROPS_IN_ACTIVE, PROPS_IN_ACTIVE_DEFAULT)
+            : pickProp(roll, PROPS_DEFAULT, PROPS_DEFAULT_DEFAULT);
       out.push({
         type,
         x,
