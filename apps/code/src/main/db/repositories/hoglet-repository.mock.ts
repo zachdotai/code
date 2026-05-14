@@ -48,6 +48,7 @@ export function createMockHogletRepository(): MockHogletRepository {
         taskId: data.taskId,
         nestId: data.nestId ?? null,
         signalReportId: data.signalReportId ?? null,
+        affinityScore: null,
         createdAt: timestamp,
         updatedAt: timestamp,
         deletedAt: null,

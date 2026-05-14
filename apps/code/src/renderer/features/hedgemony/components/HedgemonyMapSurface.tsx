@@ -408,6 +408,7 @@ export function HedgemonyMapSurface({
 
       <div
         className="absolute right-3 bottom-3 flex items-center gap-2"
+        data-no-edge-pan
         onPointerDown={(e) => e.stopPropagation()}
       >
         <BgmControl />

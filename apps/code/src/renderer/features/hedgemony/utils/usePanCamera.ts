@@ -94,14 +94,33 @@ export function usePanCamera({
 
       if (pointerInside && pointerLocal && document.hasFocus()) {
         const rect = el.getBoundingClientRect();
-        const lx = pointerLocal.x;
-        const ly = pointerLocal.y;
-        if (lx < EDGE_ZONE_PX) dx += (EDGE_ZONE_PX - lx) / EDGE_ZONE_PX;
-        else if (lx > rect.width - EDGE_ZONE_PX)
-          dx -= (lx - (rect.width - EDGE_ZONE_PX)) / EDGE_ZONE_PX;
-        if (ly < EDGE_ZONE_PX) dy += (EDGE_ZONE_PX - ly) / EDGE_ZONE_PX;
-        else if (ly > rect.height - EDGE_ZONE_PX)
-          dy -= (ly - (rect.height - EDGE_ZONE_PX)) / EDGE_ZONE_PX;
+        const px = rect.left + pointerLocal.x;
+        const py = rect.top + pointerLocal.y;
+        const exclusions = el.querySelectorAll("[data-no-edge-pan]");
+        let excluded = false;
+        const margin = EDGE_ZONE_PX;
+        for (const zone of exclusions) {
+          const zr = zone.getBoundingClientRect();
+          if (
+            px >= zr.left - margin &&
+            px <= zr.right + margin &&
+            py >= zr.top - margin &&
+            py <= zr.bottom + margin
+          ) {
+            excluded = true;
+            break;
+          }
+        }
+        if (!excluded) {
+          const lx = pointerLocal.x;
+          const ly = pointerLocal.y;
+          if (lx < EDGE_ZONE_PX) dx += (EDGE_ZONE_PX - lx) / EDGE_ZONE_PX;
+          else if (lx > rect.width - EDGE_ZONE_PX)
+            dx -= (lx - (rect.width - EDGE_ZONE_PX)) / EDGE_ZONE_PX;
+          if (ly < EDGE_ZONE_PX) dy += (EDGE_ZONE_PX - ly) / EDGE_ZONE_PX;
+          else if (ly > rect.height - EDGE_ZONE_PX)
+            dy -= (ly - (rect.height - EDGE_ZONE_PX)) / EDGE_ZONE_PX;
+        }
       }
 
       if (dx !== 0 || dy !== 0) {
