@@ -475,16 +475,16 @@ function ConversationPanel({
   onAnswerChange: (value: string) => void;
   onAnswer: () => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every transcript or drafting change
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, []);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [transcript.length, drafting]);
 
   return (
     <div className="flex flex-col rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2)">
-      <div ref={scrollRef} className="max-h-[220px] overflow-y-auto p-2">
+      <div className="max-h-[220px] overflow-y-auto p-2">
         <Flex direction="column" gap="2">
           {transcript.map((message, index) => (
             <div
@@ -507,6 +507,7 @@ function ConversationPanel({
               </Text>
             </div>
           ))}
+          <div ref={bottomRef} />
         </Flex>
       </div>
 
