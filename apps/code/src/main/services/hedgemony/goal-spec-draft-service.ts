@@ -32,6 +32,8 @@ Return JSON only, with exactly one of these shapes:
 {"kind":"ask_question","question":"One short clarifying question"}
 {"kind":"propose_spec","draft":{"name":"Short nest name","summary":"What and why, not how","primaryScenario":"The main operator/user scenario","userStories":[{"priority":"P1","story":"As a ..., I want ..., so that ...","acceptanceScenarios":["Given ..., when ..., then ..."]}],"requirements":[{"id":"FR-001","text":"The system must ..."}],"keyEntities":["Entity: why it matters"],"assumptions":["Assumption or open boundary"],"successCriteria":[{"id":"SC-001","text":"Measurable completion criterion"}],"definitionOfDone":"Concrete validation evidence"}}
 
+priority must be exactly one of: "P1", "P2", "P3". No other values (P0, P4, High, Low, etc.) are accepted.
+
 Rules:
 - This is only a bounded goal-writing draft flow. You have no tools, no worktree access, no Task, no hoglet creation, and no autonomous side effects.
 - Treat this as planning mode: clarify goals, scope, assumptions, risks, and completion signals before proposing or revising the spec. Do not move into implementation.
@@ -45,7 +47,9 @@ Rules:
 - Use requirement IDs like FR-001 and success criterion IDs like SC-001.
 - Make definitionOfDone concrete enough that a later hedgehog could judge completion.`;
 
-const JSON_ONLY_REMINDER = `Your previous reply was not valid JSON. Return ONLY a single JSON object matching one of the two shapes from the system prompt — no prose, no Markdown, no code fences, nothing before or after the JSON.`;
+function buildRetryReminder(parseError: string): string {
+  return `Your previous reply failed validation: ${parseError}\n\nReturn ONLY a single JSON object matching one of the two shapes from the system prompt — no prose, no Markdown, no code fences, nothing before or after the JSON. Remember: priority must be exactly "P1", "P2", or "P3".`;
+}
 
 export class GoalDraftParseError extends Error {
   constructor() {
@@ -99,7 +103,10 @@ export class GoalSpecDraftService {
         [
           ...messages,
           { role: "assistant", content: firstResponse.content },
-          { role: "user", content: JSON_ONLY_REMINDER },
+          {
+            role: "user",
+            content: buildRetryReminder(firstAttempt.error.message),
+          },
         ],
         {
           system: SYSTEM_PROMPT,
@@ -302,6 +309,29 @@ function clampDraftArrays(obj: Record<string, unknown>): void {
   }
 }
 
+const VALID_PRIORITIES = new Set(["P1", "P2", "P3"]);
+
+function normalizeDraftFields(draft: Record<string, unknown>): void {
+  const stories = draft.userStories;
+  if (!Array.isArray(stories)) return;
+  for (const story of stories) {
+    if (typeof story !== "object" || story === null) continue;
+    const s = story as Record<string, unknown>;
+    if (typeof s.priority === "string" && !VALID_PRIORITIES.has(s.priority)) {
+      const upper = s.priority.toUpperCase().trim();
+      if (upper === "P0" || upper === "CRITICAL" || upper === "HIGH") {
+        s.priority = "P1";
+      } else if (upper === "MEDIUM" || upper === "NORMAL") {
+        s.priority = "P2";
+      } else if (upper === "P4" || upper === "P5" || upper === "LOW") {
+        s.priority = "P3";
+      } else {
+        s.priority = "P2";
+      }
+    }
+  }
+}
+
 function tryParseResponse(content: string): ParseResult {
   try {
     const raw = extractJsonObject(content);
@@ -311,7 +341,9 @@ function tryParseResponse(content: string): ParseResult {
       typeof json.draft === "object" &&
       json.draft !== null
     ) {
-      clampDraftArrays(json.draft as Record<string, unknown>);
+      const draftObj = json.draft as Record<string, unknown>;
+      clampDraftArrays(draftObj);
+      normalizeDraftFields(draftObj);
     }
     const parsed = parsedGatewayResponse.parse(json);
     if (parsed.kind === "ask_question") {
