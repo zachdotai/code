@@ -1,5 +1,4 @@
 import type { Hoglet } from "@main/services/hedgemony/schemas";
-import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
@@ -15,7 +14,6 @@ import type { HogletRemoteService } from "../domain/HogletRemoteService";
 import type { HogletRepository } from "../domain/HogletRepository";
 import type { NestRepository } from "../domain/NestRepository";
 import type { ToastSink } from "../domain/ToastSink";
-import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { useHogletStore } from "../stores/hogletStore";
 
 const log = logger.scope("hoglet-mutations");
@@ -94,9 +92,9 @@ export async function adoptHoglet(
 export async function releaseHoglet(
   hogletId: string,
   sourceNestId: string,
+  deps: HogletMutationDeps = defaultHogletMutationDeps,
 ): Promise<void> {
-  const store = useHogletStore.getState();
-  const original = store.byBucket[sourceNestId]?.find((h) => h.id === hogletId);
+  const original = deps.hoglets.findInBucket(sourceNestId, hogletId);
   if (!original) {
     log.warn("Release: source hoglet not found in nest bucket", {
       hogletId,
@@ -110,15 +108,13 @@ export async function releaseHoglet(
     nestId: null,
     updatedAt: new Date().toISOString(),
   };
-  store.remove(sourceNestId, hogletId);
-  store.upsert(WILD_BUCKET, optimistic);
-  useHogletPositionStore.getState().clearPosition(hogletId);
+  deps.hoglets.remove(sourceNestId, hogletId);
+  deps.hoglets.upsert(WILD_BUCKET, optimistic);
+  deps.positions.clearPosition(hogletId);
 
   try {
-    const updated = await trpcClient.hedgemony.hoglets.release.mutate({
-      hogletId,
-    });
-    useHogletStore.getState().upsert(WILD_BUCKET, updated);
+    const updated = await deps.remote.release({ hogletId });
+    deps.hoglets.upsert(WILD_BUCKET, updated);
     track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED, { source: "nest" });
   } catch (error) {
     log.error("Failed to release hoglet", {
@@ -126,10 +122,9 @@ export async function releaseHoglet(
       sourceNestId,
       error,
     });
-    const current = useHogletStore.getState();
-    current.remove(WILD_BUCKET, hogletId);
-    current.upsert(sourceNestId, original);
-    toast.error("Could not release hoglet");
+    deps.hoglets.remove(WILD_BUCKET, hogletId);
+    deps.hoglets.upsert(sourceNestId, original);
+    deps.toast?.error("Could not release hoglet");
   }
 }
 
