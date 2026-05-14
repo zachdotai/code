@@ -104,7 +104,7 @@ read-then-insert in `pr-dependency-repository.ts` is TOCTOU-vulnerable.
 `CREATE UNIQUE INDEX ... ON hedgemony_pr_dependency(nest_id, parent_task_id, child_task_id)`.
 Update the repository's insert to use `onConflictDoNothing()`.
 
-### 8. Unbounded `pending` queues in FeedbackRoutingService and PrGraphService
+### 8. Unbounded `pending` queues in FeedbackRoutingService and PrGraphService — DONE
 
 **Files:** `feedback-routing-service.ts` (~line 60), `pr-graph-service.ts` (~line 62)
 

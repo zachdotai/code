@@ -22,6 +22,10 @@ const log = logger.scope("feedback-routing-service");
 const POLL_INTERVAL_MS = 60_000;
 const PER_TASK_DEBOUNCE_MS = 55_000;
 const MAX_PARALLEL_POLLS = 4;
+// Bound to keep the buffer from growing without limit if the hedgemony UI is
+// never opened. Oldest entries are dropped first — the next poll cycle will
+// repopulate anything that's still relevant.
+const MAX_PENDING_EVENTS = 100;
 const FAILING_CONCLUSIONS = new Set<string>([
   "failure",
   "timed_out",
@@ -382,8 +386,15 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       this.listenerCount(FeedbackRoutingEvent.InjectPrompt) > 0;
     if (hasListeners) {
       this.emit(FeedbackRoutingEvent.InjectPrompt, payload);
-    } else {
-      this.pending.push(payload);
+      return;
+    }
+    this.pending.push(payload);
+    if (this.pending.length > MAX_PENDING_EVENTS) {
+      const dropped = this.pending.shift();
+      log.warn("pending injectPrompt queue full, dropped oldest", {
+        cap: MAX_PENDING_EVENTS,
+        droppedPayloadRef: dropped?.payloadRef,
+      });
     }
   }
 }

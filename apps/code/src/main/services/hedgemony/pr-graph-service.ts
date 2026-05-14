@@ -30,6 +30,10 @@ const log = logger.scope("pr-graph-service");
 const POLL_INTERVAL_MS = 60_000;
 const PER_PARENT_DEBOUNCE_MS = 55_000;
 const MAX_PARALLEL_POLLS = 4;
+// Bound to keep the buffer from growing without limit if the hedgemony UI is
+// never opened. Oldest entries are dropped first — the next poll cycle will
+// repopulate anything that's still relevant.
+const MAX_PENDING_EVENTS = 100;
 
 export const PrGraphServiceEvent = {
   RebaseChild: "rebaseChild",
@@ -375,8 +379,15 @@ export class PrGraphService extends TypedEventEmitter<PrGraphServiceEvents> {
       this.listenerCount(PrGraphServiceEvent.RebaseChild) > 0;
     if (hasListeners) {
       this.emit(PrGraphServiceEvent.RebaseChild, payload);
-    } else {
-      this.pending.push(payload);
+      return;
+    }
+    this.pending.push(payload);
+    if (this.pending.length > MAX_PENDING_EVENTS) {
+      const dropped = this.pending.shift();
+      log.warn("pending rebaseChild queue full, dropped oldest", {
+        cap: MAX_PENDING_EVENTS,
+        droppedEdgeId: dropped?.edgeId,
+      });
     }
   }
 
