@@ -405,6 +405,10 @@ export interface RunTaskInCloudOptions {
   reasoningEffort?: string;
   /** Permission mode: "default" | "acceptEdits" | "plan". */
   initialPermissionMode?: string;
+  /** Source that triggered this run. */
+  runSource?: "manual" | "signal_report";
+  /** Signal report ID when run_source is "signal_report". */
+  signalReportId?: string;
 }
 
 export async function runTaskInCloud(
@@ -427,7 +431,9 @@ export async function runTaskInCloud(
       options.runtimeAdapter !== undefined ||
       options.model !== undefined ||
       options.reasoningEffort !== undefined ||
-      options.initialPermissionMode !== undefined);
+      options.initialPermissionMode !== undefined ||
+      options.runSource !== undefined ||
+      options.signalReportId !== undefined);
 
   let body: string | undefined;
   if (hasOptions) {
@@ -451,6 +457,9 @@ export async function runTaskInCloud(
     if (options?.initialPermissionMode) {
       payload.initial_permission_mode = options.initialPermissionMode;
     }
+    if (options?.runSource) payload.run_source = options.runSource;
+    if (options?.signalReportId)
+      payload.signal_report_id = options.signalReportId;
     body = JSON.stringify(payload);
   }
 

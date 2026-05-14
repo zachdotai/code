@@ -18,6 +18,7 @@ import type { PendingAttachment } from "../composer/attachments/types";
 import type {
   SessionEvent,
   SessionNotification,
+  SessionNotificationAttachment,
   StoredLogEntry,
   Task,
 } from "../types";
@@ -26,6 +27,37 @@ import {
   parseSessionLogs,
 } from "../utils/parseSessionLogs";
 import { playMeepSound } from "../utils/sounds";
+import { useAttachmentEchoStore } from "./attachmentEchoStore";
+
+// Match historical `user_message_chunk` events (text-only, as the cloud
+// stores them) against locally-cached attachment echoes by position+text.
+// Echoes are written in send-order; we walk user messages in receive-order
+// and zip them up. Drift (text mismatch at the same index) is treated as a
+// no-op rather than a misattribution.
+function reinjectAttachmentEchoes(
+  taskRunId: string,
+  events: SessionEvent[],
+): void {
+  const echoes = useAttachmentEchoStore.getState().getEchoes(taskRunId);
+  if (echoes.length === 0) return;
+
+  let echoIdx = 0;
+  for (const event of events) {
+    if (echoIdx >= echoes.length) return;
+    if (event.type !== "session_update") continue;
+    const update = event.notification?.update;
+    if (update?.sessionUpdate !== "user_message_chunk") continue;
+    if (update.attachments && update.attachments.length > 0) {
+      echoIdx++;
+      continue;
+    }
+    const echo = echoes[echoIdx];
+    echoIdx++;
+    if (echo.text === (update.content?.text ?? "")) {
+      update.attachments = echo.attachments;
+    }
+  }
+}
 
 // Infer whether the agent is actively working or idle (waiting for user input).
 // Primary signal: _posthog/turn_complete or _posthog/task_complete in raw log
@@ -271,6 +303,12 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         notifications,
       );
 
+      // Re-inject locally-cached attachment metadata into historical user
+      // messages. Cloud logs only carry text on `user_message_chunk` events,
+      // so without this merge any images the user attached before navigating
+      // away would disappear when the session is rehydrated from S3.
+      reinjectAttachmentEchoes(latestRunId, historicalEvents);
+
       // Terminal runs (completed/failed) always clear isPromptPending.
       // For non-terminal runs we infer idle vs working from the log shape
       // because the backend has no "waiting_for_input" status.
@@ -374,6 +412,15 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         : prompt;
 
     const ts = Date.now();
+    const echoAttachments: SessionNotificationAttachment[] =
+      attachments.length > 0
+        ? attachments.map((a) => ({
+            kind: a.kind,
+            uri: a.uri,
+            fileName: a.fileName,
+            mimeType: a.mimeType,
+          }))
+        : [];
     const userEvent: SessionEvent = {
       type: "session_update",
       ts,
@@ -381,18 +428,15 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         update: {
           sessionUpdate: "user_message_chunk",
           content: { type: "text", text: prompt },
-          attachments:
-            attachments.length > 0
-              ? attachments.map((a) => ({
-                  kind: a.kind,
-                  uri: a.uri,
-                  fileName: a.fileName,
-                  mimeType: a.mimeType,
-                }))
-              : undefined,
+          attachments: echoAttachments.length > 0 ? echoAttachments : undefined,
         },
       },
     };
+    if (echoAttachments.length > 0) {
+      useAttachmentEchoStore
+        .getState()
+        .recordEcho(session.taskRunId, prompt, echoAttachments);
+    }
 
     set((state) => {
       const current = state.sessions[session.taskRunId];

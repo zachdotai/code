@@ -1,5 +1,3 @@
-import * as DocumentPicker from "expo-document-picker";
-import * as ImagePicker from "expo-image-picker";
 import { Alert } from "react-native";
 import { logger } from "@/lib/logger";
 import type { PendingAttachment } from "./types";
@@ -25,11 +23,47 @@ function deriveFileName(uri: string, fallback: string): string {
   return fallback;
 }
 
+function showNativeModuleAlert(kind: "document" | "image"): void {
+  const label = kind === "document" ? "file attachments" : "photo attachments";
+
+  Alert.alert(
+    "App update needed",
+    `This build does not include the native module for ${label} yet. Rebuild and reinstall the mobile app on your device to use this feature.`,
+  );
+}
+
+async function loadDocumentPicker(): Promise<
+  typeof import("expo-document-picker") | null
+> {
+  try {
+    return await import("expo-document-picker");
+  } catch (err) {
+    log.error("Document picker native module unavailable", err);
+    showNativeModuleAlert("document");
+    return null;
+  }
+}
+
+async function loadImagePicker(): Promise<
+  typeof import("expo-image-picker") | null
+> {
+  try {
+    return await import("expo-image-picker");
+  } catch (err) {
+    log.error("Image picker native module unavailable", err);
+    showNativeModuleAlert("image");
+    return null;
+  }
+}
+
 /**
  * Open the photo library and return the picked image as a PendingAttachment.
  * Returns `null` if the user cancels or permission is denied.
  */
 export async function pickPhotoFromLibrary(): Promise<PendingAttachment | null> {
+  const ImagePicker = await loadImagePicker();
+  if (!ImagePicker) return null;
+
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
     Alert.alert(
@@ -62,6 +96,9 @@ export async function pickPhotoFromLibrary(): Promise<PendingAttachment | null> 
  * Open the camera and return the captured photo as a PendingAttachment.
  */
 export async function captureFromCamera(): Promise<PendingAttachment | null> {
+  const ImagePicker = await loadImagePicker();
+  if (!ImagePicker) return null;
+
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) {
     Alert.alert(
@@ -96,6 +133,9 @@ export async function captureFromCamera(): Promise<PendingAttachment | null> {
  */
 export async function pickDocument(): Promise<PendingAttachment | null> {
   try {
+    const DocumentPicker = await loadDocumentPicker();
+    if (!DocumentPicker) return null;
+
     const result = await DocumentPicker.getDocumentAsync({
       type: "*/*",
       copyToCacheDirectory: true,

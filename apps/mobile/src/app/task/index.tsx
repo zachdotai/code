@@ -29,6 +29,7 @@ import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useVoiceRecording } from "@/features/chat";
+import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
 import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
@@ -62,7 +63,10 @@ import { RepositoryPickerSheet } from "@/features/tasks/composer/RepositoryPicke
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
-import type { RepositorySelection } from "@/features/tasks/types";
+import type {
+  CreateTaskOptions,
+  RepositorySelection,
+} from "@/features/tasks/types";
 import {
   findRepositoryOption,
   isRepositorySelectionComplete,
@@ -161,7 +165,15 @@ export default function NewTaskScreen() {
     },
     [setLastRepository],
   );
-  const [mode, setMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE);
+  const [mode, setMode] = useState<ExecutionMode>(() => {
+    const prefs = usePreferencesStore.getState();
+    if (prefs.defaultInitialTaskMode === "last_used") {
+      const last = prefs.lastNewTaskMode;
+      const isValidMode = EXECUTION_MODES.some((m) => m.value === last);
+      if (isValidMode) return last as ExecutionMode;
+    }
+    return DEFAULT_EXECUTION_MODE;
+  });
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
   const [reasoning, setReasoning] =
     useState<ReasoningEffort>(DEFAULT_REASONING);
@@ -256,11 +268,12 @@ export default function NewTaskScreen() {
         github_integration: selection.integrationId ?? undefined,
         ...(signalReport
           ? {
+              origin_product: "signal_report",
               signal_report: signalReport,
               signal_report_task_relationship: "implementation",
             }
           : {}),
-      });
+      } as CreateTaskOptions);
 
       const pendingUserMessage =
         attachments.length > 0
@@ -277,6 +290,12 @@ export default function NewTaskScreen() {
         model,
         reasoningEffort: supportsReasoning ? reasoning : undefined,
         initialPermissionMode: mode,
+        ...(signalReport
+          ? {
+              runSource: "signal_report" as const,
+              signalReportId: signalReport,
+            }
+          : {}),
       });
 
       router.replace(`/task/${task.id}`);
@@ -573,7 +592,11 @@ export default function NewTaskScreen() {
         open={modeSheetOpen}
         title="Execution mode"
         value={mode}
-        onChange={(value) => setMode(value as ExecutionMode)}
+        onChange={(value) => {
+          const next = value as ExecutionMode;
+          setMode(next);
+          usePreferencesStore.getState().setLastNewTaskMode(next);
+        }}
         onClose={() => setModeSheetOpen(false)}
         options={EXECUTION_MODES.map((executionMode) => ({
           value: executionMode.value,

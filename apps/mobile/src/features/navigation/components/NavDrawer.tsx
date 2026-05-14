@@ -87,7 +87,13 @@ const NavDrawerContent = memo(function NavDrawerContent({
   const handleTasks = () => navigateTo("/tasks");
   const handleInbox = () => navigateTo("/inbox");
   const handleAutomations = () => navigateTo("/automations");
-  const handleSettings = () => navigateTo("/settings");
+  // Settings is pushed (not replaced) so back / swipe-back returns the user
+  // to whichever tab they were viewing when they opened the drawer.
+  const handleSettings = () => {
+    close();
+    if (pathname === "/settings") return;
+    router.push("/settings");
+  };
   const handleHome = () => navigateTo("/tasks");
 
   const handleTaskPress = (taskId: string) => {
@@ -202,7 +208,7 @@ const NavDrawerContent = memo(function NavDrawerContent({
 
       <View className="mx-3 mt-1 border-gray-6 border-t" />
 
-      <View className="px-2 pt-2">
+      <View className="gap-0.5 px-2 pt-2 pb-2">
         <DrawerItem
           icon={
             <GearSix

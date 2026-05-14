@@ -1,6 +1,7 @@
 import { Text } from "@components/text";
 import { formatDistanceToNow } from "date-fns";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { Check, GithubLogo, Lightning, X } from "phosphor-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -10,7 +11,10 @@ import {
   ScrollView,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
 import type {
@@ -113,17 +117,17 @@ function EmptyState() {
 interface TinderViewProps {
   reports: SignalReport[];
   repositoryOptions: RepositoryOption[];
-  onTaskStarted: (taskId: string) => void;
   isLoading?: boolean;
 }
 
 export function TinderView({
   reports,
   repositoryOptions,
-  onTaskStarted,
   isLoading,
 }: TinderViewProps) {
   const themeColors = useThemeColors();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // Store state
   const currentIndex = useInboxStore((s) => s.currentIndex);
@@ -136,6 +140,23 @@ export function TinderView({
   );
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    taskId: string | null;
+    title: string;
+    pending: boolean;
+  } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToastPending = useCallback((title: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ taskId: null, title, pending: true });
+  }, []);
+
+  const showToastDone = useCallback((taskId: string, title: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ taskId, title, pending: false });
+    toastTimer.current = setTimeout(() => setToast(null), 10_000);
+  }, []);
 
   const handleDismiss = useCallback(
     (reportId: string) => {
@@ -152,6 +173,7 @@ export function TinderView({
     async (report: SignalReport) => {
       setCreating(true);
       setError(null);
+      showToastPending(report.title ?? "Untitled report");
       try {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -169,13 +191,12 @@ export function TinderView({
         const prompt = `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`;
         const task = await createTask({
           description: prompt,
-          title: prompt.slice(0, 100),
+          title: prompt.slice(0, 255),
           repository: match?.repository ?? repo ?? undefined,
           github_integration: match?.integrationId ?? undefined,
-          ...{
-            signal_report: report.id,
-            signal_report_task_relationship: "implementation",
-          },
+          origin_product: "signal_report",
+          signal_report: report.id,
+          signal_report_task_relationship: "implementation",
         } as CreateTaskOptions);
 
         // 4. Run it
@@ -184,20 +205,23 @@ export function TinderView({
           runtimeAdapter: "claude",
           model: "claude-opus-4-7",
           initialPermissionMode: "plan",
+          runSource: "signal_report",
+          signalReportId: report.id,
         });
 
         advanceCard();
-        onTaskStarted(task.id);
+        showToastDone(task.id, report.title ?? "Untitled report");
       } catch (e) {
         const message =
           e instanceof Error ? e.message : "Failed to create task";
         log.error("Accept failed", message);
         setError(message);
+        setToast(null);
       } finally {
         setCreating(false);
       }
     },
-    [repositoryOptions, advanceCard, onTaskStarted],
+    [repositoryOptions, advanceCard, showToastPending, showToastDone],
   );
 
   const currentReport =
@@ -266,6 +290,39 @@ export function TinderView({
         <View className="mx-4 mb-4 rounded-lg bg-status-error/10 px-3 py-2">
           <Text className="text-[13px] text-status-error">{error}</Text>
         </View>
+      )}
+
+      {/* "Task started" toast — sits above the mode switcher pill */}
+      {toast && (
+        <Pressable
+          onPress={() => {
+            if (toast.pending || !toast.taskId) return;
+            setToast(null);
+            router.push(`/task/${toast.taskId}`);
+          }}
+          disabled={toast.pending}
+          className="elevation-4 absolute inset-x-4 flex-row items-center justify-between rounded-2xl bg-status-success px-5 py-4 shadow-lg active:opacity-80"
+          style={{ bottom: insets.bottom + 76 }}
+        >
+          <View className="min-w-0 flex-1">
+            <Text className="font-semibold text-[15px] text-white">
+              {toast.pending ? "Starting task\u2026" : "Task started"}
+            </Text>
+            <Text
+              className="mt-0.5 text-[13px] text-white/80"
+              numberOfLines={1}
+            >
+              {toast.title}
+            </Text>
+          </View>
+          {toast.pending ? (
+            <ActivityIndicator className="ml-3" color="white" size="small" />
+          ) : (
+            <Text className="ml-3 font-semibold text-[14px] text-white">
+              View →
+            </Text>
+          )}
+        </Pressable>
       )}
 
       {/* Expanded report modal */}

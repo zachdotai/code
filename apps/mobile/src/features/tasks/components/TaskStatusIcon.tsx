@@ -1,4 +1,5 @@
 import {
+  ChatCircle,
   CheckCircle,
   CircleIcon,
   CircleNotch,
@@ -6,9 +7,10 @@ import {
   XCircle,
 } from "phosphor-react-native";
 import { memo, useEffect, useRef } from "react";
-import { Animated, Easing, View } from "react-native";
+import { Animated, Easing } from "react-native";
 import { useThemeColors } from "@/lib/theme";
 import type { Task } from "../types";
+import { getTaskStatusIconKind } from "./taskStatusIconKind";
 
 interface TaskStatusIconProps {
   task: Task;
@@ -17,11 +19,10 @@ interface TaskStatusIconProps {
 
 function TaskStatusIconComponent({ task, size = 16 }: TaskStatusIconProps) {
   const colors = useThemeColors();
-  const prUrl = task.latest_run?.output?.pr_url as string | undefined;
-  const status = task.latest_run?.status;
+  const iconKind = getTaskStatusIconKind(task);
 
   const rotation = useRef(new Animated.Value(0)).current;
-  const isRunning = !prUrl && status === "in_progress";
+  const isRunning = iconKind === "running";
 
   useEffect(() => {
     if (!isRunning) {
@@ -41,24 +42,23 @@ function TaskStatusIconComponent({ task, size = 16 }: TaskStatusIconProps) {
     return () => loop.stop();
   }, [isRunning, rotation]);
 
-  // Priority: PR open > completed > failed > running > started > backlog
-  if (prUrl) {
+  if (iconKind === "pr") {
     return (
       <GitPullRequest size={size} weight="bold" color={colors.status.success} />
     );
   }
 
-  if (status === "completed") {
+  if (iconKind === "completed") {
     return (
       <CheckCircle size={size} weight="fill" color={colors.status.success} />
     );
   }
 
-  if (status === "failed") {
+  if (iconKind === "failed") {
     return <XCircle size={size} weight="fill" color={colors.status.error} />;
   }
 
-  if (status === "in_progress") {
+  if (iconKind === "running") {
     const spin = rotation.interpolate({
       inputRange: [0, 1],
       outputRange: ["0deg", "360deg"],
@@ -70,16 +70,11 @@ function TaskStatusIconComponent({ task, size = 16 }: TaskStatusIconProps) {
     );
   }
 
-  if (status === "started") {
+  if (iconKind === "started") {
     return <CircleIcon size={size} weight="duotone" color={colors.accent[9]} />;
   }
 
-  // Backlog / no run yet
-  return (
-    <View style={{ opacity: 0.7 }}>
-      <CircleIcon size={size} weight="regular" color={colors.gray[9]} />
-    </View>
-  );
+  return <ChatCircle size={size} weight="regular" color={colors.gray[9]} />;
 }
 
 export const TaskStatusIcon = memo(TaskStatusIconComponent);
