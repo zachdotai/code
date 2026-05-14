@@ -10,7 +10,7 @@ import type { HogletPositionRepository } from "../domain/HogletPositionRepositor
 import type { HogletRemoteService } from "../domain/HogletRemoteService";
 import type { HogletRepository } from "../domain/HogletRepository";
 import type { ToastSink } from "../domain/ToastSink";
-import { adoptHoglet } from "./hogletMutations";
+import { adoptHoglet, releaseHoglet } from "./hogletMutations";
 
 function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
   return {
@@ -178,6 +178,93 @@ describe("adoptHoglet", () => {
     expect(hoglets.buckets.get("nest-1")).toEqual([]);
     expect(hoglets.buckets.get(WILD_BUCKET)).toEqual([wildHoglet]);
     expect(toast.errorCalls).toEqual(["Could not adopt hoglet"]);
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+});
+
+describe("releaseHoglet", () => {
+  beforeEach(() => {
+    mockTrack.mockReset();
+  });
+
+  it("optimistically moves the hoglet back to wild and confirms with the RPC payload", async () => {
+    const nestHoglet = makeHoglet({ nestId: "nest-1" });
+    const serverEcho = makeHoglet({
+      nestId: null,
+      updatedAt: "2026-05-13T00:01:00.000Z",
+    });
+    const hoglets = makeHogletRepo({ "nest-1": [nestHoglet] });
+    const positions = makePositionRepo();
+    const remote: HogletRemoteService = {
+      adopt: vi.fn(),
+      release: vi.fn().mockResolvedValue(serverEcho),
+      list: vi.fn(),
+      watch: vi.fn(),
+    };
+    const toast = makeToastSink();
+
+    await releaseHoglet("hog-1", "nest-1", {
+      hoglets,
+      positions,
+      remote,
+      toast,
+    });
+
+    expect(hoglets.buckets.get("nest-1")).toEqual([]);
+    expect(hoglets.buckets.get(WILD_BUCKET)).toEqual([serverEcho]);
+    expect(remote.release).toHaveBeenCalledWith({ hogletId: "hog-1" });
+    expect(positions.cleared).toEqual(["hog-1"]);
+    expect(mockTrack).toHaveBeenCalledWith(
+      "hedgemony.hoglet_released",
+      expect.objectContaining({ source: "nest" }),
+    );
+    expect(toast.errorCalls).toEqual([]);
+  });
+
+  it("is a no-op when the hoglet is missing from the source nest bucket", async () => {
+    const hoglets = makeHogletRepo({ "nest-1": [] });
+    const positions = makePositionRepo();
+    const remote: HogletRemoteService = {
+      adopt: vi.fn(),
+      release: vi.fn(),
+      list: vi.fn(),
+      watch: vi.fn(),
+    };
+    const toast = makeToastSink();
+
+    await releaseHoglet("missing", "nest-1", {
+      hoglets,
+      positions,
+      remote,
+      toast,
+    });
+
+    expect(remote.release).not.toHaveBeenCalled();
+    expect(positions.cleared).toEqual([]);
+  });
+
+  it("rolls the hoglet back to the source nest when the RPC fails", async () => {
+    const nestHoglet = makeHoglet({ nestId: "nest-1" });
+    const hoglets = makeHogletRepo({ "nest-1": [nestHoglet] });
+    const positions = makePositionRepo();
+    const remote: HogletRemoteService = {
+      adopt: vi.fn(),
+      release: vi.fn().mockRejectedValue(new Error("network")),
+      list: vi.fn(),
+      watch: vi.fn(),
+    };
+    const toast = makeToastSink();
+
+    await releaseHoglet("hog-1", "nest-1", {
+      hoglets,
+      positions,
+      remote,
+      toast,
+    });
+
+    expect(hoglets.buckets.get(WILD_BUCKET)).toEqual([]);
+    expect(hoglets.buckets.get("nest-1")).toEqual([nestHoglet]);
+    expect(toast.errorCalls).toEqual(["Could not release hoglet"]);
     expect(mockTrack).not.toHaveBeenCalled();
   });
 });
