@@ -81,6 +81,10 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
       {/* Tinder-style inbox review */}
       <Stack.Screen name="review" options={{ headerShown: false }} />
 
+      {/* Settings — pushed on top of whatever the user was viewing, so
+          back / iOS swipe-back / Android hardware-back all return to it. */}
+      <Stack.Screen name="settings/index" options={{ headerShown: false }} />
+
       {/* Report detail - modal presentation */}
       <Stack.Screen
         name="report/[id]"
@@ -135,7 +139,15 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
 }
 
 export default function RootLayout() {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme, setColorScheme } = useColorScheme();
+  const themePreference = usePreferencesStore((s) => s.theme);
+
+  // Sync the user's theme preference into NativeWind's color scheme so the
+  // entire app honours it (including light/dark/system).
+  useEffect(() => {
+    setColorScheme(themePreference);
+  }, [themePreference, setColorScheme]);
+
   const themeVars = colorScheme === "dark" ? darkTheme : lightTheme;
   const { isConnected } = useNetworkStatus();
 
