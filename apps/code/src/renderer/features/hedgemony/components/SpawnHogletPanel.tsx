@@ -117,11 +117,11 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
 
   return (
     <motion.aside
-      initial={{ opacity: 0, x: -16 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -16 }}
-      transition={{ duration: 0.15, ease: "easeOut" }}
-      className="absolute top-3 bottom-3 left-3 z-10 flex w-[400px] min-w-0 flex-col rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) shadow-xl"
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 24 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+      className="-translate-x-1/2 absolute bottom-3 left-1/2 z-10 flex max-h-[min(80%,560px)] w-[680px] min-w-0 max-w-[calc(100%-24px)] flex-col rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) shadow-xl"
     >
       <div className="flex items-start justify-between gap-3 border-(--gray-5) border-b px-4 py-3">
         <div className="min-w-0">
@@ -169,7 +169,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
             placeholder="Describe what this agent should do."
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            rows={8}
+            rows={4}
             autoFocus
             disabled={submitting}
           />

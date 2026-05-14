@@ -1,23 +1,25 @@
 import { Tooltip } from "@radix-ui/themes";
 import { motion } from "framer-motion";
-import { playSfx } from "../audio/sfx";
-import { playVoice } from "../audio/voice";
-import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 
 export const HEDGEHOUSE_MAP_X = 0;
 export const HEDGEHOUSE_MAP_Y = 0;
 export const HEDGEHOUSE_AVOID_RADIUS = 220;
 
 const HEDGEHOUSE_SIZE = 220;
+const SELECTION_RING_SIZE = 232;
 
-export function HedgehouseSprite() {
-  const openSpawnHoglet = useSpawnDialogStore((s) => s.openSpawnHoglet);
+interface HedgehouseSpriteProps {
+  selected?: boolean;
+  onSelect?: () => void;
+}
 
+export function HedgehouseSprite({
+  selected,
+  onSelect,
+}: HedgehouseSpriteProps) {
   const handleClick = (event: React.MouseEvent) => {
     event.stopPropagation();
-    playSfx("select");
-    playVoice("hoglet:select");
-    openSpawnHoglet();
+    onSelect?.();
   };
 
   return (
@@ -27,17 +29,29 @@ export function HedgehouseSprite() {
         transform: `translate(calc(-50% + ${HEDGEHOUSE_MAP_X}px), calc(-50% + ${HEDGEHOUSE_MAP_Y}px))`,
       }}
     >
-      <Tooltip content="Hedgehouse — town hall of the wilds. Click to spawn a wild hog.">
+      <Tooltip content="Hedgehouse — town hall of the wilds">
         <motion.button
           type="button"
           data-hedgemony-hedgehouse
-          aria-label="Hedgehouse — spawn a wild hog"
-          className="-translate-x-1/2 -translate-y-1/2 flex cursor-pointer flex-col items-center border-0 bg-transparent p-0"
+          aria-label="Hedgehouse"
+          className="-translate-x-1/2 -translate-y-1/2 relative flex cursor-pointer flex-col items-center border-0 bg-transparent p-0"
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
           onContextMenu={(event) => event.preventDefault()}
           onClick={handleClick}
         >
+          {selected && (
+            <motion.span
+              className="-translate-x-1/2 pointer-events-none absolute top-0 left-1/2 rounded-full border-(--accent-9) border-2"
+              style={{
+                width: SELECTION_RING_SIZE,
+                height: SELECTION_RING_SIZE,
+              }}
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+            />
+          )}
           <svg
             width={HEDGEHOUSE_SIZE}
             height={HEDGEHOUSE_SIZE}

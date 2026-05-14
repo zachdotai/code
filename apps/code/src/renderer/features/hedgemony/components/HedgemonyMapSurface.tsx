@@ -67,6 +67,8 @@ interface HedgemonyMapSurfaceProps {
   onBuilderArrive?: () => void;
   onBuilderSegmentComplete?: (reachedIndex: number) => void;
   onToggleFullscreen?: () => void;
+  hedgehouseSelected?: boolean;
+  onHedgehouseSelect?: () => void;
 }
 
 export function HedgemonyMapSurface({
@@ -89,6 +91,8 @@ export function HedgemonyMapSurface({
   onBuilderArrive,
   onBuilderSegmentComplete,
   onToggleFullscreen,
+  hedgehouseSelected,
+  onHedgehouseSelect,
 }: HedgemonyMapSurfaceProps) {
   const panX = useHedgemonyViewStore((s) => s.panX);
   const panY = useHedgemonyViewStore((s) => s.panY);
@@ -322,7 +326,10 @@ export function HedgemonyMapSurface({
         className="absolute inset-0 origin-center"
       >
         <MapBackdrop nests={nests} />
-        <HedgehouseSprite />
+        <HedgehouseSprite
+          selected={hedgehouseSelected}
+          onSelect={onHedgehouseSelect}
+        />
         {nests.map((nest) => (
           <NestSprite
             key={nest.id}

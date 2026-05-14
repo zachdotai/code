@@ -28,6 +28,7 @@ import {
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
+import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import { HedgemonyMapSurface, type MoveMarker } from "./HedgemonyMapSurface";
 import { NestBroodCluster } from "./NestBroodCluster";
@@ -38,7 +39,11 @@ import { WildHogletFlock } from "./WildHogletFlock";
 
 const log = logger.scope("hedgemony-map-view");
 
-type Selection = { type: "nest"; id: string } | { type: "builder" } | null;
+type Selection =
+  | { type: "nest"; id: string }
+  | { type: "builder" }
+  | { type: "hedgehouse" }
+  | null;
 
 /**
  * Top-level interaction modes for the map. At most one is active at a time;
@@ -64,6 +69,7 @@ export function HedgemonyMapView() {
   const [selection, setSelection] = useState<Selection>(null);
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
   const spawnHogletOpen = useSpawnDialogStore((s) => s.spawnHogletOpen);
+  const openSpawnHoglet = useSpawnDialogStore((s) => s.openSpawnHoglet);
   const closeSpawnHoglet = useSpawnDialogStore((s) => s.closeSpawnHoglet);
   const fullscreen = useHedgemonyViewStore((s) => s.fullscreen);
   const setFullscreen = useHedgemonyViewStore((s) => s.setFullscreen);
@@ -304,6 +310,7 @@ export function HedgemonyMapView() {
       ? (nests.find((nest) => nest.id === selection.id) ?? null)
       : null;
   const builderSelected = selection?.type === "builder";
+  const hedgehouseSelected = selection?.type === "hedgehouse";
   const buildMode = mode.kind === "placingNest";
   const relocatingNestId = mode.kind === "relocatingNest" ? mode.nestId : null;
 
@@ -389,9 +396,11 @@ export function HedgemonyMapView() {
   // The map + every floating panel that should appear on top of it. In
   // fullscreen, this entire bundle is portalled to document.body so the
   // panels (which use position: fixed) sit above the z-[1000] overlay rather
-  // than getting hidden behind it.
+  // than getting hidden behind it. The outer `relative` wrapper anchors the
+  // absolutely-positioned panels (NestDetailPanel, SpawnHogletPanel, etc.)
+  // to the map area so they don't bleed onto the app sidebar.
   const mapContent = (
-    <>
+    <div className="relative h-full w-full">
       <HedgemonyMapSurface
         nests={nests}
         selectedNestId={activeNest?.id ?? null}
@@ -419,6 +428,12 @@ export function HedgemonyMapView() {
         onBuilderArrive={builder.handleArrive}
         onBuilderSegmentComplete={builder.handleSegmentComplete}
         onToggleFullscreen={toggleFullscreen}
+        hedgehouseSelected={hedgehouseSelected}
+        onHedgehouseSelect={() => {
+          playSfx("select");
+          playVoice("hoglet:select");
+          setSelection({ type: "hedgehouse" });
+        }}
       >
         {nests.map((nest) => (
           <NestBroodCluster key={nest.id} nest={nest} />
@@ -444,11 +459,26 @@ export function HedgemonyMapView() {
           />
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {hedgehouseSelected && !spawnHogletOpen && (
+          <HedgehouseCommandPanel
+            onSpawnWildHog={openSpawnHoglet}
+            onClose={() => setSelection(null)}
+          />
+        )}
+      </AnimatePresence>
       <HedgemonyHoldingPanel />
       <AnimatePresence>
-        {spawnHogletOpen && <SpawnHogletPanel onClose={closeSpawnHoglet} />}
+        {spawnHogletOpen && (
+          <SpawnHogletPanel
+            onClose={() => {
+              closeSpawnHoglet();
+              if (selection?.type === "hedgehouse") setSelection(null);
+            }}
+          />
+        )}
       </AnimatePresence>
-    </>
+    </div>
   );
 
   return (
