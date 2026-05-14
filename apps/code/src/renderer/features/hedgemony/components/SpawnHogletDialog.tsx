@@ -1,19 +1,18 @@
+import { GitHubRepoPicker } from "@features/folder-picker/components/GitHubRepoPicker";
 import type { TaskService } from "@features/task-detail/service/service";
 import {
-  Button,
-  Dialog,
-  Flex,
-  Text,
-  TextArea,
-  TextField,
-} from "@radix-ui/themes";
+  useUserGithubRepositories,
+  useUserRepositoryIntegration,
+} from "@hooks/useIntegrations";
+import { Button, Dialog, Flex, Text, TextArea } from "@radix-ui/themes";
 import { get as getFromContainer } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
 
 const log = logger.scope("spawn-hoglet-dialog");
@@ -25,25 +24,63 @@ export interface SpawnHogletDialogProps {
 
 export function SpawnHogletDialog({ open, onClose }: SpawnHogletDialogProps) {
   const [prompt, setPrompt] = useState("");
-  const [repository, setRepository] = useState("");
+  const [selectedRepository, setSelectedRepository] = useState<string | null>(
+    null,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRepoPickerOpen, setIsRepoPickerOpen] = useState(false);
+  const [repoSearchQuery, setRepoSearchQuery] = useState("");
+
+  const {
+    repositories,
+    isLoadingRepos,
+    isRefreshingRepos,
+    refreshRepositories,
+  } = useUserRepositoryIntegration();
+  const {
+    repositories: visibleCloudRepositories,
+    isPending: cloudRepositoriesLoading,
+    hasMore: cloudRepositoriesHasMore,
+    loadMore: loadMoreCloudRepositories,
+  } = useUserGithubRepositories(repoSearchQuery, isRepoPickerOpen);
 
   useEffect(() => {
     if (open) {
       setPrompt("");
-      setRepository("");
+      setSelectedRepository(null);
       setError(null);
       setSubmitting(false);
+      setIsRepoPickerOpen(false);
+      setRepoSearchQuery("");
     }
   }, [open]);
 
+  const handleRepositorySelect = useCallback((repo: string | null) => {
+    setSelectedRepository(repo ? repo.toLowerCase() : null);
+  }, []);
+
+  const handleRepoPickerOpenChange = useCallback((nextOpen: boolean) => {
+    setIsRepoPickerOpen(nextOpen);
+    if (!nextOpen) {
+      setRepoSearchQuery("");
+    }
+  }, []);
+
+  const handleRefreshRepositories = useCallback(() => {
+    void refreshRepositories().catch((e) => {
+      toast.error("Failed to refresh repositories", {
+        description: e instanceof Error ? e.message : "Please try again.",
+      });
+    });
+  }, [refreshRepositories]);
+
   const trimmedPrompt = prompt.trim();
-  const trimmedRepo = repository.trim();
-  const canSubmit = trimmedPrompt.length > 0 && trimmedRepo.length > 0;
+  const canSubmit =
+    trimmedPrompt.length > 0 && selectedRepository !== null && !submitting;
 
   const handleSubmit = async () => {
-    if (!canSubmit || submitting) return;
+    if (!canSubmit || submitting || !selectedRepository) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -53,7 +90,7 @@ export function SpawnHogletDialog({ open, onClose }: SpawnHogletDialogProps) {
       const result = await taskService.createTask({
         content: trimmedPrompt,
         workspaceMode: "cloud",
-        repository: trimmedRepo,
+        repository: selectedRepository,
         cloudPrAuthorshipMode: "bot",
         cloudRunSource: "manual",
       });
@@ -120,21 +157,28 @@ export function SpawnHogletDialog({ open, onClose }: SpawnHogletDialogProps) {
           </div>
 
           <div>
-            <Text
-              as="label"
-              htmlFor="hoglet-repo"
-              size="2"
-              mb="1"
-              weight="medium"
-              className="block"
-            >
+            <Text as="div" size="2" mb="1" weight="medium" className="block">
               Repository
             </Text>
-            <TextField.Root
-              id="hoglet-repo"
-              placeholder="owner/repo"
-              value={repository}
-              onChange={(e) => setRepository(e.target.value)}
+            <GitHubRepoPicker
+              value={selectedRepository}
+              onChange={handleRepositorySelect}
+              repositories={
+                isRepoPickerOpen ? visibleCloudRepositories : repositories
+              }
+              isLoading={
+                isLoadingRepos || (isRepoPickerOpen && cloudRepositoriesLoading)
+              }
+              isRefreshing={isRefreshingRepos}
+              onRefresh={handleRefreshRepositories}
+              open={isRepoPickerOpen}
+              onOpenChange={handleRepoPickerOpenChange}
+              searchQuery={repoSearchQuery}
+              onSearchQueryChange={setRepoSearchQuery}
+              hasMore={cloudRepositoriesHasMore}
+              onLoadMore={loadMoreCloudRepositories}
+              placeholder="Select repository..."
+              size="2"
               disabled={submitting}
             />
           </div>
