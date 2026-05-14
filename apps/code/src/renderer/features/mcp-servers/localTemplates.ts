@@ -69,4 +69,15 @@ export const LOCAL_MCP_TEMPLATES: LocalMcpTemplate[] = [
       "Access Granola meeting notes and transcripts. Uses Dynamic Client Registration — no additional credentials required.",
     docs_url: "https://docs.granola.ai/help-center/sharing/integrations/mcp",
   },
+  {
+    id: "local:slack",
+    name: "Slack",
+    url: "https://mcp.slack.com/mcp",
+    auth_type: "oauth",
+    category: "productivity",
+    icon_key: "slack",
+    description:
+      "Search Slack messages, channels, and threads with Real-time Search. Requires a directory-published or internal Slack app — add your client ID and secret under the optional authentication fields.",
+    docs_url: "https://docs.slack.dev/ai/slack-mcp-server/",
+  },
 ];
