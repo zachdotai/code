@@ -4,6 +4,7 @@ import { Tooltip } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useCallback } from "react";
 import { useTransitPath } from "../hooks/useTransitPath";
 import { useWalkTo } from "../hooks/useWalkTo";
 import {
@@ -11,9 +12,10 @@ import {
   useHogletPositionStore,
 } from "../stores/hogletPositionStore";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
-import { useRegisterHogletVisualPosition } from "../utils/hogletVisualPositions";
+import { selectNests, useNestStore } from "../stores/nestStore";
+import { useCollisionResolvedPosition } from "../utils/collisionResolution";
 import { nestAccentColor } from "../utils/nestColors";
-import { HOGLET_RADIUS } from "../utils/worldObstacles";
+import { HOGLET_RADIUS, worldObstacles } from "../utils/worldObstacles";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
 import {
@@ -71,7 +73,16 @@ export function BroodHoglet({
     y,
     walkPath ?? computedPath,
   );
-  useRegisterHogletVisualPosition(hoglet.id, motionX, motionY);
+  const nests = useNestStore(selectNests);
+  const getStaticObstacles = useCallback(() => worldObstacles(nests), [nests]);
+  const { resolvedX, resolvedY } = useCollisionResolvedPosition(
+    hoglet.id,
+    motionX,
+    motionY,
+    HOGLET_RADIUS,
+    getStaticObstacles,
+    { visualRegistryId: hoglet.id },
+  );
 
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
@@ -107,8 +118,8 @@ export function BroodHoglet({
     <motion.div
       className="absolute top-1/2 left-1/2"
       style={{
-        x: motionX,
-        y: motionY,
+        x: resolvedX,
+        y: resolvedY,
         opacity: isDragging
           ? 0.4
           : dimmedByAffiliation

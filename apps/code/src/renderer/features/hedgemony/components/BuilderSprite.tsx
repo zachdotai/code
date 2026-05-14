@@ -5,10 +5,16 @@ import {
   motion,
   useMotionValue,
 } from "framer-motion";
-import { type MutableRefObject, useEffect, useState } from "react";
+import { type MutableRefObject, useCallback, useEffect, useState } from "react";
 import { BUILDER_NAME } from "../constants/map";
 import type { BuilderAnimation } from "../hooks/useBuilderCoordinator";
+import { selectNests, useNestStore } from "../stores/nestStore";
+import { useCollisionResolvedPosition } from "../utils/collisionResolution";
 import type { Vec2 } from "../utils/pathfinding";
+import {
+  BUILDER_OBSTACLE_RADIUS,
+  worldObstacles,
+} from "../utils/worldObstacles";
 import { AnimatedHedgehog, type HedgehogAnimation } from "./AnimatedHedgehog";
 
 export type { BuilderAnimation };
@@ -57,20 +63,30 @@ export function BuilderSprite({
   const motionY = useMotionValue(initial.y);
   const [facing, setFacing] = useState<"left" | "right">("right");
 
+  const nests = useNestStore(selectNests);
+  const getStaticObstacles = useCallback(() => worldObstacles(nests), [nests]);
+  const { resolvedX, resolvedY } = useCollisionResolvedPosition(
+    "builder",
+    motionX,
+    motionY,
+    BUILDER_OBSTACLE_RADIUS,
+    getStaticObstacles,
+  );
+
   useEffect(() => {
     if (!positionRef) return;
-    positionRef.current = { x: motionX.get(), y: motionY.get() };
-    const unsubX = motionX.on("change", (v) => {
+    positionRef.current = { x: resolvedX.get(), y: resolvedY.get() };
+    const unsubX = resolvedX.on("change", (v) => {
       positionRef.current = { x: v, y: positionRef.current.y };
     });
-    const unsubY = motionY.on("change", (v) => {
+    const unsubY = resolvedY.on("change", (v) => {
       positionRef.current = { x: positionRef.current.x, y: v };
     });
     return () => {
       unsubX();
       unsubY();
     };
-  }, [motionX, motionY, positionRef]);
+  }, [resolvedX, resolvedY, positionRef]);
 
   useEffect(() => {
     if (path.length === 0) return;
@@ -144,7 +160,7 @@ export function BuilderSprite({
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
-      style={{ x: motionX, y: motionY }}
+      style={{ x: resolvedX, y: resolvedY }}
     >
       <Tooltip
         content={

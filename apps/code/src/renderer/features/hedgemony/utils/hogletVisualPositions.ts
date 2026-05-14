@@ -23,6 +23,20 @@ export function applyHogletVisualPositions(
   });
 }
 
+// Writer for the collision-resolution loop. It writes the sprite's actual
+// on-screen position each animation frame so path planners see the truth
+// (motion target + per-frame collision offset), not just the framer
+// motionX/motionY. Components that don't participate in collision
+// resolution use `useRegisterHogletVisualPosition` instead, which writes
+// the raw motion values via subscription.
+export function writeHogletVisualPosition(hogletId: string, pos: Vec2): void {
+  visualPositions.set(hogletId, clone(pos));
+}
+
+export function clearHogletVisualPosition(hogletId: string): void {
+  visualPositions.delete(hogletId);
+}
+
 export function setHogletVisualPositionForTest(
   hogletId: string,
   pos: Vec2 | null,
