@@ -3,6 +3,8 @@ import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import type { Hoglet } from "@main/services/hedgemony/schemas";
 import {
   ArrowSquareOut,
+  ArrowsIn,
+  ArrowsOut,
   CaretDown,
   ChatCircle,
   House,
@@ -74,6 +76,7 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
   );
 
   const [chatOpen, setChatOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [retireDialogOpen, setRetireDialogOpen] = useState(false);
   const [retiring, setRetiring] = useState(false);
 
@@ -131,6 +134,9 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
   const description = taskQuery.data?.description?.trim() ?? "";
 
   useHotkeys("c", () => setChatOpen((v) => !v));
+  useHotkeys("e", () => {
+    if (chatOpen) setExpanded((v) => !v);
+  }, [chatOpen]);
   useHotkeys("o", () => {
     if (taskQuery.data) handleOpenInEditor();
   }, [taskQuery.data, handleOpenInEditor]);
@@ -141,11 +147,20 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
     if (!retiring) setRetireDialogOpen(true);
   }, [retiring]);
 
+  const panelHeight = chatOpen
+    ? expanded
+      ? "min(92vh, 880px)"
+      : "min(60vh, 540px)"
+    : undefined;
+  const panelWidth =
+    chatOpen && expanded ? "min(1100px, calc(100vw - 1.5rem))" : undefined;
+
   return (
     <CommandConsole
       consoleKey={hoglet.id}
       size="wide"
-      style={{ height: chatOpen ? "min(60vh, 540px)" : undefined }}
+      width={panelWidth}
+      style={{ height: panelHeight }}
       onPointerDown={(e) => e.stopPropagation()}
       onContextMenuCapture={(e) => e.stopPropagation()}
     >
@@ -182,6 +197,22 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
                   aria-label="Send to default position"
                 >
                   <House size={14} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {chatOpen && (
+              <Tooltip
+                content={expanded ? "Shrink panel (E)" : "Expand panel (E)"}
+                side="top"
+              >
+                <IconButton
+                  size="1"
+                  variant="soft"
+                  color="gray"
+                  onClick={() => setExpanded((v) => !v)}
+                  aria-label={expanded ? "Shrink panel" : "Expand panel"}
+                >
+                  {expanded ? <ArrowsIn size={14} /> : <ArrowsOut size={14} />}
                 </IconButton>
               </Tooltip>
             )}
