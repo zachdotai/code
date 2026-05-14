@@ -6,10 +6,11 @@ import {
   type ToolViewProps,
   useToolCallStatus,
 } from "@features/sessions/components/session-update/toolCallUtils";
+import { RobotIcon } from "@phosphor-icons/react";
+import { Dialog, Flex } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 
 interface GeneratedCanvas {
-  id: string;
   name: string;
   content: string;
 }
@@ -20,11 +21,10 @@ function parseGeneratedCanvas(raw: string | undefined): GeneratedCanvas | null {
   if (!trimmed) return null;
   try {
     const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-    const id = typeof parsed.id === "string" ? parsed.id : null;
     const name = typeof parsed.name === "string" ? parsed.name : "Canvas";
     const content = typeof parsed.content === "string" ? parsed.content : null;
-    if (!id || !content) return null;
-    return { id, name, content };
+    if (!content) return null;
+    return { name, content };
   } catch {
     return null;
   }
@@ -43,6 +43,7 @@ export function GenerateCanvasResult({
   );
   const client = useAuthenticatedClient();
   const resolver = useMemo(() => buildClientResolver(client), [client]);
+  const [open, setOpen] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
 
   if (!isComplete || isFailed || wasCancelled) return null;
@@ -61,28 +62,52 @@ export function GenerateCanvasResult({
   }
 
   return (
-    <div className="mx-6 my-2 overflow-hidden rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1)">
-      <div className="flex items-center justify-between border-(--gray-5) border-b px-3 py-1.5">
-        <span className="font-medium text-(--gray-12) text-xs">
-          {canvas.name}
-        </span>
-        <span className="font-mono text-(--gray-10) text-[11px]">
-          {canvas.id.slice(0, 8)}
-        </span>
-      </div>
-      {renderError && (
-        <div className="whitespace-pre-wrap bg-(--red-3) px-3 py-2 font-mono text-(--red-11) text-xs">
-          {renderError}
-        </div>
-      )}
-      <div className="h-[420px]">
-        <CanvasRenderer
-          content={canvas.content}
-          onApiCall={resolver}
-          onReady={() => setRenderError(null)}
-          onError={setRenderError}
-        />
-      </div>
-    </div>
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Trigger>
+        <button
+          type="button"
+          className="mx-6 my-2 flex items-center gap-2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-3 py-2 text-left transition-colors hover:bg-(--gray-3)"
+        >
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-(--gray-10)">
+            <RobotIcon size={14} />
+          </span>
+          <span className="flex flex-col">
+            <span className="text-(--gray-12) text-xs">{canvas.name}</span>
+            <span className="text-(--gray-10) text-[11px]">
+              Preview generated canvas
+            </span>
+          </span>
+        </button>
+      </Dialog.Trigger>
+      <Dialog.Content
+        maxWidth="780px"
+        style={{ height: 640, padding: 0, overflow: "hidden" }}
+      >
+        <Flex direction="column" className="h-full w-full">
+          <Flex
+            align="center"
+            justify="between"
+            className="shrink-0 border-(--gray-5) border-b px-3 py-2"
+          >
+            <Dialog.Title className="m-0 text-(--gray-12) text-sm">
+              {canvas.name}
+            </Dialog.Title>
+          </Flex>
+          {renderError && (
+            <div className="shrink-0 whitespace-pre-wrap bg-(--red-3) px-3 py-2 font-mono text-(--red-11) text-xs">
+              {renderError}
+            </div>
+          )}
+          <Flex direction="column" className="min-h-0 flex-1">
+            <CanvasRenderer
+              content={canvas.content}
+              onApiCall={resolver}
+              onReady={() => setRenderError(null)}
+              onError={setRenderError}
+            />
+          </Flex>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
   );
 }

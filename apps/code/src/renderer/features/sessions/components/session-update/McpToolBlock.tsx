@@ -1,7 +1,7 @@
 import { McpAppHost } from "@features/mcp-apps/components/McpAppHost";
 import { McpToolView } from "@features/mcp-apps/components/McpToolView";
 import { parseMcpToolKey } from "@features/mcp-apps/utils/mcp-app-host-utils";
-import { GenerateCanvasResult } from "@features/rendering-canvas/GenerateCanvasResult";
+import { CreateCanvasResult } from "@features/rendering-canvas/CreateCanvasResult";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useTRPC } from "@renderer/trpc/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -47,13 +47,13 @@ export function McpToolBlock(props: McpToolBlockProps) {
     }),
   );
 
-  const isGenerateCanvas = toolName === "generate-canvas";
+  const isCreateCanvas = toolName === "create-canvas";
 
   return (
     <>
       <McpToolView {...props} />
-      {isGenerateCanvas && <GenerateCanvasResult {...props} />}
-      {hasUi && !isDisabledForServer && !isGenerateCanvas && (
+      {isCreateCanvas && <CreateCanvasResult {...props} />}
+      {hasUi && !isDisabledForServer && !isCreateCanvas && (
         <McpAppHost {...props} serverName={serverName} toolName={toolName} />
       )}
     </>
