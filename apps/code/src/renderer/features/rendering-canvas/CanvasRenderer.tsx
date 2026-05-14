@@ -1,4 +1,6 @@
+import { buildCanvasTokens } from "@features/rendering-canvas/canvas-theme";
 import { buildCanvasSrcDoc } from "@features/rendering-canvas/runtime";
+import { useThemeStore } from "@stores/themeStore";
 import { useEffect, useMemo, useRef } from "react";
 
 export type CanvasApiResolver = (
@@ -27,7 +29,15 @@ export function CanvasRenderer({
   const resolverRef = useRef<CanvasApiResolver | undefined>(onApiCall);
   resolverRef.current = onApiCall;
 
-  const srcDoc = useMemo(() => buildCanvasSrcDoc(content), [content]);
+  const isDarkMode = useThemeStore((s) => s.isDarkMode);
+  // buildCanvasTokens() reads CSS vars off the host <html>, which depend on
+  // the active theme. Listing isDarkMode as a dep forces a fresh srcDoc when
+  // the host theme flips so the iframe picks up the new palette.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isDarkMode is read indirectly via getComputedStyle inside buildCanvasTokens()
+  const srcDoc = useMemo(
+    () => buildCanvasSrcDoc(content, { tokens: buildCanvasTokens() }),
+    [content, isDarkMode],
+  );
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {

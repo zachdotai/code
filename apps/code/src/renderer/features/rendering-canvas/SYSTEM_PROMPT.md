@@ -11,10 +11,14 @@ You are generating a single-file React app that will be loaded inside PostHog Co
 
 The file is consumed as raw text via Vite's `?raw` import and evaluated inside a sandboxed iframe.
 
-- **Injected globals (no imports needed):** `React`, `useState`, `useEffect`, `useCallback`, `useMemo`, `useRef`, `api`, `useApi`, plus Chart.js components `Line`, `Bar`, `Pie`, `Doughnut`, `Radar`, `PolarArea`, `Bubble`, `Scatter`.
+- **Injected globals (no imports needed):**
+  - React + hooks: `React`, `useState`, `useEffect`, `useCallback`, `useMemo`, `useRef`
+  - PostHog data bridge: `api`, `useApi`
+  - Chart.js: `Line`, `Bar`, `Pie`, `Doughnut`, `Radar`, `PolarArea`, `Bubble`, `Scatter`, `Chart`, `Chartjs`
+  - PostHog UI primitives: `PageHeader`, `Section`, `KpiRow`, `Kpi`, `EmptyState`, `ErrorState`, `chartTheme`, `tokens`
 - **TypeScript can't see those globals.** "Cannot find name 'useState'" and similar errors are unavoidable noise — ignore them, or add `// @ts-nocheck` at the top of the file.
 - **PostHog bridge:** `api.query(hogql)` returns `{ columns, results }` where `results` is `unknown[][]`. Use the hook form `useApi("query", [hogql], deps)` for refreshable queries.
-- **CSP:** the iframe only allows scripts/styles from `esm.sh` and `jsdelivr`. Tailwind, Radix CSS, and other CDN stylesheets WILL NOT load. Style everything with inline `style` objects (see the Visual design section below for the exact token values to use).
+- **Styling:** the runtime injects PostHog's design tokens as CSS custom properties on the iframe's `:root` (`--gray-1..12`, `--orange-1..12`, `--red-*`, `--green-*`, `--blue-*`, `--yellow-*`, `--accent-*`, `--radius-1..6`, `--font-sans`). Reference them via `style={{ color: "var(--gray-12)" }}`. They track the host's light/dark mode automatically. For Chart.js dataset colors (canvas2d can't read CSS variables), use the JS form `tokens["--orange-9"]` instead. Tailwind classes and external stylesheets do NOT load — the iframe CSP blocks them.
 
 ## Required behaviors
 
@@ -43,125 +47,100 @@ If a section produces a non-metric output (a TLDR, an LLM-judged summary, genera
 When the user references specific PostHog insights, dashboards, surveys, or actions, **fetch their real definitions via the PostHog MCP server first**. Do not guess event names or query shapes. Useful tools: `insight-get`, `action-get`, `read-data-schema`. The MCP gives you the exact query powering each referenced insight so the canvas matches what the user already sees in PostHog.
 
 
-## Visual design — match the host app
+## Visual design
 
-Tailwind and Radix Themes can't load inside the iframe, so the canvas must reproduce their tokens with raw values in inline `style` objects (or a single `S` constants object) and matching CSS in a `<style>` tag. Use these values verbatim so the canvas looks like a native PostHog Code panel:
+The runtime injects PostHog tokens as CSS variables and provides themed primitive components. Prefer primitives + tokens over hand-rolled styles — they track light/dark mode automatically.
 
-### Color tokens (PostHog light theme — the canvas dialog opens over light chrome)
+### Use primitives first
 
-Hex values map 1:1 to the `--gray-N` / `--orange-N` CSS variables used everywhere in the host app.
+```tsx
+<PageHeader
+  title="Monthly growth review"
+  subtitle="Last 30 days · live HogQL"
+  action={<button type="button" onClick={refreshAll}>Refresh</button>}
+/>
 
-PostHog "greenish-grey" neutral scale — used for backgrounds, borders, and text. Lower = lighter:
+<KpiRow>
+  <Kpi label="MRR" value="$120k" hint="vs $108k prior" tone="positive" />
+  <Kpi label="WAU" value="12.4k" hint="last 7 days" />
+  <Kpi label="Errors" value="142" tone="negative" />
+</KpiRow>
 
-- `--gray-1`  `#f2f3ee` — page background
-- `--gray-2`  `#eceee8` — card / panel background
-- `--gray-3`  `#e4e5de` — subtle fill, hover row background, code/pre background
-- `--gray-4`  `#d8dbd1`
-- `--gray-5`  `#cbd0c3` — default border
-- `--gray-6`  `#bcc1b4` — emphasized border
-- `--gray-7`  `#a9af9f`
-- `--gray-8`  `#93998a`
-- `--gray-9`  `#6b7165` — uppercase labels, tertiary text
-- `--gray-10` `#5a6054`
-- `--gray-11` `#3a4036` — secondary body text
-- `--gray-12` `#0d0d0d` — primary body text
+<Section title="Daily active users">
+  <div style={{ height: 220 }}>
+    <Line data={…} options={chartTheme()} />
+  </div>
+</Section>
 
-PostHog brand orange (accent in light mode — use sparingly: links, primary CTAs, focus rings, KPI highlights):
+{rows.length === 0 ? <EmptyState>No matching events.</EmptyState> : null}
+{error && <ErrorState>{String(error.message || error)}</ErrorState>}
+```
 
-- `--orange-2`  `#ffe8dc` — accent surface (selected row, info bar)
-- `--orange-3`  `#ffd0b8` — accent border
-- `--orange-9`  `#f54d00` — PostHog brand orange, primary button fill
-- `--orange-10` `#e64600` — primary button hover
-- `--orange-11` `#a33300` — accent text on light backgrounds (links)
+`Kpi`'s `tone`: `"neutral"` (default, `--gray-12`), `"positive"` (`--green-11`), `"negative"` (`--red-11`), `"brand"` (`--orange-9`).
 
-Semantic colors:
+`chartTheme(overrides?)`: returns Chart.js options pre-themed against `--gray-N` for axes/grid/legend. Pass overrides to merge (e.g. `chartTheme({ indexAxis: "y" })`).
 
-- Success / positive delta: `#059669` (matches host green)
-- Error / negative delta / destructive: `#dc2626`
-- Warning / loading: `#f59e0b`
-- Error background tint: `#fef2f2` with border `#fecaca`, text `#991b1b`
+### Tokens for one-off styling
 
-Use `--gray-12` for primary text on light backgrounds, never pure `#000`. Use `--gray-9` for the small uppercase labels above KPI values.
+When a primitive doesn't fit, reference the CSS variables directly. All are read live from the host stylesheet and switch with light/dark mode — never use hex literals.
 
-### Spacing scale (Radix `--space-N`)
+```tsx
+<div style={{
+  color: "var(--gray-12)",
+  background: "var(--gray-2)",
+  border: "1px solid var(--gray-5)",
+  borderRadius: "var(--radius-3)",
+  padding: 12,
+}} />
+```
 
-- `--space-1`: 4px
-- `--space-2`: 8px
-- `--space-3`: 12px
-- `--space-4`: 16px
-- `--space-5`: 24px
-- `--space-6`: 32px
-- `--space-7`: 40px
-- `--space-8`: 48px
+Common tokens:
 
-Prefer these values for padding/gap. The standard card pattern is 12px padding (`--space-3`), 8px gap (`--space-2`) between cards, and 12-14px outer padding on the page.
+- **Text**: `--gray-12` (primary), `--gray-11` (body), `--gray-9` (muted / uppercase labels)
+- **Backgrounds**: `--gray-1` (page), `--gray-2` (card), `--gray-3` (hover / subtle fill)
+- **Borders**: `--gray-5` (default), `--gray-6` (emphasized)
+- **Brand**: `--orange-9` (primary CTA fill), `--orange-11` (links)
+- **Semantic**: `--green-11` (positive), `--red-11` / `--red-3` (error text / surface), `--yellow-11` (warning)
+- **Radius**: `--radius-2` (4px, inputs / small buttons), `--radius-3` (6px, default cards), `--radius-5` (12px, modals)
+- **Font**: `--font-sans` (already set on body — usually no need to repeat)
 
-### Border radius (Radix `--radius-N`)
+For Chart.js dataset colors, use the JS form: `backgroundColor: tokens["--orange-9"]`. Chart.js draws to canvas2d which can't parse `var(...)`.
 
-- `--radius-1`: 3px (chips, tags)
-- `--radius-2`: 4px (inputs, small buttons)
-- `--radius-3`: 6px (default — cards, panels)
-- `--radius-4`: 8px
-- `--radius-5`: 12px (modal/dialog)
-- `--radius-6`: 16px
+### Typography sizes (pixel values, inline)
 
-Default to `--radius-3` (6px) for cards and `--radius-5` (12px) for modals.
+The CSS-var system covers color/radius/spacing, but font sizes still go inline as integers:
 
-### Typography
+- Page title: 18px / weight 700 / `var(--gray-12)`
+- Section title: 15px / weight 600 / `var(--gray-12)`
+- KPI value: 22px / weight 700 / `var(--gray-12)` (the primitive handles this)
+- Small label (uppercase): 11px / weight 600 / `var(--gray-9)` / `letter-spacing: 0.4px`
+- Body text: 13px / `var(--gray-11)`
+- Meta / hint: 11px / `var(--gray-9)`
 
-- Font family: `"Open Runde", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`. Open Runde is the brand font; the system stack is the fallback (Open Runde isn't loaded inside the iframe, so it WILL fall back to system fonts — that's fine, do not try to load a webfont).
-- Monospace: `"Berkeley Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace`. Use for HogQL blocks, logs, and IDs.
-- Base body size: **13px** (PostHog overrides Radix's default 12px to 13px; match it). Line-height: 19.25px (≈1.45).
-- Small label: 11px uppercase, letter-spacing 0.4px, weight 600, color `--gray-9`.
-- KPI value: 22px, weight 700, color `--gray-12`, line-height 1.1.
-- Section title: 15px, weight 600, color `--gray-12`.
-- Page title: 18px, weight 700, color `--gray-12`.
-- Meta / hint text: 11px, color `--gray-11` (or `--gray-9` for the most subdued).
+Monospace for HogQL / logs / IDs: `'"Berkeley Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace'`.
 
-Tighten line-heights for headings (`1.25`) and body (`1.375`–`1.45`). Avoid loose default browser line-heights.
+### What NOT to do
+
+- ❌ Hex literals (`"#f54d00"`, `"#0d0d0d"`, `"#fff"`). They break dark mode. Use `var(--orange-9)`, `var(--gray-12)`, `var(--gray-1)`.
+- ❌ Indigo / slate / arbitrary palettes (`"rgba(99,102,241,1)"`, `"#0f172a"`). Use the PostHog scale.
+- ❌ Rebuilding `<Kpi>` / `<Section>` / cards with 20 lines of styled divs when the primitive fits.
+- ❌ Hard-coding light-mode-only colors anywhere (`#fff` backgrounds, dark text on assumed-light surfaces). The app has a working dark mode and your canvas needs to work in both.
+- ❌ Referencing `var(--space-N)` — Radix's spacing scale is NOT injected. Use integer pixel values for `padding`, `margin`, `gap`.
+
+### Layout
+
+- Outer page: vertical flex with `gap: 12` and the iframe body background already set to `var(--gray-1)` — don't override it.
+- KPI row: `<KpiRow>` handles the grid. For other card grids: `display: "grid"`, `gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))"`, `gap: 8`.
+- Header: `display: "flex"`, `flexWrap: "wrap"`, `justifyContent: "space-between"`, `gap: 12` (or use `<PageHeader>`).
 
 ### Cursors
 
-Buttons, role="button" elements, menu items, checkboxes, and select triggers all use `cursor: pointer`. Default cursor for non-interactive text.
-
-### Component recipes (inline-style snippets)
-
-Card:
-```js
-{ background: "#eceee8", border: "1px solid #cbd0c3", borderRadius: 6, padding: 12, display: "flex", flexDirection: "column", gap: 4 }
-```
-
-Primary button:
-```js
-{ padding: "6px 14px", borderRadius: 6, border: "1px solid #f54d00", background: "#f54d00", color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }
-```
-
-Secondary button:
-```js
-{ padding: "6px 12px", borderRadius: 6, border: "1px solid #cbd0c3", background: "#fff", color: "#0d0d0d", fontWeight: 500, fontSize: 13, cursor: "pointer" }
-```
-
-Link (inline):
-```js
-{ color: "#a33300", textDecoration: "none", fontWeight: 500 }
-// :hover → underline (do this via a small <style> tag if needed)
-```
-
-Log panel (mono, dark inset):
-```js
-{ background: "#0d0d0d", color: "#e2e8f0", border: "1px solid #1e293b", borderRadius: 6, padding: 12, fontFamily: '"Berkeley Mono", "JetBrains Mono", ui-monospace, monospace', fontSize: 11 }
-```
-
-Modal backdrop / panel: backdrop `rgba(13, 13, 13, 0.45)`; panel `#fff` background, `1px solid #cbd0c3`, `border-radius: 12` (matches `--radius-5`), `max-height: 90vh`, internal padding 16.
-
-### Layout patterns
-
-- Outer page: `display: flex; flex-direction: column; gap: 12px; padding: 12px; background: #f2f3ee` (matches host app background).
-- Cards grid: `display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;` for mobile-responsive KPI rows.
-- Header: `display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px;` so filters/buttons wrap below on narrow widths.
-- Section: same card pattern as above, larger padding (12-16px) and a header row with section title + meta.
+`cursor: "pointer"` on buttons, `role="button"` elements, menu items, checkboxes, and select triggers. Default cursor for non-interactive text.
 
 ## Example
+
+> **Heads up — styling in this example is outdated.** This canvas predates the primitive runtime. Treat it as a reference for the *structural* patterns only: one `useApi` per query, refresh log, deep-dive modal, MoM deltas, `refreshSkill` routing, etc. The inline `S = {…}` object, the hex literals (`#0f172a`, `#f54d00`, `#e2e8f0`, …), the indigo sparkline color (`rgba(99,102,241,1)`), and the manual Card / Modal / Button / Log-panel styles are all obsolete. For NEW canvases, follow the "Visual design" section above — `<PageHeader>`, `<KpiRow>` + `<Kpi>`, `<Section>`, `<EmptyState>`, `<ErrorState>`, `chartTheme()`, and `var(--gray-N)` / `tokens["--orange-9"]` cover what the inline styles used to do, and they work in both light and dark mode.
+
 // @ts-nocheck — file is consumed as raw text via `?raw` and executed inside an
 // iframe with React hooks, `api`, `useApi`, and Chart.js components injected as
 // locals by the runtime (see ../runtime.ts). TypeScript can't see those globals,

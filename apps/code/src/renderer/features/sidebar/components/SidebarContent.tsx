@@ -1,5 +1,7 @@
 import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { SidebarUsageBar } from "@features/billing/components/SidebarUsageBar";
+import { GeneratedCanvasButton } from "@features/rendering-canvas/GeneratedCanvasButton";
+import { PrimitivesDemoApiButton } from "@features/rendering-canvas/PrimitivesDemoApiButton";
 import { SdkUsageCanvasButton } from "@features/rendering-canvas/SdkUsageCanvasButton";
 import { TestCanvasButton } from "@features/rendering-canvas/TestCanvasButton";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
@@ -31,6 +33,12 @@ export const SidebarContent: React.FC = () => {
       </Box>
       <Box className="shrink-0 border-gray-6 border-t">
         <SdkUsageCanvasButton />
+      </Box>
+      <Box className="shrink-0 border-gray-6 border-t">
+        <PrimitivesDemoApiButton />
+      </Box>
+      <Box className="shrink-0 border-gray-6 border-t">
+        <GeneratedCanvasButton />
       </Box>
       {archivedTaskIds.size > 0 && (
         <Box className="shrink-0 border-gray-6 border-t">
