@@ -1,11 +1,15 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
 import { Tooltip } from "@radix-ui/themes";
+import nestImage from "@renderer/assets/images/hedgemony/nest.png";
 import { animate, motion, useMotionValue } from "framer-motion";
 import { useEffect, useState } from "react";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 
-const SPRITE_SIZE = 96;
-const SELECTION_RING_SIZE = SPRITE_SIZE + 22;
+const NEST_SIZE = 140;
+const HOG_SIZE = 44;
+const SELECTION_RING_SIZE = NEST_SIZE + 24;
+const TERRITORY_SIZE = 220;
+const TERRITORY_SIZE_SELECTED = 260;
 const NEST_SPEED = 100;
 const NEST_EASE = [0.4, 0, 0.2, 1] as const;
 const WALK_ANIMATION = "skins/default/walk/tile";
@@ -72,6 +76,8 @@ export function NestSprite({
     };
   }, [nest.mapX, nest.mapY, motionX, motionY]);
 
+  const showResident = nest.status !== "dormant";
+
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
@@ -91,12 +97,15 @@ export function NestSprite({
             onSelect?.(nest);
           }}
         >
-          <div className="relative">
+          <div
+            className="relative"
+            style={{ width: NEST_SIZE, height: NEST_SIZE }}
+          >
             <div
               className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full"
               style={{
-                width: selected ? 260 : 220,
-                height: selected ? 260 : 220,
+                width: selected ? TERRITORY_SIZE_SELECTED : TERRITORY_SIZE,
+                height: selected ? TERRITORY_SIZE_SELECTED : TERRITORY_SIZE,
                 background: territoryBackground(nest),
               }}
             />
@@ -112,17 +121,26 @@ export function NestSprite({
                 transition={{ duration: 0.18, ease: "easeOut" }}
               />
             )}
-            <div
-              className="flex items-center justify-center rounded-full bg-(--gray-2) shadow-md ring-(--accent-7) ring-2"
-              style={{ width: SPRITE_SIZE, height: SPRITE_SIZE }}
-            >
-              <AnimatedHedgehog
-                animation={isMoving ? WALK_ANIMATION : IDLE_ANIMATION}
-                fps={isMoving ? 14 : 8}
-                facing={facing}
-                size={SPRITE_SIZE * 0.8}
-              />
-            </div>
+            <img
+              src={nestImage}
+              alt=""
+              className="pointer-events-none absolute inset-0 select-none drop-shadow-md"
+              style={{ width: NEST_SIZE, height: NEST_SIZE }}
+              draggable={false}
+            />
+            {showResident && (
+              <div
+                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute"
+                style={{ left: "50%", top: "72%" }}
+              >
+                <AnimatedHedgehog
+                  animation={isMoving ? WALK_ANIMATION : IDLE_ANIMATION}
+                  fps={isMoving ? 14 : 8}
+                  facing={facing}
+                  size={HOG_SIZE}
+                />
+              </div>
+            )}
           </div>
           <div className="mt-1 max-w-[160px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-12) text-[12px] shadow-sm">
             {nest.name}
