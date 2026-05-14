@@ -1,9 +1,9 @@
 import { create } from "zustand";
 
 /**
- * Transient dialog state. Lives in its own store because the open-trigger
- * is in CommandCenterToolbar while the dialog itself mounts inside
- * HedgemonyMapView.
+ * Transient open/close state for the spawn-hoglet panel. Lives in its own
+ * store because the open-trigger is in CommandCenterToolbar while the panel
+ * itself mounts inside HedgemonyMapView.
  */
 interface SpawnDialogStore {
   spawnHogletOpen: boolean;

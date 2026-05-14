@@ -28,7 +28,7 @@ import { HedgemonyMapSurface, type MoveMarker } from "./HedgemonyMapSurface";
 import { NestBroodCluster } from "./NestBroodCluster";
 import { NestDetailPanel } from "./NestDetailPanel";
 import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
-import { SpawnHogletDialog } from "./SpawnHogletDialog";
+import { SpawnHogletPanel } from "./SpawnHogletPanel";
 
 const log = logger.scope("hedgemony-map-view");
 
@@ -337,7 +337,9 @@ export function HedgemonyMapView() {
         }}
       />
       <HedgemonyHoldingPanel />
-      <SpawnHogletDialog open={spawnHogletOpen} onClose={closeSpawnHoglet} />
+      <AnimatePresence>
+        {spawnHogletOpen && <SpawnHogletPanel onClose={closeSpawnHoglet} />}
+      </AnimatePresence>
     </DragDropProvider>
   );
 }
