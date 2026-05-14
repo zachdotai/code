@@ -12,6 +12,7 @@ import hackerHog from "@renderer/assets/images/hedgehogs/hacker-hog.png";
 import happyHog from "@renderer/assets/images/hedgehogs/happy-hog.png";
 import partyHog from "@renderer/assets/images/hedgehogs/party-hog.png";
 import meepUrl from "@renderer/assets/sounds/meep.mp3";
+import { useWorkProjects } from "@renderer/features/work/canvas/useProjectCanvas";
 import type { CSSProperties } from "react";
 import { useMemo, useRef, useState } from "react";
 import { WorkTemplateRail } from "../templates/WorkTemplateRail";
@@ -170,6 +171,10 @@ const HOG_CLICK_COOLDOWN_MS = 5000;
 const HOG_SPIN_DURATION_MS = 700;
 
 export function WorkHome() {
+  const { data: projects } = useWorkProjects();
+  const projectsLoaded = projects !== undefined;
+  const hasProjects = (projects?.length ?? 0) > 0;
+
   const { hog, message, floatStyle } = useMemo(() => {
     const picked = HOGS[Math.floor(Math.random() * HOGS.length)];
     const pickedMessage =
@@ -249,22 +254,20 @@ export function WorkHome() {
           <WorkPinnedProjects />
         </Box>
 
-        <Box className="work-enter work-enter-3 w-full">
-          <WorkTemplateRail />
-        </Box>
+        {projectsLoaded && !hasProjects && (
+          <Box className="work-enter work-enter-3 w-full">
+            <WorkTemplateRail />
+          </Box>
+        )}
+
+        {hasProjects && (
+          <Box className="work-enter work-enter-4 w-full">
+            <WorkRecentProjects />
+          </Box>
+        )}
 
         <Box className="work-enter work-enter-4 w-full">
-          <WorkRecentProjects />
-        </Box>
-
-        <Box className="work-enter work-enter-4 w-full">
-          <Text
-            as="div"
-            className="mb-2 text-center text-(--gray-10) text-[11px] uppercase tracking-wide"
-          >
-            Or fire a quick task
-          </Text>
-          <WorkSampleProjects />
+          <WorkSampleProjects projects={projects ?? []} />
         </Box>
       </Flex>
     </Box>
