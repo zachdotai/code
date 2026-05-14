@@ -4,8 +4,8 @@ import { playSfx } from "../audio/sfx";
 import { playVoice } from "../audio/voice";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 
-export const HEDGEHOUSE_MAP_X = -1180;
-export const HEDGEHOUSE_MAP_Y = 920;
+export const HEDGEHOUSE_MAP_X = 0;
+export const HEDGEHOUSE_MAP_Y = 0;
 export const HEDGEHOUSE_AVOID_RADIUS = 220;
 
 const HEDGEHOUSE_SIZE = 220;
