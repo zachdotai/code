@@ -15,15 +15,38 @@ const ATLAS_W = atlas.meta.size.w;
 const ATLAS_H = atlas.meta.size.h;
 const NATIVE_FRAME_SIZE = 80;
 
-function getFrames(animation: string): Frame[] {
-  const names = atlas.animations[animation];
-  if (!names) return [];
+/**
+ * Animations we explicitly consume from the hedgehog-mode atlas. Limits the
+ * surface area we depend on so a typo at a call site fails type-checking
+ * instead of silently rendering nothing.
+ */
+export const HEDGEHOG_ANIMATIONS = {
+  idle: "skins/default/idle/tile",
+  walk: "skins/default/walk/tile",
+  action: "skins/default/action/tile",
+  wave: "skins/default/wave/tile",
+  sign: "skins/default/sign/tile",
+  jump: "skins/default/jump/tile",
+  fall: "skins/default/fall/tile",
+} as const;
+
+export type HedgehogAnimation = keyof typeof HEDGEHOG_ANIMATIONS;
+
+for (const [name, key] of Object.entries(HEDGEHOG_ANIMATIONS)) {
+  if (!atlas.animations[key]) {
+    throw new Error(
+      `Hedgehog atlas missing animation "${name}" (key "${key}"). Re-vendor sprites.{png,json} from @posthog/hedgehog-mode.`,
+    );
+  }
+}
+
+function getFrames(animation: HedgehogAnimation): Frame[] {
+  const names = atlas.animations[HEDGEHOG_ANIMATIONS[animation]];
   return names.map((name) => atlas.frames[name].frame);
 }
 
 interface AnimatedHedgehogProps {
-  /** Animation key like `"skins/default/walk/tile"`. */
-  animation: string;
+  animation: HedgehogAnimation;
   facing?: "left" | "right";
   size?: number;
   fps?: number;

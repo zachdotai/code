@@ -8,6 +8,7 @@ import {
   HEDGEMONY_ZOOM_MIN,
   useHedgemonyViewStore,
 } from "../stores/hedgemonyViewStore";
+import { clientToWorld, fitZoom, panToCenter } from "../utils/coordinates";
 import type { Vec2 } from "../utils/pathfinding";
 import { BgmControl } from "./BgmControl";
 import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
@@ -103,7 +104,8 @@ export function HedgemonyMapSurface({
   };
 
   const centerOnWorldPoint = (worldX: number, worldY: number) => {
-    applyView(-worldX * zoom, -worldY * zoom);
+    const next = panToCenter(worldX, worldY, zoom);
+    applyView(next.x, next.y);
   };
 
   const fitToContents = () => {
@@ -120,18 +122,18 @@ export function HedgemonyMapSurface({
     const maxX = Math.max(...points.map((point) => point.x));
     const minY = Math.min(...points.map((point) => point.y));
     const maxY = Math.max(...points.map((point) => point.y));
-    const contentWidth = Math.max(1, maxX - minX + FIT_PADDING_PX);
-    const contentHeight = Math.max(1, maxY - minY + FIT_PADDING_PX);
-    const nextZoom = Math.min(
+    const nextZoom = fitZoom(
+      maxX - minX + FIT_PADDING_PX,
+      maxY - minY + FIT_PADDING_PX,
+      rect.width,
+      rect.height,
+      HEDGEMONY_ZOOM_MIN,
       HEDGEMONY_ZOOM_MAX,
-      Math.max(
-        HEDGEMONY_ZOOM_MIN,
-        Math.min(rect.width / contentWidth, rect.height / contentHeight, 1.25),
-      ),
     );
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    applyView(-centerX * nextZoom, -centerY * nextZoom, nextZoom);
+    const next = panToCenter(centerX, centerY, nextZoom);
+    applyView(next.x, next.y, nextZoom);
   };
 
   const centerSelected = () => {
@@ -151,12 +153,7 @@ export function HedgemonyMapSurface({
   const toWorldCoords = (clientX: number, clientY: number) => {
     const rect = outerRef.current?.getBoundingClientRect();
     if (!rect) return null;
-    const visibleX = clientX - rect.left - rect.width / 2;
-    const visibleY = clientY - rect.top - rect.height / 2;
-    return {
-      x: (visibleX - x.get()) / zoom,
-      y: (visibleY - y.get()) / zoom,
-    };
+    return clientToWorld(clientX, clientY, rect, x.get(), y.get(), zoom);
   };
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {

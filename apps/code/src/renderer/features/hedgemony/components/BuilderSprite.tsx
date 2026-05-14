@@ -6,19 +6,20 @@ import {
   useMotionValue,
 } from "framer-motion";
 import { type MutableRefObject, useEffect, useState } from "react";
+import type { BuilderAnimation } from "../hooks/useBuilderCoordinator";
 import type { Vec2 } from "../utils/pathfinding";
-import { AnimatedHedgehog } from "./AnimatedHedgehog";
+import { AnimatedHedgehog, type HedgehogAnimation } from "./AnimatedHedgehog";
+
+export type { BuilderAnimation };
 
 const SPRITE_SIZE = 72;
 const SELECTION_RING_SIZE = SPRITE_SIZE + 18;
 const SPEED = 150;
 
-export type BuilderAnimation = "idle" | "walking" | "building";
-
-const ANIMATION_KEYS: Record<BuilderAnimation, string> = {
-  idle: "skins/default/idle/tile",
-  walking: "skins/default/walk/tile",
-  building: "skins/default/action/tile",
+const ANIMATION_KEYS: Record<BuilderAnimation, HedgehogAnimation> = {
+  idle: "idle",
+  walking: "walk",
+  building: "action",
 };
 
 const ANIMATION_FPS: Record<BuilderAnimation, number> = {

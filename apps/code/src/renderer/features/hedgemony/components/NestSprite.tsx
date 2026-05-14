@@ -16,8 +16,8 @@ const TERRITORY_SIZE_SELECTED = 260;
 const TERRITORY_SIZE_DROP_TARGET = 280;
 const NEST_SPEED = 100;
 const NEST_EASE = [0.4, 0, 0.2, 1] as const;
-const WALK_ANIMATION = "skins/default/walk/tile";
-const IDLE_ANIMATION = "skins/default/idle/tile";
+const WALK_ANIMATION = "walk" as const;
+const IDLE_ANIMATION = "idle" as const;
 
 interface NestSpriteProps {
   nest: Nest;

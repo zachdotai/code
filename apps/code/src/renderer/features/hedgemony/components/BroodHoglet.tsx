@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { motion } from "framer-motion";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
-import { AnimatedHedgehog } from "./AnimatedHedgehog";
+import { AnimatedHedgehog, type HedgehogAnimation } from "./AnimatedHedgehog";
 
 const log = logger.scope("brood-hoglet");
 
@@ -24,13 +24,16 @@ type TaskStatus =
   | "cancelled"
   | null;
 
-const ANIMATION_BY_STATUS: Record<NonNullable<TaskStatus>, string> = {
-  not_started: "skins/default/idle/tile",
-  queued: "skins/default/idle/tile",
-  in_progress: "skins/default/action/tile",
-  completed: "skins/default/wave/tile",
-  failed: "skins/default/fall/tile",
-  cancelled: "skins/default/idle/tile",
+const ANIMATION_BY_STATUS: Record<
+  NonNullable<TaskStatus>,
+  HedgehogAnimation
+> = {
+  not_started: "idle",
+  queued: "idle",
+  in_progress: "action",
+  completed: "wave",
+  failed: "fall",
+  cancelled: "idle",
 };
 
 const FPS_BY_STATUS: Record<NonNullable<TaskStatus>, number> = {
