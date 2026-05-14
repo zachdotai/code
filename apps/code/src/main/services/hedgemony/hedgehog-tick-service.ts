@@ -41,6 +41,7 @@ import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
 import type { PrGraphService } from "./pr-graph-service";
+import { parseNestLoadout, parseScratchpadState } from "./schema-parsers";
 import {
   DEFAULT_HOGLET_MODEL,
   HedgemonyEvent,
@@ -50,8 +51,6 @@ import {
   type NestChangedEvent,
   type NestMessage,
   parseNestChatCreationBootstrapPayload,
-  parseNestLoadout,
-  parseScratchpadState,
 } from "./schemas";
 
 const log = logger.scope("hedgehog-tick-service");

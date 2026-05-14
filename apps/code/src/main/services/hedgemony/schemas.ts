@@ -1,16 +1,5 @@
 import { z } from "zod";
 
-// Renderer code imports types from this module, so it must not statically
-// import the main-only logger (which transitively pulls in `node:fs` and
-// black-screens the browser bundle). The main process registers a real
-// logger via `setHedgemonySchemaLogger`; renderer-side, schemaLog stays a
-// no-op.
-type SchemaLogger = { warn: (msg: string, ctx?: object) => void };
-let schemaLog: SchemaLogger = { warn: () => {} };
-export function setHedgemonySchemaLogger(l: SchemaLogger): void {
-  schemaLog = l;
-}
-
 /**
  * GitHub-style repository slug. Matches what `parseGithubUrl` produces:
  * `owner/repo` with each segment limited to GitHub's allowed character set.
@@ -351,38 +340,6 @@ export const nestLoadout = z.object({
 export type NestLoadout = z.infer<typeof nestLoadout>;
 
 /**
- * Loadouts live in `nests.loadoutJson` and are loaded back into the hedgehog
- * tick. We refuse to honour fields we can't validate (a tampered row could
- * otherwise set `executionMode: "bypassPermissions"` for every hoglet spawned
- * from that nest), but we never throw — a corrupt row falls back to defaults
- * with a single warning so the operator can keep working.
- */
-export function parseNestLoadout(loadoutJson: string | null): NestLoadout {
-  if (!loadoutJson) return {};
-  let raw: unknown;
-  try {
-    raw = JSON.parse(loadoutJson);
-  } catch (error) {
-    schemaLog.warn("nestLoadout JSON.parse failed; falling back to defaults", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return {};
-  }
-  const result = nestLoadout.safeParse(raw);
-  if (!result.success) {
-    schemaLog.warn("nestLoadout shape rejected; falling back to defaults", {
-      issues: result.error.issues.map((issue) => ({
-        path: issue.path,
-        code: issue.code,
-        message: issue.message,
-      })),
-    });
-    return {};
-  }
-  return result.data;
-}
-
-/**
  * Validates a single `ScratchpadEntry` (defined structurally in
  * `hedgehog-prompts.ts`). Kept here so the schema and the parser live next
  * to each other.
@@ -401,32 +358,6 @@ export const scratchpadEntrySchema = z.object({
 export const scratchpadStateSchema = z.object({
   scratchpad: z.array(scratchpadEntrySchema).max(200).optional(),
 });
-
-export function parseScratchpadState(
-  serializedStateJson: string | null,
-): z.infer<typeof scratchpadEntrySchema>[] {
-  if (!serializedStateJson) return [];
-  let raw: unknown;
-  try {
-    raw = JSON.parse(serializedStateJson);
-  } catch (error) {
-    schemaLog.warn("scratchpad JSON.parse failed; starting fresh", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return [];
-  }
-  const result = scratchpadStateSchema.safeParse(raw);
-  if (!result.success) {
-    schemaLog.warn("scratchpad shape rejected; starting fresh", {
-      issues: result.error.issues.map((issue) => ({
-        path: issue.path,
-        code: issue.code,
-      })),
-    });
-    return [];
-  }
-  return result.data.scratchpad ?? [];
-}
 
 /**
  * Shape of the `payloadJson` row written by nest creation when bootstrap

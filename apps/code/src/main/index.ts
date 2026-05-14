@@ -2,12 +2,8 @@ import "reflect-metadata";
 import os from "node:os";
 import { app, BrowserWindow } from "electron";
 import log from "electron-log/main";
-import { logger } from "./utils/logger";
+import "./utils/logger";
 import "./services/index.js";
-import { setHedgemonySchemaLogger } from "./services/hedgemony/schemas";
-
-setHedgemonySchemaLogger(logger.scope("hedgemony-schemas"));
-
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { DatabaseService } from "./db/service";
 import { initializeDeepLinks, registerDeepLinkHandlers } from "./deep-links";

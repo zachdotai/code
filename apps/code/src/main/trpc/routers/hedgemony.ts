@@ -15,6 +15,7 @@ import {
   type PrGraphService,
   PrGraphServiceEvent,
 } from "../../services/hedgemony/pr-graph-service";
+import { parseNestLoadout } from "../../services/hedgemony/schema-parsers";
 import {
   adoptHogletInput,
   compactValidatedNestInput,
@@ -43,7 +44,6 @@ import {
   nestIdInput,
   nestMessage,
   nestWatchEvent,
-  parseNestLoadout,
   prDependency,
   prGraphWatchEvent,
   rebaseChildEventPayload,
