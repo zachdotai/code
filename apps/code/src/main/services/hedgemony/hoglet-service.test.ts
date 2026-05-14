@@ -232,6 +232,7 @@ function createMockCloudTaskClient(
       }),
     ),
     deleteTask: vi.fn(async () => undefined),
+    resolveGithubUserIntegration: vi.fn(async () => "user-integration-auto"),
     getTaskWithLatestRun: vi.fn(async (taskId: string) => ({
       task: {
         id: taskId,
@@ -812,6 +813,7 @@ describe("HogletService", () => {
           description: "Build the checkout page",
           repository: null,
           originProduct: "automation",
+          githubUserIntegration: null,
         }),
       );
       expect(cloudTasks.createTaskRun).toHaveBeenCalledWith(
@@ -934,7 +936,7 @@ describe("HogletService", () => {
       );
     });
 
-    it("passes repository to createTask when provided", async () => {
+    it("passes repository and resolved githubUserIntegration to createTask", async () => {
       cloudTasks = createMockCloudTaskClient();
       service = new HogletService(
         repo,
@@ -951,8 +953,39 @@ describe("HogletService", () => {
         repository: "posthog/posthog",
       });
 
+      expect(cloudTasks.resolveGithubUserIntegration).toHaveBeenCalledWith(
+        "posthog/posthog",
+      );
       expect(cloudTasks.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ repository: "posthog/posthog" }),
+        expect.objectContaining({
+          repository: "posthog/posthog",
+          githubUserIntegration: "user-integration-auto",
+        }),
+      );
+    });
+
+    it("does not resolve githubUserIntegration when no repository is provided", async () => {
+      cloudTasks = createMockCloudTaskClient();
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+        workspaceService,
+      );
+
+      await service.spawnInNest({
+        nestId: "nest-1",
+        prompt: "work",
+      });
+
+      expect(cloudTasks.resolveGithubUserIntegration).not.toHaveBeenCalled();
+      expect(cloudTasks.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repository: null,
+          githubUserIntegration: null,
+        }),
       );
     });
 

@@ -450,6 +450,11 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
 
     const runtime = resolveHogletRuntime(loadout, readUserTaskPreferences());
 
+    const repository = input.repository ?? null;
+    const githubUserIntegration = repository
+      ? await this.cloudTasks.resolveGithubUserIntegration(repository)
+      : null;
+
     const result = await new HogletSpawnSaga<SpawnInNestSagaOutput>(
       this.cloudTasks,
       log,
@@ -457,8 +462,9 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
       task: {
         title: truncateTitle(input.prompt),
         description: input.prompt,
-        repository: input.repository ?? null,
+        repository,
         originProduct: "automation",
+        githubUserIntegration,
       },
       run: {
         environment: runtime.environment,

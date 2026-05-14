@@ -12,6 +12,8 @@ import type { HedgemonyReasoningEffort } from "./schemas";
 
 const log = logger.scope("hedgemony-cloud-task-client");
 
+const REPO_INTEGRATION_CACHE_TTL_MS = 5 * 60 * 1000;
+
 interface CreateTaskRunOptions {
   environment?: "local" | "cloud";
   mode?: "background" | "interactive";
@@ -43,6 +45,10 @@ interface UpdateTaskRunPatch {
 export class CloudTaskClient {
   private cachedFallbackContext: { apiHost: string; teamId: number } | null =
     null;
+  private repoIntegrationCache: {
+    map: Map<string, string>;
+    fetchedAt: number;
+  } | null = null;
 
   constructor(
     @inject(MAIN_TOKENS.AuthService)
@@ -233,6 +239,72 @@ export class CloudTaskClient {
       throw new Error(`update_task_run_failed: HTTP ${response.status}`);
     }
     return (await response.json()) as TaskRun;
+  }
+
+  /**
+   * Resolves the GitHub user integration ID that covers `repository` (e.g.
+   * "org/repo"). Fetches the user's GitHub installations and their repo
+   * lists, caches the mapping for 5 minutes to avoid redundant calls across
+   * rapid hoglet spawns.
+   */
+  async resolveGithubUserIntegration(
+    repository: string,
+  ): Promise<string | null> {
+    const now = Date.now();
+    if (
+      this.repoIntegrationCache &&
+      now - this.repoIntegrationCache.fetchedAt < REPO_INTEGRATION_CACHE_TTL_MS
+    ) {
+      return (
+        this.repoIntegrationCache.map.get(repository.toLowerCase()) ?? null
+      );
+    }
+
+    try {
+      const { apiHost } = await this.resolveContext();
+      const integrationsRes = await this.auth.authenticatedFetch(
+        fetch,
+        `${apiHost}/api/users/@me/integrations/`,
+      );
+      if (!integrationsRes.ok) {
+        log.warn("resolveGithubUserIntegration: failed to fetch integrations", {
+          status: integrationsRes.status,
+        });
+        return null;
+      }
+      const integrationsData = (await integrationsRes.json()) as {
+        results?: Array<{ id: string; installation_id: string }>;
+      };
+      const integrations = integrationsData.results ?? [];
+
+      const map = new Map<string, string>();
+      await Promise.all(
+        integrations.map(async (integration) => {
+          const reposRes = await this.auth.authenticatedFetch(
+            fetch,
+            `${apiHost}/api/users/@me/integrations/github/${integration.installation_id}/repos/?limit=500`,
+          );
+          if (!reposRes.ok) return;
+          const reposData = (await reposRes.json()) as {
+            results?: string[];
+          };
+          for (const repo of reposData.results ?? []) {
+            if (!map.has(repo.toLowerCase())) {
+              map.set(repo.toLowerCase(), integration.id);
+            }
+          }
+        }),
+      );
+
+      this.repoIntegrationCache = { map, fetchedAt: now };
+      return map.get(repository.toLowerCase()) ?? null;
+    } catch (error) {
+      log.warn("resolveGithubUserIntegration failed", {
+        repository,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   private async resolveContext(): Promise<{ apiHost: string; teamId: number }> {
