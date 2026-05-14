@@ -7,7 +7,7 @@ import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
@@ -32,7 +32,11 @@ import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
-import { HedgemonyMapSurface, type MoveMarker } from "./HedgemonyMapSurface";
+import {
+  HedgemonyMapSurface,
+  type MapSurfaceHandle,
+  type MoveMarker,
+} from "./HedgemonyMapSurface";
 import { HogletDetailPanel } from "./HogletDetailPanel";
 import { NestBroodCluster } from "./NestBroodCluster";
 import { NestDetailPanel } from "./NestDetailPanel";
@@ -202,6 +206,8 @@ export function HedgemonyMapView() {
   useHotkeys("f, f11", toggleFullscreen, mapHotkeyOptions);
   useHotkeys("shift+f", toggleInAppFullscreen, mapHotkeyOptions);
 
+  const surfaceRef = useRef<MapSurfaceHandle | null>(null);
+
   const recallBookmark = useCallback(
     (slot: BookmarkSlot) => {
       const bookmark = useHedgemonyViewStore.getState().bookmarks[slot];
@@ -211,7 +217,18 @@ export function HedgemonyMapView() {
         });
         return;
       }
-      setView(bookmark.panX, bookmark.panY, bookmark.zoom);
+      // Prefer the smooth-tween path via the surface; fall back to an
+      // instant store update if the surface isn't mounted yet (e.g., during
+      // unmount races).
+      if (surfaceRef.current) {
+        surfaceRef.current.animateToView(
+          bookmark.panX,
+          bookmark.panY,
+          bookmark.zoom,
+        );
+      } else {
+        setView(bookmark.panX, bookmark.panY, bookmark.zoom);
+      }
     },
     [setView],
   );
@@ -438,6 +455,7 @@ export function HedgemonyMapView() {
   const mapContent = (
     <div className="relative h-full w-full">
       <HedgemonyMapSurface
+        ref={surfaceRef}
         nests={nests}
         selectedNestId={activeNest?.id ?? null}
         relocatingNestId={relocatingNestId}

@@ -6,12 +6,20 @@ import {
 } from "@phosphor-icons/react";
 import {
   AnimatePresence,
+  animate,
   motion,
   useMotionValue,
   useMotionValueEvent,
 } from "framer-motion";
-import type { MutableRefObject, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { MutableRefObject, ReactNode, Ref } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import {
   HEDGEMONY_ZOOM_MAX,
   HEDGEMONY_ZOOM_MIN,
@@ -38,11 +46,28 @@ const FIT_PADDING_PX = 360;
 const FOCUS_ZOOM = 1.4;
 const MINIMAP_SIZE_DEFAULT = 168;
 const MINIMAP_SIZE_FULLSCREEN = 232;
+const CAMERA_ANIM_DURATION_S = 0.42;
+// Material Design "standard" cubic-bezier — gentle ease-out that reads as a
+// confident snap without feeling abrupt. Typed as a mutable tuple so framer's
+// `Easing` overload (which expects a 4-tuple, not `number[]`) accepts it.
+const CAMERA_ANIM_EASE: [number, number, number, number] = [0.4, 0, 0.2, 1];
 
 export interface MoveMarker {
   id: number;
   x: number;
   y: number;
+}
+
+/**
+ * Imperative camera control exposed by `HedgemonyMapSurface` via ref. Lets the
+ * parent (`HedgemonyMapView`) drive smooth camera moves for actions that
+ * originate outside the surface itself — e.g., bookmark recall. The motion
+ * values live on the surface because they're tied to the rendered transform,
+ * and exposing a small API keeps that ownership intact while still allowing
+ * the parent to request animated transitions.
+ */
+export interface MapSurfaceHandle {
+  animateToView: (panX: number, panY: number, zoom: number) => void;
 }
 
 interface HedgemonyMapSurfaceProps {
@@ -72,30 +97,33 @@ interface HedgemonyMapSurfaceProps {
   onHedgehouseSelect?: () => void;
 }
 
-export function HedgemonyMapSurface({
-  nests,
-  selectedNestId,
-  relocatingNestId,
-  builderPath,
-  builderPos,
-  builderPositionRef,
-  builderSelected,
-  builderAnimation,
-  hogletSelected,
-  pendingNest,
-  buildMode,
-  moveMarker,
-  children,
-  onMapClick,
-  onMapRightClick,
-  onNestSelect,
-  onBuilderSelect,
-  onBuilderArrive,
-  onBuilderSegmentComplete,
-  onToggleFullscreen,
-  hedgehouseSelected,
-  onHedgehouseSelect,
-}: HedgemonyMapSurfaceProps) {
+function HedgemonyMapSurfaceImpl(
+  {
+    nests,
+    selectedNestId,
+    relocatingNestId,
+    builderPath,
+    builderPos,
+    builderPositionRef,
+    builderSelected,
+    builderAnimation,
+    hogletSelected,
+    pendingNest,
+    buildMode,
+    moveMarker,
+    children,
+    onMapClick,
+    onMapRightClick,
+    onNestSelect,
+    onBuilderSelect,
+    onBuilderArrive,
+    onBuilderSegmentComplete,
+    onToggleFullscreen,
+    hedgehouseSelected,
+    onHedgehouseSelect,
+  }: HedgemonyMapSurfaceProps,
+  ref: Ref<MapSurfaceHandle>,
+) {
   const panX = useHedgemonyViewStore((s) => s.panX);
   const panY = useHedgemonyViewStore((s) => s.panY);
   const zoom = useHedgemonyViewStore((s) => s.zoom);
@@ -178,20 +206,57 @@ export function HedgemonyMapSurface({
     setZoom(nextZoom);
   };
 
+  /**
+   * Smooth-tween the camera to a target view. Used for explicit "go-to"
+   * actions — bookmark recall, double-click focus, fit, center, minimap jump —
+   * where a snap feels jarring. Wheel-zoom and middle-drag stay on the instant
+   * `applyView` path because the user is driving them continuously.
+   */
+  const animateToView = useCallback(
+    (nextPanX: number, nextPanY: number, nextZoom?: number) => {
+      const targetZoom = nextZoom ?? zoom;
+      animate(x, nextPanX, {
+        duration: CAMERA_ANIM_DURATION_S,
+        ease: CAMERA_ANIM_EASE,
+      });
+      animate(y, nextPanY, {
+        duration: CAMERA_ANIM_DURATION_S,
+        ease: CAMERA_ANIM_EASE,
+      });
+      if (targetZoom !== zoom) {
+        animate(zoom, targetZoom, {
+          duration: CAMERA_ANIM_DURATION_S,
+          ease: CAMERA_ANIM_EASE,
+          onUpdate: (latest: number) => setZoom(latest),
+        });
+      }
+      // Commit the final pan to the store once the animation settles. The
+      // wheel and middle-drag paths commit immediately; this matches their
+      // behavior so the persisted state reflects the visible camera.
+      window.setTimeout(
+        () => setPan(nextPanX, nextPanY),
+        CAMERA_ANIM_DURATION_S * 1000,
+      );
+    },
+    [x, y, zoom, setZoom, setPan],
+  );
+
+  useImperativeHandle(ref, () => ({ animateToView }), [animateToView]);
+
   const centerOnWorldPoint = (worldX: number, worldY: number) => {
     const next = panToCenter(worldX, worldY, zoom);
-    applyView(next.x, next.y);
+    animateToView(next.x, next.y);
   };
 
   const focusNest = (nest: Nest) => {
     const nextZoom = Math.max(zoom, FOCUS_ZOOM);
     const next = panToCenter(nest.mapX, nest.mapY, nextZoom);
-    applyView(next.x, next.y, nextZoom);
+    animateToView(next.x, next.y, nextZoom);
   };
 
   const handleMinimapJump = (worldX: number, worldY: number) => {
     const next = panToCenter(worldX, worldY, zoom);
-    applyView(next.x, next.y);
+    animateToView(next.x, next.y);
   };
 
   const fitToContents = () => {
@@ -219,7 +284,7 @@ export function HedgemonyMapSurface({
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
     const next = panToCenter(centerX, centerY, nextZoom);
-    applyView(next.x, next.y, nextZoom);
+    animateToView(next.x, next.y, nextZoom);
   };
 
   const centerSelected = () => {
@@ -231,8 +296,10 @@ export function HedgemonyMapSurface({
   };
 
   const handleResetView = () => {
-    x.set(0);
-    y.set(0);
+    animateToView(0, 0, 1);
+    // resetView() also resets holding-panel/bookmark sentinel state that
+    // animateToView doesn't touch. Run it alongside so the rest stays in sync;
+    // the pan/zoom store fields will get re-set by animateToView's commit.
     resetView();
   };
 
@@ -533,3 +600,9 @@ export function HedgemonyMapSurface({
     </div>
   );
 }
+
+export const HedgemonyMapSurface = forwardRef<
+  MapSurfaceHandle,
+  HedgemonyMapSurfaceProps
+>(HedgemonyMapSurfaceImpl);
+HedgemonyMapSurface.displayName = "HedgemonyMapSurface";
