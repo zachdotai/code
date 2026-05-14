@@ -1,4 +1,4 @@
-import { Megaphone, MegaphoneSimple } from "@phosphor-icons/react";
+import { Megaphone } from "@phosphor-icons/react";
 import { useSfxStore } from "../audio/sfxStore";
 
 export function SfxControl() {
@@ -15,7 +15,7 @@ export function SfxControl() {
         className="flex h-7 w-7 items-center justify-center rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) text-(--gray-11) transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
         title={muted ? "Unmute voice/SFX" : "Mute voice/SFX"}
       >
-        {muted ? <MegaphoneSimple size={14} /> : <Megaphone size={14} />}
+        <Megaphone size={14} className={muted ? "opacity-40" : undefined} />
       </button>
       <input
         type="range"

@@ -1,4 +1,4 @@
-import { SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
+import { MusicNotes } from "@phosphor-icons/react";
 import { useBgmStore } from "../audio/bgmStore";
 
 export function BgmControl() {
@@ -15,7 +15,7 @@ export function BgmControl() {
         className="flex h-7 w-7 items-center justify-center rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) text-(--gray-11) transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
         title={muted ? "Unmute music" : "Mute music"}
       >
-        {muted ? <SpeakerSlash size={14} /> : <SpeakerHigh size={14} />}
+        <MusicNotes size={14} className={muted ? "opacity-40" : undefined} />
       </button>
       <input
         type="range"
