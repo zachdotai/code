@@ -72,7 +72,7 @@ export function NestDetailPanel({
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setName(nest.name);
@@ -86,10 +86,8 @@ export function NestDetailPanel({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on nest open and once messages finish loading
   useEffect(() => {
-    const viewport = scrollAreaRef.current;
-    if (!viewport) return;
     const raf = requestAnimationFrame(() => {
-      viewport.scrollTop = viewport.scrollHeight;
+      bottomRef.current?.scrollIntoView({ block: "end" });
     });
     return () => cancelAnimationFrame(raf);
   }, [nest.id, loadingMessages, messages.length]);
@@ -212,12 +210,7 @@ export function NestDetailPanel({
         }
       />
 
-      <ScrollArea
-        ref={scrollAreaRef}
-        type="auto"
-        scrollbars="vertical"
-        className="min-h-0 flex-1"
-      >
+      <ScrollArea type="auto" scrollbars="vertical" className="min-h-0 flex-1">
         <Flex direction="column" gap="4" px="4" py="3">
           <Flex direction="row" gap="3" wrap="wrap">
             <LabeledField
@@ -289,6 +282,7 @@ export function NestDetailPanel({
               )}
             </Flex>
           </div>
+          <div ref={bottomRef} />
         </Flex>
       </ScrollArea>
 
