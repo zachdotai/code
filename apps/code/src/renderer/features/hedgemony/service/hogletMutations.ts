@@ -2,7 +2,6 @@ import type { Hoglet } from "@main/services/hedgemony/schemas";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
-import { toast } from "sonner";
 import { sonnerToastSink } from "../adapters/sonnerToastSink";
 import { trpcHogletRemoteService } from "../adapters/trpcHogletRemoteService";
 import { zustandHogletPositionRepository } from "../adapters/zustandHogletPositionRepository";
@@ -14,7 +13,6 @@ import type { HogletRemoteService } from "../domain/HogletRemoteService";
 import type { HogletRepository } from "../domain/HogletRepository";
 import type { NestRepository } from "../domain/NestRepository";
 import type { ToastSink } from "../domain/ToastSink";
-import { useHogletStore } from "../stores/hogletStore";
 
 const log = logger.scope("hoglet-mutations");
 
@@ -137,6 +135,7 @@ export async function releaseHoglet(
 export function handleHogletDrop(
   source: HogletDragSource | undefined,
   target: HogletDragTarget | undefined,
+  deps: HogletMutationDeps = defaultHogletMutationDeps,
 ): void {
   if (
     !source ||
@@ -149,20 +148,20 @@ export function handleHogletDrop(
 
   if (target?.type === "nest" && target.nestId) {
     if (sourceNestId !== null) {
-      toast.error("Release this hoglet to wild before adopting it elsewhere");
+      deps.toast?.error(
+        "Release this hoglet to wild before adopting it elsewhere",
+      );
       return;
     }
-    const original = useHogletStore
-      .getState()
-      .byBucket[WILD_BUCKET]?.find((h) => h.id === hogletId);
+    const original = deps.hoglets.findInBucket(WILD_BUCKET, hogletId);
     const adoptedFrom: "wild" | "signal" =
       original?.signalReportId != null ? "signal" : "wild";
-    void adoptHoglet(hogletId, target.nestId, adoptedFrom);
+    void adoptHoglet(hogletId, target.nestId, adoptedFrom, deps);
     return;
   }
 
   if (target?.type === "wild") {
     if (sourceNestId === null) return;
-    void releaseHoglet(hogletId, sourceNestId);
+    void releaseHoglet(hogletId, sourceNestId, deps);
   }
 }
