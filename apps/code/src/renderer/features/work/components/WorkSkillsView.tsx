@@ -4,15 +4,10 @@ import {
   ChartLineUp,
   Compass,
   CurrencyDollar,
-  Gear,
   Hash,
   type IconProps,
   Lightbulb,
-  Megaphone,
-  Palette,
   Plus,
-  Scales,
-  UsersThree,
   X,
 } from "@phosphor-icons/react";
 import { Box, Dialog, Flex, SegmentedControl, Text } from "@radix-ui/themes";
@@ -247,57 +242,165 @@ function newSkillId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `skill-${Date.now()}`;
 }
 
-const ROLE_CRESTS: Record<StarAxis, ComponentType<IconProps>> = {
-  marketing: Megaphone,
-  operations: Gear,
-  product: Compass,
-  design: Palette,
-  hr: UsersThree,
-  finance: CurrencyDollar,
-  legal: Scales,
-};
+type FounderTier = "none" | "light" | "strong" | "heavy";
 
-function topAxis(scores: StarMapScores): StarAxis | null {
-  if (scores.max === 0) return null;
-  let best: StarAxis = AXIS_ORDER[0];
-  for (const axis of AXIS_ORDER) {
-    if (scores.axes[axis] > scores.axes[best]) best = axis;
-  }
-  return scores.axes[best] > 0 ? best : null;
+function founderTier(score: number): FounderTier {
+  if (score <= 0) return "none";
+  if (score < 2) return "light";
+  if (score < 4) return "strong";
+  return "heavy";
 }
 
-function RoleCrests({ scores }: { scores: StarMapScores }) {
-  const leader = topAxis(scores);
-  return (
-    <Flex align="center" justify="center" gap="2" className="w-full">
-      {AXIS_ORDER.map((axis) => {
-        const Icon = ROLE_CRESTS[axis];
-        const isLeader = axis === leader;
-        return (
-          <Box
-            key={axis}
-            title={AXIS_LABEL[axis]}
-            className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
-              isLeader
-                ? "border-(--orange-9) bg-(--orange-3) text-(--orange-11)"
-                : "border-(--gray-5) bg-(--gray-2) text-(--gray-10)"
-            }`}
-          >
-            <Icon size={16} weight={isLeader ? "fill" : "duotone"} />
-          </Box>
-        );
-      })}
-    </Flex>
+const FOUNDER_TIER_LABEL: Record<FounderTier, string> = {
+  none: "no founder energy",
+  light: "founder-curious",
+  strong: "founder energy",
+  heavy: "full founder mode",
+};
+
+function topTwoAxes(
+  scores: StarMapScores,
+): { top: StarAxis; second: StarAxis | null; tied: boolean } | null {
+  if (scores.max === 0) return null;
+  const sorted = AXIS_ORDER.map((axis) => ({
+    axis,
+    value: scores.axes[axis],
+  })).sort((a, b) => b.value - a.value);
+  const top = sorted[0];
+  if (top.value <= 0) return null;
+  const second = sorted[1];
+  const tied = !!second && second.value === top.value;
+  return { top: top.axis, second: second?.axis ?? null, tied };
+}
+
+const AXIS_HEADLINE: Record<StarAxis, string> = {
+  marketing: "Built different for launch day",
+  operations: "The reason anything ships at all",
+  product: "Roadmap whisperer",
+  design: "Pixels have feelings, and you know them",
+  hr: "The team's emotional support adult",
+  finance: "Spreadsheet brain, unlocked",
+  legal: "Sleeps next to the DPA",
+};
+
+const AXIS_DESCRIPTION: Record<StarAxis, Record<FounderTier, string>> = {
+  marketing: {
+    none: "You can ship a campaign in your sleep — ask you to forecast next quarter and the room goes quiet.",
+    light:
+      "Launch days are your Olympics. Cap-table conversations are someone else's sport, but you're starting to peek.",
+    strong:
+      "Comms brain wired to roadmap brain. You ship the post *and* know what it costs to ship it.",
+    heavy:
+      "Marketing *and* cap table? You're either a founder or pretending convincingly. Both count.",
+  },
+  operations: {
+    none: "You keep the trains running. The board deck is somebody else's problem, and that's fine for now.",
+    light:
+      "Process gods love you. Pricing decks still feel like a foreign language — but only just.",
+    strong:
+      "You run the machine *and* know which lever does what. Dangerous in a good way.",
+    heavy:
+      "Ops, automation, *and* the strategy memo. The company quietly runs on you. Take a vacation.",
+  },
+  product: {
+    none: "PRDs flow out of you. Numbers on the pricing page are someone else's department.",
+    light:
+      "Discovery, specs, roadmap — locked in. The P&L is starting to make sense, ask again in a quarter.",
+    strong:
+      "Roadmap, discovery, *and* you can read a P&L. The dangerous kind of PM.",
+    heavy:
+      "PM by title, founder by behaviour. Stop calling yourself a PM, it's getting weird.",
+  },
+  design: {
+    none: "You sweat the kerning. You delegate the spreadsheet, and the spreadsheet is fine with that.",
+    light:
+      "Pixels are pristine. Pricing tiers are starting to look like a design problem to you — that's the right instinct.",
+    strong: "You sweat the kerning *and* the pricing page. Rare combo.",
+    heavy:
+      "Design lead with founder reflexes. Cofounder material. Send your designer friend this quiz immediately.",
+  },
+  hr: {
+    none: "You make people feel seen. Asking for the raise — different story.",
+    light:
+      "Team's emotional core. Starting to think about comp bands, which is a healthy sign.",
+    strong:
+      "1:1s *and* hiring plans *and* a view on burn. You're running People, not just doing it.",
+    heavy:
+      "Chief of staff energy with founder reflexes. Whoever you work for is extremely lucky.",
+  },
+  finance: {
+    none: "Revenue, billing, pricing — your turf. Now find someone to handle everything else.",
+    light:
+      "Numbers brain. Slowly accumulating the broader operator instincts. Keep going.",
+    strong:
+      "Finance lead with strategy chops. You make the spreadsheet *and* the call.",
+    heavy:
+      "Pricing, billing, *and* delegate-the-rest energy. Hire a designer immediately.",
+  },
+  legal: {
+    none: "DPAs hold no fear. Revenue still does.",
+    light: "Contracts are a solved problem. Cap table is the next mountain.",
+    strong:
+      "Legal brain *and* commercial brain. Every founder wants you on speed-dial.",
+    heavy:
+      "Counsel, commercial, *and* founder instincts. You should probably be running something.",
+  },
+};
+
+const EMPTY_HEADLINE = "Add some skills to chart your map";
+const EMPTY_DESCRIPTION =
+  "No skills active yet. Add a few and we'll roast your shape.";
+
+function balancedHeadline(top: StarAxis, second: StarAxis): string {
+  return `Quietly doing both ${AXIS_LABEL[top]} and ${AXIS_LABEL[second]}`;
+}
+
+const BALANCED_DESCRIPTION =
+  "Two roles tied at the top. Either you're suspiciously well-rounded or your skills need sharper edges.";
+
+function starMapTagline(scores: StarMapScores): string {
+  const top = topTwoAxes(scores);
+  if (!top) return EMPTY_HEADLINE;
+  if (top.tied && top.second) return balancedHeadline(top.top, top.second);
+  return AXIS_HEADLINE[top.top];
+}
+
+function starMapDescription(scores: StarMapScores): string {
+  const top = topTwoAxes(scores);
+  if (!top) return EMPTY_DESCRIPTION;
+  if (top.tied) return BALANCED_DESCRIPTION;
+  return AXIS_DESCRIPTION[top.top][founderTier(scores.founder)];
+}
+
+function emojiBar(value: number, max: number, width = 8): string {
+  if (max <= 0) return "░".repeat(width);
+  const filled = Math.max(
+    0,
+    Math.min(width, Math.round((value / max) * width)),
   );
+  return "▓".repeat(filled) + "░".repeat(width - filled);
 }
 
 function formatStarMapForSlack(scores: StarMapScores): string {
-  const tagline = starMapTagline(scores);
-  const lines = AXIS_ORDER.map(
-    (a) => `• ${AXIS_LABEL[a]}: ${scores.axes[a]}`,
-  ).join("\n");
+  const headline = starMapTagline(scores);
+  const description = starMapDescription(scores);
   const founder = Math.round(scores.founder * 10) / 10;
-  return `*Your star map* — ${tagline}\n${lines}\n_Founder score: ${founder}_`;
+  const tierLabel = FOUNDER_TIER_LABEL[founderTier(scores.founder)];
+  const labelWidth = Math.max(...AXIS_ORDER.map((a) => AXIS_LABEL[a].length));
+  const rows = AXIS_ORDER.map((axis) => {
+    const label = AXIS_LABEL[axis].padEnd(labelWidth, " ");
+    const bar = emojiBar(scores.axes[axis], scores.max);
+    return `${label}  ${bar}  ${scores.axes[axis]}`;
+  }).join("\n");
+  return [
+    `🦔 *${headline}* — Founder score *${founder}* (${tierLabel})`,
+    "",
+    "```",
+    rows,
+    "```",
+    `_${description}_`,
+    "> Charted by PostHog Code · posthog.com/code",
+  ].join("\n");
 }
 
 async function copyStarMapToSlack(scores: StarMapScores): Promise<void> {
@@ -308,25 +411,6 @@ async function copyStarMapToSlack(scores: StarMapScores): Promise<void> {
   } catch {
     toast.error("Couldn't copy to clipboard");
   }
-}
-
-function starMapTagline(scores: StarMapScores): string {
-  if (scores.max === 0) return "Add some skills to chart your map";
-  const sorted = AXIS_ORDER.map((a) => ({
-    axis: a,
-    value: scores.axes[a],
-  })).sort((a, b) => b.value - a.value);
-  const top = sorted[0];
-  const second = sorted[1];
-  if (second && top.value === second.value) {
-    const balanced = sorted
-      .filter((s) => s.value === top.value)
-      .slice(0, 2)
-      .map((s) => AXIS_LABEL[s.axis as StarAxis])
-      .join(" & ");
-    return `Balanced across ${balanced}`;
-  }
-  return `Leaning ${AXIS_LABEL[top.axis as StarAxis]}`;
 }
 
 export function WorkSkillsView() {
@@ -664,7 +748,6 @@ export function WorkSkillsView() {
             <X size={14} weight="bold" />
           </button>
           <Flex direction="column" align="center" gap="3" className="py-2">
-            <RoleCrests scores={starScores} />
             <Flex direction="column" align="center" gap="1">
               <Text
                 as="div"
@@ -684,11 +767,7 @@ export function WorkSkillsView() {
               as="div"
               className="mx-auto max-w-[440px] text-center text-(--gray-11) text-[13px] leading-snug"
             >
-              A live read of how your skill set leans across seven everyday
-              roles — Marketing, Operations, Product, Design, HR, Finance, and
-              Legal — with a Founder score at the centre for the financial and
-              decision-shaping work. It refreshes every hour as you add or
-              activate new skills.
+              {starMapDescription(starScores)}
             </Text>
             <Box className="mt-1 w-full">
               <SkillsStarMap
@@ -704,13 +783,6 @@ export function WorkSkillsView() {
               >
                 <Hash size={12} weight="bold" />
                 Copy for Slack
-              </button>
-              <button
-                type="button"
-                onClick={() => setStarMapOpen(false)}
-                className="rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-3 py-1 font-medium text-(--gray-12) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
-              >
-                Minimize
               </button>
             </Flex>
           </Flex>
