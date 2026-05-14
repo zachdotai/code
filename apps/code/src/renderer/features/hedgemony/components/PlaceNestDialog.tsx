@@ -16,7 +16,7 @@ import {
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 const log = logger.scope("place-nest-dialog");
 
@@ -56,8 +56,6 @@ export function PlaceNestDialog({
   const [name, setName] = useState("");
   const [goalPrompt, setGoalPrompt] = useState("");
   const [definitionOfDone, setDefinitionOfDone] = useState("");
-  const [mapXValue, setMapXValue] = useState("");
-  const [mapYValue, setMapYValue] = useState("");
   const [simpleMode, setSimpleMode] = useState(initialMode === "simple");
   const [drafting, setDrafting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -76,26 +74,21 @@ export function PlaceNestDialog({
       setName("");
       setGoalPrompt("");
       setDefinitionOfDone("");
-      setMapXValue(String(Math.round(mapX)));
-      setMapYValue(String(Math.round(mapY)));
       setSimpleMode(initialMode === "simple");
       setError(null);
       setLastDraftAttempt(null);
       setDrafting(false);
       setSubmitting(false);
     }
-  }, [open, initialMode, mapX, mapY]);
+  }, [open, initialMode]);
 
-  const parsedMapX = useMemo(() => Number(mapXValue), [mapXValue]);
-  const parsedMapY = useMemo(() => Number(mapYValue), [mapYValue]);
-  const hasValidCoords =
-    Number.isFinite(parsedMapX) && Number.isFinite(parsedMapY);
+  const roundedMapX = Math.round(mapX);
+  const roundedMapY = Math.round(mapY);
 
   const canSubmit = simpleMode
-    ? goalPrompt.trim().length > 0 && hasValidCoords
+    ? goalPrompt.trim().length > 0
     : name.trim().length > 0 &&
       goalPrompt.trim().length > 0 &&
-      hasValidCoords &&
       definitionOfDone.trim().length > 0;
 
   const requestDraft = async (
@@ -109,12 +102,10 @@ export function PlaceNestDialog({
       const response = await trpcClient.hedgemony.goalDraft.respond.mutate({
         transcript: nextTranscript,
         currentDraft,
-        mapContext: hasValidCoords
-          ? {
-              mapX: Math.round(parsedMapX),
-              mapY: Math.round(parsedMapY),
-            }
-          : undefined,
+        mapContext: {
+          mapX: roundedMapX,
+          mapY: roundedMapY,
+        },
       });
 
       if (response.kind === "ask_question") {
@@ -205,8 +196,8 @@ export function PlaceNestDialog({
         name: effectiveName,
         goalPrompt: trimmedGoalPrompt,
         definitionOfDone: simpleMode ? null : definitionOfDone.trim(),
-        mapX: Math.round(parsedMapX),
-        mapY: Math.round(parsedMapY),
+        mapX: roundedMapX,
+        mapY: roundedMapY,
         creationMode: simpleMode ? "simple" : "guided",
         creationTranscript,
       });
@@ -255,27 +246,6 @@ export function PlaceNestDialog({
                 onDefinitionOfDoneChange={setDefinitionOfDone}
               />
             )}
-
-            <Flex gap="2">
-              <LabeledField label="X" htmlFor="nest-map-x">
-                <TextField.Root
-                  id="nest-map-x"
-                  type="number"
-                  value={mapXValue}
-                  onChange={(e) => setMapXValue(e.target.value)}
-                  disabled={submitting}
-                />
-              </LabeledField>
-              <LabeledField label="Y" htmlFor="nest-map-y">
-                <TextField.Root
-                  id="nest-map-y"
-                  type="number"
-                  value={mapYValue}
-                  onChange={(e) => setMapYValue(e.target.value)}
-                  disabled={submitting}
-                />
-              </LabeledField>
-            </Flex>
 
             <button
               type="button"
