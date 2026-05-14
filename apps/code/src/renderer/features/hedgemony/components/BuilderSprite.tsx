@@ -74,9 +74,18 @@ export function BuilderSprite({
 
   useEffect(() => {
     if (path.length === 0) return;
+    // Always re-sync motion to the planned origin before starting the walk.
+    // Vite Fast Refresh / HMR preserves useMotionValue state across module
+    // reloads even when the surrounding state has reset, so motionX/motionY
+    // can be stranded at a stale position (e.g. inside an obstacle from a
+    // pre-fix build) that no longer matches what pathfinding planned for.
+    // Without this snap, the first animation segment would tween from the
+    // stale position to path[1], visibly cutting through whatever the agent
+    // is stuck inside. In the steady state path[0] === visualPosRef ≈
+    // motionX/Y so this is a no-op; it only fires on the desync edge cases.
+    motionX.set(path[0].x);
+    motionY.set(path[0].y);
     if (path.length === 1) {
-      motionX.set(path[0].x);
-      motionY.set(path[0].y);
       const fire = onArrive;
       if (fire) queueMicrotask(fire);
       return;
