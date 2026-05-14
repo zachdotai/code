@@ -527,7 +527,6 @@ export function HedgemonyMapView() {
         builderPositionRef={builder.visualPosRef}
         builderSelected={builderSelected}
         builderAnimation={builder.animation}
-        hogletSelected={selectedHogletIds.size > 0}
         pendingNest={builder.pendingNest}
         buildMode={buildMode}
         moveMarker={moveMarker}
@@ -669,10 +668,6 @@ export function HedgemonyMapView() {
             >
               ×
             </button>
-            <BookmarkChips
-              onRecall={recallBookmark}
-              onSave={handleSaveBookmark}
-            />
             <FullscreenVignette />
           </motion.div>,
           document.body,
@@ -709,45 +704,5 @@ function FullscreenVignette() {
           "radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.18) 92%, rgba(0,0,0,0.34) 100%)",
       }}
     />
-  );
-}
-
-const BOOKMARK_SLOTS: BookmarkSlot[] = [1, 2, 3];
-
-interface BookmarkChipsProps {
-  onRecall: (slot: BookmarkSlot) => void;
-  onSave: (slot: BookmarkSlot) => void;
-}
-
-function BookmarkChips({ onRecall, onSave }: BookmarkChipsProps) {
-  // Subscribe at the slot level so we re-render when bookmarks change.
-  const bookmarks = useHedgemonyViewStore((s) => s.bookmarks);
-  return (
-    <div className="-translate-x-1/2 absolute top-3 left-1/2 flex items-center gap-2">
-      {BOOKMARK_SLOTS.map((slot) => {
-        const saved = bookmarks[slot] !== undefined;
-        return (
-          <button
-            key={slot}
-            type="button"
-            onClick={(event) =>
-              event.shiftKey ? onSave(slot) : onRecall(slot)
-            }
-            title={
-              saved
-                ? `Recall view ${slot} (key ${slot}) · Shift-click to overwrite`
-                : `No view in slot ${slot} · Shift-click to save current view`
-            }
-            className={`flex h-7 w-7 items-center justify-center rounded-(--radius-2) border text-[12px] tabular-nums backdrop-blur-sm transition-colors ${
-              saved
-                ? "border-(--accent-7) bg-(--accent-3)/85 font-semibold text-(--accent-11) hover:bg-(--accent-4)"
-                : "border-(--gray-5) bg-(--gray-2)/70 text-(--gray-9) hover:bg-(--gray-3)"
-            }`}
-          >
-            {slot}
-          </button>
-        );
-      })}
-    </div>
   );
 }

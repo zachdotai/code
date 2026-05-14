@@ -89,7 +89,6 @@ interface HedgemonyMapSurfaceProps {
   builderPositionRef?: MutableRefObject<Vec2>;
   builderSelected: boolean;
   builderAnimation: BuilderAnimation;
-  hogletSelected: boolean;
   pendingNest: Nest | null;
   buildMode: boolean;
   moveMarker: MoveMarker | null;
@@ -119,7 +118,6 @@ function HedgemonyMapSurfaceImpl(
     builderPositionRef,
     builderSelected,
     builderAnimation,
-    hogletSelected,
     pendingNest,
     buildMode,
     moveMarker,
@@ -701,16 +699,6 @@ function HedgemonyMapSurfaceImpl(
         <div className="-translate-x-1/2 pointer-events-none absolute top-3 left-1/2 rounded-(--radius-2) border border-(--accent-7) bg-(--accent-3) px-3 py-1 font-medium text-(--accent-11) text-[12px] shadow-sm">
           Click a new home for {relocatingNest.name} · Esc / right-click to
           cancel
-        </div>
-      )}
-      {!placementMode && builderSelected && (
-        <div className="-translate-x-1/2 pointer-events-none absolute top-3 left-1/2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-3 py-1 text-(--gray-11) text-[12px] shadow-sm">
-          Right-click the map to move the builder
-        </div>
-      )}
-      {!placementMode && hogletSelected && (
-        <div className="-translate-x-1/2 pointer-events-none absolute top-3 left-1/2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-3 py-1 text-(--gray-11) text-[12px] shadow-sm">
-          Right-click the map to move this hoglet
         </div>
       )}
     </div>

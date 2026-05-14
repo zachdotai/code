@@ -1201,14 +1201,19 @@ button,
     0 calc(100% - 13px),
     0 13px
   );
-  background:
+  background-color: var(--gray-1);
+  background-image:
     linear-gradient(
       180deg,
-      var(--gray-3) 0%,
-      var(--gray-1) 32%,
-      var(--gray-2) 100%
-    ), radial-gradient(ellipse at 50% 0%, var(--accent-a3) 0%, transparent 60%);
+      var(--gray-4) 0%,
+      var(--gray-2) 32%,
+      var(--gray-3) 100%
+    ),
+    radial-gradient(ellipse at 50% 0%, var(--accent-a3) 0%, transparent 60%);
   background-blend-mode: normal, screen;
+  box-shadow:
+    inset 0 0 0 1px var(--gray-a3),
+    0 18px 36px rgba(0, 0, 0, 0.55);
 }
 
 /* Top-edge accent rail. Sits flush against the inner chamfered top so it
