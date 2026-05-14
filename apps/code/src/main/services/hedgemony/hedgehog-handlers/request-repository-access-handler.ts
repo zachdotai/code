@@ -16,16 +16,6 @@ export const requestRepositoryAccessHandler: HedgehogToolHandler = {
     }
     const { repository, reason } = parsed.data;
 
-    const alreadyAvailable = ctx.repositoryContext.availableRepositories.some(
-      (r) => r.toLowerCase() === repository.toLowerCase(),
-    );
-    if (alreadyAvailable) {
-      return {
-        success: true,
-        scratchpadSummary: `request_repository_access: ${repository} already available`,
-      };
-    }
-
     try {
       const integrationId =
         await deps.cloudTasks.resolveGithubUserIntegration(repository);
