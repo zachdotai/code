@@ -15,12 +15,11 @@ import {
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { useCollisionResolvedPosition } from "../utils/collisionResolution";
+import { selectHogletAnimation } from "../utils/selectHogletAnimation";
 import { HOGLET_RADIUS, worldObstacles } from "../utils/worldObstacles";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
 import {
-  ANIMATION_BY_TASK_STATUS,
-  ANIMATION_BY_TASK_STATUS_ROBO,
   FPS_BY_TASK_STATUS,
   PR_DOT_COLOR,
   type TaskStatus,
@@ -93,16 +92,11 @@ export function WildHoglet({
     "not_started") as TaskStatus;
   const title = summary?.title ?? hoglet.taskId.slice(0, 8);
   const prState = prStatusQuery.data?.prState ?? null;
-  const animationMap =
-    hoglet.signalReportId !== null
-      ? ANIMATION_BY_TASK_STATUS_ROBO
-      : ANIMATION_BY_TASK_STATUS;
-  const statusAnimationKey = animationMap[status ?? "not_started"];
-  const animationKey = isWalking
-    ? hoglet.signalReportId !== null
-      ? "walkRobo"
-      : "walk"
-    : statusAnimationKey;
+  const animationKey = selectHogletAnimation(
+    status,
+    isWalking,
+    hoglet.signalReportId !== null,
+  );
   const fps = isWalking
     ? HEDGEMONY_CONFIG.animation.fps.walk
     : FPS_BY_TASK_STATUS[status ?? "not_started"];
