@@ -63,3 +63,5 @@ plugins/posthog/local-skills/
 posthog-sym
 
 .claude/settings.local.json
+
+apps/mobile/ROADMAP.md
