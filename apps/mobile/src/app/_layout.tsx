@@ -81,15 +81,11 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
       {/* Tinder-style inbox review */}
       <Stack.Screen name="review" options={{ headerShown: false }} />
 
-      {/* Report detail - modal presentation */}
+      {/* Report detail - modal presentation, no native header
+          (the in-content title block is the canonical header). */}
       <Stack.Screen
         name="report/[id]"
-        options={{
-          presentation: "modal",
-          headerShown: true,
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.gray[12],
-        }}
+        options={{ presentation: "modal", headerShown: false }}
       />
 
       {/* Task routes - modal presentation, no native header. */}
