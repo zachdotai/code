@@ -1,17 +1,17 @@
 import { ServerIcon } from "@features/mcp-servers/components/parts/icons";
 import { useMcpServers } from "@features/mcp-servers/hooks/useMcpServers";
-import { ArrowRight, Check } from "@phosphor-icons/react";
-import { Box, Button, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { Check } from "@phosphor-icons/react";
+import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 interface SourcesPickerProps {
   /** MCP template ids the user has selected. */
   value: string[];
   onChange: (next: string[]) => void;
-  /** Called when the user clicks the "Connect data sources" affordance. The
-   * caller is responsible for persisting any in-progress draft before
-   * navigating away. */
-  onConnectMore: () => void;
+  /** Called when the user clicks an uninstalled source. The caller is
+   * responsible for persisting any in-progress draft before navigating to
+   * the data-sources configuration screen. */
+  onConfigureSource: (sourceId: string) => void;
 }
 
 interface SourceOption {
@@ -24,7 +24,7 @@ interface SourceOption {
 export function SourcesPicker({
   value,
   onChange,
-  onConnectMore,
+  onConfigureSource,
 }: SourcesPickerProps) {
   const { servers, installedTemplateIds } = useMcpServers();
 
@@ -45,7 +45,6 @@ export function SourcesPicker({
   }, [servers, installedTemplateIds]);
 
   const selected = useMemo(() => new Set(value), [value]);
-  const hasUninstalled = options.some((o) => !o.installed);
 
   const toggle = (id: string) => {
     if (selected.has(id)) {
@@ -83,24 +82,28 @@ export function SourcesPicker({
       <Flex gap="2" wrap="wrap">
         {options.map((option) => {
           const isSelected = selected.has(option.id);
-          // Selected-but-uninstalled (e.g. a saved task whose source got
-          // uninstalled) stays clickable so the user can remove it.
-          const isInteractive = option.installed || isSelected;
+          const handleClick = () => {
+            if (option.installed) {
+              toggle(option.id);
+            } else if (isSelected) {
+              // Selected-but-uninstalled: let the user remove it.
+              toggle(option.id);
+            } else {
+              onConfigureSource(option.id);
+            }
+          };
           const chip = (
             <button
               type="button"
-              onClick={isInteractive ? () => toggle(option.id) : undefined}
-              disabled={!isInteractive}
-              className={`flex items-center gap-2 rounded-full border px-3 py-1 text-[12px] transition-colors ${
-                isInteractive ? "cursor-pointer" : "cursor-not-allowed"
-              } ${
+              onClick={handleClick}
+              className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1 text-[12px] transition-colors ${
                 isSelected
                   ? option.installed
                     ? "border-(--accent-7) bg-(--accent-3) text-(--gray-12)"
                     : "border-(--amber-7) bg-(--amber-3) text-(--gray-12)"
                   : option.installed
                     ? "border-(--gray-5) bg-(--gray-2) text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12)"
-                    : "border-(--gray-4) bg-(--gray-1) text-(--gray-9) opacity-70"
+                    : "border-(--gray-4) bg-(--gray-1) text-(--gray-9) opacity-70 hover:border-(--gray-6) hover:bg-(--gray-2) hover:opacity-100"
               }`}
             >
               <Box className="shrink-0">
@@ -114,8 +117,8 @@ export function SourcesPicker({
           if (option.installed) return <Box key={option.id}>{chip}</Box>;
 
           const tooltipContent = isSelected
-            ? "Saved but not connected — click to remove, or connect it from MCP servers."
-            : "Not connected. Connect this from the MCP servers screen first.";
+            ? "Saved but not connected — click to remove."
+            : `Set up ${option.label} to use it`;
 
           return (
             <Tooltip key={option.id} content={tooltipContent}>
@@ -124,15 +127,6 @@ export function SourcesPicker({
           );
         })}
       </Flex>
-
-      {hasUninstalled && (
-        <Flex>
-          <Button size="1" variant="ghost" color="gray" onClick={onConnectMore}>
-            Connect data sources
-            <ArrowRight size={12} />
-          </Button>
-        </Flex>
-      )}
     </Flex>
   );
 }

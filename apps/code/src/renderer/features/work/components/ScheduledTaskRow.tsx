@@ -31,6 +31,8 @@ export function ScheduledTaskRow({
   onClick,
 }: ScheduledTaskRowProps) {
   const nextRunText = formatNextRun(automation);
+  const showError =
+    automation.last_run_status === "failed" && !!automation.last_error;
 
   return (
     <button
@@ -65,6 +67,11 @@ export function ScheduledTaskRow({
               </Text>
             )}
           </Flex>
+          {showError && (
+            <Text size="1" className="truncate text-(--red-11)">
+              {automation.last_error}
+            </Text>
+          )}
         </Flex>
         <CaretRight size={14} className="shrink-0 text-(--gray-9)" />
       </Flex>
