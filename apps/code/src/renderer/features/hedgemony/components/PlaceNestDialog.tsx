@@ -202,7 +202,7 @@ export function PlaceNestDialog({
       <Dialog.Content maxWidth="640px" size="2" className="max-h-[85vh]">
         <Dialog.Title size="3">Create a nest</Dialog.Title>
         <Dialog.Description size="2" color="gray">
-          Turn a rough goal into a nest spec before creating it.
+          Turn a rough goal into a spec-driven nest before creating it.
         </Dialog.Description>
 
         <ScrollArea type="auto" scrollbars="vertical" className="max-h-[64vh]">
@@ -369,7 +369,7 @@ function GoalDraftFlow({
               disabled={!initialGoal.trim() || disabled}
               loading={drafting}
             >
-              Start goal draft
+              Start spec draft
             </Button>
           </Flex>
         </div>
@@ -486,13 +486,13 @@ function SpecFields({
         />
       </LabeledField>
 
-      <LabeledField label="Goal" htmlFor="nest-goal">
+      <LabeledField label="Spec" htmlFor="nest-goal">
         <TextArea
           id="nest-goal"
-          placeholder="Describe the objective, useful context, likely scope, and constraints."
+          placeholder="Review or edit the generated feature spec."
           value={goalPrompt}
           onChange={(e) => onGoalPromptChange(e.target.value)}
-          rows={5}
+          rows={10}
           disabled={disabled}
         />
       </LabeledField>
@@ -575,7 +575,8 @@ function formatDraftForTranscript(draft: GoalSpecDraft): string {
     "Proposed spec",
     "",
     `Name: ${draft.name}`,
-    `Goal: ${draft.goalPrompt}`,
+    `Summary: ${draft.summary}`,
+    `Spec:\n${draft.goalPrompt}`,
     `Definition of done: ${draft.definitionOfDone}`,
   ].join("\n");
 }
@@ -597,7 +598,7 @@ function buildSimpleTranscript(input: {
         "Created through simple form.",
         "",
         `Name: ${input.name}`,
-        `Goal: ${input.goalPrompt}`,
+        `Spec: ${input.goalPrompt}`,
         input.definitionOfDone
           ? `Definition of done: ${input.definitionOfDone}`
           : "Definition of done: not set yet",

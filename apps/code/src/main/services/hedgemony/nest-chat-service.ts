@@ -8,6 +8,7 @@ import type {
   Nest,
   NestMessage,
 } from "./schemas";
+import { SPEC_DRIVEN_DEVELOPMENT_METHOD } from "./spec-driven-development";
 
 @injectable()
 export class NestChatService {
@@ -36,6 +37,7 @@ export class NestChatService {
       body: formatCreationContext(input, creationTranscript),
       payloadJson: JSON.stringify({
         creationMode: input.creationMode ?? "guided",
+        planningMethod: SPEC_DRIVEN_DEVELOPMENT_METHOD,
         goalPrompt: input.goalPrompt,
         definitionOfDone: input.definitionOfDone ?? null,
         creationTranscript,
@@ -64,8 +66,8 @@ function buildFallbackTranscript(
       role: "user",
       content:
         mode === "simple"
-          ? `Created through simple form.\n\nName: ${input.name}\n\nGoal: ${input.goalPrompt}`
-          : `Created from accepted goal draft.\n\nName: ${input.name}\n\nGoal: ${input.goalPrompt}`,
+          ? `Created through simple form.\n\nName: ${input.name}\n\nSpec: ${input.goalPrompt}`
+          : `Created from accepted goal draft.\n\nName: ${input.name}\n\nSpec: ${input.goalPrompt}`,
     },
   ];
 }
@@ -83,10 +85,11 @@ function formatCreationContext(
 
   const acceptedSpec = [
     `Name: ${input.name}`,
-    `Goal: ${input.goalPrompt}`,
+    `Spec: ${input.goalPrompt}`,
     input.definitionOfDone
       ? `Definition of done: ${input.definitionOfDone}`
       : "Definition of done: not set yet",
+    `Planning method: ${SPEC_DRIVEN_DEVELOPMENT_METHOD}`,
   ].join("\n");
 
   return `Creation transcript\n\n${transcriptBody}\n\nAccepted spec\n\n${acceptedSpec}`;

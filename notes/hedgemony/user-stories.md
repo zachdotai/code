@@ -52,7 +52,7 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
   - **Build nest** (guided): enters `GoalSpecDraftService` conversational flow → editable draft fields → place nest, no auto-spawned hoglet.
   - **Quick nest** (simple): one-field form (prompt; name optional, defaults from prompt) → enter build mode → place nest with `creationMode: "quick"` → atomically spawns one hoglet inside it.
 - `hedgemony_nest` CRUD for `name`, `goal_prompt`, nullable `definition_of_done`, `map_x` / `map_y`, `status`, `creation_mode` (`"guided" | "quick"`), and empty/default `loadout_json`.
-- `GoalSpecDraftService` drives the guided back-and-forth before the nest exists. It takes the current transcript + optional map context and returns either the next clarifying question or a draft `{ name, goalPrompt, definitionOfDone }`. Lightweight LLM call through the existing main-process LLM gateway/auth path, not a `Task`, not a hedgehog tick, no tools, no worktree, no autonomous actions.
+- `GoalSpecDraftService` drives the guided back-and-forth before the nest exists. It takes the current transcript + optional map context and returns either the next clarifying question or a structured spec draft: `{ name, summary, primaryScenario, userStories, requirements, keyEntities, assumptions, successCriteria, definitionOfDone }`. The app renders the accepted `goalPrompt` Markdown from those structured fields. Lightweight LLM call through the existing main-process LLM gateway/auth path, not a `Task`, not a hedgehog tick, no tools, no worktree, no autonomous actions.
 - The renderer owns the in-progress draft transcript until the operator clicks "Create nest". `nests.create` accepts the accepted draft plus `creationTranscript`; `hedgemony_nest_message` writes that transcript plus the initial "nest created" audit entry as durable creation context.
 - `NestService.create / get / list / update / archive` plus the matching sqlite repository. `create` accepts an optional `spawnFirstHoglet` flag (set by the Quick nest path) that triggers a one-hoglet `task-creation` saga inside the same transaction.
 - `NestChatService.list` can read creation transcript/audit rows for a nest, but does not yet accept live operator commands.
@@ -74,7 +74,7 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 - Opening a nest detail panel shows the saved goal prompt/spec, definition of done when present, and the creation transcript/audit context.
 - `nests.update` can move/rename/edit an active nest without recreating it.
 - Archive flips status without dropping the row; archived nests disappear from the default active map list but remain queryable for history/debugging.
-- Guided flow asks at least one clarifying question when the initial prompt is under-specified, then produces editable `name`, `goalPrompt`, and `definitionOfDone` fields.
+- Guided flow asks at least one clarifying question when the initial prompt is under-specified, then produces editable `name`, rendered spec, and `definitionOfDone` fields from the structured spec draft.
 - The accepted draft transcript is persisted only after `nests.create`; refreshing mid-draft loses the unsaved conversation, while refreshing after create shows the saved creation transcript.
 - Quick path creates a nest with nullable `definition_of_done` and auto-spawns exactly one hoglet inside it in the same transaction (rollback if the hoglet spawn fails).
 

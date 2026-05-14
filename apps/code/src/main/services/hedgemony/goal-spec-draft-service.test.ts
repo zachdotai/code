@@ -13,6 +13,7 @@ vi.mock("../../utils/logger.js", () => ({
 
 import type { LlmGatewayService } from "../llm-gateway/service";
 import { GoalSpecDraftService } from "./goal-spec-draft-service";
+import { SPEC_DRIVEN_DEVELOPMENT_METHOD } from "./spec-driven-development";
 
 function createMockLlmGateway() {
   return {
@@ -59,7 +60,13 @@ describe("GoalSpecDraftService", () => {
           content: expect.stringContaining("Map placement: (10, 20)"),
         }),
       ],
-      expect.objectContaining({ maxTokens: 900 }),
+      expect.objectContaining({
+        maxTokens: 1400,
+        system: expect.stringContaining(SPEC_DRIVEN_DEVELOPMENT_METHOD),
+      }),
+    );
+    expect(llmGateway.prompt.mock.calls[0][0][0].content).toContain(
+      "prioritized user stories",
     );
   });
 
@@ -69,7 +76,34 @@ describe("GoalSpecDraftService", () => {
         kind: "propose_spec",
         draft: {
           name: "Checkout lift",
-          goalPrompt: "Improve checkout conversion by reducing payment errors.",
+          summary:
+            "Reduce checkout payment errors so more customers complete purchase.",
+          primaryScenario:
+            "A customer reaches payment, enters valid details, and either completes checkout or receives an actionable error.",
+          userStories: [
+            {
+              priority: "P1",
+              story:
+                "As an operator, I want payment-error causes surfaced so that we can remove the largest checkout blockers.",
+              acceptanceScenarios: [
+                "Given checkout events are available, when the hedgehog analyzes failures, then it identifies the top payment-error causes.",
+              ],
+            },
+          ],
+          requirements: [
+            {
+              id: "FR-001",
+              text: "The nest must identify and prioritize payment-error causes.",
+            },
+          ],
+          keyEntities: ["Checkout session: the customer attempt to pay"],
+          assumptions: ["Existing checkout analytics are available."],
+          successCriteria: [
+            {
+              id: "SC-001",
+              text: "Payment-error rate is lower on the validation dashboard.",
+            },
+          ],
           definitionOfDone:
             "Payment-error rate is lower and the checkout runbook is updated.",
         },
@@ -79,30 +113,41 @@ describe("GoalSpecDraftService", () => {
       usage: { inputTokens: 10, outputTokens: 20 },
     });
 
-    await expect(
-      service.respond({
-        transcript: [
-          { role: "user", content: "Improve checkout" },
-          {
-            role: "assistant",
-            content: "Which metric should improve?",
-          },
-          {
-            role: "user",
-            content:
-              "Reduce payment errors and update the runbook once dashboards prove the rate fell.",
-          },
-        ],
-      }),
-    ).resolves.toEqual({
+    const response = await service.respond({
+      transcript: [
+        { role: "user", content: "Improve checkout" },
+        {
+          role: "assistant",
+          content: "Which metric should improve?",
+        },
+        {
+          role: "user",
+          content:
+            "Reduce payment errors and update the runbook once dashboards prove the rate fell.",
+        },
+      ],
+    });
+
+    expect(response).toEqual({
       kind: "propose_spec",
-      draft: {
+      draft: expect.objectContaining({
         name: "Checkout lift",
-        goalPrompt: "Improve checkout conversion by reducing payment errors.",
+        summary:
+          "Reduce checkout payment errors so more customers complete purchase.",
         definitionOfDone:
           "Payment-error rate is lower and the checkout runbook is updated.",
-      },
+      }),
     });
+    expect(response.kind).toBe("propose_spec");
+    if (response.kind === "propose_spec") {
+      expect(response.draft.goalPrompt).toContain("## User Stories");
+      expect(response.draft.goalPrompt).toContain(
+        "FR-001: The nest must identify",
+      );
+      expect(response.draft.goalPrompt).toContain(
+        "SC-001: Payment-error rate is lower",
+      );
+    }
   });
 
   it("forces one clarification for an under-specified initial prompt", async () => {
@@ -111,7 +156,21 @@ describe("GoalSpecDraftService", () => {
         kind: "propose_spec",
         draft: {
           name: "Checkout",
-          goalPrompt: "Improve checkout",
+          summary: "Improve checkout.",
+          primaryScenario: "A customer attempts checkout.",
+          userStories: [
+            {
+              priority: "P1",
+              story: "As an operator, I want checkout improved.",
+              acceptanceScenarios: [
+                "Given checkout, when changed, then better.",
+              ],
+            },
+          ],
+          requirements: [{ id: "FR-001", text: "Improve checkout." }],
+          keyEntities: [],
+          assumptions: [],
+          successCriteria: [{ id: "SC-001", text: "Checkout is better." }],
           definitionOfDone: "Checkout is better.",
         },
       }),

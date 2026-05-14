@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NestMessageRepository } from "../../db/repositories/nest-message-repository";
 import { NestChatService } from "./nest-chat-service";
 import type { Nest, NestMessage } from "./schemas";
+import { SPEC_DRIVEN_DEVELOPMENT_METHOD } from "./spec-driven-development";
 
 function makeNest(): Nest {
   const now = "2026-05-13T00:00:00.000Z";
@@ -116,10 +117,16 @@ describe("NestChatService", () => {
       "Goal draft: Which metric should improve?",
     );
     expect(messages[0].body).toContain("Accepted spec");
-    expect(messages[0].body).toContain("Goal: Goal");
+    expect(messages[0].body).toContain("Spec: Goal");
     expect(messages[0].body).toContain("Definition of done: Done");
+    expect(messages[0].body).toContain(
+      `Planning method: ${SPEC_DRIVEN_DEVELOPMENT_METHOD}`,
+    );
     expect(messages[0].payloadJson).toContain('"creationMode":"guided"');
     expect(messages[0].payloadJson).toContain('"creationTranscript"');
+    expect(messages[0].payloadJson).toContain(
+      `"planningMethod":"${SPEC_DRIVEN_DEVELOPMENT_METHOD}"`,
+    );
     expect(messages[1].body).toBe("Nest created at (5, 6).");
   });
 

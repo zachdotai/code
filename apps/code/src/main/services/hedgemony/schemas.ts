@@ -35,10 +35,36 @@ export type GoalDraftTranscriptMessage = z.infer<
   typeof goalDraftTranscriptMessage
 >;
 
-export const goalSpecDraft = z.object({
-  name: z.string().min(1).max(120),
-  goalPrompt: z.string().min(1),
-  definitionOfDone: z.string().min(1),
+export const goalSpecUserStory = z.object({
+  priority: z.enum(["P1", "P2", "P3"]),
+  story: z.string().trim().min(1),
+  acceptanceScenarios: z.array(z.string().trim().min(1)).min(1).max(5),
+});
+
+export const goalSpecRequirement = z.object({
+  id: z.string().trim().min(1).max(20),
+  text: z.string().trim().min(1),
+});
+
+export const goalSpecSuccessCriterion = z.object({
+  id: z.string().trim().min(1).max(20),
+  text: z.string().trim().min(1),
+});
+
+export const goalSpecDraftCore = z.object({
+  name: z.string().trim().min(1).max(120),
+  summary: z.string().trim().min(1),
+  primaryScenario: z.string().trim().min(1),
+  userStories: z.array(goalSpecUserStory).min(1).max(6),
+  requirements: z.array(goalSpecRequirement).min(1).max(8),
+  keyEntities: z.array(z.string().trim().min(1)).max(6),
+  assumptions: z.array(z.string().trim().min(1)).max(6),
+  successCriteria: z.array(goalSpecSuccessCriterion).min(1).max(6),
+  definitionOfDone: z.string().trim().min(1),
+});
+
+export const goalSpecDraft = goalSpecDraftCore.extend({
+  goalPrompt: z.string().trim().min(1),
 });
 export type GoalSpecDraft = z.infer<typeof goalSpecDraft>;
 
