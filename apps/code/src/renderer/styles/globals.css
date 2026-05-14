@@ -346,6 +346,19 @@
   animation-iteration-count: infinite;
 }
 
+@keyframes hog-spin {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}
+
+.hog-spin {
+  animation: hog-spin 700ms ease-in-out;
+}
+
 /* Work-mode home entrance — staggered fade + lift */
 @keyframes work-enter {
   0% {
