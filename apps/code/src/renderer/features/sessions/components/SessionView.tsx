@@ -1,11 +1,13 @@
 import { isOtherOption } from "@components/action-selector/constants";
 import { PermissionSelector } from "@components/permissions/PermissionSelector";
+import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { showOfflineToast } from "@features/connectivity/connectivityToast";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
 } from "@features/message-editor/components/PromptInput";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
+import { extractTeamMemberUuidsFromXml } from "@features/message-editor/utils/content";
 import { resolveAndAttachDroppedFiles } from "@features/message-editor/utils/persistFile";
 import { CHAT_CONTENT_MAX_WIDTH } from "@features/sessions/constants";
 import { useSessionForTask } from "@features/sessions/hooks/useSession";
@@ -17,6 +19,8 @@ import {
 } from "@features/sessions/stores/sessionStore";
 import type { Plan } from "@features/sessions/types";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { useWorkThreadParticipantsStore } from "@features/work/stores/workThreadParticipantsStore";
+import { useWorkThreadsStore } from "@features/work/stores/workThreadsStore";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { useConnectivity } from "@hooks/useConnectivity";
@@ -29,6 +33,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcResponse,
 } from "@shared/types/session-events";
+import { logger } from "@utils/logger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSessionService } from "../service/service";
 import { flattenSelectOptions } from "../stores/sessionStore";
@@ -78,6 +83,8 @@ interface SessionViewProps {
 
 const DEFAULT_ERROR_MESSAGE =
   "Failed to resume this session. The working directory may have been deleted. Please start a new session.";
+
+const log = logger.scope("session-view");
 
 /**
  * When an allow_always permission is granted outside a mode-switch prompt,
@@ -242,13 +249,33 @@ export function SessionView({
     return plan;
   }, [events]);
 
+  const isWorkThread = useWorkThreadsStore((s) =>
+    taskId ? s.isThread(taskId) : false,
+  );
+  const addParticipants = useWorkThreadParticipantsStore(
+    (s) => s.addParticipants,
+  );
+
   const handleSubmit = useCallback(
     (text: string) => {
-      if (text.trim()) {
-        onSendPrompt(text);
-      }
+      if (!text.trim()) return;
+      onSendPrompt(text);
+
+      if (!isWorkThread || !taskId) return;
+      const uuids = extractTeamMemberUuidsFromXml(text);
+      if (uuids.length === 0) return;
+      addParticipants(taskId, uuids);
+      void (async () => {
+        try {
+          const client = await getAuthenticatedClient();
+          if (!client) return;
+          await client.addTaskCollaborators(taskId, uuids);
+        } catch (error) {
+          log.error("Failed to add task collaborators", { error, uuids });
+        }
+      })();
     },
-    [onSendPrompt],
+    [onSendPrompt, isWorkThread, taskId, addParticipants],
   );
 
   const handleBeforeSubmit = useCallback(
@@ -655,7 +682,12 @@ export function SessionView({
                           ref={editorRef}
                           onTextChange={handlePromptTextChange}
                           sessionId={sessionId}
-                          placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
+                          placeholder={
+                            isWorkThread
+                              ? "Type a message... @ to mention teammates"
+                              : "Type a message... @ to mention files, ! for bash mode, / for skills"
+                          }
+                          enableTeamMentions={isWorkThread}
                           disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
                             handoffInProgress || !isOnline

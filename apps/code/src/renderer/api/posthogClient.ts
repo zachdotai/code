@@ -74,6 +74,14 @@ export type McpInstallationTool = Schemas.MCPServerInstallationTool;
 
 export type Evaluation = Schemas.Evaluation;
 
+export interface OrgMember {
+  membershipId: string;
+  uuid: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+}
+
 export interface UserGitHubIntegration {
   id: string;
   kind: "github";
@@ -603,6 +611,86 @@ export class PostHogAPIClient {
       path: { uuid: "@me" },
     });
     return data;
+  }
+
+  async getOrgMembers(): Promise<OrgMember[]> {
+    // Project-scoped access tokens can't hit `/api/organizations/@current/members/`,
+    // so we use `/api/users/` and filter client-side to the current user's
+    // organization. PostHog staff would otherwise see users across all orgs.
+    const me = (await this.api.get("/api/users/{uuid}/", {
+      path: { uuid: "@me" },
+    })) as unknown as { organization?: { id?: string } | null };
+    const orgId = me?.organization?.id;
+    if (!orgId) {
+      log.warn("getOrgMembers: current user has no organization id");
+      return [];
+    }
+
+    const collected: Array<{
+      uuid: string;
+      email: string;
+      first_name?: string;
+      last_name?: string;
+      organization?: { id?: string } | null;
+    }> = [];
+
+    const urlPath = `/api/users/`;
+    let nextUrl: string | null = `${this.api.baseUrl}${urlPath}?limit=200`;
+    const MAX_PAGES = 25;
+    for (let page = 0; page < MAX_PAGES && nextUrl; page++) {
+      const url = new URL(nextUrl);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch organization members: ${response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as {
+        count?: number;
+        next?: string | null;
+        results?: Array<{
+          uuid: string;
+          email: string;
+          first_name?: string;
+          last_name?: string;
+          organization?: { id?: string } | null;
+        }>;
+      };
+      const matchingThisPage = (data.results ?? []).filter(
+        (u) => u.organization?.id === orgId,
+      );
+      collected.push(...matchingThisPage);
+      nextUrl = data.next ?? null;
+      // Bail out early once we've collected enough matches to be useful.
+      if (collected.length >= 500) break;
+    }
+
+    log.info("getOrgMembers", {
+      orgId,
+      matched: collected.length,
+    });
+
+    return collected.map((u) => ({
+      membershipId: u.uuid,
+      uuid: u.uuid,
+      email: u.email,
+      firstName: u.first_name ?? "",
+      lastName: u.last_name ?? "",
+    }));
+  }
+
+  async addTaskCollaborators(
+    taskId: string,
+    userUuids: string[],
+  ): Promise<{ ok: boolean }> {
+    // TODO: replace with real API call when /api/projects/{team}/tasks/{id}/collaborators/
+    // exists on the PostHog backend.
+    log.info("addTaskCollaborators (stub)", { taskId, userUuids });
+    return { ok: true };
   }
 
   async getGithubLogin(): Promise<string | null> {

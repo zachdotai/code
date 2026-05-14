@@ -1,4 +1,3 @@
-import { TaskDetail } from "@features/task-detail/components/TaskDetail";
 import { useNavigationStore } from "@stores/navigationStore";
 import { MemoryView } from "../../memory/components/MemoryView";
 import { ScheduledTaskEditor } from "./ScheduledTaskEditor";
@@ -11,11 +10,11 @@ import { WorkProjectsView } from "./WorkProjectsView";
 import { WorkScheduledCreatePrompt } from "./WorkScheduledCreatePrompt";
 import { WorkSkillDetailView } from "./WorkSkillDetailView";
 import { WorkSkillsView } from "./WorkSkillsView";
+import { WorkTaskDetailView } from "./WorkTaskDetailView";
 
 export function WorkView() {
   const workView = useNavigationStore((s) => s.workView);
   const scheduledEditId = useNavigationStore((s) => s.workScheduledEditId);
-  const workTaskDetailTask = useNavigationStore((s) => s.workTaskDetailTask);
 
   if (workView === "generate") {
     return <WorkGenerateView />;
@@ -57,8 +56,8 @@ export function WorkView() {
     return <WorkProjectDetailView />;
   }
 
-  if (workView === "task-detail" && workTaskDetailTask) {
-    return <TaskDetail key={workTaskDetailTask.id} task={workTaskDetailTask} />;
+  if (workView === "task-detail") {
+    return <WorkTaskDetailView />;
   }
 
   return <WorkHome />;
