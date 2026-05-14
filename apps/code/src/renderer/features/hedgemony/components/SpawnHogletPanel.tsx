@@ -35,6 +35,7 @@ import {
   useUserGithubRepositories,
   useUserRepositoryIntegration,
 } from "@hooks/useIntegrations";
+import { genderForName } from "@main/services/hedgemony/hoglet-names";
 import { ButtonGroup } from "@posthog/quill";
 import { Flex } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
@@ -46,6 +47,7 @@ import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { playVoice } from "../audio/voice";
 import { WILD_BUCKET } from "../constants/buckets";
 import { useHogletStore } from "../stores/hogletStore";
 import { CommandConsole } from "./CommandConsole";
@@ -367,6 +369,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
           taskId: task.id,
         });
         useHogletStore.getState().upsert(WILD_BUCKET, hoglet);
+        playVoice("hoglet:order_work", genderForName(hoglet.name));
         track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED, { source: "adhoc" });
       } catch (error) {
         log.error("Failed to register wild hoglet", { error, taskId: task.id });

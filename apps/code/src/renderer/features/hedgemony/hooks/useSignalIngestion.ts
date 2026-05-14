@@ -9,6 +9,7 @@ import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useEffect, useRef } from "react";
+import { playVoice } from "../audio/voice";
 import { HEDGEMONY_CONFIG } from "../config";
 import { useHogletStore } from "../stores/hogletStore";
 import { buildSignalPrompt } from "../utils/signalPrompt";
@@ -163,6 +164,7 @@ async function ingestOne(report: SignalReport): Promise<void> {
     return;
   }
 
+  playVoice("system:signal_arrived");
   track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_INGESTED, { source: "signal" });
   log.info("Ingested signal report as hoglet", {
     reportId: report.id,

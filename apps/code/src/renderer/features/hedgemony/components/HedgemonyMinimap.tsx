@@ -1,5 +1,10 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
-import type { MouseEvent } from "react";
+import { type MouseEvent, useMemo } from "react";
+import { useHogletPositionStore } from "../stores/hogletPositionStore";
+import { useHogletStore } from "../stores/hogletStore";
+import { selectNests, useNestStore } from "../stores/nestStore";
+import { collectHogletWorldPositions } from "../utils/hogletPositions";
+import { applyHogletVisualPositions } from "../utils/hogletVisualPositions";
 import type { Vec2 } from "../utils/pathfinding";
 
 const WORLD_HALF = 1600;
@@ -46,6 +51,22 @@ export function HedgemonyMinimap({
   height,
   onJump,
 }: HedgemonyMinimapProps) {
+  const byBucket = useHogletStore((s) => s.byBucket);
+  const positionOverrides = useHogletPositionStore((s) => s.positions);
+  const nestsForPositions = useNestStore(selectNests);
+
+  const hogletPositions = useMemo(
+    () =>
+      applyHogletVisualPositions(
+        collectHogletWorldPositions(
+          nestsForPositions,
+          byBucket,
+          positionOverrides,
+        ),
+      ),
+    [nestsForPositions, byBucket, positionOverrides],
+  );
+
   const viewWorldW = viewportWidth / zoom;
   const viewWorldH = viewportHeight / zoom;
   const viewCenterWx = -panX / zoom;
@@ -93,6 +114,18 @@ export function HedgemonyMinimap({
       >
         <title>World minimap</title>
         <rect x={0} y={0} width={width} height={height} fill="var(--gray-3)" />
+        {hogletPositions.map((hp) => {
+          const point = worldToMinimap(hp.x, hp.y, width, height);
+          return (
+            <circle
+              key={hp.hogletId}
+              cx={point.x}
+              cy={point.y}
+              r={1.5}
+              fill="var(--violet-9)"
+            />
+          );
+        })}
         {nests.map((nest) => {
           const point = worldToMinimap(nest.mapX, nest.mapY, width, height);
           return (

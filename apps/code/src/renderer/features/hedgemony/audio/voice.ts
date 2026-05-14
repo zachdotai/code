@@ -4,9 +4,20 @@ import { logger } from "@utils/logger";
 const log = logger.scope("hedgemony-voice");
 
 export type VoiceIntent =
-  | "hoglet:select"
+  | "builder:build_mode"
+  | "builder:place_nest"
+  | "builder:select"
+  | "hedgehog:goal_complete"
+  | "hedgehog:intervention_request"
+  | "hedgehog:nest_established"
+  | "hedgehog:select"
+  | "hoglet:blocked"
+  | "hoglet:complete"
   | "hoglet:order_move"
-  | "hedgehog:goal_complete";
+  | "hoglet:order_work"
+  | "hoglet:select"
+  | "system:error"
+  | "system:signal_arrived";
 
 const voiceFiles = import.meta.glob<string>(
   "@renderer/assets/sounds/voice/**/*.wav",
@@ -68,12 +79,29 @@ export function playVoice(
 
 type GenderedRegistry = Record<HogletGender, Record<VoiceIntent, string[]>>;
 
+const ALL_INTENTS: VoiceIntent[] = [
+  "builder:build_mode",
+  "builder:place_nest",
+  "builder:select",
+  "hedgehog:goal_complete",
+  "hedgehog:intervention_request",
+  "hedgehog:nest_established",
+  "hedgehog:select",
+  "hoglet:blocked",
+  "hoglet:complete",
+  "hoglet:order_move",
+  "hoglet:order_work",
+  "hoglet:select",
+  "system:error",
+  "system:signal_arrived",
+];
+
 function buildRegistry(): GenderedRegistry {
-  const empty = (): Record<VoiceIntent, string[]> => ({
-    "hoglet:select": [],
-    "hoglet:order_move": [],
-    "hedgehog:goal_complete": [],
-  });
+  const empty = (): Record<VoiceIntent, string[]> => {
+    const record = {} as Record<VoiceIntent, string[]>;
+    for (const intent of ALL_INTENTS) record[intent] = [];
+    return record;
+  };
   const out: GenderedRegistry = {
     male: empty(),
     female: empty(),

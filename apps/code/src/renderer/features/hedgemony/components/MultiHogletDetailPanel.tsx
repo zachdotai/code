@@ -7,6 +7,7 @@ import { STATUS_BADGE_COLOR, type TaskStatus } from "./hogletStatus";
 
 interface MultiHogletDetailPanelProps {
   hogletIds: string[];
+  includeBuilder?: boolean;
   onClose: () => void;
   /** Focus a single hoglet from the list (single-select). */
   onSelectOne: (hogletId: string) => void;
@@ -34,6 +35,7 @@ const STATUS_ORDER: NonNullable<TaskStatus>[] = [
 
 export function MultiHogletDetailPanel({
   hogletIds,
+  includeBuilder,
   onClose,
   onSelectOne,
 }: MultiHogletDetailPanelProps) {
@@ -82,7 +84,11 @@ export function MultiHogletDetailPanel({
     >
       <CommandConsole.Header
         eyebrow="Selection"
-        title={`${hogletIds.length} hoglets`}
+        title={
+          includeBuilder
+            ? `${hogletIds.length} hoglets + builder`
+            : `${hogletIds.length} hoglets`
+        }
         subtitle={
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {STATUS_ORDER.map((status) => {

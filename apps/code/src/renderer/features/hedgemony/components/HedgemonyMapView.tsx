@@ -369,7 +369,7 @@ export function HedgemonyMapView() {
   // camera so the player can see what they grabbed.
   const selectBuilder = useCallback(() => {
     playSfx("select");
-    playVoice("hoglet:select", genderForName(BUILDER_NAME));
+    playVoice("builder:select", genderForName(BUILDER_NAME));
     setSelection({ type: "builder" });
     const pos = builder.visualPosRef.current;
     surfaceRef.current?.centerOnPoint(pos.x, pos.y);
@@ -400,7 +400,7 @@ export function HedgemonyMapView() {
           : (currentIdx + direction + nests.length) % nests.length;
       const nest = nests[nextIdx];
       playSfx("select");
-      playVoice("hoglet:select");
+      playVoice("hedgehog:select");
       setSelection({ type: "nest", id: nest.id });
       surfaceRef.current?.centerOnPoint(nest.mapX, nest.mapY);
     },
@@ -507,13 +507,13 @@ export function HedgemonyMapView() {
       }
 
       playSfx("select");
-      const recalledGender =
-        recalled?.type === "hoglets" && recalled.ids.length > 0
-          ? voiceGenderForHoglet(recalled.ids[0])
-          : recalled?.type === "builder"
-            ? genderForName(BUILDER_NAME)
-            : undefined;
-      playVoice("hoglet:select", recalledGender);
+      if (recalled?.type === "hoglets" && recalled.ids.length > 0) {
+        playVoice("hoglet:select", voiceGenderForHoglet(recalled.ids[0]));
+      } else if (recalled?.type === "builder") {
+        playVoice("builder:select", genderForName(BUILDER_NAME));
+      } else if (recalled?.type === "nest") {
+        playVoice("hedgehog:select");
+      }
       setSelection(recalled);
       if (centerPoint) {
         surfaceRef.current?.centerOnPoint(centerPoint.x, centerPoint.y);
@@ -905,11 +905,13 @@ export function HedgemonyMapView() {
   );
 
   const beginBuildNest = () => {
+    playVoice("builder:build_mode", genderForName(BUILDER_NAME));
     setMode({ kind: "placingNest", creationMode: "guided" });
     setSelection({ type: "builder" });
   };
 
   const beginQuickNest = () => {
+    playVoice("builder:build_mode", genderForName(BUILDER_NAME));
     setMode({ kind: "placingNest", creationMode: "simple" });
     setSelection({ type: "builder" });
   };
@@ -952,12 +954,12 @@ export function HedgemonyMapView() {
         onMapBoxSelect={handleBoxSelect}
         onNestSelect={(nest) => {
           playSfx("select");
-          playVoice("hoglet:select");
+          playVoice("hedgehog:select");
           setSelection({ type: "nest", id: nest.id });
         }}
         onBuilderSelect={() => {
           playSfx("select");
-          playVoice("hoglet:select", genderForName(BUILDER_NAME));
+          playVoice("builder:select", genderForName(BUILDER_NAME));
           setSelection({ type: "builder" });
         }}
         onBuilderArrive={builder.handleArrive}
@@ -1037,14 +1039,17 @@ export function HedgemonyMapView() {
             onClose={() => setSelection(null)}
           />
         )}
-        {selection?.type === "hoglets" && selection.ids.length > 1 && (
-          <MultiHogletDetailPanel
-            key="multi-hoglet-panel"
-            hogletIds={selection.ids}
-            onClose={() => setSelection(null)}
-            onSelectOne={(id) => setSelection({ type: "hoglets", ids: [id] })}
-          />
-        )}
+        {selection?.type === "hoglets" &&
+          (selection.ids.length > 1 ||
+            (selection.ids.length === 1 && selection.includeBuilder)) && (
+            <MultiHogletDetailPanel
+              key="multi-hoglet-panel"
+              hogletIds={selection.ids}
+              includeBuilder={selection.includeBuilder}
+              onClose={() => setSelection(null)}
+              onSelectOne={(id) => setSelection({ type: "hoglets", ids: [id] })}
+            />
+          )}
       </AnimatePresence>
       <HedgemonyHotkeyHelper
         open={helperOpen}
@@ -1122,6 +1127,7 @@ export function HedgemonyMapView() {
         onClose={() => setPendingPlacement(null)}
         onCreated={(created) => {
           playSfx("place");
+          playVoice("builder:place_nest", genderForName(BUILDER_NAME));
           builder.startWalk(
             { x: created.mapX, y: created.mapY },
             "build",
