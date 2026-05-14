@@ -19,7 +19,6 @@ import type { CloudTaskClient } from "./cloud-task-client";
 import {
   HogletService,
   MAX_NEST_HOGLETS,
-  MAX_SIGNAL_STAGING_HOGLETS,
   MAX_WILD_HOGLETS,
 } from "./hoglet-service";
 import type { PrGraphService } from "./pr-graph-service";
@@ -90,29 +89,15 @@ function createMockRepo() {
       return null;
     }),
     findAllWild: vi.fn(() =>
-      [...hoglets.values()].filter(
-        (h) => h.nestId === null && h.signalReportId === null && !h.deletedAt,
-      ),
-    ),
-    findAllSignalStaging: vi.fn(() =>
-      [...hoglets.values()].filter(
-        (h) => h.nestId === null && h.signalReportId !== null && !h.deletedAt,
-      ),
+      [...hoglets.values()].filter((h) => h.nestId === null && !h.deletedAt),
     ),
     findAllForNest: vi.fn((nestId: string) =>
       [...hoglets.values()].filter((h) => h.nestId === nestId && !h.deletedAt),
     ),
     countWild: vi.fn(
       () =>
-        [...hoglets.values()].filter(
-          (h) => h.nestId === null && h.signalReportId === null && !h.deletedAt,
-        ).length,
-    ),
-    countSignalStaging: vi.fn(
-      () =>
-        [...hoglets.values()].filter(
-          (h) => h.nestId === null && h.signalReportId !== null && !h.deletedAt,
-        ).length,
+        [...hoglets.values()].filter((h) => h.nestId === null && !h.deletedAt)
+          .length,
     ),
     create: vi.fn((data: CreateHogletData) => {
       const hoglet = makeHoglet({
@@ -274,21 +259,20 @@ describe("HogletService", () => {
       signalReportId: "sr-1",
     });
 
-    expect(service.list({ wildOnly: true })).toHaveLength(2);
-    expect(service.list({ signalStagingOnly: true })).toHaveLength(1);
+    // Wild covers both ad-hoc spawns and signal-backed unrouted hoglets.
+    expect(service.list({ wildOnly: true })).toHaveLength(3);
 
     repo._hoglets.set(
       "nested",
       makeHoglet({ id: "nested", taskId: "task-3", nestId: "nest-A" }),
     );
     expect(service.list({ nestId: "nest-A" })).toHaveLength(1);
-    expect(service.list({ wildOnly: true })).toHaveLength(2);
-    expect(service.list({ signalStagingOnly: true })).toHaveLength(1);
+    expect(service.list({ wildOnly: true })).toHaveLength(3);
   });
 
   it("rejects list calls without scope", () => {
     expect(() => service.list({})).toThrowError(
-      "hoglets.list requires wildOnly, signalStagingOnly, or nestId",
+      "hoglets.list requires wildOnly or nestId",
     );
   });
 
@@ -376,7 +360,7 @@ describe("HogletService", () => {
       });
     });
 
-    it("routes signal-backed hoglets back to signal-staging on release", async () => {
+    it("routes signal-backed hoglets back to wild on release", async () => {
       const signal = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
@@ -394,7 +378,7 @@ describe("HogletService", () => {
         event: { kind: "removed", hogletId: adopted.id },
       });
       expect(listener).toHaveBeenNthCalledWith(2, {
-        bucket: { kind: "signal_staging" },
+        bucket: { kind: "wild" },
         event: { kind: "upsert", hoglet: released },
       });
     });
@@ -419,7 +403,7 @@ describe("HogletService", () => {
   });
 
   describe("recordSignalBacked", () => {
-    it("records a signal-backed hoglet and emits a signal_staging event", async () => {
+    it("records a signal-backed hoglet and emits a wild event when unrouted", async () => {
       const listener = vi.fn();
       service.on(HedgemonyEvent.HogletChanged, listener);
 
@@ -442,7 +426,7 @@ describe("HogletService", () => {
         affinityScore: null,
       });
       expect(listener).toHaveBeenCalledWith({
-        bucket: { kind: "signal_staging" },
+        bucket: { kind: "wild" },
         event: { kind: "upsert", hoglet },
       });
     });
@@ -482,9 +466,9 @@ describe("HogletService", () => {
       });
     });
 
-    it("does not enforce the staging cap when the router places the hoglet in a nest", async () => {
-      // Fill staging to the cap, then route the next one — should succeed.
-      for (let i = 0; i < MAX_SIGNAL_STAGING_HOGLETS; i++) {
+    it("does not enforce the wild cap when the router places the hoglet in a nest", async () => {
+      // Fill wild to the cap, then route the next one — should succeed.
+      for (let i = 0; i < MAX_WILD_HOGLETS; i++) {
         await service.recordSignalBacked({
           taskId: `task-${i}`,
           signalReportId: `sr-${i}`,
@@ -530,8 +514,8 @@ describe("HogletService", () => {
       expect(repo.create).toHaveBeenCalledTimes(1);
     });
 
-    it("enforces the signal staging cap", async () => {
-      for (let i = 0; i < MAX_SIGNAL_STAGING_HOGLETS; i++) {
+    it("enforces the shared wild cap on unrouted signal-backed hoglets", async () => {
+      for (let i = 0; i < MAX_WILD_HOGLETS; i++) {
         await service.recordSignalBacked({
           taskId: `task-${i}`,
           signalReportId: `sr-${i}`,
@@ -543,10 +527,10 @@ describe("HogletService", () => {
           taskId: "task-overflow",
           signalReportId: "sr-overflow",
         }),
-      ).rejects.toThrowError("signal_staging_cap_reached");
+      ).rejects.toThrowError("wild_hoglet_cap_reached");
     });
 
-    it("emits removed from signal_staging when adopting a signal-backed hoglet", async () => {
+    it("emits removed from wild when adopting a signal-backed hoglet", async () => {
       const signal = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
@@ -558,7 +542,7 @@ describe("HogletService", () => {
 
       expect(adopted.nestId).toBe("nest-A");
       expect(listener).toHaveBeenNthCalledWith(1, {
-        bucket: { kind: "signal_staging" },
+        bucket: { kind: "wild" },
         event: { kind: "removed", hogletId: signal.id },
       });
       expect(listener).toHaveBeenNthCalledWith(2, {
@@ -612,7 +596,7 @@ describe("HogletService", () => {
   });
 
   describe("dismissSignal", () => {
-    it("soft-deletes a signal-backed hoglet and emits removal", async () => {
+    it("soft-deletes a signal-backed hoglet and emits removal from wild", async () => {
       const signal = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
@@ -624,7 +608,7 @@ describe("HogletService", () => {
 
       expect(repo.softDelete).toHaveBeenCalledWith(signal.id);
       expect(listener).toHaveBeenCalledWith({
-        bucket: { kind: "signal_staging" },
+        bucket: { kind: "wild" },
         event: { kind: "removed", hogletId: signal.id },
       });
     });
@@ -659,7 +643,7 @@ describe("HogletService", () => {
       });
     });
 
-    it("soft-deletes a signal-backed staging hoglet and emits from signal_staging", async () => {
+    it("soft-deletes an unrouted signal-backed hoglet and emits from wild", async () => {
       const signal = await service.recordSignalBacked({
         taskId: "task-2",
         signalReportId: "sr-2",
@@ -671,7 +655,7 @@ describe("HogletService", () => {
 
       expect(repo.softDelete).toHaveBeenCalledWith(signal.id);
       expect(listener).toHaveBeenCalledWith({
-        bucket: { kind: "signal_staging" },
+        bucket: { kind: "wild" },
         event: { kind: "removed", hogletId: signal.id },
       });
     });

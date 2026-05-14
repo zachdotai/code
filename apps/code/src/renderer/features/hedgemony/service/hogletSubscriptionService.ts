@@ -3,11 +3,7 @@ import type { HogletWatchEvent } from "@main/services/hedgemony/schemas";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
-import {
-  SIGNAL_STAGING_BUCKET,
-  useHogletStore,
-  WILD_BUCKET,
-} from "../stores/hogletStore";
+import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
 import { wildHogletPosition } from "../utils/hogletPositions";
 
 const log = logger.scope("hoglet-subscription-service");
@@ -105,44 +101,6 @@ export function initializeWildHogletStore(): () => void {
       pollAllSummaries();
     })
     .catch((error) => log.error("Failed to load wild hoglets", { error }));
-
-  return () => {
-    if (disposed) return;
-    disposed = true;
-    watch.unsubscribe();
-    releaseTaskSummaryPolling();
-  };
-}
-
-/**
- * Bootstraps the signal-staging hoglet bucket: Inbox-backed signal hoglets
- * with `nest_id = null` and `signal_report_id` set. Mirrors
- * initializeWildHogletStore but scoped to the signal-staging bucket so the
- * holding panel can render them as a separate section.
- */
-export function initializeSignalStagingHogletStore(): () => void {
-  let disposed = false;
-  acquireTaskSummaryPolling();
-
-  const watch: WatchHandle = trpcClient.hedgemony.hoglets.watch.subscribe(
-    { kind: "signal_staging" },
-    {
-      onData: (event) => applyWatchEvent(SIGNAL_STAGING_BUCKET, event),
-      onError: (error) =>
-        log.error("signal_staging hoglet watch subscription error", { error }),
-    },
-  );
-
-  trpcClient.hedgemony.hoglets.list
-    .query({ signalStagingOnly: true })
-    .then((hoglets) => {
-      if (disposed) return;
-      useHogletStore.getState().setBucket(SIGNAL_STAGING_BUCKET, hoglets);
-      pollAllSummaries();
-    })
-    .catch((error) =>
-      log.error("Failed to load signal-staging hoglets", { error }),
-    );
 
   return () => {
     if (disposed) return;

@@ -1,9 +1,9 @@
 /**
  * Shared status / PR-state vocabulary for the hoglet UI surfaces.
- * BroodHoglet (in-nest sprite) and WildHogletCard (holding-panel list item)
- * derive their colors, labels, and animations from these tables. The cards
- * render differently enough that we don't share a component, but the source
- * of truth for "what does each status mean visually" lives here.
+ * BroodHoglet (in-nest sprite) and WildHoglet (on-map sprite) derive their
+ * colors, labels, and animations from these tables. The two sprites render
+ * differently enough that we don't share a component, but the source of
+ * truth for "what does each status mean visually" lives here.
  */
 
 import type { HedgehogAnimation } from "./AnimatedHedgehog";

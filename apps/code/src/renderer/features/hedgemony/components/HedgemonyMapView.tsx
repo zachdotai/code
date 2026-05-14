@@ -19,6 +19,7 @@ import {
   type HogletDragTarget,
   handleHogletDrop,
 } from "../service/hogletMutations";
+import { initializeWildHogletStore } from "../service/hogletSubscriptionService";
 import { moveNest } from "../service/nestMutations";
 import { initializeNestStore } from "../service/nestSubscriptionService";
 import { initializePrGraphForNest } from "../service/prGraphSubscriptionService";
@@ -40,15 +41,14 @@ import { applyHogletVisualPositions } from "../utils/hogletVisualPositions";
 import { findPath, type Obstacle } from "../utils/pathfinding";
 import {
   BUILDER_OBSTACLE_RADIUS,
-  hogletObstacles,
   HOGLET_RADIUS,
+  hogletObstacles,
   worldObstacles,
 } from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HEDGEHOUSE_MAP_X, HEDGEHOUSE_MAP_Y } from "./HedgehouseSprite";
-import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import { HedgemonyHotkeyHelper } from "./HedgemonyHotkeyHelper";
 import {
   HedgemonyMapSurface,
@@ -105,13 +105,6 @@ export function HedgemonyMapView() {
   const setOsFullscreen = useHedgemonyViewStore((s) => s.setOsFullscreen);
   const setView = useHedgemonyViewStore((s) => s.setView);
   const saveBookmark = useHedgemonyViewStore((s) => s.saveBookmark);
-  const holdingPanel = useHedgemonyViewStore((s) => s.holdingPanel);
-  const setHoldingPanelOpen = useHedgemonyViewStore(
-    (s) => s.setHoldingPanelOpen,
-  );
-  const toggleHoldingPanelCollapsed = useHedgemonyViewStore(
-    (s) => s.toggleHoldingPanelCollapsed,
-  );
   const toggleBgmMute = useBgmStore((s) => s.toggleMute);
   const toggleSfxMute = useSfxStore((s) => s.toggleMute);
   const [helperOpen, setHelperOpen] = useState(false);
@@ -124,6 +117,13 @@ export function HedgemonyMapView() {
   // Mirrors Signals Inbox reports into Hedgemony as signal-backed hoglets
   // while the map view is mounted. Tears down with the view.
   useSignalIngestion();
+
+  // Subscribe to the wild bucket while the map is mounted. Both ad-hoc
+  // operator spawns and unrouted signal-backed hoglets live here, and the
+  // wild flock renders directly on the map.
+  useEffect(() => {
+    return initializeWildHogletStore();
+  }, []);
 
   useEffect(() => {
     return initializeNestStore();
@@ -326,21 +326,6 @@ export function HedgemonyMapView() {
   useHotkeys("shift+m", () => toggleSfxMute(), { preventDefault: true }, [
     toggleSfxMute,
   ]);
-
-  // Holding panel toggle. `T` collapses/expands inline; if closed entirely,
-  // open it first so a single press always produces a visible change.
-  useHotkeys(
-    "t",
-    () => {
-      if (!holdingPanel.open) {
-        setHoldingPanelOpen(true);
-        return;
-      }
-      toggleHoldingPanelCollapsed();
-    },
-    mapHotkeyOptions,
-    [holdingPanel.open, setHoldingPanelOpen, toggleHoldingPanelCollapsed],
-  );
 
   // RTS-style keyboard selection. Without this the map has no way to pick a
   // unit without a mouse. F1/F2 grab the two fixed-position structures; F3
@@ -855,16 +840,6 @@ export function HedgemonyMapView() {
     setMode({ kind: "relocatingNest", nestId: id });
   };
 
-  const handleDragStart = useCallback<DragDropEvents["dragstart"]>((event) => {
-    const source = event.operation.source?.data;
-    if (source?.type === "hoglet" && typeof source.sourceNestId === "string") {
-      // Brood hoglet drag — make the release target visible if hidden.
-      const view = useHedgemonyViewStore.getState();
-      if (!view.holdingPanel.open) view.setHoldingPanelOpen(true);
-      if (view.holdingPanel.collapsed) view.toggleHoldingPanelCollapsed();
-    }
-  }, []);
-
   const handleDragEnd = useCallback<DragDropEvents["dragend"]>((event) => {
     if (event.canceled) return;
     const source = event.operation.source?.data as HogletDragSource | undefined;
@@ -984,7 +959,6 @@ export function HedgemonyMapView() {
         onOpenChange={setHelperOpen}
         activeContext={activeHotkeyContext}
       />
-      <HedgemonyHoldingPanel />
       <AnimatePresence>
         {spawnHogletOpen && (
           <SpawnHogletPanel
@@ -1000,7 +974,6 @@ export function HedgemonyMapView() {
 
   return (
     <DragDropProvider
-      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       sensors={[
         {

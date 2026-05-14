@@ -9,13 +9,6 @@ function clampZoom(value: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
 }
 
-interface HoldingPanelState {
-  open: boolean;
-  collapsed: boolean;
-  x: number;
-  y: number;
-}
-
 export interface CameraView {
   panX: number;
   panY: number;
@@ -32,7 +25,6 @@ interface HedgemonyViewState {
   zoom: number;
   fullscreen: boolean;
   osFullscreen: boolean;
-  holdingPanel: HoldingPanelState;
   bookmarks: BookmarkMap;
 }
 
@@ -43,21 +35,11 @@ interface HedgemonyViewActions {
   resetView: () => void;
   setFullscreen: (value: boolean) => void;
   setOsFullscreen: (value: boolean) => void;
-  setHoldingPanelOpen: (open: boolean) => void;
-  toggleHoldingPanelCollapsed: () => void;
-  setHoldingPanelPosition: (x: number, y: number) => void;
   saveBookmark: (slot: BookmarkSlot) => void;
   clearBookmark: (slot: BookmarkSlot) => void;
 }
 
 type HedgemonyViewStore = HedgemonyViewState & HedgemonyViewActions;
-
-const DEFAULT_HOLDING_PANEL: HoldingPanelState = {
-  open: true,
-  collapsed: false,
-  x: -1, // sentinel: position on first mount relative to viewport
-  y: -1,
-};
 
 const DEFAULT_VIEW: Omit<
   HedgemonyViewState,
@@ -66,7 +48,6 @@ const DEFAULT_VIEW: Omit<
   panX: 0,
   panY: 0,
   zoom: 1,
-  holdingPanel: DEFAULT_HOLDING_PANEL,
 };
 
 export const BUILDER_NAME = "James";
@@ -84,19 +65,6 @@ export const useHedgemonyViewStore = create<HedgemonyViewStore>()(
       resetView: () => set({ ...DEFAULT_VIEW }),
       setFullscreen: (value) => set({ fullscreen: value }),
       setOsFullscreen: (value) => set({ osFullscreen: value }),
-      setHoldingPanelOpen: (open) =>
-        set((state) => ({ holdingPanel: { ...state.holdingPanel, open } })),
-      toggleHoldingPanelCollapsed: () =>
-        set((state) => ({
-          holdingPanel: {
-            ...state.holdingPanel,
-            collapsed: !state.holdingPanel.collapsed,
-          },
-        })),
-      setHoldingPanelPosition: (x, y) =>
-        set((state) => ({
-          holdingPanel: { ...state.holdingPanel, x, y },
-        })),
       saveBookmark: (slot) =>
         set((state) => ({
           bookmarks: {
@@ -120,7 +88,6 @@ export const useHedgemonyViewStore = create<HedgemonyViewStore>()(
         panX: state.panX,
         panY: state.panY,
         zoom: state.zoom,
-        holdingPanel: state.holdingPanel,
         bookmarks: state.bookmarks,
       }),
     },

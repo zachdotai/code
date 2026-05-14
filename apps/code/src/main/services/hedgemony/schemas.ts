@@ -353,7 +353,6 @@ export type RetireHogletInput = z.infer<typeof retireHogletInput>;
 
 export const listHogletsInput = z.object({
   wildOnly: z.boolean().optional(),
-  signalStagingOnly: z.boolean().optional(),
   nestId: z.string().optional(),
 });
 export type ListHogletsInput = z.infer<typeof listHogletsInput>;
@@ -362,7 +361,6 @@ export const listHogletsOutput = z.array(hoglet);
 
 export const hogletWatchScope = z.union([
   z.object({ kind: z.literal("wild") }),
-  z.object({ kind: z.literal("signal_staging") }),
   z.object({ kind: z.literal("nest"), nestId: z.string() }),
 ]);
 export type HogletWatchScope = z.infer<typeof hogletWatchScope>;
@@ -545,20 +543,18 @@ export interface NestChangedEvent {
 }
 
 /**
- * Bucket partition for hoglet watch events. Wild = `nest_id IS NULL AND
- * signal_report_id IS NULL`; signal_staging = `nest_id IS NULL AND
- * signal_report_id IS NOT NULL`; nest = adopted into a specific nest. The
- * router filters subscriptions by matching the bucket against the watch scope.
+ * Bucket partition for hoglet watch events. Wild = `nest_id IS NULL`
+ * (regardless of `signal_report_id`); nest = adopted into a specific nest.
+ * The router filters subscriptions by matching the bucket against the watch
+ * scope. Signal-backed hoglets that the affinity router doesn't auto-route
+ * land in `wild` alongside operator-spawned ad-hoc work.
  */
-export type HogletBucket =
-  | { kind: "wild" }
-  | { kind: "signal_staging" }
-  | { kind: "nest"; nestId: string };
+export type HogletBucket = { kind: "wild" } | { kind: "nest"; nestId: string };
 
 /**
  * Internal service-bus event for hoglet roster changes. `bucket` identifies
  * the destination/origin partition so the tRPC router can route to the
- * matching watcher (`wild` / `signal_staging` / `nest:<id>`).
+ * matching watcher (`wild` / `nest:<id>`).
  */
 export interface HogletChangedEvent {
   bucket: HogletBucket;

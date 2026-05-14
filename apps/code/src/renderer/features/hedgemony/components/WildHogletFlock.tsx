@@ -12,10 +12,14 @@ import { WildHoglet } from "./WildHoglet";
  * Wild hoglets live in the WILD_BUCKET with no nest. We give each one a
  * deterministic world position derived from its id, placed in a small ring
  * just outside the hedgehouse footprint so they read as having walked out of
- * the town hall (the hedgehouse sits at the map origin).
+ * the town hall (the hedgehouse sits at the map origin). Signal-backed
+ * hoglets that the affinity router didn't auto-route share this bucket and
+ * appear in the flock alongside operator-spawned ad-hoc work — the only
+ * visible difference is the robo sprite the WildHoglet component picks when
+ * `signalReportId` is set.
  *
- * Subscription to the wild bucket is owned by HedgemonyHoldingPanel (which
- * always mounts) — we just read from the store here.
+ * Subscription to the wild bucket is owned by HedgemonyMapView — we just
+ * read from the store here.
  */
 
 interface WildHogletFlockProps {

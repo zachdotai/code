@@ -9,7 +9,7 @@ import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useEffect, useRef } from "react";
-import { SIGNAL_STAGING_BUCKET, useHogletStore } from "../stores/hogletStore";
+import { useHogletStore } from "../stores/hogletStore";
 import { buildSignalPrompt } from "../utils/signalPrompt";
 
 const log = logger.scope("signal-ingestion");
@@ -59,7 +59,7 @@ export function useSignalIngestion(): void {
 
   // Tracks reports currently mid-ingestion so a fast second refetch tick
   // doesn't double-spawn before the first round-trip lands. A successful
-  // ingestion adds the row to `byBucket[SIGNAL_STAGING_BUCKET]` via the watch
+  // ingestion adds the row to `byBucket[WILD_BUCKET]` via the watch
   // subscription, which is then the durable source of truth.
   const inFlight = useRef<Set<string>>(new Set());
 
@@ -74,11 +74,17 @@ async function ingestNewReports(
   reports: ReadonlyArray<SignalReport>,
   inFlight: Set<string>,
 ): Promise<void> {
-  const existingSignalIds = new Set(
-    (useHogletStore.getState().byBucket[SIGNAL_STAGING_BUCKET] ?? [])
-      .map((h) => h.signalReportId)
-      .filter((id): id is string => id !== null),
-  );
+  // Signal-backed hoglets without a nest live in the wild bucket alongside
+  // ad-hoc operator spawns. Auto-routed hoglets live inside their nest's
+  // bucket. Walk every bucket so we don't re-ingest reports that already
+  // have a hoglet anywhere in the system.
+  const buckets = useHogletStore.getState().byBucket;
+  const existingSignalIds = new Set<string>();
+  for (const bucket of Object.values(buckets)) {
+    for (const h of bucket) {
+      if (h.signalReportId !== null) existingSignalIds.add(h.signalReportId);
+    }
+  }
 
   const candidates = reports.filter((r) => {
     if (existingSignalIds.has(r.id)) return false;

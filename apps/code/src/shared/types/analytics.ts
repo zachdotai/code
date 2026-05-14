@@ -463,9 +463,9 @@ export interface HedgemonyHogletSpawnedProperties {
 }
 
 export interface HedgemonyHogletAdoptedProperties {
-  // Slice 3: wild → nest. Slice 4 adds signal-staging → nest.
-  // "nest" added in a future slice when nest → nest transfer ships
-  // alongside PR dep graph migration.
+  // `signal` is a wild hoglet with `signalReportId` set; `wild` is an
+  // operator-spawned ad-hoc hoglet. "nest" added in a future slice when
+  // nest → nest transfer ships alongside PR dep graph migration.
   source: "wild" | "signal";
 }
 
@@ -482,7 +482,7 @@ export interface HedgemonyHogletDismissedProperties {
 }
 
 export interface HedgemonyHogletRetiredProperties {
-  source: "wild" | "signal_staging" | "nest";
+  source: "wild" | "signal" | "nest";
 }
 
 export interface HedgemonyFeedbackRoutedProperties {

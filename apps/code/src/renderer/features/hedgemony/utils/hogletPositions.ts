@@ -17,8 +17,7 @@ const WILD_RING_THICKNESS = 90;
 // Brood hoglets sit in a ring around their nest. This is deliberately derived
 // from the shared obstacle radii so the static layout and right-click movement
 // agree on where "outside the nest" begins.
-const BROOD_RADIUS =
-  NEST_OBSTACLE_RADIUS + HOGLET_RADIUS + OBSTACLE_CLEARANCE;
+const BROOD_RADIUS = NEST_OBSTACLE_RADIUS + HOGLET_RADIUS + OBSTACLE_CLEARANCE;
 
 function hashToUnit(id: string, seed: number): number {
   let h = 2166136261 ^ seed;
@@ -109,8 +108,8 @@ export function resolveHogletLayoutCollisions(
       for (let j = i + 1; j < resolved.length; j++) {
         const a = resolved[i];
         const b = resolved[j];
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
         let dist = Math.hypot(dx, dy);
         let ux: number;
         let uy: number;
@@ -156,8 +155,8 @@ export function resolveHogletLayoutCollisions(
  * Compute the on-map world position for every hoglet currently rendered on the
  * surface — wild flock + nest broods. Mirrors the layout logic in
  * `WildHogletFlock` and `NestBroodCluster` so callers (e.g. box-select) can
- * hit-test against the same coordinates the user sees. Signal-staging hoglets
- * live in the holding panel, not on the map, so they're excluded.
+ * hit-test against the same coordinates the user sees. Signal-backed wild
+ * hoglets are included; they share the wild bucket with ad-hoc spawns.
  */
 export function collectHogletWorldPositions(
   nests: Nest[],

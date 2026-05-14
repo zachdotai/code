@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   findPath,
-  snapPointOutsideObstacles,
   type Obstacle,
+  snapPointOutsideObstacles,
   type Vec2,
 } from "./pathfinding";
 
@@ -197,7 +197,6 @@ describe("findPath", () => {
     );
   });
 
-
   it("routes around multiple obstacles that both block the straight line", () => {
     const from = { x: -300, y: 0 };
     const to = { x: 300, y: 0 };
@@ -225,11 +224,7 @@ describe("findPath", () => {
   it("snaps a resting point outside an inflated obstacle", () => {
     const obstacle: Obstacle = { x: 0, y: 0, radius: 86 };
 
-    const point = snapPointOutsideObstacles(
-      { x: 20, y: 0 },
-      [obstacle],
-      36,
-    );
+    const point = snapPointOutsideObstacles({ x: 20, y: 0 }, [obstacle], 36);
 
     expect(distance(point, obstacle)).toBeGreaterThanOrEqual(122);
   });

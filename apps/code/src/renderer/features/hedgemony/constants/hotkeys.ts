@@ -203,12 +203,6 @@ export const HEDGEMONY_HOTKEYS: HedgemonyHotkey[] = [
 
   // Panels / helper
   {
-    id: "panels-holding",
-    keys: "t",
-    description: "Toggle holding panel",
-    context: "panels",
-  },
-  {
     id: "panels-helper",
     keys: "shift+/",
     description: "Show hedgemony shortcuts",

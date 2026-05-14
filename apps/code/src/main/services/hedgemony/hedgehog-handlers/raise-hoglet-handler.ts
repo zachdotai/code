@@ -61,15 +61,13 @@ export const raiseHogletHandler: HedgehogToolHandler = {
     try {
       const runtimeAdapter =
         ctx.loadout.runtimeAdapter ?? DEFAULT_HOGLET_RUNTIME_ADAPTER;
-      const model =
-        ctx.loadout.model ?? defaultModelForAdapter(runtimeAdapter);
+      const model = ctx.loadout.model ?? defaultModelForAdapter(runtimeAdapter);
       const reasoningEffort = clampReasoningEffortForAdapter(
         ctx.loadout.reasoningEffort ??
           defaultReasoningEffortForAdapter(runtimeAdapter),
         runtimeAdapter,
       );
-      const environment =
-        ctx.loadout.environment ?? DEFAULT_HOGLET_ENVIRONMENT;
+      const environment = ctx.loadout.environment ?? DEFAULT_HOGLET_ENVIRONMENT;
       const run = await deps.cloudTasks.createTaskRun(entry.hoglet.taskId, {
         environment,
         mode: "background",

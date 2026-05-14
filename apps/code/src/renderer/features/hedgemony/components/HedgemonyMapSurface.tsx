@@ -328,9 +328,9 @@ function HedgemonyMapSurfaceImpl(
 
   const handleResetView = useCallback(() => {
     animateToView(0, 0, 1);
-    // resetView() also resets holding-panel/bookmark sentinel state that
-    // animateToView doesn't touch. Run it alongside so the rest stays in sync;
-    // the pan/zoom store fields will get re-set by animateToView's commit.
+    // resetView() also resets bookmark sentinel state that animateToView
+    // doesn't touch. Run it alongside so the rest stays in sync; the
+    // pan/zoom store fields will get re-set by animateToView's commit.
     resetView();
   }, [animateToView, resetView]);
 

@@ -2,15 +2,15 @@ import type { Hoglet, Nest } from "@main/services/hedgemony/schemas";
 import { describe, expect, it } from "vitest";
 import { WILD_BUCKET } from "../stores/hogletStore";
 import {
-  HOGLET_RADIUS,
-  NEST_OBSTACLE_RADIUS,
-  worldObstacles,
-} from "./worldObstacles";
-import {
   avoidHogletObstacleCollision,
   broodHogletPosition,
   collectHogletWorldPositions,
 } from "./hogletPositions";
+import {
+  HOGLET_RADIUS,
+  NEST_OBSTACLE_RADIUS,
+  worldObstacles,
+} from "./worldObstacles";
 
 function makeNest(overrides: Partial<Nest> = {}): Nest {
   return {
@@ -24,6 +24,7 @@ function makeNest(overrides: Partial<Nest> = {}): Nest {
     health: overrides.health ?? "ok",
     targetMetricId: overrides.targetMetricId ?? null,
     loadoutJson: overrides.loadoutJson ?? null,
+    primaryRepository: overrides.primaryRepository ?? null,
     createdAt: overrides.createdAt ?? "2026-01-01T00:00:00Z",
     updatedAt: overrides.updatedAt ?? "2026-01-01T00:00:00Z",
   };
@@ -92,9 +93,9 @@ describe("hogletPositions", () => {
 
     expect(pos).toBeDefined();
     if (!pos) throw new Error("expected position");
-    expect(distance(pos, { x: nest.mapX, y: nest.mapY })).toBeGreaterThanOrEqual(
-      NEST_OBSTACLE_RADIUS + HOGLET_RADIUS,
-    );
+    expect(
+      distance(pos, { x: nest.mapX, y: nest.mapY }),
+    ).toBeGreaterThanOrEqual(NEST_OBSTACLE_RADIUS + HOGLET_RADIUS);
   });
 
   it("separates hoglets that would otherwise share a resting point", () => {

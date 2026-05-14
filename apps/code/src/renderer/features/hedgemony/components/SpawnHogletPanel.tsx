@@ -369,7 +369,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
         track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED, { source: "adhoc" });
       } catch (error) {
         log.error("Failed to register wild hoglet", { error, taskId: task.id });
-        toast.error("Hoglet created but couldn't join the holding area", {
+        toast.error("Hoglet created but couldn't join the wild flock", {
           description:
             error instanceof Error ? error.message : "Please try again.",
         });
@@ -541,7 +541,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
         <CommandConsole.Header
           eyebrow={t("Hedgehouse")}
           title={t("Send out a wild hog")}
-          subtitle="Dispatched from the town hall of the wilds — lands in the holding area, no nest required."
+          subtitle="Dispatched from the town hall of the wilds — joins the map flock, no nest required."
           onClose={handleClose}
           closeDisabled={isCreatingTask}
         />

@@ -40,28 +40,15 @@ function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
 
 function createMockHogletService(hoglets: Hoglet[]): HogletService {
   return {
-    list: vi.fn(
-      (input: {
-        wildOnly?: boolean;
-        signalStagingOnly?: boolean;
-        nestId?: string;
-      }) => {
-        if (input.wildOnly) {
-          return hoglets.filter(
-            (h) => h.nestId === null && h.signalReportId === null,
-          );
-        }
-        if (input.signalStagingOnly) {
-          return hoglets.filter(
-            (h) => h.nestId === null && h.signalReportId !== null,
-          );
-        }
-        if (input.nestId) {
-          return hoglets.filter((h) => h.nestId === input.nestId);
-        }
-        return [];
-      },
-    ),
+    list: vi.fn((input: { wildOnly?: boolean; nestId?: string }) => {
+      if (input.wildOnly) {
+        return hoglets.filter((h) => h.nestId === null);
+      }
+      if (input.nestId) {
+        return hoglets.filter((h) => h.nestId === input.nestId);
+      }
+      return [];
+    }),
   } as unknown as HogletService;
 }
 

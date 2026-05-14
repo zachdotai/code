@@ -23,16 +23,10 @@ export interface UpdateHogletData {
 
 const byId = (id: string) => eq(hedgemonyHoglets.id, id);
 const notDeleted = isNull(hedgemonyHoglets.deletedAt);
-const isWild = and(
-  isNull(hedgemonyHoglets.nestId),
-  isNull(hedgemonyHoglets.signalReportId),
-  notDeleted,
-);
-const isSignalStaging = and(
-  isNull(hedgemonyHoglets.nestId),
-  isNotNull(hedgemonyHoglets.signalReportId),
-  notDeleted,
-);
+// "Wild" is now every non-nested, non-deleted hoglet — both operator-spawned
+// ad-hoc work and signal-backed hoglets the affinity router didn't auto-route.
+// They all share one wild bucket and render directly on the map.
+const isWild = and(isNull(hedgemonyHoglets.nestId), notDeleted);
 const now = () => new Date().toISOString();
 
 @injectable()
@@ -76,10 +70,6 @@ export class HogletRepository {
     return this.db.select().from(hedgemonyHoglets).where(isWild).all();
   }
 
-  findAllSignalStaging(): Hoglet[] {
-    return this.db.select().from(hedgemonyHoglets).where(isSignalStaging).all();
-  }
-
   findAllForNest(nestId: string): Hoglet[] {
     return this.db
       .select()
@@ -93,15 +83,6 @@ export class HogletRepository {
       .select({ count: sql<number>`count(*)` })
       .from(hedgemonyHoglets)
       .where(isWild)
-      .get();
-    return row?.count ?? 0;
-  }
-
-  countSignalStaging(): number {
-    const row = this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(hedgemonyHoglets)
-      .where(isSignalStaging)
       .get();
     return row?.count ?? 0;
   }

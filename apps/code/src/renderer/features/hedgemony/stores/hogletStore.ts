@@ -3,7 +3,6 @@ import type { Schemas } from "@renderer/api/generated";
 import { create } from "zustand";
 
 export const WILD_BUCKET = "wild";
-export const SIGNAL_STAGING_BUCKET = "signal_staging";
 
 export interface DyingHogletEntry {
   hogletId: string;
@@ -96,12 +95,6 @@ export const selectWildHoglets = (state: HogletStore): Hoglet[] =>
 
 export const selectWildLoaded = (state: HogletStore): boolean =>
   state.loaded[WILD_BUCKET] ?? false;
-
-export const selectSignalStagingHoglets = (state: HogletStore): Hoglet[] =>
-  state.byBucket[SIGNAL_STAGING_BUCKET] ?? [];
-
-export const selectSignalStagingLoaded = (state: HogletStore): boolean =>
-  state.loaded[SIGNAL_STAGING_BUCKET] ?? false;
 
 export const selectNestHoglets =
   (nestId: string) =>

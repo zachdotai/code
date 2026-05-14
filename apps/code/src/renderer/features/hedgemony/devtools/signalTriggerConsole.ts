@@ -107,19 +107,20 @@ const listTasksCommand: ListTasksCommand = async () => {
 /**
  * Synthesises a signal-backed hoglet without going through the real
  * pipeline. Takes an existing cloud-task id, mints a stub `SignalReport`,
- * seeds the inbox TanStack cache so `SignalHogletCard` can render title +
- * summary, then calls the `recordSignalBacked` mutation directly. The
- * watch subscription pushes the new hoglet into `useHogletStore`, where
- * it appears in the signal-staging bucket on the map.
+ * seeds the inbox TanStack cache so on-map sprites and detail panels can
+ * resolve title + summary, then calls the `recordSignalBacked` mutation
+ * directly. The watch subscription pushes the new hoglet into
+ * `useHogletStore`, where it appears as a robot wild hoglet on the map
+ * (or inside a nest if the affinity router auto-routes it).
  *
  * Skips:
  *   - The 30s ingestion poll (instant)
  *   - The artefact fetch (synthetic)
  *   - `taskService.createTask` (re-uses the task you pass in)
  *
- * Useful for verifying UI rendering / drag / dismiss without waiting for
- * the real signal pipeline. Pass any existing cloud task id — get a list
- * via `window.__hedgemonyListTasks()` in the console.
+ * Useful for verifying UI rendering / drag without waiting for the real
+ * signal pipeline. Pass any existing cloud task id — get a list via
+ * `window.__hedgemonyListTasks()` in the console.
  */
 const stubSignalCommand: SignalStubCommand = async (taskId, options = {}) => {
   if (!taskId || typeof taskId !== "string") {

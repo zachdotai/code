@@ -33,7 +33,6 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import {
-  SIGNAL_STAGING_BUCKET,
   selectTaskSummary,
   useHogletStore,
   WILD_BUCKET,
@@ -45,14 +44,12 @@ import { STATUS_BADGE_COLOR, type TaskStatus } from "./hogletStatus";
 const log = logger.scope("hoglet-detail-panel");
 
 function bucketKeyForHoglet(h: Hoglet): string {
-  if (h.nestId !== null) return h.nestId;
-  if (h.signalReportId !== null) return SIGNAL_STAGING_BUCKET;
-  return WILD_BUCKET;
+  return h.nestId ?? WILD_BUCKET;
 }
 
-function retireSourceForHoglet(h: Hoglet): "wild" | "signal_staging" | "nest" {
+function retireSourceForHoglet(h: Hoglet): "wild" | "signal" | "nest" {
   if (h.nestId !== null) return "nest";
-  if (h.signalReportId !== null) return "signal_staging";
+  if (h.signalReportId !== null) return "signal";
   return "wild";
 }
 

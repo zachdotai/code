@@ -218,11 +218,11 @@ export const hedgemonyRouter = router({
       .query(({ input }) => getHogletService().list(input)),
 
     /**
-     * Per-scope watch. The floating holding panel subscribes with
-     * `kind: "wild"` for ad-hoc hoglets, `kind: "signal_staging"` for
-     * Inbox-backed signal hoglets, and each nest's brood cluster subscribes
-     * with `kind: "nest", nestId`. The service emits with a `bucket`
-     * discriminator that the router matches against the watch scope.
+     * Per-scope watch. The map subscribes with `kind: "wild"` for every
+     * non-nested hoglet (ad-hoc operator spawns + signal-backed hoglets that
+     * the affinity router didn't route into a nest), and each nest's brood
+     * cluster subscribes with `kind: "nest", nestId`. The service emits with
+     * a `bucket` discriminator that the router matches against the scope.
      */
     watch: publicProcedure
       .input(hogletWatchScope)
@@ -234,11 +234,6 @@ export const hedgemonyRouter = router({
         for await (const data of iterable) {
           const { bucket } = data;
           if (input.kind === "wild" && bucket.kind === "wild") {
-            yield data.event;
-          } else if (
-            input.kind === "signal_staging" &&
-            bucket.kind === "signal_staging"
-          ) {
             yield data.event;
           } else if (
             input.kind === "nest" &&
