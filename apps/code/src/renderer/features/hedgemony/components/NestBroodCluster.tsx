@@ -3,7 +3,11 @@ import { useEffect, useMemo } from "react";
 import { initializeNestHogletStore } from "../service/hogletSubscriptionService";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectNestHoglets, useHogletStore } from "../stores/hogletStore";
-import { broodHogletPosition } from "../utils/hogletPositions";
+import { selectNests, useNestStore } from "../stores/nestStore";
+import {
+  avoidHogletObstacleCollision,
+  broodHogletPosition,
+} from "../utils/hogletPositions";
 import { BroodHoglet } from "./BroodHoglet";
 
 interface NestBroodClusterProps {
@@ -19,6 +23,7 @@ export function NestBroodCluster({
 }: NestBroodClusterProps) {
   const hoglets = useHogletStore(selectNestHoglets(nest.id));
   const positionOverrides = useHogletPositionStore((s) => s.positions);
+  const nests = useNestStore(selectNests);
 
   useEffect(() => {
     return initializeNestHogletStore(nest.id);
@@ -39,12 +44,14 @@ export function NestBroodCluster({
     <>
       {ordered.map((hoglet, index) => {
         const override = positionOverrides[hoglet.id];
-        const position =
+        const position = avoidHogletObstacleCollision(
           override ??
-          broodHogletPosition(index, ordered.length, {
-            x: nest.mapX,
-            y: nest.mapY,
-          });
+            broodHogletPosition(index, ordered.length, {
+              x: nest.mapX,
+              y: nest.mapY,
+            }),
+          nests,
+        );
         return (
           <BroodHoglet
             key={hoglet.id}

@@ -75,6 +75,14 @@ function pushOutOf(p: Vec2, infl: InflatedObstacle[]): Vec2 {
   return current;
 }
 
+export function snapPointOutsideObstacles(
+  point: Vec2,
+  obstacles: Obstacle[],
+  agentRadius: number = DEFAULT_AGENT_RADIUS,
+): Vec2 {
+  return pushOutOf(point, inflate(obstacles, agentRadius));
+}
+
 // Walks from `to` toward `from`, returning the first point that's outside
 // every inflated obstacle. Used so a click that lands inside a building snaps
 // to the perimeter on the side the builder is approaching from — instead of

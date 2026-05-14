@@ -1,7 +1,11 @@
 import { useMemo } from "react";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectWildHoglets, useHogletStore } from "../stores/hogletStore";
-import { wildHogletPosition } from "../utils/hogletPositions";
+import { selectNests, useNestStore } from "../stores/nestStore";
+import {
+  avoidHogletObstacleCollision,
+  wildHogletPosition,
+} from "../utils/hogletPositions";
 import { WildHoglet } from "./WildHoglet";
 
 /**
@@ -25,6 +29,7 @@ export function WildHogletFlock({
 }: WildHogletFlockProps) {
   const hoglets = useHogletStore(selectWildHoglets);
   const positionOverrides = useHogletPositionStore((s) => s.positions);
+  const nests = useNestStore(selectNests);
 
   const ordered = useMemo(
     () =>
@@ -41,7 +46,10 @@ export function WildHogletFlock({
     <>
       {ordered.map((hoglet, index) => {
         const override = positionOverrides[hoglet.id];
-        const { x, y } = override ?? wildHogletPosition(hoglet.id);
+        const { x, y } = avoidHogletObstacleCollision(
+          override ?? wildHogletPosition(hoglet.id),
+          nests,
+        );
         return (
           <WildHoglet
             key={hoglet.id}

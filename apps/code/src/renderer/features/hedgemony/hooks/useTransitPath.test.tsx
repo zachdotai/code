@@ -2,7 +2,7 @@ import type { Nest } from "@main/services/hedgemony/schemas";
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useNestStore } from "../stores/nestStore";
-import { NEST_OBSTACLE_RADIUS } from "../utils/worldObstacles";
+import { HOGLET_RADIUS, NEST_OBSTACLE_RADIUS } from "../utils/worldObstacles";
 import { useTransitPath } from "./useTransitPath";
 
 function makeNest(overrides: Partial<Nest> & { id: string }): Nest {
@@ -47,7 +47,8 @@ describe("useTransitPath", () => {
 
   it("returns undefined when the target hasn't moved", () => {
     const { result, rerender } = renderHook(
-      ({ x, y }: { x: number; y: number }) => useTransitPath(x, y, 24, true),
+      ({ x, y }: { x: number; y: number }) =>
+        useTransitPath(x, y, HOGLET_RADIUS, true),
       { initialProps: { x: 50, y: 50 } },
     );
     act(() => rerender({ x: 50, y: 50 }));
@@ -66,7 +67,8 @@ describe("useTransitPath", () => {
     });
 
     const { result, rerender } = renderHook(
-      ({ x, y }: { x: number; y: number }) => useTransitPath(x, y, 24, true),
+      ({ x, y }: { x: number; y: number }) =>
+        useTransitPath(x, y, HOGLET_RADIUS, true),
       // Far side of the offset nest.
       { initialProps: { x: 600, y: 0 } },
     );
@@ -80,8 +82,8 @@ describe("useTransitPath", () => {
     if (!path) throw new Error("expected path");
     // Detour must add at least one intermediate waypoint.
     expect(path.length).toBeGreaterThanOrEqual(3);
-    // Every waypoint must sit outside the inflated nest radius (78 + 24).
-    const inflated = NEST_OBSTACLE_RADIUS + 24;
+    // Every waypoint must sit outside the inflated nest radius.
+    const inflated = NEST_OBSTACLE_RADIUS + HOGLET_RADIUS;
     for (const p of path) {
       const dx = p.x - 400;
       const dy = p.y - 0;

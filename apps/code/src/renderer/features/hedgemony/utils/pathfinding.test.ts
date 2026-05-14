@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { findPath, type Obstacle, type Vec2 } from "./pathfinding";
+import {
+  findPath,
+  snapPointOutsideObstacles,
+  type Obstacle,
+  type Vec2,
+} from "./pathfinding";
 
 const BUILDER_RADIUS = 36;
 
@@ -215,5 +220,17 @@ describe("findPath", () => {
     for (const p of path) {
       expect(pointOutsideInflated(p, obstacles)).toBe(true);
     }
+  });
+
+  it("snaps a resting point outside an inflated obstacle", () => {
+    const obstacle: Obstacle = { x: 0, y: 0, radius: 86 };
+
+    const point = snapPointOutsideObstacles(
+      { x: 20, y: 0 },
+      [obstacle],
+      36,
+    );
+
+    expect(distance(point, obstacle)).toBeGreaterThanOrEqual(122);
   });
 });

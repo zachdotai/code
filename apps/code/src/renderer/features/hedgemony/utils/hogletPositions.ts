@@ -1,12 +1,22 @@
 import type { Hoglet, Nest } from "@main/services/hedgemony/schemas";
 import { WILD_BUCKET } from "../stores/hogletStore";
+import { snapPointOutsideObstacles, type Vec2 } from "./pathfinding";
+import {
+  HEDGEHOUSE_OBSTACLE_RADIUS,
+  HOGLET_RADIUS,
+  NEST_OBSTACLE_RADIUS,
+  worldObstacles,
+} from "./worldObstacles";
 
-const WILD_RING_INNER = 130;
+const OBSTACLE_CLEARANCE = 28;
+const WILD_RING_INNER =
+  HEDGEHOUSE_OBSTACLE_RADIUS + HOGLET_RADIUS + OBSTACLE_CLEARANCE;
 const WILD_RING_THICKNESS = 90;
-// Brood hoglets sit in a ring around their nest. Was 92, which placed the
-// hoglet sprite half-overlapping the wreath (painted radius ~70 + hoglet
-// radius ~22). 115 keeps every hoglet visibly outside the nest art.
-const BROOD_RADIUS = 115;
+// Brood hoglets sit in a ring around their nest. This is deliberately derived
+// from the shared obstacle radii so the static layout and right-click movement
+// agree on where "outside the nest" begins.
+const BROOD_RADIUS =
+  NEST_OBSTACLE_RADIUS + HOGLET_RADIUS + OBSTACLE_CLEARANCE;
 
 function hashToUnit(id: string, seed: number): number {
   let h = 2166136261 ^ seed;
@@ -39,6 +49,17 @@ export function broodHogletPosition(
   };
 }
 
+export function avoidHogletObstacleCollision(
+  position: Vec2,
+  nests: Nest[],
+): Vec2 {
+  return snapPointOutsideObstacles(
+    position,
+    worldObstacles(nests),
+    HOGLET_RADIUS,
+  );
+}
+
 function sortByCreated(hoglets: Hoglet[]): Hoglet[] {
   return [...hoglets].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
@@ -68,7 +89,10 @@ export function collectHogletWorldPositions(
   const wild = byBucket[WILD_BUCKET] ?? [];
   for (const hoglet of sortByCreated(wild)) {
     const override = overrides[hoglet.id];
-    const pos = override ?? wildHogletPosition(hoglet.id);
+    const pos = avoidHogletObstacleCollision(
+      override ?? wildHogletPosition(hoglet.id),
+      nests,
+    );
     out.push({ hogletId: hoglet.id, x: pos.x, y: pos.y });
   }
 
@@ -77,12 +101,14 @@ export function collectHogletWorldPositions(
     const ordered = sortByCreated(brood);
     ordered.forEach((hoglet, index) => {
       const override = overrides[hoglet.id];
-      const pos =
+      const pos = avoidHogletObstacleCollision(
         override ??
-        broodHogletPosition(index, ordered.length, {
-          x: nest.mapX,
-          y: nest.mapY,
-        });
+          broodHogletPosition(index, ordered.length, {
+            x: nest.mapX,
+            y: nest.mapY,
+          }),
+        nests,
+      );
       out.push({ hogletId: hoglet.id, x: pos.x, y: pos.y });
     });
   }
