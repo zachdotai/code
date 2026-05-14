@@ -124,6 +124,7 @@ const TURN_END_METHODS = new Set([
 interface BatchAnalysis {
   hasTurnEnd: boolean;
   hasAwaitingUserInput: boolean;
+  hasError: boolean;
   hasVisibleAgentOutput: boolean;
   externalUserMessageCount: number;
   agentMessageFinalized: boolean;
@@ -135,6 +136,7 @@ function analyzeEntries(
 ): BatchAnalysis {
   let hasTurnEnd = false;
   let hasAwaitingUserInput = false;
+  let hasError = false;
   let hasVisibleAgentOutput = false;
   let externalUserMessageCount = 0;
   let agentMessageFinalized = false;
@@ -145,6 +147,9 @@ function analyzeEntries(
       hasTurnEnd = true;
       if (method === "_posthog/awaiting_user_input") {
         hasAwaitingUserInput = true;
+      }
+      if (method === "_posthog/error") {
+        hasError = true;
       }
     }
 
@@ -173,6 +178,7 @@ function analyzeEntries(
   return {
     hasTurnEnd,
     hasAwaitingUserInput,
+    hasError,
     hasVisibleAgentOutput,
     externalUserMessageCount,
     agentMessageFinalized,
@@ -721,12 +727,20 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           nextIsPromptPending = false;
         }
 
+        // Snapshots replay historical content — we don't mutate awaitingPing
+        // based on history, otherwise turn-end markers inside an existing
+        // run's snapshot would clear the user's pending ping before the
+        // status block has a chance to fire its (more specific, e.g.
+        // "task_failed") notification. The status block below is the
+        // canonical owner of awaitingPing for terminal snapshots.
         let nextAwaitingPing = current.awaitingPing;
-        if (analysis.externalUserMessageCount > 0 && !current.awaitingPing) {
-          nextAwaitingPing = true;
-        }
-        if (analysis.hasTurnEnd || analysis.agentMessageFinalized) {
-          nextAwaitingPing = false;
+        if (!isSnapshot) {
+          if (analysis.externalUserMessageCount > 0 && !current.awaitingPing) {
+            nextAwaitingPing = true;
+          }
+          if (analysis.hasTurnEnd || analysis.agentMessageFinalized) {
+            nextAwaitingPing = false;
+          }
         }
 
         const nextAwaitingAgentOutput =
@@ -755,7 +769,10 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         };
       });
 
+      // Only fire on live `logs` deltas — snapshots are historical replay
+      // and the status block below handles their terminal-state notification.
       const shouldPingNow =
+        !isSnapshot &&
         (analysis.hasTurnEnd || analysis.agentMessageFinalized) &&
         (wasAwaitingPing || analysis.externalUserMessageCount > 0);
       if (shouldPingNow && usePreferencesStore.getState().pingsEnabled) {
@@ -763,12 +780,12 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       if (shouldPingNow) {
-        maybePresentLocalNotification({
-          taskRunId,
-          kind: analysis.hasAwaitingUserInput
+        const kind: LocalNotificationKind = analysis.hasError
+          ? "task_failed"
+          : analysis.hasAwaitingUserInput
             ? "awaiting_user_input"
-            : "turn_complete",
-        });
+            : "turn_complete";
+        maybePresentLocalNotification({ taskRunId, kind });
       }
     }
 

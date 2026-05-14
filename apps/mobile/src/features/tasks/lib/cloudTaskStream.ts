@@ -455,6 +455,21 @@ function handleSseEvent(watcher: WatcherState, event: SseEvent): void {
     return;
   }
 
+  // StoredLogEntry always has a string `type`. Anything else is a server
+  // event the mobile client doesn't understand yet — drop it instead of
+  // forwarding a malformed entry to convertStoredEntriesToEvents.
+  if (
+    typeof event.data !== "object" ||
+    event.data === null ||
+    typeof (event.data as { type?: unknown }).type !== "string"
+  ) {
+    log.warn("Skipping unrecognized SSE event", {
+      runId: watcher.runId,
+      eventName: event.event,
+    });
+    return;
+  }
+
   watcher.pendingLogEntries.push(event.data as StoredLogEntry);
   if (watcher.pendingLogEntries.length >= EVENT_BATCH_MAX_SIZE) {
     flushLogBatch(watcher);

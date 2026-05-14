@@ -655,33 +655,38 @@ export async function fetchSessionLogs(
   runId: string,
   options: { limit?: number; offset?: number } = {},
 ): Promise<SessionLogsPage> {
-  const baseUrl = getBaseUrl();
-  const projectId = getProjectId();
-  const headers = getHeaders();
+  return withRetry(
+    async () => {
+      const baseUrl = getBaseUrl();
+      const projectId = getProjectId();
+      const headers = getHeaders();
 
-  const params = new URLSearchParams({
-    limit: String(options.limit ?? 5000),
-    offset: String(options.offset ?? 0),
-  });
+      const params = new URLSearchParams({
+        limit: String(options.limit ?? 5000),
+        offset: String(options.offset ?? 0),
+      });
 
-  const response = await fetch(
-    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/session_logs/?${params}`,
-    { headers },
+      const response = await fetch(
+        `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/session_logs/?${params}`,
+        { headers },
+      );
+
+      if (!response.ok) {
+        throw new HttpError(
+          response.status,
+          response.statusText,
+          "Failed to fetch session logs",
+        );
+      }
+
+      const entries = (await response.json()) as StoredLogEntry[];
+      return {
+        entries,
+        hasMore: response.headers.get("X-Has-More") === "true",
+      };
+    },
+    { shouldRetry: isRetryableError },
   );
-
-  if (!response.ok) {
-    throw new HttpError(
-      response.status,
-      response.statusText,
-      "Failed to fetch session logs",
-    );
-  }
-
-  const entries = (await response.json()) as StoredLogEntry[];
-  return {
-    entries,
-    hasMore: response.headers.get("X-Has-More") === "true",
-  };
 }
 
 export interface StreamCloudTaskOptions {
