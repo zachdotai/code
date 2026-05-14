@@ -17,9 +17,9 @@ interface FloatingInboxHeaderProps {
 
 /**
  * Floating header for the inbox screen — hamburger menu on the left,
- * centered "Inbox" title with live-polling indicator and subtitle, and
- * reviewer / filter buttons on the right. Sits over the content with a
- * top-to-bottom fade so the list disappears gracefully behind it.
+ * centered "Inbox" title with live-polling indicator, and reviewer / filter
+ * buttons on the right. Sits over the content with a top-to-bottom fade so
+ * the list disappears gracefully behind it.
  */
 export function FloatingInboxHeader({
   isFetching,
@@ -31,7 +31,7 @@ export function FloatingInboxHeader({
   const insets = useSafeAreaInsets();
   const themeColors = useThemeColors();
 
-  const fadeHeight = insets.top + 96;
+  const fadeHeight = insets.top + 80;
 
   return (
     <View
@@ -56,19 +56,14 @@ export function FloatingInboxHeader({
       >
         <MenuButton />
 
-        <View className="min-w-0 flex-1 items-center px-2">
-          <View className="flex-row items-center gap-1.5">
-            <Text
-              className="font-semibold text-[15px] text-gray-12"
-              numberOfLines={1}
-            >
-              Inbox
-            </Text>
-            <LiveDot active={isFetching} hasError={hasError} />
-          </View>
-          <Text className="mt-0.5 text-[12px] text-gray-10" numberOfLines={1}>
-            Signals and reports
+        <View className="min-w-0 flex-1 flex-row items-center justify-center gap-1.5 px-2">
+          <Text
+            className="font-semibold text-[15px] text-gray-12"
+            numberOfLines={1}
+          >
+            Inbox
           </Text>
+          <LiveDot active={isFetching} hasError={hasError} />
         </View>
 
         <View className="flex-row items-center gap-2">
@@ -98,7 +93,7 @@ export function FloatingInboxHeader({
           <Pressable
             onPress={onFilterPress}
             hitSlop={8}
-            accessibilityLabel="Filter reports"
+            accessibilityLabel="Filter and sort reports"
             accessibilityRole="button"
             className="h-9 w-9 items-center justify-center rounded-md border border-gray-6 bg-gray-2 active:bg-gray-3"
           >

@@ -27,9 +27,9 @@ export default function InboxScreen() {
     [router],
   );
 
-  // Header occupies insets.top + 6 (top pad) + 44 (button stack) + 8 (bottom
+  // Header occupies insets.top + 6 (top pad) + 40 (MenuButton) + 8 (bottom
   // pad), plus a small buffer so the first row isn't hugging the fade edge.
-  const headerHeight = insets.top + 72;
+  const headerHeight = insets.top + 60;
 
   return (
     <View className="flex-1 bg-background">
