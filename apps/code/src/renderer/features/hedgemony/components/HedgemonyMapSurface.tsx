@@ -1,8 +1,17 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
-import { ArrowCounterClockwise } from "@phosphor-icons/react";
-import { AnimatePresence, motion, useMotionValue } from "framer-motion";
+import {
+  ArrowCounterClockwise,
+  ArrowsIn,
+  ArrowsOut,
+} from "@phosphor-icons/react";
+import {
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+} from "framer-motion";
 import type { MutableRefObject, ReactNode } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   HEDGEMONY_ZOOM_MAX,
   HEDGEMONY_ZOOM_MIN,
@@ -13,6 +22,7 @@ import type { Vec2 } from "../utils/pathfinding";
 import { usePanCamera } from "../utils/usePanCamera";
 import { BgmControl } from "./BgmControl";
 import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
+import { HedgemonyMinimap } from "./HedgemonyMinimap";
 import { MapBackdrop } from "./MapBackdrop";
 import { NestConstructionSite } from "./NestConstructionSite";
 import { NestSprite } from "./NestSprite";
@@ -24,6 +34,9 @@ const ZOOM_WHEEL_STEP = 0.0015;
 const CLICK_MOVE_THRESHOLD_PX = 4;
 const GHOST_SIZE = 96;
 const FIT_PADDING_PX = 360;
+const FOCUS_ZOOM = 1.4;
+const MINIMAP_SIZE_DEFAULT = 168;
+const MINIMAP_SIZE_FULLSCREEN = 232;
 
 export interface MoveMarker {
   id: number;
@@ -52,6 +65,7 @@ interface HedgemonyMapSurfaceProps {
   onBuilderSelect?: () => void;
   onBuilderArrive?: () => void;
   onBuilderSegmentComplete?: (reachedIndex: number) => void;
+  onToggleFullscreen?: () => void;
 }
 
 export function HedgemonyMapSurface({
@@ -73,6 +87,7 @@ export function HedgemonyMapSurface({
   onBuilderSelect,
   onBuilderArrive,
   onBuilderSegmentComplete,
+  onToggleFullscreen,
 }: HedgemonyMapSurfaceProps) {
   const panX = useHedgemonyViewStore((s) => s.panX);
   const panY = useHedgemonyViewStore((s) => s.panY);
@@ -80,6 +95,7 @@ export function HedgemonyMapSurface({
   const setPan = useHedgemonyViewStore((s) => s.setPan);
   const setZoom = useHedgemonyViewStore((s) => s.setZoom);
   const resetView = useHedgemonyViewStore((s) => s.resetView);
+  const fullscreen = useHedgemonyViewStore((s) => s.fullscreen);
 
   const x = useMotionValue(panX);
   const y = useMotionValue(panY);
@@ -104,6 +120,29 @@ export function HedgemonyMapSurface({
     x: number;
     y: number;
   } | null>(null);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  // Mirror motion values into render state so the minimap viewport rect tracks
+  // edge-pan and drag in real time, not just after the 200ms commit debounce.
+  const [livePan, setLivePan] = useState({ x: panX, y: panY });
+  useMotionValueEvent(x, "change", (value) => {
+    setLivePan((prev) => (prev.x === value ? prev : { ...prev, x: value }));
+  });
+  useMotionValueEvent(y, "change", (value) => {
+    setLivePan((prev) => (prev.y === value ? prev : { ...prev, y: value }));
+  });
+
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const sync = () => {
+      const rect = el.getBoundingClientRect();
+      setContainerSize({ width: rect.width, height: rect.height });
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const selectedNest =
     selectedNestId !== null
       ? (nests.find((nest) => nest.id === selectedNestId) ?? null)
@@ -122,6 +161,17 @@ export function HedgemonyMapSurface({
   };
 
   const centerOnWorldPoint = (worldX: number, worldY: number) => {
+    const next = panToCenter(worldX, worldY, zoom);
+    applyView(next.x, next.y);
+  };
+
+  const focusNest = (nest: Nest) => {
+    const nextZoom = Math.max(zoom, FOCUS_ZOOM);
+    const next = panToCenter(nest.mapX, nest.mapY, nextZoom);
+    applyView(next.x, next.y, nextZoom);
+  };
+
+  const handleMinimapJump = (worldX: number, worldY: number) => {
     const next = panToCenter(worldX, worldY, zoom);
     applyView(next.x, next.y);
   };
@@ -177,7 +227,26 @@ export function HedgemonyMapSurface({
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     if (!(event.metaKey || event.ctrlKey)) return;
     event.preventDefault();
-    setZoom(zoom * (1 - event.deltaY * ZOOM_WHEEL_STEP));
+    const rect = outerRef.current?.getBoundingClientRect();
+    const rawZoom = zoom * (1 - event.deltaY * ZOOM_WHEEL_STEP);
+    const nextZoom = Math.min(
+      HEDGEMONY_ZOOM_MAX,
+      Math.max(HEDGEMONY_ZOOM_MIN, rawZoom),
+    );
+    if (!rect || nextZoom === zoom) {
+      setZoom(nextZoom);
+      return;
+    }
+    // Anchor zoom on the world point under the cursor so the map scales toward
+    // where the user is looking instead of toward the surface center.
+    const localX = event.clientX - rect.left - rect.width / 2;
+    const localY = event.clientY - rect.top - rect.height / 2;
+    const factor = nextZoom / zoom;
+    const currentPanX = x.get();
+    const currentPanY = y.get();
+    const newPanX = localX * (1 - factor) + currentPanX * factor;
+    const newPanY = localY * (1 - factor) + currentPanY * factor;
+    applyView(newPanX, newPanY, nextZoom);
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -255,6 +324,7 @@ export function HedgemonyMapSurface({
             selected={nest.id === selectedNestId}
             dimmed={nest.id === relocatingNestId}
             onSelect={onNestSelect}
+            onFocus={focusNest}
           />
         ))}
         {pendingNest && builderAnimation === "building" && (
@@ -313,6 +383,24 @@ export function HedgemonyMapSurface({
       </motion.div>
 
       <div
+        className="absolute bottom-3 left-3"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <HedgemonyMinimap
+          nests={nests}
+          builderPos={builderPos}
+          panX={livePan.x}
+          panY={livePan.y}
+          zoom={zoom}
+          viewportWidth={containerSize.width}
+          viewportHeight={containerSize.height}
+          width={fullscreen ? MINIMAP_SIZE_FULLSCREEN : MINIMAP_SIZE_DEFAULT}
+          height={fullscreen ? MINIMAP_SIZE_FULLSCREEN : MINIMAP_SIZE_DEFAULT}
+          onJump={handleMinimapJump}
+        />
+      </div>
+
+      <div
         className="absolute right-3 bottom-3 flex items-center gap-2"
         onPointerDown={(e) => e.stopPropagation()}
       >
@@ -344,6 +432,21 @@ export function HedgemonyMapSurface({
           <ArrowCounterClockwise size={12} />
           Reset
         </button>
+        {onToggleFullscreen && (
+          <button
+            type="button"
+            onClick={onToggleFullscreen}
+            className="flex h-7 items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-2 text-(--gray-11) text-[12px] transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+            title={
+              fullscreen
+                ? "Exit fullscreen (F · Esc)"
+                : "Enter fullscreen (F · Shift+F for OS)"
+            }
+          >
+            {fullscreen ? <ArrowsIn size={12} /> : <ArrowsOut size={12} />}
+            {fullscreen ? "Exit" : "Fullscreen"}
+          </button>
+        )}
         <div className="flex h-7 items-center rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-2 text-(--gray-10) text-[12px] tabular-nums">
           {Math.round(zoom * 100)}%
         </div>

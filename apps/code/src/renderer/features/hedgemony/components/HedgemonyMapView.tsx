@@ -6,15 +6,20 @@ import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
 import { playSfx } from "../audio/sfx";
 import { playVoice } from "../audio/voice";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
 import { initializeNestStore } from "../service/nestSubscriptionService";
-import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
+import {
+  type BookmarkSlot,
+  useHedgemonyViewStore,
+} from "../stores/hedgemonyViewStore";
 import {
   SIGNAL_STAGING_BUCKET,
   useHogletStore,
@@ -59,6 +64,11 @@ export function HedgemonyMapView() {
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
   const spawnHogletOpen = useSpawnDialogStore((s) => s.spawnHogletOpen);
   const closeSpawnHoglet = useSpawnDialogStore((s) => s.closeSpawnHoglet);
+  const fullscreen = useHedgemonyViewStore((s) => s.fullscreen);
+  const setFullscreen = useHedgemonyViewStore((s) => s.setFullscreen);
+  const setOsFullscreen = useHedgemonyViewStore((s) => s.setOsFullscreen);
+  const setView = useHedgemonyViewStore((s) => s.setView);
+  const saveBookmark = useHedgemonyViewStore((s) => s.saveBookmark);
 
   const builder = useBuilderCoordinator({
     nests,
@@ -73,18 +83,137 @@ export function HedgemonyMapView() {
     return initializeNestStore();
   }, []);
 
+  // Keep the store flag in sync with the DOM's actual fullscreen state — the
+  // OS may exit fullscreen via its own controls (Esc from the browser, the
+  // window's traffic-light, etc.) without us hearing about it otherwise.
+  useEffect(() => {
+    const handler = () => {
+      setOsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, [setOsFullscreen]);
+
+  // Always tear down OS fullscreen when the map unmounts so we don't strand
+  // the user in fullscreen on another view.
+  useEffect(() => {
+    return () => {
+      if (document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => undefined);
+      }
+    };
+  }, []);
+
+  const exitOsFullscreen = useCallback(async () => {
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // Ignore — fullscreenchange listener will reconcile the store.
+      }
+    }
+  }, []);
+
+  const enterFullscreen = useCallback(() => {
+    setFullscreen(true);
+  }, [setFullscreen]);
+
+  const exitFullscreen = useCallback(() => {
+    setFullscreen(false);
+    void exitOsFullscreen();
+  }, [setFullscreen, exitOsFullscreen]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (fullscreen) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  }, [fullscreen, enterFullscreen, exitFullscreen]);
+
+  const toggleOsFullscreen = useCallback(async () => {
+    if (document.fullscreenElement) {
+      await exitOsFullscreen();
+      return;
+    }
+    // Enter the in-app overlay too so chrome is hidden underneath.
+    if (!fullscreen) setFullscreen(true);
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch (error) {
+      log.warn("Failed to enter OS fullscreen", { error });
+    }
+  }, [exitOsFullscreen, fullscreen, setFullscreen]);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // Esc unwinds the most-specific UI mode first: placement → fullscreen →
+      // selection. Without this ordering, hitting Esc in fullscreen during a
+      // placement would dump the user all the way back to nothing-selected.
       if (mode.kind !== "browsing") {
         setMode({ kind: "browsing" });
+        return;
+      }
+      if (fullscreen) {
+        exitFullscreen();
         return;
       }
       if (selection) setSelection(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode, selection]);
+  }, [mode, selection, fullscreen, exitFullscreen]);
+
+  // Suppress map-only hotkeys while a modal dialog is open so typing in the
+  // dialog (or just having it focused) doesn't ricochet into fullscreen /
+  // bookmark recall.
+  const dialogOpen = pendingPlacement !== null || spawnHogletOpen;
+  const mapHotkeyOptions = {
+    enableOnFormTags: false,
+    preventDefault: true,
+    enabled: !dialogOpen,
+  } as const;
+
+  useHotkeys("f", toggleFullscreen, mapHotkeyOptions);
+  useHotkeys("shift+f, f11", toggleOsFullscreen, mapHotkeyOptions);
+
+  const recallBookmark = useCallback(
+    (slot: BookmarkSlot) => {
+      const bookmark = useHedgemonyViewStore.getState().bookmarks[slot];
+      if (!bookmark) {
+        toast(`No view saved in slot ${slot}`, {
+          description: `Press Shift+${slot} on the map to save this view.`,
+        });
+        return;
+      }
+      setView(bookmark.panX, bookmark.panY, bookmark.zoom);
+    },
+    [setView],
+  );
+
+  const handleSaveBookmark = useCallback(
+    (slot: BookmarkSlot) => {
+      saveBookmark(slot);
+      toast(`Saved view ${slot}`, {
+        description: `Press ${slot} to jump back.`,
+      });
+    },
+    [saveBookmark],
+  );
+
+  useHotkeys("1", () => recallBookmark(1), mapHotkeyOptions, [recallBookmark]);
+  useHotkeys("2", () => recallBookmark(2), mapHotkeyOptions, [recallBookmark]);
+  useHotkeys("3", () => recallBookmark(3), mapHotkeyOptions, [recallBookmark]);
+  useHotkeys("shift+1", () => handleSaveBookmark(1), mapHotkeyOptions, [
+    handleSaveBookmark,
+  ]);
+  useHotkeys("shift+2", () => handleSaveBookmark(2), mapHotkeyOptions, [
+    handleSaveBookmark,
+  ]);
+  useHotkeys("shift+3", () => handleSaveBookmark(3), mapHotkeyOptions, [
+    handleSaveBookmark,
+  ]);
 
   const flashMoveMarker = useCallback((x: number, y: number) => {
     const id = Date.now();
@@ -256,21 +385,12 @@ export function HedgemonyMapView() {
     }
   }, []);
 
-  return (
-    <DragDropProvider
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      sensors={[
-        {
-          plugin: PointerSensor,
-          options: {
-            activationConstraints: {
-              distance: { value: 5 },
-            },
-          },
-        },
-      ]}
-    >
+  // The map + every floating panel that should appear on top of it. In
+  // fullscreen, this entire bundle is portalled to document.body so the
+  // panels (which use position: fixed) sit above the z-[1000] overlay rather
+  // than getting hidden behind it.
+  const mapContent = (
+    <>
       <HedgemonyMapSurface
         nests={nests}
         selectedNestId={activeNest?.id ?? null}
@@ -297,6 +417,7 @@ export function HedgemonyMapView() {
         }}
         onBuilderArrive={builder.handleArrive}
         onBuilderSegmentComplete={builder.handleSegmentComplete}
+        onToggleFullscreen={toggleFullscreen}
       >
         {nests.map((nest) => (
           <NestBroodCluster key={nest.id} nest={nest} />
@@ -321,6 +442,48 @@ export function HedgemonyMapView() {
           />
         )}
       </AnimatePresence>
+      <HedgemonyHoldingPanel />
+      <AnimatePresence>
+        {spawnHogletOpen && <SpawnHogletPanel onClose={closeSpawnHoglet} />}
+      </AnimatePresence>
+    </>
+  );
+
+  return (
+    <DragDropProvider
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      sensors={[
+        {
+          plugin: PointerSensor,
+          options: {
+            activationConstraints: {
+              distance: { value: 5 },
+            },
+          },
+        },
+      ]}
+    >
+      {fullscreen
+        ? createPortal(
+            <motion.div
+              key="hedgemony-fullscreen"
+              className="fixed inset-0 z-[1000] bg-(--gray-1)"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+            >
+              {mapContent}
+              <div className="-translate-x-1/2 pointer-events-none absolute bottom-3 left-1/2 rounded-(--radius-2) border border-(--gray-6) bg-(--gray-2)/85 px-3 py-1 text-(--gray-11) text-[11px] backdrop-blur-sm">
+                F · fullscreen &nbsp;·&nbsp; Shift+F · OS &nbsp;·&nbsp; 1/2/3
+                recall &nbsp;·&nbsp; Shift+1/2/3 save &nbsp;·&nbsp; Esc exit
+              </div>
+              <FullscreenVignette />
+            </motion.div>,
+            document.body,
+          )
+        : mapContent}
       <PlaceNestDialog
         open={pendingPlacement !== null}
         mapX={pendingPlacement?.x ?? 0}
@@ -336,11 +499,20 @@ export function HedgemonyMapView() {
           );
         }}
       />
-      <HedgemonyHoldingPanel />
-      <AnimatePresence>
-        {spawnHogletOpen && <SpawnHogletPanel onClose={closeSpawnHoglet} />}
-      </AnimatePresence>
     </DragDropProvider>
+  );
+}
+
+function FullscreenVignette() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0"
+      style={{
+        background:
+          "radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.18) 92%, rgba(0,0,0,0.34) 100%)",
+      }}
+    />
   );
 }
 

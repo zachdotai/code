@@ -24,6 +24,7 @@ interface NestSpriteProps {
   selected?: boolean;
   dimmed?: boolean;
   onSelect?: (nest: Nest) => void;
+  onFocus?: (nest: Nest) => void;
 }
 
 function territoryBackground(nest: Nest): string {
@@ -44,6 +45,7 @@ export function NestSprite({
   selected,
   dimmed,
   onSelect,
+  onFocus,
 }: NestSpriteProps) {
   const motionX = useMotionValue(nest.mapX);
   const motionY = useMotionValue(nest.mapY);
@@ -105,6 +107,10 @@ export function NestSprite({
           onClick={(event) => {
             event.stopPropagation();
             onSelect?.(nest);
+          }}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+            onFocus?.(nest);
           }}
         >
           <div
