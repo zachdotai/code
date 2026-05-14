@@ -24,15 +24,6 @@ export interface MoveMarker {
   y: number;
 }
 
-export interface CommandPath {
-  id: number;
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
-  kind: "move" | "relocate" | "build";
-}
-
 interface HedgemonyMapSurfaceProps {
   nests: Nest[];
   selectedNestId: string | null;
@@ -43,7 +34,6 @@ interface HedgemonyMapSurfaceProps {
   builderAnimation: BuilderAnimation;
   buildMode: boolean;
   moveMarker: MoveMarker | null;
-  commandPath: CommandPath | null;
   children?: ReactNode;
   overlay?: ReactNode;
   /** Left-click on empty map at world coords. */
@@ -66,7 +56,6 @@ export function HedgemonyMapSurface({
   builderAnimation,
   buildMode,
   moveMarker,
-  commandPath,
   children,
   overlay,
   onMapClick,
@@ -247,33 +236,6 @@ export function HedgemonyMapSurface({
         className="absolute inset-0 origin-center"
       >
         <MapBackdrop />
-        <AnimatePresence>
-          {commandPath && (
-            <motion.svg
-              key={commandPath.id}
-              aria-hidden="true"
-              className="pointer-events-none absolute top-1/2 left-1/2 overflow-visible"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <motion.line
-                x1={commandPath.fromX}
-                y1={commandPath.fromY}
-                x2={commandPath.toX}
-                y2={commandPath.toY}
-                stroke="var(--accent-9)"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeDasharray="8 8"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ duration: 0.28, ease: "easeOut" }}
-              />
-            </motion.svg>
-          )}
-        </AnimatePresence>
         {nests.map((nest) => (
           <NestSprite
             key={nest.id}
@@ -401,15 +363,23 @@ function MapBackdrop() {
       style={{
         backgroundColor: "var(--gray-1)",
         backgroundImage: [
-          "radial-gradient(circle at 48% 46%, var(--accent-a3) 0%, transparent 26%)",
-          "radial-gradient(circle at 28% 68%, var(--gray-a4) 0%, transparent 22%)",
-          "radial-gradient(circle at 72% 28%, var(--gray-a3) 0%, transparent 24%)",
-          "linear-gradient(135deg, transparent 0%, var(--gray-a2) 45%, transparent 46%, transparent 54%, var(--gray-a2) 55%, transparent 100%)",
-          "radial-gradient(circle, var(--gray-5) 1px, transparent 1px)",
+          // soft warm meadow wash at center
+          "radial-gradient(ellipse 60% 50% at 50% 50%, var(--grass-a3) 0%, transparent 70%)",
+          // scattered hedge clumps — irregular, varying sizes
+          "radial-gradient(ellipse 320px 200px at 18% 22%, var(--green-a6) 0%, var(--green-a3) 45%, transparent 70%)",
+          "radial-gradient(ellipse 240px 160px at 82% 28%, var(--green-a6) 0%, var(--green-a3) 45%, transparent 70%)",
+          "radial-gradient(ellipse 380px 220px at 14% 78%, var(--green-a5) 0%, var(--green-a2) 50%, transparent 75%)",
+          "radial-gradient(ellipse 300px 200px at 86% 80%, var(--green-a6) 0%, var(--green-a3) 45%, transparent 70%)",
+          "radial-gradient(ellipse 200px 140px at 38% 12%, var(--grass-a5) 0%, transparent 65%)",
+          "radial-gradient(ellipse 220px 160px at 64% 88%, var(--grass-a5) 0%, transparent 65%)",
+          "radial-gradient(ellipse 180px 120px at 8% 48%, var(--green-a4) 0%, transparent 65%)",
+          "radial-gradient(ellipse 200px 140px at 92% 52%, var(--green-a4) 0%, transparent 65%)",
+          // subtle topographical contour rings
+          "radial-gradient(circle at 50% 50%, transparent 480px, var(--gray-a3) 481px, transparent 484px)",
+          "radial-gradient(circle at 50% 50%, transparent 900px, var(--gray-a2) 901px, transparent 904px)",
+          "radial-gradient(circle at 50% 50%, transparent 1320px, var(--gray-a2) 1321px, transparent 1324px)",
         ].join(", "),
-        backgroundSize:
-          "1800px 1300px, 1500px 1100px, 1500px 1100px, 520px 520px, 24px 24px",
-        backgroundPosition: "center, center, center, center, center",
+        backgroundRepeat: "no-repeat",
       }}
     >
       <MapZone
@@ -439,14 +409,6 @@ function MapBackdrop() {
         description="unrouted signal work"
         variant="muted"
       />
-      <div
-        className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 h-[2px] w-[2100px] rotate-[-18deg] rounded-full bg-(--accent-a4)"
-        style={{ transform: "translate(-50%, -50%) rotate(-18deg)" }}
-      />
-      <div
-        className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 h-[2px] w-[1900px] rotate-[28deg] rounded-full bg-(--gray-a4)"
-        style={{ transform: "translate(-50%, -50%) rotate(28deg)" }}
-      />
     </div>
   );
 }
@@ -470,10 +432,10 @@ function MapZone({
 }) {
   return (
     <div
-      className={`-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 rounded-[48px] border ${
+      className={`-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 rounded-[64px] border border-dashed ${
         variant === "primary"
-          ? "border-(--accent-a5) bg-(--accent-a2)"
-          : "border-(--gray-a5) bg-(--gray-a2)"
+          ? "border-(--grass-a6) bg-(--grass-a2)"
+          : "border-(--gray-a5) bg-(--gray-a1)"
       }`}
       style={{
         width,

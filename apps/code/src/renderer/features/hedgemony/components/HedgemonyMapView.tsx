@@ -15,11 +15,7 @@ import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import type { BuilderAnimation } from "./BuilderSprite";
 import { HedgemonyEmptyState } from "./HedgemonyEmptyState";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
-import {
-  type CommandPath,
-  HedgemonyMapSurface,
-  type MoveMarker,
-} from "./HedgemonyMapSurface";
+import { HedgemonyMapSurface, type MoveMarker } from "./HedgemonyMapSurface";
 import { NestDetailPanel } from "./NestDetailPanel";
 import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
 import { SpawnHogletDialog } from "./SpawnHogletDialog";
@@ -55,7 +51,6 @@ export function HedgemonyMapView() {
   const [relocatingNestId, setRelocatingNestId] = useState<string | null>(null);
   const [pendingMode, setPendingMode] = useState<NestCreationMode>("guided");
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
-  const [commandPath, setCommandPath] = useState<CommandPath | null>(null);
   const buildingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spawnHogletOpen = useSpawnDialogStore((s) => s.spawnHogletOpen);
   const closeSpawnHoglet = useSpawnDialogStore((s) => s.closeSpawnHoglet);
@@ -97,17 +92,6 @@ export function HedgemonyMapView() {
     }, 600);
   }, []);
 
-  const flashCommandPath = useCallback(
-    (path: Omit<CommandPath, "id">, duration = 1400) => {
-      const id = Date.now();
-      setCommandPath({ id, ...path });
-      setTimeout(() => {
-        setCommandPath((current) => (current?.id === id ? null : current));
-      }, duration);
-    },
-    [],
-  );
-
   async function moveNest(
     nest: Nest,
     mapX: number,
@@ -129,13 +113,6 @@ export function HedgemonyMapView() {
             label: "Undo",
             onClick: () => {
               flashMoveMarker(previous.mapX, previous.mapY);
-              flashCommandPath({
-                fromX: updated.mapX,
-                fromY: updated.mapY,
-                toX: previous.mapX,
-                toY: previous.mapY,
-                kind: "relocate",
-              });
               void moveNest(updated, previous.mapX, previous.mapY);
             },
           },
@@ -210,13 +187,6 @@ export function HedgemonyMapView() {
       const targetY = Math.round(y);
       setRelocatingNestId(null);
       flashMoveMarker(targetX, targetY);
-      flashCommandPath({
-        fromX: nest.mapX,
-        fromY: nest.mapY,
-        toX: targetX,
-        toY: targetY,
-        kind: "relocate",
-      });
       void moveNest(nest, targetX, targetY, { undoable: true });
       return;
     }
@@ -245,13 +215,6 @@ export function HedgemonyMapView() {
     if (selection.type === "nest") return;
 
     flashMoveMarker(targetX, targetY);
-    flashCommandPath({
-      fromX: builderPos.x,
-      fromY: builderPos.y,
-      toX: targetX,
-      toY: targetY,
-      kind: "move",
-    });
     startWalk({ x: targetX, y: targetY }, "idle");
   };
 
@@ -300,7 +263,6 @@ export function HedgemonyMapView() {
         builderAnimation={builderAnimation}
         buildMode={buildMode}
         moveMarker={moveMarker}
-        commandPath={commandPath}
         overlay={
           showEmptyState && !buildMode ? (
             <HedgemonyEmptyState onBuildFirstNest={beginBuildNest} />
@@ -339,13 +301,6 @@ export function HedgemonyMapView() {
         initialMode={pendingMode}
         onClose={() => setPendingPlacement(null)}
         onCreated={(mapX, mapY) => {
-          flashCommandPath({
-            fromX: builderPos.x,
-            fromY: builderPos.y,
-            toX: mapX,
-            toY: mapY,
-            kind: "build",
-          });
           startWalk({ x: mapX, y: mapY }, "build");
         }}
       />
