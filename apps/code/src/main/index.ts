@@ -7,6 +7,7 @@ import "./services/index.js";
 import { setHedgemonySchemaLogger } from "./services/hedgemony/schemas";
 
 setHedgemonySchemaLogger(logger.scope("hedgemony-schemas"));
+
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { DatabaseService } from "./db/service";
 import { initializeDeepLinks, registerDeepLinkHandlers } from "./deep-links";
