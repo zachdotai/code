@@ -1,4 +1,5 @@
 import { DotPatternBackground } from "@components/DotPatternBackground";
+import { useAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { PromptInput } from "@features/message-editor/components/PromptInput";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
@@ -26,6 +27,18 @@ export function CanvasInput({ canvasId }: CanvasInputProps) {
   const trpcReact = useTRPC();
   const { folders } = useFolders();
   const { isOnline } = useConnectivity();
+  const client = useAuthenticatedClient();
+
+  const { data: canvas } = useQuery({
+    queryKey: ["rendering-canvas", canvasId],
+    queryFn: () => client.getRenderingCanvas(canvasId),
+  });
+
+  const messagePrefix = useMemo(() => {
+    if (!canvas) return undefined;
+    const path = canvas.path ? canvas.path : "(unset)";
+    return `[Canvas context: you are editing an existing PostHog rendering canvas. id=${canvas.id} name=${JSON.stringify(canvas.name)} path=${path}. To edit a canvas, you must fetch the current code, generate a new version, and save it.]`;
+  }, [canvas]);
 
   const {
     lastUsedWorkspaceMode,
@@ -112,6 +125,7 @@ export function CanvasInput({ canvasId }: CanvasInputProps) {
     model: currentModel,
     reasoningLevel: currentReasoningLevel,
     environmentId,
+    messagePrefix,
     onTaskCreated: (task) => {
       useCanvasChatStore.getState().setActiveTask(canvasId, task);
       useCanvasChatStore.getState().setOpen(true);

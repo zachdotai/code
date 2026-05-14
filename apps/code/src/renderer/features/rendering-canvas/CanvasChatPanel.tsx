@@ -1,3 +1,4 @@
+import { useAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { PromptInput } from "@features/message-editor/components/PromptInput";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
@@ -33,6 +34,18 @@ export function CanvasChatPanel({ canvasId }: CanvasChatPanelProps) {
   const { isOnline } = useConnectivity();
   const trpcReact = useTRPC();
   const { folders } = useFolders();
+  const client = useAuthenticatedClient();
+
+  const { data: canvas } = useQuery({
+    queryKey: ["rendering-canvas", canvasId],
+    queryFn: () => client.getRenderingCanvas(canvasId),
+  });
+
+  const messagePrefix = useMemo(() => {
+    if (!canvas) return undefined;
+    const path = canvas.path ? canvas.path : "(unset)";
+    return `[Canvas context: you are editing an existing PostHog rendering canvas. id=${canvas.id} name=${JSON.stringify(canvas.name)} path=${path}. To save changes, call create-canvas with the same id to overwrite this canvas's content.]`;
+  }, [canvas]);
 
   const {
     lastUsedWorkspaceMode,
@@ -119,6 +132,7 @@ export function CanvasChatPanel({ canvasId }: CanvasChatPanelProps) {
     model: currentModel,
     reasoningLevel: currentReasoningLevel,
     environmentId,
+    messagePrefix,
     onTaskCreated: (task) => {
       setActiveTask(canvasId, task);
     },

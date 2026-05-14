@@ -42,6 +42,7 @@ interface UseTaskCreationOptions {
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
   signalReportId?: string;
+  messagePrefix?: string;
   onTaskCreated?: (task: Task) => void;
 }
 
@@ -67,9 +68,13 @@ function prepareTaskInput(
     environmentId?: string | null;
     sandboxEnvironmentId?: string;
     signalReportId?: string;
+    messagePrefix?: string;
   },
 ): TaskCreationInput {
-  const serializedContent = contentToXml(content).trim();
+  const userContent = contentToXml(content).trim();
+  const serializedContent = options.messagePrefix
+    ? `${options.messagePrefix.trim()}\n\n${userContent}`
+    : userContent;
   const filePaths = extractFilePaths(content);
 
   return {
@@ -183,6 +188,7 @@ export function useTaskCreation({
   environmentId,
   sandboxEnvironmentId,
   signalReportId,
+  messagePrefix,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -232,6 +238,7 @@ export function useTaskCreation({
         environmentId,
         sandboxEnvironmentId,
         signalReportId,
+        messagePrefix,
       });
 
       if (executionMode) {
@@ -289,6 +296,7 @@ export function useTaskCreation({
     environmentId,
     sandboxEnvironmentId,
     signalReportId,
+    messagePrefix,
     clearTaskInputReportAssociation,
     invalidateTasks,
     navigateToTask,
