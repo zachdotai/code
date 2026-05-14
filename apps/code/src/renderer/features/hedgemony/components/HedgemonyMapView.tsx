@@ -1092,17 +1092,20 @@ export function HedgemonyMapView() {
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
             {mapContent}
-            <button
-              type="button"
-              onClick={exitFullscreen}
-              title="Exit fullscreen (Esc / F)"
-              aria-label="Exit fullscreen"
-              // Shifted left to make room for the hotkey helper button which
-              // sits at the map's top-right corner.
-              className="absolute top-3 right-16 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-(--gray-6) bg-(--gray-2)/80 text-(--gray-11) text-[16px] backdrop-blur-sm transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
-            >
-              ×
-            </button>
+            {!activeHotkeyContext && (
+              <button
+                type="button"
+                onClick={exitFullscreen}
+                title="Exit fullscreen (Esc / F)"
+                aria-label="Exit fullscreen"
+                // Hidden whenever something is selected so it doesn't collide
+                // with the detail panel's close / relocate buttons. Esc / F
+                // still exits fullscreen from the keyboard.
+                className="absolute top-3 right-16 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-(--gray-6) bg-(--gray-2)/80 text-(--gray-11) text-[16px] backdrop-blur-sm transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+              >
+                ×
+              </button>
+            )}
             <FullscreenVignette />
           </motion.div>,
           document.body,
