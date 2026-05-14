@@ -170,8 +170,33 @@ export function usePanCamera({
     };
 
     const onPointerLeaveDoc = (e: PointerEvent) => {
-      // Cursor left the document (e.g. moved to another monitor / OS chrome).
-      if (e.relatedTarget === null) pointerInside = false;
+      // Cursor left the document — most often to OS chrome at the top of the
+      // screen (macOS menu bar reveal, traffic-light region). Without this
+      // carve-out, edge-pan would die exactly as the user pushed against the
+      // screen edge to pan up. If the last known position was already inside
+      // an edge zone, clamp it to the boundary and keep panning until the
+      // cursor re-enters the document.
+      if (e.relatedTarget !== null) return;
+      if (!pointerLocal) {
+        pointerInside = false;
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      const { x: lx, y: ly } = pointerLocal;
+      const inEdgeZone =
+        lx < EDGE_ZONE_PX ||
+        lx > rect.width - EDGE_ZONE_PX ||
+        ly < EDGE_ZONE_PX ||
+        ly > rect.height - EDGE_ZONE_PX;
+      if (!inEdgeZone) {
+        pointerInside = false;
+        return;
+      }
+      pointerLocal = {
+        x: Math.max(0, Math.min(rect.width, lx)),
+        y: Math.max(0, Math.min(rect.height, ly)),
+      };
+      pointerInside = true;
     };
 
     window.addEventListener("keydown", onKeyDown);

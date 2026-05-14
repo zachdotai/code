@@ -536,10 +536,6 @@ export function HedgemonyMapView() {
               onRecall={recallBookmark}
               onSave={handleSaveBookmark}
             />
-            <div className="-translate-x-1/2 pointer-events-none absolute bottom-3 left-1/2 rounded-(--radius-2) border border-(--gray-6) bg-(--gray-2)/85 px-3 py-1 text-(--gray-11) text-[11px] backdrop-blur-sm">
-              F · fullscreen &nbsp;·&nbsp; middle-drag · pan &nbsp;·&nbsp; 1/2/3
-              recall &nbsp;·&nbsp; Shift+1/2/3 save &nbsp;·&nbsp; Esc exit
-            </div>
             <FullscreenVignette />
           </motion.div>,
           document.body,
