@@ -10,6 +10,7 @@ import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { playSfx } from "../audio/sfx";
+import { playVoice } from "../audio/voice";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
 import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
@@ -131,6 +132,7 @@ export function HedgemonyMapView() {
         const targetY = Math.round(y);
         flashMoveMarker(targetX, targetY);
         playSfx("order");
+        playVoice("hoglet:order_move");
         void moveNest(nest, targetX, targetY, { undoable: true });
         return;
       }
@@ -156,6 +158,7 @@ export function HedgemonyMapView() {
     const targetX = Math.round(x);
     const targetY = Math.round(y);
     playSfx("order");
+    playVoice("hoglet:order_move");
     const resolved = builder.startWalk({ x: targetX, y: targetY }, "idle");
     flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
   };
@@ -256,10 +259,12 @@ export function HedgemonyMapView() {
         onMapRightClick={handleMapRightClick}
         onNestSelect={(nest) => {
           playSfx("select");
+          playVoice("hoglet:select");
           setSelection({ type: "nest", id: nest.id });
         }}
         onBuilderSelect={() => {
           playSfx("select");
+          playVoice("hoglet:select");
           setSelection({ type: "builder" });
         }}
         onBuilderArrive={builder.handleArrive}
