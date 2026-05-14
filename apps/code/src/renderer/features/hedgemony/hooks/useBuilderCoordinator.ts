@@ -7,10 +7,10 @@ import {
   useState,
 } from "react";
 import {
-  clampOutsideObstacles,
   findPath,
   type Obstacle,
   snapGoal,
+  snapPointOutsideObstacles,
   type Vec2,
 } from "../utils/pathfinding";
 import { worldObstacles } from "../utils/worldObstacles";
@@ -125,7 +125,7 @@ export function useBuilderCoordinator({
       pendingNest: pendingBuildRef.current,
     });
     const rawFrom = visualPosRef.current;
-    const safe = clampOutsideObstacles(rawFrom, obstacles);
+    const safe = snapPointOutsideObstacles(rawFrom, obstacles);
     if (safe.x === rawFrom.x && safe.y === rawFrom.y) return;
     visualPosRef.current = safe;
     setPath([safe]);
@@ -187,7 +187,7 @@ export function useBuilderCoordinator({
       // the visual to the inside-obstacle position. Push the position to
       // the nearest perimeter first so path[0] is always safe.
       const rawFrom = visualPosRef.current;
-      const from = clampOutsideObstacles(rawFrom, obstacles);
+      const from = snapPointOutsideObstacles(rawFrom, obstacles);
       if (from.x !== rawFrom.x || from.y !== rawFrom.y) {
         visualPosRef.current = from;
       }

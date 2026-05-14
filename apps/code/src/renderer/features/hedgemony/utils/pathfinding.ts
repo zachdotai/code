@@ -75,6 +75,14 @@ function pushOutOf(p: Vec2, infl: InflatedObstacle[]): Vec2 {
   return current;
 }
 
+// Pushes a point out of every inflated obstacle it's inside, iteratively, so
+// the result sits on (or just outside) the nearest perimeter. Used by callers
+// to self-heal a unit's resting or starting position before passing it
+// downstream: hoglet layouts call this so brood/wild positions never overlap
+// the nests they're orbiting, and useBuilderCoordinator calls it before
+// findPath so a stale visualPosRef (HMR-preserved, etc.) inside an obstacle
+// doesn't flow into the planner and become a visibly-inside-the-building
+// path[0].
 export function snapPointOutsideObstacles(
   point: Vec2,
   obstacles: Obstacle[],
@@ -117,22 +125,6 @@ export function snapGoal(
   const infl = inflate(obstacles, agentRadius);
   if (!pointBlocked(to, infl)) return to;
   return nearestFreePointOnLine(from, to, infl);
-}
-
-// Pushes a point out of every inflated obstacle it's inside, iteratively, so
-// the result sits on (or just outside) the nearest perimeter. Used by callers
-// to self-heal a unit's "current position" before passing it to findPath:
-// without this, a stale or HMR-preserved position inside an obstacle would
-// flow into findPath, which prepends the blocked `from` as path[0] — making
-// the sprite visibly snap to the inside-obstacle position before the escape
-// segment plays.
-export function clampOutsideObstacles(
-  point: Vec2,
-  obstacles: Obstacle[],
-  agentRadius: number = DEFAULT_AGENT_RADIUS,
-): Vec2 {
-  const infl = inflate(obstacles, agentRadius);
-  return pushOutOf(point, infl);
 }
 
 // Returns a nearby free perimeter point when a plan starts inside an
