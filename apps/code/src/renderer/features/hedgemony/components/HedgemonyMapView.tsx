@@ -1,6 +1,7 @@
 import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
+import { genderForName } from "@main/services/hedgemony/hoglet-names";
 import { logger } from "@utils/logger";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -12,7 +13,11 @@ import { playSfx } from "../audio/sfx";
 import { useSfxStore } from "../audio/sfxStore";
 import { playVoice } from "../audio/voice";
 import type { HedgemonyHotkeyContext } from "../constants/hotkeys";
-import { HEDGEHOUSE_MAP_X, HEDGEHOUSE_MAP_Y } from "../constants/map";
+import {
+  BUILDER_NAME,
+  HEDGEHOUSE_MAP_X,
+  HEDGEHOUSE_MAP_Y,
+} from "../constants/map";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
 import {
@@ -352,13 +357,18 @@ export function HedgemonyMapView() {
     toggleSfxMute,
   ]);
 
+  const voiceGenderForHoglet = useCallback((hogletId: string) => {
+    const hoglet = selectHogletById(hogletId)(useHogletStore.getState());
+    return genderForName(hoglet?.name ?? null);
+  }, []);
+
   // RTS-style keyboard selection. Without this the map has no way to pick a
   // unit without a mouse. F1/F2 grab the two fixed-position structures; F3
   // cycles nests since they're a dynamic set. Each selection also pans the
   // camera so the player can see what they grabbed.
   const selectBuilder = useCallback(() => {
     playSfx("select");
-    playVoice("hoglet:select");
+    playVoice("hoglet:select", genderForName(BUILDER_NAME));
     setSelection({ type: "builder" });
     const pos = builder.visualPosRef.current;
     surfaceRef.current?.centerOnPoint(pos.x, pos.y);
@@ -496,13 +506,19 @@ export function HedgemonyMapView() {
       }
 
       playSfx("select");
-      playVoice("hoglet:select");
+      const recalledGender =
+        recalled?.type === "hoglets" && recalled.ids.length > 0
+          ? voiceGenderForHoglet(recalled.ids[0])
+          : recalled?.type === "builder"
+            ? genderForName(BUILDER_NAME)
+            : undefined;
+      playVoice("hoglet:select", recalledGender);
       setSelection(recalled);
       if (centerPoint) {
         surfaceRef.current?.centerOnPoint(centerPoint.x, centerPoint.y);
       }
     },
-    [nests, builder.visualPosRef],
+    [nests, builder.visualPosRef, voiceGenderForHoglet],
   );
 
   // useHotkeys can't be invoked in a loop, so unroll the nine slots. Each
@@ -646,7 +662,7 @@ export function HedgemonyMapView() {
         const targetY = Math.round(y);
         flashMoveMarker(targetX, targetY);
         playSfx("order");
-        playVoice("hoglet:order_move");
+        playVoice("hoglet:order_move", genderForName(BUILDER_NAME));
         void moveNest(nest, targetX, targetY, {
           undoable: true,
           flashMoveMarker,
@@ -729,13 +745,13 @@ export function HedgemonyMapView() {
         );
       }
       playSfx("order");
-      playVoice("hoglet:order_move");
+      playVoice("hoglet:order_move", voiceGenderForHoglet(selection.ids[0]));
       flashMoveMarker(resolvedX, resolvedY);
       return;
     }
 
     playSfx("order");
-    playVoice("hoglet:order_move");
+    playVoice("hoglet:order_move", genderForName(BUILDER_NAME));
     const resolved = builder.startWalk(
       { x: targetX, y: targetY },
       "idle",
@@ -871,7 +887,7 @@ export function HedgemonyMapView() {
   const handleHogletSelect = useCallback(
     (hogletId: string, additive: boolean) => {
       playSfx("select");
-      playVoice("hoglet:select");
+      playVoice("hoglet:select", voiceGenderForHoglet(hogletId));
       setSelection((prev) => {
         if (additive && prev?.type === "hoglets") {
           // Toggle: shift-clicking an already-selected hoglet removes it.
@@ -884,7 +900,7 @@ export function HedgemonyMapView() {
         return { type: "hoglets", ids: [hogletId] };
       });
     },
-    [],
+    [voiceGenderForHoglet],
   );
 
   const beginBuildNest = () => {
@@ -940,7 +956,7 @@ export function HedgemonyMapView() {
         }}
         onBuilderSelect={() => {
           playSfx("select");
-          playVoice("hoglet:select");
+          playVoice("hoglet:select", genderForName(BUILDER_NAME));
           setSelection({ type: "builder" });
         }}
         onBuilderArrive={builder.handleArrive}
@@ -985,7 +1001,7 @@ export function HedgemonyMapView() {
             onRelocate={() => beginRelocateNest(activeNest.id)}
             onFocusHoglet={(hogletId) => {
               playSfx("select");
-              playVoice("hoglet:select");
+              playVoice("hoglet:select", voiceGenderForHoglet(hogletId));
               setSelection({ type: "hoglets", ids: [hogletId] });
               // Pan camera to the hoglet so it's visible behind the panel.
               const positions = collectLiveHogletPositions();
