@@ -1,13 +1,7 @@
 import type { Hoglet, Nest } from "@main/services/hedgemony/schemas";
 import { useEffect, useMemo } from "react";
 import { initializeNestHogletStore } from "../service/hogletSubscriptionService";
-import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectNestHoglets, useHogletStore } from "../stores/hogletStore";
-import { selectNests, useNestStore } from "../stores/nestStore";
-import {
-  broodHogletPosition,
-  collectHogletWorldPositions,
-} from "../utils/hogletPositions";
 import { BroodHoglet } from "./BroodHoglet";
 
 interface NestBroodClusterProps {
@@ -24,9 +18,6 @@ export function NestBroodCluster({
   onHogletSelect,
 }: NestBroodClusterProps) {
   const hoglets = useHogletStore(selectNestHoglets(nest.id));
-  const byBucket = useHogletStore((s) => s.byBucket);
-  const positionOverrides = useHogletPositionStore((s) => s.positions);
-  const nests = useNestStore(selectNests);
 
   useEffect(() => {
     return initializeNestHogletStore(nest.id);
@@ -41,43 +32,28 @@ export function NestBroodCluster({
     [hoglets],
   );
 
-  const resolvedPositions = useMemo(
-    () =>
-      new Map(
-        collectHogletWorldPositions(nests, byBucket, positionOverrides).map(
-          (pos) => [pos.hogletId, pos],
-        ),
-      ),
-    [nests, byBucket, positionOverrides],
+  const nestOrigin = useMemo(
+    () => ({ x: nest.mapX, y: nest.mapY }),
+    [nest.mapX, nest.mapY],
   );
 
   if (ordered.length === 0) return null;
 
   return (
     <>
-      {ordered.map((hoglet, index) => {
-        const override = positionOverrides[hoglet.id];
-        const position =
-          resolvedPositions.get(hoglet.id) ??
-          override ??
-          broodHogletPosition(index, ordered.length, {
-            x: nest.mapX,
-            y: nest.mapY,
-          });
-        return (
-          <BroodHoglet
-            key={hoglet.id}
-            hoglet={hoglet}
-            nestId={nest.id}
-            index={index}
-            x={position.x}
-            y={position.y}
-            selected={selectedHogletIds.has(hoglet.id)}
-            dimmed={dimmed && !selectedHogletIds.has(hoglet.id)}
-            onSelect={onHogletSelect}
-          />
-        );
-      })}
+      {ordered.map((hoglet, index) => (
+        <BroodHoglet
+          key={hoglet.id}
+          hoglet={hoglet}
+          nestId={nest.id}
+          nestOrigin={nestOrigin}
+          index={index}
+          total={ordered.length}
+          selected={selectedHogletIds.has(hoglet.id)}
+          dimmed={dimmed && !selectedHogletIds.has(hoglet.id)}
+          onSelect={onHogletSelect}
+        />
+      ))}
     </>
   );
 }

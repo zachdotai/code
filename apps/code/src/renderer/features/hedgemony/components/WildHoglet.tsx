@@ -3,6 +3,8 @@ import type { Hoglet } from "@main/services/hedgemony/schemas";
 import { Tooltip } from "@radix-ui/themes";
 import { motion } from "framer-motion";
 import { useHogletVisuals } from "../hooks/useHogletVisuals";
+import { useHogletPositionStore } from "../stores/hogletPositionStore";
+import { wildHogletPosition } from "../utils/hogletPositions";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
 import { PR_DOT_COLOR } from "./hogletStatus";
@@ -12,8 +14,6 @@ const SPRITE_SIZE = 40;
 interface WildHogletProps {
   hoglet: Hoglet;
   index: number;
-  x: number;
-  y: number;
   selected: boolean;
   dimmed?: boolean;
   onSelect: (hogletId: string, additive: boolean) => void;
@@ -22,12 +22,14 @@ interface WildHogletProps {
 export function WildHoglet({
   hoglet,
   index,
-  x,
-  y,
   selected,
   dimmed: dimmedByAffiliation,
   onSelect,
 }: WildHogletProps) {
+  const override = useHogletPositionStore((s) => s.positions[hoglet.id]);
+  const fallback = wildHogletPosition(hoglet.id);
+  const x = override?.x ?? fallback.x;
+  const y = override?.y ?? fallback.y;
   const { ref, isDragging } = useSortable({
     id: hoglet.id,
     index,

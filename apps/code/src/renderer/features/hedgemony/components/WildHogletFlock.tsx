@@ -1,11 +1,5 @@
 import { useMemo } from "react";
-import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectWildHoglets, useHogletStore } from "../stores/hogletStore";
-import { selectNests, useNestStore } from "../stores/nestStore";
-import {
-  collectHogletWorldPositions,
-  wildHogletPosition,
-} from "../utils/hogletPositions";
 import { WildHoglet } from "./WildHoglet";
 
 /**
@@ -19,7 +13,8 @@ import { WildHoglet } from "./WildHoglet";
  * `signalReportId` is set.
  *
  * Subscription to the wild bucket is owned by HedgemonyMapView — we just
- * read from the store here.
+ * read from the store here. Per-hoglet position overrides are read inside
+ * each WildHoglet so a single hoglet moving doesn't re-render the whole flock.
  */
 
 interface WildHogletFlockProps {
@@ -34,9 +29,6 @@ export function WildHogletFlock({
   onHogletSelect,
 }: WildHogletFlockProps) {
   const hoglets = useHogletStore(selectWildHoglets);
-  const byBucket = useHogletStore((s) => s.byBucket);
-  const positionOverrides = useHogletPositionStore((s) => s.positions);
-  const nests = useNestStore(selectNests);
 
   const ordered = useMemo(
     () =>
@@ -47,39 +39,20 @@ export function WildHogletFlock({
     [hoglets],
   );
 
-  const resolvedPositions = useMemo(
-    () =>
-      new Map(
-        collectHogletWorldPositions(nests, byBucket, positionOverrides).map(
-          (pos) => [pos.hogletId, pos],
-        ),
-      ),
-    [nests, byBucket, positionOverrides],
-  );
-
   if (ordered.length === 0) return null;
 
   return (
     <>
-      {ordered.map((hoglet, index) => {
-        const override = positionOverrides[hoglet.id];
-        const { x, y } =
-          resolvedPositions.get(hoglet.id) ??
-          override ??
-          wildHogletPosition(hoglet.id);
-        return (
-          <WildHoglet
-            key={hoglet.id}
-            hoglet={hoglet}
-            index={index}
-            x={x}
-            y={y}
-            selected={selectedHogletIds.has(hoglet.id)}
-            dimmed={dimmed && !selectedHogletIds.has(hoglet.id)}
-            onSelect={onHogletSelect}
-          />
-        );
-      })}
+      {ordered.map((hoglet, index) => (
+        <WildHoglet
+          key={hoglet.id}
+          hoglet={hoglet}
+          index={index}
+          selected={selectedHogletIds.has(hoglet.id)}
+          dimmed={dimmed && !selectedHogletIds.has(hoglet.id)}
+          onSelect={onHogletSelect}
+        />
+      ))}
     </>
   );
 }

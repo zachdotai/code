@@ -147,7 +147,7 @@ brief windows where events are missed.
 approach: track nest IDs and only subscribe/unsubscribe when nests are
 added/removed, not on every selector re-evaluation.
 
-### 11. Unbounded re-rendering on hoglet position changes
+### 11. Unbounded re-rendering on hoglet position changes — DONE
 
 **Files:** `WildHogletFlock.tsx` (~line 27), `NestBroodCluster.tsx` (~line 21)
 
