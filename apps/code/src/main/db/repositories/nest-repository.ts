@@ -31,6 +31,7 @@ export interface UpdateNestData {
   mapY?: number;
   status?: NestStatus;
   health?: NestHealth;
+  primaryRepository?: string | null;
 }
 
 const byId = (id: string) => eq(hedgemonyNests.id, id);

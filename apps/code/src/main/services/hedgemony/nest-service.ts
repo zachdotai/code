@@ -8,8 +8,10 @@ import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { FoldersService } from "../folders/service";
 import type { GitService } from "../git/service";
+import type { CloudTaskClient } from "./cloud-task-client";
 import { buildLocalBootstrapHandoff } from "./local-bootstrap-handoff";
 import type { NestChatService } from "./nest-chat-service";
+import { findConfidentMatch } from "./repo-slug-match";
 import {
   type CompactValidatedNestInput,
   type CreateNestInput,
@@ -40,6 +42,8 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     private readonly git: GitService,
     @inject(MAIN_TOKENS.FoldersService)
     private readonly folders: FoldersService,
+    @inject(MAIN_TOKENS.CloudTaskClient)
+    private readonly cloudTasks: CloudTaskClient,
   ) {
     super();
   }
@@ -58,10 +62,29 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
 
   async create(input: CreateNestInput): Promise<Nest> {
     const bootstrap = input.creationBootstrap;
-    const primaryRepository =
+    let primaryRepository =
       bootstrap?.primaryRepository ??
       bootstrap?.repositories[0] ??
       this.pickFallbackPrimaryRepository();
+    const originalPrimaryRepository = primaryRepository;
+    primaryRepository =
+      await this.validateAndCorrectRepository(primaryRepository);
+    const effectiveInput =
+      input.creationBootstrap &&
+      originalPrimaryRepository &&
+      primaryRepository &&
+      originalPrimaryRepository !== primaryRepository
+        ? {
+            ...input,
+            creationBootstrap: {
+              ...input.creationBootstrap,
+              primaryRepository,
+              repositories: input.creationBootstrap.repositories.map((repo) =>
+                repo === originalPrimaryRepository ? primaryRepository : repo,
+              ),
+            },
+          }
+        : input;
     const created = this.nests.create({
       name: input.name,
       goalPrompt: input.goalPrompt,
@@ -72,15 +95,32 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     });
     const creationMessages = this.nestChat.recordCreationContext(
       created,
-      input,
+      effectiveInput,
     );
     for (const message of creationMessages) {
+      this.emitMessageAppended(message);
+    }
+    if (
+      originalPrimaryRepository &&
+      primaryRepository &&
+      originalPrimaryRepository !== primaryRepository
+    ) {
+      const message = this.nestChat.recordHedgehogMessage({
+        nestId: created.id,
+        kind: "audit",
+        body: `Auto-corrected primary repository: "${originalPrimaryRepository}" -> "${primaryRepository}" (original slug not found in GitHub integrations).`,
+        payloadJson: {
+          type: "primary_repository_auto_corrected",
+          originalRepository: originalPrimaryRepository,
+          correctedRepository: primaryRepository,
+        },
+      });
       this.emitMessageAppended(message);
     }
     if (input.creationBootstrap) {
       const handoffMessage = await this.buildBootstrapHandoffMessage(
         created,
-        input,
+        effectiveInput,
       );
       this.emitMessageAppended(handoffMessage);
     }
@@ -200,6 +240,28 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
 
   private emitChange(nest: Nest, event: NestWatchEvent): void {
     this.emit(HedgemonyEvent.NestChanged, { nestId: nest.id, event });
+  }
+
+  private async validateAndCorrectRepository(
+    slug: string | null,
+  ): Promise<string | null> {
+    if (!slug) return slug;
+
+    try {
+      const integration =
+        await this.cloudTasks.resolveGithubUserIntegration(slug);
+      if (integration) return slug;
+
+      const accessibleRepositories =
+        await this.cloudTasks.listAccessibleRepositorySlugs();
+      return findConfidentMatch(slug, accessibleRepositories) ?? slug;
+    } catch (error) {
+      log.warn("Repository validation failed during nest creation", {
+        repository: slug,
+        error: stringifyError(error),
+      });
+      return slug;
+    }
   }
 
   /**

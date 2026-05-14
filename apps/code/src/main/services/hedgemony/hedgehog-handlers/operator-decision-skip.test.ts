@@ -94,6 +94,8 @@ function makeDeps(overrides: Partial<HedgehogToolDeps> = {}): {
   const deps: HedgehogToolDeps = {
     cloudTasks: {
       updateTaskRun,
+      resolveGithubUserIntegration: vi.fn(async () => "integration-1"),
+      listAccessibleRepositorySlugs: vi.fn(async () => []),
     } as unknown as CloudTaskClient,
     prGraph: {} as PrGraphService,
     feedbackRouting: {} as FeedbackRoutingService,
@@ -191,6 +193,46 @@ describe("spawn_hoglet operator-override skip", () => {
 
     expect(result.success).toBe(true);
     expect(spawnInNest).toHaveBeenCalledOnce();
+  });
+
+  it("refuses an inaccessible repository with fuzzy suggestions", async () => {
+    const ctx: TickContext = {
+      ...makeContext({ operatorDecisions: [] }),
+      nest: makeNest({ primaryRepository: "org/reppo" }),
+      repositoryContext: {
+        repositories: ["org/reppo"],
+        primaryRepository: "org/reppo",
+        availableRepositories: ["org/reppo"],
+      },
+    };
+    const { deps, writeNestMessage, spawnInNest } = makeDeps({
+      cloudTasks: {
+        resolveGithubUserIntegration: vi.fn(async () => null),
+        listAccessibleRepositorySlugs: vi.fn(async () => ["org/repo"]),
+      } as unknown as CloudTaskClient,
+    });
+
+    const result = await spawnHogletHandler.handle(
+      ctx,
+      block("spawn_hoglet", {
+        prompt: "do work",
+      }),
+      deps,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.scratchpadSummary).toContain("suggestions: org/repo");
+    expect(spawnInNest).not.toHaveBeenCalled();
+    expect(writeNestMessage).toHaveBeenCalledWith(
+      "nest-1",
+      expect.objectContaining({
+        body: expect.stringContaining("Did you mean: org/repo?"),
+        payloadJson: expect.objectContaining({
+          type: "spawn_repository_not_accessible",
+          suggestions: ["org/repo"],
+        }),
+      }),
+    );
   });
 });
 

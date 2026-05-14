@@ -39,13 +39,16 @@ vi.mock("./hoglet-runtime-preferences", async () => {
         ),
         executionMode:
           loadout.executionMode ??
-          preferences.executionMode ??
-          (runtimeAdapter === "codex" ? "auto" : "plan"),
+          (runtimeAdapter === "codex" ? "full-access" : "bypassPermissions"),
         environment: loadout.environment ?? schemas.DEFAULT_HOGLET_ENVIRONMENT,
       };
     }),
   };
 });
+
+vi.mock("../settingsStore", () => ({
+  getHedgemonyMaxTicksPerHour: () => 60,
+}));
 
 import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
 import { createMockHedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository.mock";
@@ -311,6 +314,8 @@ function setupMocks(input: {
     })),
     startTaskRun: vi.fn(async () => ({})),
     updateTaskRun: vi.fn(async () => ({})),
+    resolveGithubUserIntegration: vi.fn(async () => "integration-1"),
+    listAccessibleRepositorySlugs: vi.fn(async () => []),
   } as unknown as CloudTaskClient;
 
   const llm = {
@@ -904,6 +909,7 @@ describe("HedgehogTickService", () => {
         model: defaultModelForAdapter("codex"),
         runtimeAdapter: "codex",
         reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
+        initialPermissionMode: "full-access",
       }),
     );
   });
@@ -912,7 +918,6 @@ describe("HedgehogTickService", () => {
     (readUserTaskPreferences as ReturnType<typeof vi.fn>).mockReturnValue({
       runtimeAdapter: "codex",
       reasoningEffort: "medium",
-      executionMode: "full-access",
     });
     const idleHoglets = [makeHoglet({ id: "h1", taskId: "task-1" })];
     const mocks = setupMocks({

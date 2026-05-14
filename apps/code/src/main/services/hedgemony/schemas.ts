@@ -33,10 +33,10 @@ export const modelIdentifierSchema = z
 /**
  * Execution modes that can be persisted into the per-nest loadout or read
  * back from settings-storage. Tighter than `executionModeSchema`:
- * `bypassPermissions` is excluded so a tampered `loadoutJson` row or
- * settings-storage entry cannot silently disable per-tool approvals for
- * every hoglet spawned from a nest. `auto` is kept because it is the
- * documented Codex default.
+ * `bypassPermissions` is excluded so a tampered `loadoutJson` row cannot
+ * silently disable per-tool approvals for every hoglet spawned from a nest.
+ * Hedgemony may still choose a bypassing default internally for autonomous
+ * background hoglets.
  */
 export const persistedExecutionModeSchema = z.enum([
   "default",

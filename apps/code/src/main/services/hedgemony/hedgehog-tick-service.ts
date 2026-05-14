@@ -50,6 +50,7 @@ import {
   type HogletChangedEvent,
   type Nest,
   type NestChangedEvent,
+  type NestLoadout,
   type NestMessage,
   parseNestChatCreationBootstrapPayload,
 } from "./schemas";
@@ -480,14 +481,16 @@ export class HedgehogTickService {
   ): Promise<TickContext> {
     const rawLoadout = parseNestLoadout(nest.loadoutJson);
     const runtime = resolveHogletRuntime(rawLoadout, readUserTaskPreferences());
-    const loadout = {
+    const loadout: NestLoadout = {
       ...rawLoadout,
       runtimeAdapter: runtime.runtimeAdapter,
       model: runtime.model,
       reasoningEffort: runtime.reasoningEffort,
-      executionMode: runtime.executionMode,
       environment: runtime.environment,
     };
+    if (runtime.executionMode !== "bypassPermissions") {
+      loadout.executionMode = runtime.executionMode;
+    }
     const hoglets = this.hogletService
       .list({ nestId: nest.id })
       .filter((h): h is Hoglet => !h.deletedAt);

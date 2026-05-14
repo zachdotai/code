@@ -4,6 +4,7 @@ vi.mock("../../utils/logger.js", () => ({
   logger: {
     scope: () => ({
       error: vi.fn(),
+      warn: vi.fn(),
     }),
   },
 }));
@@ -142,6 +143,35 @@ describe("CloudTaskClient", () => {
       "https://app.posthog.test/api/projects/42/tasks/task-1/",
       { method: "DELETE" },
     );
+  });
+
+  it("lists accessible repository slugs from the integration cache", async () => {
+    const auth = createAuthMock(42);
+    (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_fetch: typeof fetch, url: string) => {
+        if (url.endsWith("/api/users/@me/integrations/")) {
+          return jsonResponse({
+            results: [{ id: "integration-1", installation_id: "install-1" }],
+          });
+        }
+        if (
+          url.endsWith(
+            "/api/users/@me/integrations/github/install-1/repos/?limit=500",
+          )
+        ) {
+          return jsonResponse({
+            results: ["PostHog/posthog", "Brooker-Fam/nexus-games"],
+          });
+        }
+        return jsonResponse({});
+      },
+    );
+    const client = new CloudTaskClient(auth);
+
+    await expect(client.listAccessibleRepositorySlugs()).resolves.toEqual([
+      "PostHog/posthog",
+      "Brooker-Fam/nexus-games",
+    ]);
   });
 
   it("throws on non-OK task creation responses", async () => {

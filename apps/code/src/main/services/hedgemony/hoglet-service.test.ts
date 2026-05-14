@@ -39,8 +39,7 @@ vi.mock("./hoglet-runtime-preferences", async () => {
         ),
         executionMode:
           loadout.executionMode ??
-          preferences.executionMode ??
-          (runtimeAdapter === "codex" ? "auto" : "plan"),
+          (runtimeAdapter === "codex" ? "full-access" : "bypassPermissions"),
         environment: loadout.environment ?? schemas.DEFAULT_HOGLET_ENVIRONMENT,
       };
     }),
@@ -48,6 +47,7 @@ vi.mock("./hoglet-runtime-preferences", async () => {
 });
 
 import type { HogletRepository } from "../../db/repositories/hoglet-repository";
+import type { NestRepository } from "../../db/repositories/nest-repository";
 import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
 import { createMockPrDependencyRepository } from "../../db/repositories/pr-dependency-repository.mock";
 import type { WorkspaceService } from "../workspace/service";
@@ -67,6 +67,7 @@ import {
   defaultModelForAdapter,
   HedgemonyEvent,
   type Hoglet,
+  type Nest,
 } from "./schemas";
 
 function createMockPrGraphService(): PrGraphService {
@@ -104,6 +105,26 @@ function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
+    ...overrides,
+  };
+}
+
+function makeNest(overrides: Partial<Nest> = {}): Nest {
+  const now = "2026-05-13T00:00:00.000Z";
+  return {
+    id: "nest-1",
+    name: "Checkout lift",
+    goalPrompt: "Improve checkout conversion",
+    definitionOfDone: null,
+    mapX: 0,
+    mapY: 0,
+    status: "active",
+    health: "ok",
+    targetMetricId: null,
+    loadoutJson: "{}",
+    primaryRepository: null,
+    createdAt: now,
+    updatedAt: now,
     ...overrides,
   };
 }
@@ -199,6 +220,14 @@ function createMockRepo() {
   return repo as typeof repo & HogletRepository;
 }
 
+function createMockNestRepository(
+  nest: Nest | null = makeNest(),
+): NestRepository {
+  return {
+    findById: vi.fn(() => nest),
+  } as unknown as NestRepository;
+}
+
 function createMockCloudTaskClient(
   taskOverrides: Partial<{
     id: string;
@@ -254,6 +283,7 @@ describe("HogletService", () => {
   let repo: ReturnType<typeof createMockRepo>;
   let router: AffinityRouterService;
   let prDeps: ReturnType<typeof createMockPrDependencyRepository>;
+  let nestRepository: NestRepository;
   let cloudTasks: CloudTaskClient;
   let workspaceService: WorkspaceService;
   let service: HogletService;
@@ -263,12 +293,14 @@ describe("HogletService", () => {
     repo = createMockRepo();
     router = createMockAffinityRouter(null);
     prDeps = createMockPrDependencyRepository();
+    nestRepository = createMockNestRepository();
     cloudTasks = createMockCloudTaskClient();
     workspaceService = createMockWorkspaceService();
     service = new HogletService(
       repo,
       router,
       prDeps as unknown as PrDependencyRepository,
+      nestRepository,
       cloudTasks,
       createMockPrGraphService(),
       workspaceService,
@@ -505,6 +537,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -545,6 +578,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -568,6 +602,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -652,6 +687,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -677,6 +713,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -795,6 +832,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -824,6 +862,7 @@ describe("HogletService", () => {
           runtimeAdapter: "claude",
           model: DEFAULT_HOGLET_MODEL,
           reasoningEffort: DEFAULT_CLAUDE_REASONING_EFFORT,
+          initialPermissionMode: "bypassPermissions",
           prAuthorshipMode: "bot",
         }),
       );
@@ -855,6 +894,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -887,6 +927,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -903,6 +944,7 @@ describe("HogletService", () => {
           model: defaultModelForAdapter("codex"),
           runtimeAdapter: "codex",
           reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
+          initialPermissionMode: "full-access",
         }),
       );
     });
@@ -911,13 +953,13 @@ describe("HogletService", () => {
       (readUserTaskPreferences as ReturnType<typeof vi.fn>).mockReturnValue({
         runtimeAdapter: "codex",
         reasoningEffort: "medium",
-        executionMode: "full-access",
       });
       cloudTasks = createMockCloudTaskClient({ id: "cloud-task-prefs" });
       service = new HogletService(
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -942,6 +984,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -970,6 +1013,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -1012,6 +1056,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -1033,6 +1078,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -1066,6 +1112,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -1095,6 +1142,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -1120,6 +1168,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -1139,6 +1188,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -1189,6 +1239,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -1216,7 +1267,11 @@ describe("HogletService", () => {
         expect.objectContaining({
           description: "Address late feedback",
           repository: "org/repo",
+          githubUserIntegration: "user-integration-auto",
         }),
+      );
+      expect(cloudTasks.resolveGithubUserIntegration).toHaveBeenCalledWith(
+        "org/repo",
       );
       expect(cloudTasks.createTaskRun).toHaveBeenCalledWith(
         "child-task-1",
@@ -1261,6 +1316,45 @@ describe("HogletService", () => {
       });
     });
 
+    it("prefers the nest primaryRepository over a stale parent repository", async () => {
+      nestRepository = createMockNestRepository(
+        makeNest({ primaryRepository: "org/correct-repo" }),
+      );
+      cloudTasks = createMockCloudTaskClient({
+        id: "child-task-corrected",
+        repository: "org/stale-repo",
+      });
+      (
+        cloudTasks.resolveGithubUserIntegration as ReturnType<typeof vi.fn>
+      ).mockResolvedValueOnce("user-integration-corrected");
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        nestRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+        workspaceService,
+      );
+
+      await service.spawnFollowUp({
+        nestId: "nest-1",
+        parentTaskId: "parent-task-1",
+        prompt: "Address late feedback",
+        payloadRef: "pr-comment:12345",
+      });
+
+      expect(cloudTasks.resolveGithubUserIntegration).toHaveBeenCalledWith(
+        "org/correct-repo",
+      );
+      expect(cloudTasks.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repository: "org/correct-repo",
+          githubUserIntegration: "user-integration-corrected",
+        }),
+      );
+    });
+
     it("rolls back cloud task state when follow-up workspace creation fails", async () => {
       cloudTasks = createMockCloudTaskClient({ id: "child-task-fail" });
       (
@@ -1270,6 +1364,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,
@@ -1306,6 +1401,7 @@ describe("HogletService", () => {
         repo,
         router,
         prDeps as unknown as PrDependencyRepository,
+        nestRepository,
         cloudTasks,
         createMockPrGraphService(),
         workspaceService,

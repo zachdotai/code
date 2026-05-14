@@ -19,6 +19,7 @@ import type { NestRepository } from "../../db/repositories/nest-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import type { FoldersService } from "../folders/service";
 import type { GitService } from "../git/service";
+import type { CloudTaskClient } from "./cloud-task-client";
 import type { NestChatService } from "./nest-chat-service";
 import { NestService } from "./nest-service";
 import { HedgemonyEvent, type Nest, type NestMessage } from "./schemas";
@@ -103,12 +104,14 @@ function createMockNestChatService() {
     recordBootstrapHandoffFailure: vi.fn(() => makeMessage()),
     recordValidationContext: vi.fn(() => makeMessage()),
     compactValidatedNest: vi.fn(() => makeMessage()),
+    recordHedgehogMessage: vi.fn(() => makeMessage()),
   } as unknown as NestChatService & {
     recordCreationContext: ReturnType<typeof vi.fn>;
     recordBootstrapHandoff: ReturnType<typeof vi.fn>;
     recordBootstrapHandoffFailure: ReturnType<typeof vi.fn>;
     recordValidationContext: ReturnType<typeof vi.fn>;
     compactValidatedNest: ReturnType<typeof vi.fn>;
+    recordHedgehogMessage: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -154,12 +157,23 @@ function createMockFoldersService() {
   };
 }
 
+function createMockCloudTaskClient() {
+  return {
+    resolveGithubUserIntegration: vi.fn(async () => "integration-1"),
+    listAccessibleRepositorySlugs: vi.fn(async () => []),
+  } as unknown as CloudTaskClient & {
+    resolveGithubUserIntegration: ReturnType<typeof vi.fn>;
+    listAccessibleRepositorySlugs: ReturnType<typeof vi.fn>;
+  };
+}
+
 describe("NestService", () => {
   let nestRepository: ReturnType<typeof createMockNestRepository>;
   let nestChat: ReturnType<typeof createMockNestChatService>;
   let repositoryRepository: ReturnType<typeof createMockRepositoryRepository>;
   let git: ReturnType<typeof createMockGitService>;
   let folders: ReturnType<typeof createMockFoldersService>;
+  let cloudTasks: ReturnType<typeof createMockCloudTaskClient>;
   let service: NestService;
 
   beforeEach(() => {
@@ -168,12 +182,14 @@ describe("NestService", () => {
     repositoryRepository = createMockRepositoryRepository();
     git = createMockGitService();
     folders = createMockFoldersService();
+    cloudTasks = createMockCloudTaskClient();
     service = new NestService(
       nestRepository,
       nestChat,
       repositoryRepository,
       git,
       folders,
+      cloudTasks,
     );
   });
 
@@ -272,6 +288,102 @@ describe("NestService", () => {
     );
   });
 
+  it("auto-corrects a missing primaryRepository when GitHub has a confident match", async () => {
+    cloudTasks.resolveGithubUserIntegration.mockResolvedValue(null);
+    cloudTasks.listAccessibleRepositorySlugs.mockResolvedValue([
+      "Brooker-Fam/nexus-games",
+    ]);
+
+    const nest = await service.create({
+      name: "Bootstrapped",
+      goalPrompt: "Work on a specific repo",
+      definitionOfDone: null,
+      mapX: 0,
+      mapY: 0,
+      creationMode: "guided",
+      creationBootstrap: {
+        mode: "agent_bootstrap",
+        repositories: ["Brooker-Fam/nexus-game"],
+        primaryRepository: "Brooker-Fam/nexus-game",
+        prompt: "go",
+        handoffInstructions: "ok",
+      },
+    });
+
+    expect(nestRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        primaryRepository: "Brooker-Fam/nexus-games",
+      }),
+    );
+    expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nestId: nest.id,
+        kind: "audit",
+        body: expect.stringContaining(
+          '"Brooker-Fam/nexus-game" -> "Brooker-Fam/nexus-games"',
+        ),
+      }),
+    );
+  });
+
+  it("leaves a valid primaryRepository unchanged", async () => {
+    await service.create({
+      name: "Bootstrapped",
+      goalPrompt: "Work on a specific repo",
+      definitionOfDone: null,
+      mapX: 0,
+      mapY: 0,
+      creationMode: "guided",
+      creationBootstrap: {
+        mode: "agent_bootstrap",
+        repositories: ["posthog/posthog"],
+        primaryRepository: "posthog/posthog",
+        prompt: "go",
+        handoffInstructions: "ok",
+      },
+    });
+
+    expect(cloudTasks.listAccessibleRepositorySlugs).not.toHaveBeenCalled();
+    expect(nestRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ primaryRepository: "posthog/posthog" }),
+    );
+    expect(nestChat.recordHedgehogMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        payloadJson: expect.objectContaining({
+          type: "primary_repository_auto_corrected",
+        }),
+      }),
+    );
+  });
+
+  it("keeps the original primaryRepository when validation fails", async () => {
+    cloudTasks.resolveGithubUserIntegration.mockRejectedValue(
+      new Error("api unavailable"),
+    );
+
+    await service.create({
+      name: "Bootstrapped",
+      goalPrompt: "Work on a specific repo",
+      definitionOfDone: null,
+      mapX: 0,
+      mapY: 0,
+      creationMode: "guided",
+      creationBootstrap: {
+        mode: "agent_bootstrap",
+        repositories: ["Brooker-Fam/nexus-game"],
+        primaryRepository: "Brooker-Fam/nexus-game",
+        prompt: "go",
+        handoffInstructions: "ok",
+      },
+    });
+
+    expect(nestRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        primaryRepository: "Brooker-Fam/nexus-game",
+      }),
+    );
+  });
+
   it("leaves primaryRepository null when no bootstrap and no local repos exist", async () => {
     repositoryRepository.findMostRecentlyAccessed.mockReturnValue(null);
 
@@ -287,6 +399,7 @@ describe("NestService", () => {
     expect(nestRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({ primaryRepository: null }),
     );
+    expect(cloudTasks.resolveGithubUserIntegration).not.toHaveBeenCalled();
   });
 
   it("records a local bootstrap handoff when creation includes bootstrap context", async () => {

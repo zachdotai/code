@@ -18,7 +18,7 @@ import {
 } from "./schemas";
 
 describe("resolveHogletRuntime", () => {
-  it("uses user preferences when the nest has no explicit loadout", () => {
+  it("uses user model preferences but keeps the autonomous permission default", () => {
     expect(
       resolveHogletRuntime(
         {},
@@ -26,7 +26,6 @@ describe("resolveHogletRuntime", () => {
           runtimeAdapter: "codex",
           model: "gpt-5.5",
           reasoningEffort: "high",
-          executionMode: "full-access",
         },
       ),
     ).toEqual({
@@ -52,7 +51,6 @@ describe("resolveHogletRuntime", () => {
           runtimeAdapter: "codex",
           model: "gpt-5.5",
           reasoningEffort: "high",
-          executionMode: "full-access",
         },
       ),
     ).toEqual({
@@ -72,14 +70,23 @@ describe("resolveHogletRuntime", () => {
           runtimeAdapter: "claude",
           model: "claude-sonnet-4-5-20250929",
           reasoningEffort: "max",
-          executionMode: "plan",
         },
       ),
     ).toEqual({
       runtimeAdapter: "codex",
       model: defaultModelForAdapter("codex"),
       reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
-      executionMode: "plan",
+      executionMode: "full-access",
+      environment: "cloud",
+    });
+  });
+
+  it("defaults Claude hoglets to bypass permissions for autonomous cloud work", () => {
+    expect(resolveHogletRuntime({}, {})).toEqual({
+      runtimeAdapter: "claude",
+      model: defaultModelForAdapter("claude"),
+      reasoningEffort: "max",
+      executionMode: "bypassPermissions",
       environment: "cloud",
     });
   });

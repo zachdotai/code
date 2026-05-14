@@ -213,6 +213,7 @@ export class CloudTaskClient {
     null;
   private repoIntegrationCache: {
     map: Map<string, string>;
+    slugs: string[];
     fetchedAt: number;
   } | null = null;
 
@@ -551,6 +552,7 @@ export class CloudTaskClient {
       const integrations = integrationsData.results ?? [];
 
       const map = new Map<string, string>();
+      const slugs: string[] = [];
       await Promise.all(
         integrations.map(async (integration) => {
           const reposRes = await this.auth.authenticatedFetch(
@@ -573,14 +575,16 @@ export class CloudTaskClient {
             return;
           }
           for (const repo of reposData.results ?? []) {
-            if (!map.has(repo.toLowerCase())) {
-              map.set(repo.toLowerCase(), integration.id);
+            const key = repo.toLowerCase();
+            if (!map.has(key)) {
+              map.set(key, integration.id);
+              slugs.push(repo);
             }
           }
         }),
       );
 
-      this.repoIntegrationCache = { map, fetchedAt: now };
+      this.repoIntegrationCache = { map, slugs, fetchedAt: now };
       return map.get(repository.toLowerCase()) ?? null;
     } catch (error) {
       log.warn("resolveGithubUserIntegration failed", {
@@ -588,6 +592,18 @@ export class CloudTaskClient {
         error: error instanceof Error ? error.message : String(error),
       });
       return null;
+    }
+  }
+
+  async listAccessibleRepositorySlugs(): Promise<string[]> {
+    try {
+      await this.resolveGithubUserIntegration("__cache_warmup__");
+      return [...(this.repoIntegrationCache?.slugs ?? [])];
+    } catch (error) {
+      log.warn("listAccessibleRepositorySlugs failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
     }
   }
 

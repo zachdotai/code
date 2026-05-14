@@ -1,5 +1,6 @@
 import { logger } from "../../../utils/logger";
 import { spawnHogletArgs } from "../hedgehog-tools";
+import { findSimilarRepoSlugs } from "../repo-slug-match";
 import {
   clampReasoningEffortForAdapter,
   defaultModelForAdapter,
@@ -116,6 +117,46 @@ export const spawnHogletHandler: HedgehogToolHandler = {
         scratchpadSummary:
           "spawn_hoglet refused: no repository resolvable for this nest",
       };
+    }
+
+    try {
+      const integration =
+        await deps.cloudTasks.resolveGithubUserIntegration(repository);
+      if (!integration) {
+        const accessibleRepositories =
+          await deps.cloudTasks.listAccessibleRepositorySlugs();
+        const suggestions = findSimilarRepoSlugs(
+          repository,
+          accessibleRepositories,
+        );
+        const suggestionText =
+          suggestions.length > 0
+            ? ` Did you mean: ${suggestions.join(", ")}?`
+            : "";
+        deps.writeNestMessage(ctx.nest.id, {
+          kind: "audit",
+          body: `Repository "${repository}" is not accessible.${suggestionText}`,
+          payloadJson: {
+            type: "spawn_repository_not_accessible",
+            repository,
+            suggestions,
+          },
+        });
+        return {
+          success: false,
+          scratchpadSummary: `spawn_hoglet refused: repository "${repository}" is not accessible${
+            suggestions.length > 0
+              ? `; suggestions: ${suggestions.join(", ")}`
+              : ""
+          }`,
+        };
+      }
+    } catch (error) {
+      log.warn("Repository validation failed before spawn; proceeding", {
+        nestId: ctx.nest.id,
+        repository,
+        error: stringifyError(error),
+      });
     }
 
     try {

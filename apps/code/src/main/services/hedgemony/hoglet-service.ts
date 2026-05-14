@@ -2,6 +2,7 @@ import { Saga, type SagaLogger } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import type { Task, TaskRun } from "../../../shared/types";
 import type { HogletRepository } from "../../db/repositories/hoglet-repository";
+import type { NestRepository } from "../../db/repositories/nest-repository";
 import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
@@ -152,6 +153,8 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     private readonly affinityRouter: AffinityRouterService,
     @inject(MAIN_TOKENS.PrDependencyRepository)
     private readonly prDependencies: PrDependencyRepository,
+    @inject(MAIN_TOKENS.NestRepository)
+    private readonly nests: NestRepository,
     @inject(MAIN_TOKENS.CloudTaskClient)
     private readonly cloudTasks: CloudTaskClient,
     @inject(MAIN_TOKENS.PrGraphService)
@@ -610,8 +613,8 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
 
   /**
    * Spawns a follow-up hoglet in `nestId` to address late feedback on a
-   * merged/closed parent's PR. Inherits the parent Task's repository so the
-   * new agent operates in the same code context. Writes a
+   * merged/closed parent's PR. Prefers the nest's current repository so
+   * corrected nest state beats any stale parent task fields. Writes a
    * `hedgemony_pr_dependency` edge with `state = "follow_up"` linking the
    * new child Task to the parent, so the hedgehog and PR-graph UIs track
    * them together.
@@ -625,6 +628,12 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     const parent = await this.cloudTasks.getTaskWithLatestRun(
       input.parentTaskId,
     );
+    const nestPrimaryRepository =
+      this.nests.findById(input.nestId)?.primaryRepository ?? null;
+    const repository = nestPrimaryRepository ?? parent.task.repository ?? null;
+    const githubUserIntegration = repository
+      ? await this.cloudTasks.resolveGithubUserIntegration(repository)
+      : null;
 
     const runtime = resolveHogletRuntime(loadout, readUserTaskPreferences());
 
@@ -635,10 +644,9 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
       task: {
         title: `Follow-up: ${parent.task.title}`,
         description: input.prompt,
-        repository: parent.task.repository ?? null,
+        repository,
         originProduct: "user_created",
-        githubIntegration: parent.task.github_integration ?? null,
-        githubUserIntegration: parent.task.github_user_integration ?? null,
+        githubUserIntegration,
       },
       run: {
         environment: runtime.environment,

@@ -13,8 +13,6 @@ import {
   hogletRuntimeAdapter,
   modelIdentifierSchema,
   type NestLoadout,
-  type PersistedExecutionMode,
-  persistedExecutionModeSchema,
 } from "./schemas";
 
 const log = logger.scope("hoglet-runtime-preferences");
@@ -23,24 +21,25 @@ interface RendererSettingsState {
   lastUsedAdapter?: unknown;
   lastUsedModel?: unknown;
   lastUsedReasoningEffort?: unknown;
-  defaultInitialTaskMode?: unknown;
-  lastUsedInitialTaskMode?: unknown;
 }
 
 export interface UserTaskPreferences {
   runtimeAdapter?: HogletRuntimeAdapter;
   model?: string;
   reasoningEffort?: HedgemonyReasoningEffort;
-  executionMode?: PersistedExecutionMode;
 }
 
 export interface ResolvedHogletRuntime {
   runtimeAdapter: HogletRuntimeAdapter;
   model: string;
   reasoningEffort: HedgemonyReasoningEffort;
-  executionMode: PersistedExecutionMode;
+  executionMode: HogletExecutionMode;
   environment: "local" | "cloud";
 }
+
+export type HogletExecutionMode =
+  | NonNullable<NestLoadout["executionMode"]>
+  | "bypassPermissions";
 
 export function readUserTaskPreferences(): UserTaskPreferences {
   if (!rendererStore.has("settings-storage")) return {};
@@ -58,11 +57,6 @@ export function readUserTaskPreferences(): UserTaskPreferences {
     const reasoningEffort = hedgemonyReasoningEffort.safeParse(
       state.lastUsedReasoningEffort,
     );
-    const executionMode = resolvePreferredExecutionMode(
-      state.defaultInitialTaskMode,
-      state.lastUsedInitialTaskMode,
-      runtimeAdapter.success ? runtimeAdapter.data : undefined,
-    );
     const modelParse = modelIdentifierSchema.safeParse(state.lastUsedModel);
     if (!modelParse.success && state.lastUsedModel !== undefined) {
       log.warn("lastUsedModel rejected; using adapter default", {
@@ -75,7 +69,6 @@ export function readUserTaskPreferences(): UserTaskPreferences {
       reasoningEffort: reasoningEffort.success
         ? reasoningEffort.data
         : undefined,
-      executionMode,
     };
   } catch {
     return {};
@@ -103,9 +96,7 @@ export function resolveHogletRuntime(
     runtimeAdapter,
   );
   const executionMode =
-    loadout.executionMode ??
-    preferences.executionMode ??
-    defaultExecutionModeForAdapter(runtimeAdapter);
+    loadout.executionMode ?? defaultExecutionModeForAdapter(runtimeAdapter);
   return {
     runtimeAdapter,
     model,
@@ -117,26 +108,9 @@ export function resolveHogletRuntime(
 
 export function defaultExecutionModeForAdapter(
   adapter: HogletRuntimeAdapter,
-): PersistedExecutionMode {
-  return adapter === "codex" ? "auto" : "plan";
-}
-
-function resolvePreferredExecutionMode(
-  defaultInitialTaskMode: unknown,
-  lastUsedInitialTaskMode: unknown,
-  adapter: HogletRuntimeAdapter | undefined,
-): PersistedExecutionMode | undefined {
-  if (defaultInitialTaskMode === "last_used") {
-    const parsed = persistedExecutionModeSchema.safeParse(
-      lastUsedInitialTaskMode,
-    );
-    if (parsed.success) return parsed.data;
-    if (lastUsedInitialTaskMode !== undefined) {
-      log.warn(
-        "lastUsedInitialTaskMode rejected for hedgemony (bypassPermissions or unknown); using adapter default",
-        { value: lastUsedInitialTaskMode },
-      );
-    }
-  }
-  return adapter ? defaultExecutionModeForAdapter(adapter) : undefined;
+): HogletExecutionMode {
+  // Hoglets are background workers: permission prompts strand them until an
+  // operator opens the task. Use autonomous defaults unless the nest loadout
+  // explicitly asks for a stricter mode.
+  return adapter === "codex" ? "full-access" : "bypassPermissions";
 }
