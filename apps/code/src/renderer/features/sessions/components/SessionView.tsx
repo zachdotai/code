@@ -20,7 +20,6 @@ import {
 import type { Plan } from "@features/sessions/types";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useWorkThreadParticipantsStore } from "@features/work/stores/workThreadParticipantsStore";
-import { useWorkThreadsStore } from "@features/work/stores/workThreadsStore";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { useConnectivity } from "@hooks/useConnectivity";
@@ -33,6 +32,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcResponse,
 } from "@shared/types/session-events";
+import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSessionService } from "../service/service";
@@ -249,9 +249,14 @@ export function SessionView({
     return plan;
   }, [events]);
 
-  const isWorkThread = useWorkThreadsStore((s) =>
-    taskId ? s.isThread(taskId) : false,
-  );
+  // HACKATHON SHORTCUT: see useWorkThreadTasks.ts. The most reliable signal that
+  // we're inside a Work thread chat is that the app is in Work mode — the user
+  // got here via the Work sidebar / Work home. We don't need to wait for task
+  // data to hydrate with `repository_config.work_thread` before flipping the
+  // editor to team-member @-mentions. The repository_config marker is still set
+  // so other clients (Charles) can pick the task up via useWorkThreadTasks.
+  const appMode = useNavigationStore((s) => s.mode);
+  const isWorkThread = appMode === "work";
   const addParticipants = useWorkThreadParticipantsStore(
     (s) => s.addParticipants,
   );

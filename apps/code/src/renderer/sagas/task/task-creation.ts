@@ -61,6 +61,12 @@ export interface TaskCreationInput {
   cloudRunSource?: CloudRunSource;
   signalReportId?: string;
   originProduct?: string;
+  /**
+   * HACKATHON SHORTCUT: see `features/work/hooks/useWorkThreadTasks.ts`. Used by
+   * Work mode to stash `{ work_thread: true, collaborators: [] }` on the task
+   * via the existing JSON field, without backend changes.
+   */
+  repositoryConfig?: Record<string, unknown>;
 }
 
 export interface TaskCreationOutput {
@@ -425,6 +431,7 @@ export class TaskCreationSaga extends Saga<
           signal_report_task_relationship: input.signalReportId
             ? SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP
             : undefined,
+          repository_config: input.repositoryConfig ?? undefined,
         });
         return result as unknown as Task;
       },

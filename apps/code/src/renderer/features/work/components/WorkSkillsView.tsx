@@ -337,6 +337,9 @@ export function WorkSkillsView() {
   const setMode = useNavigationStore((s) => s.setMode);
   const navigateToSkills = useNavigationStore((s) => s.navigateToSkills);
   const navigateToWorkSkill = useNavigationStore((s) => s.navigateToWorkSkill);
+  const navigateToWorkGenerate = useNavigationStore(
+    (s) => s.navigateToWorkGenerate,
+  );
 
   const workSkills = useWorkSkillsStore((s) => s.skills);
   const addSkill = useWorkSkillsStore((s) => s.addSkill);
@@ -473,17 +476,27 @@ export function WorkSkillsView() {
             </SegmentedControl.Item>
           </SegmentedControl.Root>
 
-          {scope === "team" && (
+          <Flex align="center" gap="2">
             <button
               type="button"
-              onClick={() => openUrlInBrowser(TEAM_SKILLS_LIBRARY_URL)}
-              title="Open the team skills library in PostHog Cloud"
-              className="flex items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-2.5 py-1 text-(--gray-11) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
+              onClick={navigateToWorkGenerate}
+              className="flex items-center gap-1 rounded-(--radius-2) border border-(--accent-7) bg-(--accent-3) px-2.5 py-1 text-(--accent-11) text-[12px] transition-colors hover:border-(--accent-8) hover:bg-(--accent-4)"
             >
-              Manage in PostHog
-              <ArrowSquareOut size={12} weight="bold" />
+              <Plus size={12} weight="bold" />
+              New skill
             </button>
-          )}
+            {scope === "team" && (
+              <button
+                type="button"
+                onClick={() => openUrlInBrowser(TEAM_SKILLS_LIBRARY_URL)}
+                title="Open the team skills library in PostHog Cloud"
+                className="flex items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-2.5 py-1 text-(--gray-11) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
+              >
+                Manage in PostHog
+                <ArrowSquareOut size={12} weight="bold" />
+              </button>
+            )}
+          </Flex>
         </Flex>
 
         {scope === "user" && (

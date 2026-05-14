@@ -46,6 +46,10 @@ export interface Task {
   created_by?: UserBasic | null;
   origin_product: string;
   repository?: string | null; // Format: "organization/repository" (e.g., "posthog/posthog-js")
+  // Free-form JSON bag stored on the backend Task model. Used by Code mode for repo
+  // org/repo, and (HACKATHON SHORTCUT — see useWorkThreadTasks) for Work-thread
+  // markers and the client-side @-mention collaborator list.
+  repository_config?: Record<string, unknown> | null;
   github_integration?: number | null;
   github_user_integration?: string | null;
   json_schema?: Record<string, unknown> | null;

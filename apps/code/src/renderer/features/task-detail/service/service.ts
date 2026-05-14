@@ -66,6 +66,7 @@ export class TaskService {
             void queryClient.invalidateQueries(
               trpc.workspace.getAll.pathFilter(),
             );
+            void queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
             onTaskReady(output);
           }
         : undefined,
@@ -79,6 +80,7 @@ export class TaskService {
         this.updateStoresOnSuccess(result.data, input);
       }
       void queryClient.invalidateQueries(trpc.workspace.getAll.pathFilter());
+      void queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
     }
 
     return result;

@@ -1,18 +1,24 @@
+import { useFolders } from "@features/folders/hooks/useFolders";
 import {
-  Bug,
-  FilmReel,
-  Flag,
-  FunnelSimple,
+  CalendarCheck,
+  ChartLineUp,
+  CurrencyDollar,
   type IconProps,
-  Newspaper,
-  UserMinus,
+  Megaphone,
 } from "@phosphor-icons/react";
-import { Box, Text } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
+import { get } from "@renderer/di/container";
+import { RENDERER_TOKENS } from "@renderer/di/tokens";
+import type {
+  TaskCreationInput,
+  TaskService,
+} from "@renderer/features/task-detail/service/service";
+import { trpcClient } from "@renderer/trpc/client";
+import { toast } from "@renderer/utils/toast";
 import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
-import { toast } from "@utils/toast";
 import { type ComponentType, useState } from "react";
-import { createProject } from "../canvas/useProjectCanvas";
+import { useWorkThreadsStore } from "../stores/workThreadsStore";
 
 const log = logger.scope("work-sample-projects");
 
@@ -25,48 +31,39 @@ interface SampleProject {
 
 const PROJECTS: SampleProject[] = [
   {
-    icon: Newspaper,
-    title: "Monday brief",
-    description: "What changed in the product last week",
+    icon: CalendarCheck,
+    title: "Weekly status",
+    description: "What you shipped, what's next, what's stuck",
     prompt:
-      "Pull together a Monday brief: top product events that moved last week, notable user-behavior shifts, and anything that looks like a regression.",
+      "Draft my weekly status update — what I shipped, what's next, what I'm stuck on.",
   },
   {
-    icon: FunnelSimple,
-    title: "Funnel leaks",
-    description: "Where users are quietly falling out",
+    icon: Megaphone,
+    title: "Campaign performance",
+    description: "Which channels are converting this week",
     prompt:
-      "Find the biggest drop-off points in our signup-to-activation funnel over the last 30 days and propose two hypotheses for each.",
+      "Summarize this week's marketing campaign performance and what's actually converting.",
   },
   {
-    icon: UserMinus,
-    title: "Churn radar",
-    description: "Who used to be active and isn't anymore",
+    icon: ChartLineUp,
+    title: "Feature adoption",
+    description: "Which new features are sticking",
     prompt:
-      "Identify users who were highly active in the last 60 days but have gone quiet in the last 14, and group them by what they were doing before.",
+      "Which recently shipped features are users actually adopting, and which are flat?",
   },
   {
-    icon: Flag,
-    title: "Flag hygiene",
-    description: "Stale or fully rolled-out flags safe to remove",
+    icon: CurrencyDollar,
+    title: "Pipeline brief",
+    description: "Top deals, risk, and momentum",
     prompt:
-      "Audit our feature flags — which are stale, fully rolled out, or no longer being evaluated, and which look safe to delete?",
-  },
-  {
-    icon: Bug,
-    title: "Error triage",
-    description: "Noisiest new errors this week",
-    prompt:
-      "Surface the noisiest new error tracking issues from the last 7 days, ranked by user impact, with a one-line root-cause guess for each.",
-  },
-  {
-    icon: FilmReel,
-    title: "Replay digest",
-    description: "Three session replays worth watching",
-    prompt:
-      "Pick three representative session replays from the last 7 days that are worth me actually watching — one happy path, one friction moment, one weird outlier.",
+      "Pull together this week's pipeline brief — top deals, risk signals, and where momentum is shifting.",
   },
 ];
+
+async function resolveRepoPath(folders: string[]): Promise<string> {
+  if (folders.length > 0) return folders[0];
+  return trpcClient.os.getHomeDir.query();
+}
 
 function SampleCard({
   project,
@@ -83,15 +80,15 @@ function SampleCard({
       type="button"
       onClick={() => onCreate(project.prompt)}
       disabled={disabled}
-      className="group flex h-full flex-col items-start gap-1 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-3 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) disabled:cursor-not-allowed disabled:opacity-60"
+      className="flex flex-1 flex-col items-start gap-1 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-3 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) disabled:cursor-not-allowed disabled:opacity-60"
     >
-      <Box className="mb-1 text-(--gray-11) transition-colors group-hover:text-(--gray-12)">
+      <Box className="text-(--gray-11)">
         <Icon size={20} weight="duotone" />
       </Box>
       <Text as="div" weight="medium" className="text-(--gray-12) text-[13px]">
         {project.title}
       </Text>
-      <Text as="div" className="text-(--gray-11) text-[12px] leading-snug">
+      <Text as="div" className="text-(--gray-11) text-[12px]">
         {project.description}
       </Text>
     </button>
@@ -99,29 +96,52 @@ function SampleCard({
 }
 
 export function WorkSampleProjects() {
-  const navigateToWorkProjectDetail = useNavigationStore(
-    (s) => s.navigateToWorkProjectDetail,
-  );
+  const navigateToWorkTask = useNavigationStore((s) => s.navigateToWorkTask);
+  const addThread = useWorkThreadsStore((s) => s.addThread);
+  const { folders, isLoaded: foldersLoaded } = useFolders();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleCreate = async (prompt: string) => {
-    if (isSubmitting) return;
+    if (isSubmitting || !foldersLoaded) return;
+
     setIsSubmitting(true);
     try {
-      const project = await createProject({ fromPrompt: prompt });
-      navigateToWorkProjectDetail(project.id);
+      const folderPaths = folders.map((f) => f.path);
+      const repoPath = await resolveRepoPath(folderPaths);
+
+      const input: TaskCreationInput = {
+        content: prompt,
+        repoPath,
+        workspaceMode: "local",
+        // HACKATHON SHORTCUT: see useWorkThreadTasks.ts.
+        repositoryConfig: { work_thread: true, collaborators: [] },
+      };
+
+      const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
+      const result = await taskService.createTask(input, (output) => {
+        addThread(output.task.id);
+        navigateToWorkTask(output.task.id);
+      });
+
+      if (!result.success) {
+        toast.error("Failed to start task", { description: result.error });
+        log.error("Sample project task creation failed", {
+          failedStep: result.failedStep,
+          error: result.error,
+        });
+      }
     } catch (error) {
       const description =
         error instanceof Error ? error.message : "Unknown error";
-      toast.error("Could not start project", { description });
-      log.error("Failed to create project from sample prompt", { error });
+      toast.error("Failed to start task", { description });
+      log.error("Unexpected error during sample project creation", { error });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <Box className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    <Flex gap="2" className="w-full">
       {PROJECTS.map((p) => (
         <SampleCard
           key={p.title}
@@ -130,6 +150,6 @@ export function WorkSampleProjects() {
           disabled={isSubmitting}
         />
       ))}
-    </Box>
+    </Flex>
   );
 }
