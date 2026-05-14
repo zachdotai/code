@@ -28,7 +28,15 @@ export function useWorkThreadTasks() {
 
   const sorted = useMemo<Task[]>(() => {
     const tasks = query.data ?? [];
-    const myUuid = currentUser?.uuid;
+    // The stub team-member picker (STUB_ORG_MEMBERS) uses email as the fake
+    // "uuid" because we don't have real PostHog uuids in the stub. Match on
+    // both uuid and email so this works regardless of which identifier
+    // James's app stuffed into `repository_config.collaborators`.
+    const myIdentifiers = new Set(
+      [currentUser?.uuid, currentUser?.email].filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      ),
+    );
     const localIdSet = new Set(localThreadIds);
     return tasks
       .filter((t) => {
@@ -38,16 +46,18 @@ export function useWorkThreadTasks() {
           | null
           | undefined;
         const collabs = Array.isArray(config?.collaborators)
-          ? (config.collaborators as unknown[])
+          ? (config.collaborators as unknown[]).filter(
+              (v): v is string => typeof v === "string",
+            )
           : [];
-        return typeof myUuid === "string" && collabs.includes(myUuid);
+        return collabs.some((c) => myIdentifiers.has(c));
       })
       .sort((a, b) => {
         const ta = new Date(a.created_at).getTime();
         const tb = new Date(b.created_at).getTime();
         return tb - ta;
       });
-  }, [query.data, currentUser?.uuid, localThreadIds]);
+  }, [query.data, currentUser?.uuid, currentUser?.email, localThreadIds]);
 
   return { ...query, data: sorted };
 }
