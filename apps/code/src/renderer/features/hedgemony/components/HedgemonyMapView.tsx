@@ -10,7 +10,12 @@ import {
   useNestStore,
 } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
-import { findPath, type Obstacle, type Vec2 } from "../utils/pathfinding";
+import {
+  findPath,
+  type Obstacle,
+  snapGoal,
+  type Vec2,
+} from "../utils/pathfinding";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import type { BuilderAnimation } from "./BuilderSprite";
 import { HedgemonyEmptyState } from "./HedgemonyEmptyState";
@@ -52,6 +57,12 @@ export function HedgemonyMapView() {
   const [pendingMode, setPendingMode] = useState<NestCreationMode>("guided");
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
   const buildingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Authoritative on-screen position of the builder sprite, updated by
+  // BuilderSprite each motion frame. Used as the start point for re-plans so
+  // the path begins where the sprite visually is — not at the last waypoint
+  // it nominally reached. Otherwise Framer Motion animates straight from the
+  // current screen position to path[1], which can clip through obstacles.
+  const builderVisualPosRef = useRef<Vec2>({ ...INITIAL_BUILDER_POS });
   const spawnHogletOpen = useSpawnDialogStore((s) => s.spawnHogletOpen);
   const closeSpawnHoglet = useSpawnDialogStore((s) => s.closeSpawnHoglet);
 
@@ -135,30 +146,33 @@ export function HedgemonyMapView() {
   }, []);
 
   const startWalk = useCallback(
-    (target: Vec2, onArrive: "idle" | "build") => {
+    (target: Vec2, onArrive: "idle" | "build"): Vec2 => {
       if (buildingTimerRef.current) {
         clearTimeout(buildingTimerRef.current);
         buildingTimerRef.current = null;
       }
-      const from = builderPath[lastReachedIndex] ?? INITIAL_BUILDER_POS;
+      const from = builderVisualPosRef.current;
       const obstacles: Obstacle[] = nests.map((nest) => ({
         x: nest.mapX,
         y: nest.mapY,
         radius: NEST_OBSTACLE_RADIUS,
       }));
-      const path = findPath(from, target, obstacles);
+      const snapped = snapGoal(from, target, obstacles);
+      const path = findPath(from, snapped, obstacles);
+      const resolvedGoal = path[path.length - 1] ?? snapped;
       if (path.length < 2) {
         setBuilderPath(path.length === 1 ? path : [from]);
         setLastReachedIndex(0);
         if (onArrive === "build") enterBuilding();
         else setBuilderState({ kind: "idle" });
-        return;
+        return resolvedGoal;
       }
       setBuilderPath(path);
       setLastReachedIndex(0);
       setBuilderState({ kind: "walking", onArrive });
+      return resolvedGoal;
     },
-    [builderPath, lastReachedIndex, nests, enterBuilding],
+    [nests, enterBuilding],
   );
 
   const handleBuilderArrive = useCallback(() => {
@@ -214,8 +228,8 @@ export function HedgemonyMapView() {
 
     if (selection.type === "nest") return;
 
-    flashMoveMarker(targetX, targetY);
-    startWalk({ x: targetX, y: targetY }, "idle");
+    const resolved = startWalk({ x: targetX, y: targetY }, "idle");
+    flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
   };
 
   const showEmptyState = loaded && nests.length === 0;
@@ -259,6 +273,7 @@ export function HedgemonyMapView() {
         relocatingNestId={relocatingNestId}
         builderPath={builderPath}
         builderPos={builderPos}
+        builderPositionRef={builderVisualPosRef}
         builderSelected={builderSelected}
         builderAnimation={builderAnimation}
         buildMode={buildMode}

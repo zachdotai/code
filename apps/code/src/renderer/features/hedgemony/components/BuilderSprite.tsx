@@ -5,7 +5,7 @@ import {
   motion,
   useMotionValue,
 } from "framer-motion";
-import { useEffect, useState } from "react";
+import { type MutableRefObject, useEffect, useState } from "react";
 import type { Vec2 } from "../utils/pathfinding";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 
@@ -31,6 +31,10 @@ interface BuilderSpriteProps {
   path: Vec2[];
   selected?: boolean;
   animation: BuilderAnimation;
+  /** Updated each motion frame with the sprite's actual on-screen position so
+   * the parent can re-plan from where the builder visually is, not from the
+   * last waypoint it nominally reached. */
+  positionRef?: MutableRefObject<Vec2>;
   onSelect?: () => void;
   onArrive?: () => void;
   onSegmentComplete?: (reachedIndex: number) => void;
@@ -40,6 +44,7 @@ export function BuilderSprite({
   path,
   selected,
   animation,
+  positionRef,
   onSelect,
   onArrive,
   onSegmentComplete,
@@ -48,6 +53,21 @@ export function BuilderSprite({
   const motionX = useMotionValue(initial.x);
   const motionY = useMotionValue(initial.y);
   const [facing, setFacing] = useState<"left" | "right">("right");
+
+  useEffect(() => {
+    if (!positionRef) return;
+    positionRef.current = { x: motionX.get(), y: motionY.get() };
+    const unsubX = motionX.on("change", (v) => {
+      positionRef.current = { x: v, y: positionRef.current.y };
+    });
+    const unsubY = motionY.on("change", (v) => {
+      positionRef.current = { x: positionRef.current.x, y: v };
+    });
+    return () => {
+      unsubX();
+      unsubY();
+    };
+  }, [motionX, motionY, positionRef]);
 
   useEffect(() => {
     if (path.length === 0) return;

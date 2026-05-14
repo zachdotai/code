@@ -72,6 +72,10 @@ function pushOutOf(p: Vec2, infl: InflatedObstacle[]): Vec2 {
   return current;
 }
 
+// Walks from `to` toward `from`, returning the first point that's outside
+// every inflated obstacle. Used so a click that lands inside a building snaps
+// to the perimeter on the side the builder is approaching from — instead of
+// being shoved radially to a random direction.
 function nearestFreePointOnLine(
   from: Vec2,
   to: Vec2,
@@ -80,8 +84,8 @@ function nearestFreePointOnLine(
   const dx = from.x - to.x;
   const dy = from.y - to.y;
   const dist = Math.hypot(dx, dy);
-  if (dist === 0) return pointBlocked(from, infl) ? from : from;
-  const steps = Math.max(1, Math.ceil(dist / (CELL / 2)));
+  if (dist === 0) return pushOutOf(from, infl);
+  const steps = Math.max(1, Math.ceil(dist / (CELL / 4)));
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const candidate = {
@@ -91,6 +95,12 @@ function nearestFreePointOnLine(
     if (!pointBlocked(candidate, infl)) return candidate;
   }
   return from;
+}
+
+export function snapGoal(from: Vec2, to: Vec2, obstacles: Obstacle[]): Vec2 {
+  const infl = inflate(obstacles);
+  if (!pointBlocked(to, infl)) return to;
+  return nearestFreePointOnLine(from, to, infl);
 }
 
 type HeapEntry = { col: number; row: number; f: number };
@@ -176,7 +186,9 @@ function stringPull(path: Vec2[], infl: InflatedObstacle[]): Vec2[] {
 
 export function findPath(from: Vec2, to: Vec2, obstacles: Obstacle[]): Vec2[] {
   const infl = inflate(obstacles);
-  const goal = pushOutOf(to, infl);
+  const goal = pointBlocked(to, infl)
+    ? nearestFreePointOnLine(from, to, infl)
+    : to;
 
   if (segmentClear(from, goal, infl)) {
     return [from, goal];

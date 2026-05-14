@@ -1,7 +1,7 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
 import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useMotionValue } from "framer-motion";
-import type { ReactNode } from "react";
+import type { MutableRefObject, ReactNode } from "react";
 import { useRef, useState } from "react";
 import {
   HEDGEMONY_ZOOM_MAX,
@@ -30,6 +30,7 @@ interface HedgemonyMapSurfaceProps {
   relocatingNestId: string | null;
   builderPath: Vec2[];
   builderPos: Vec2;
+  builderPositionRef?: MutableRefObject<Vec2>;
   builderSelected: boolean;
   builderAnimation: BuilderAnimation;
   buildMode: boolean;
@@ -52,6 +53,7 @@ export function HedgemonyMapSurface({
   relocatingNestId,
   builderPath,
   builderPos,
+  builderPositionRef,
   builderSelected,
   builderAnimation,
   buildMode,
@@ -249,6 +251,7 @@ export function HedgemonyMapSurface({
           path={builderPath}
           selected={builderSelected}
           animation={builderAnimation}
+          positionRef={builderPositionRef}
           onSelect={onBuilderSelect}
           onArrive={onBuilderArrive}
           onSegmentComplete={onBuilderSegmentComplete}
