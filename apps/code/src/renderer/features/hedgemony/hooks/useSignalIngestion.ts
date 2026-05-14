@@ -27,7 +27,11 @@ const MAX_INGESTIONS_PER_TICK = 5;
 // alongside ready ones so the map can be exercised end-to-end without waiting
 // for the full research pipeline to land a `ready` report. Production keeps
 // the original filter so behaviour ships unchanged.
-const SIGNAL_QUERY_PARAMS = {
+//
+// Exported so consumers that need to look up the same cached report payload
+// (e.g. SignalHogletCard) read from the exact key this hook writes to. If
+// the two diverge, the card silently misses the cached report data.
+export const SIGNAL_QUERY_PARAMS = {
   status: import.meta.env.DEV
     ? ("ready,in_progress,candidate" as const)
     : ("needs_review" as const),

@@ -14,6 +14,7 @@ import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useState } from "react";
 import { toast } from "sonner";
+import { SIGNAL_QUERY_PARAMS } from "../hooks/useSignalIngestion";
 import {
   SIGNAL_STAGING_BUCKET,
   selectTaskSummary,
@@ -51,10 +52,9 @@ export function SignalHogletCard({ hoglet, index }: SignalHogletCardProps) {
   // Pull the matching signal report from the TanStack cache populated by
   // useSignalIngestion's polling call. No extra fetch — the data is already
   // in memory by the time this card renders.
-  const reportsCache = useInboxReports(
-    { status: "needs_review", ordering: "-created_at", limit: 50 },
-    { enabled: false },
-  );
+  const reportsCache = useInboxReports(SIGNAL_QUERY_PARAMS, {
+    enabled: false,
+  });
   const signalReport =
     hoglet.signalReportId !== null
       ? (reportsCache.data?.results.find(
