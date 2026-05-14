@@ -21,7 +21,6 @@ interface ArtifactTileProps {
   currentGridSize: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
-  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   onUpdateChecklistItems?: (
@@ -42,7 +41,6 @@ export function ArtifactTile({
   currentGridSize,
   onRemove,
   onResizeGrid,
-  onResizePreview,
   onApplyPending,
   onRejectPending,
   onUpdateChecklistItems,
@@ -56,7 +54,6 @@ export function ArtifactTile({
       currentGridSize={currentGridSize}
       onRemove={onRemove}
       onResizeGrid={onResizeGrid}
-      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >

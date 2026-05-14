@@ -3,6 +3,7 @@ import type {
   GithubActivitySummary,
   GithubActivityType,
   GridSize,
+  HeadlineTilePatch,
   NewTileInput,
   ProjectIconId,
   Tile,
@@ -752,20 +753,7 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
   updateHeadlineTile(
     projectId: string,
     tileId: string,
-    patch: {
-      label?: string;
-      liveLabel?: string;
-      query?: {
-        posthogProjectId: number;
-        body: Record<string, unknown>;
-        insightShortId?: string;
-        shareToken?: string;
-      };
-      posthogUrl?: string;
-      fallbackValue?: string;
-      fallbackDelta?: string;
-      fallbackSparkline?: number[];
-    },
+    patch: HeadlineTilePatch,
   ): WorkProject | null {
     return this.mutateProject(projectId, (project) => {
       const tiles = project.tiles.map((t) => {

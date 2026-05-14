@@ -11,7 +11,6 @@ interface SkillOutputTileProps {
   currentGridSize: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
-  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
 }
@@ -36,7 +35,6 @@ export function SkillOutputTile({
   currentGridSize,
   onRemove,
   onResizeGrid,
-  onResizePreview,
   onApplyPending,
   onRejectPending,
 }: SkillOutputTileProps) {
@@ -57,7 +55,6 @@ export function SkillOutputTile({
       currentGridSize={currentGridSize}
       onRemove={onRemove}
       onResizeGrid={onResizeGrid}
-      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >

@@ -3,6 +3,7 @@ import { toast } from "@renderer/utils/toast";
 import type {
   GithubActivityType,
   GridSize,
+  HeadlineTilePatch,
   NewTileInput,
   TileSize,
   WorkProject,
@@ -395,23 +396,7 @@ export function useProjectCanvas(projectId: string | undefined) {
   );
 
   const updateHeadlineTile = useCallback(
-    (
-      tileId: string,
-      patch: {
-        label?: string;
-        liveLabel?: string;
-        query?: {
-          posthogProjectId: number;
-          body: Record<string, unknown>;
-          insightShortId?: string;
-          shareToken?: string;
-        };
-        posthogUrl?: string;
-        fallbackValue?: string;
-        fallbackDelta?: string;
-        fallbackSparkline?: number[];
-      },
-    ): Promise<void> => {
+    (tileId: string, patch: HeadlineTilePatch): Promise<void> => {
       return runOptimistic(
         "Update headline metric",
         (project) => ({
@@ -445,28 +430,6 @@ export function useProjectCanvas(projectId: string | undefined) {
             projectId: projectId!,
             tileId,
             ...patch,
-          }),
-      );
-    },
-    [projectId, runOptimistic],
-  );
-
-  const clearHeadlineTileQuery = useCallback(
-    (tileId: string): Promise<void> => {
-      return runOptimistic(
-        "Clear headline metric",
-        (project) => ({
-          ...project,
-          tiles: project.tiles.map((t) => {
-            if (t.id !== tileId || t.type !== "headline") return t;
-            const { query: _q, posthogUrl: _u, liveLabel: _l, ...rest } = t;
-            return rest as typeof t;
-          }),
-        }),
-        () =>
-          trpcClient.workProjects.clearHeadlineTileQuery.mutate({
-            projectId: projectId!,
-            tileId,
           }),
       );
     },
@@ -597,7 +560,6 @@ export function useProjectCanvas(projectId: string | undefined) {
     updateFileTile,
     updateChecklistItems,
     updateHeadlineTile,
-    clearHeadlineTileQuery,
     updateGithubActivityTile,
     refreshGithubActivityTile,
     applyPending,

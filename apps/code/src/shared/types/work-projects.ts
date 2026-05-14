@@ -73,7 +73,18 @@ export const titleTile = tileBase.extend({
 });
 export type TitleTile = z.infer<typeof titleTile>;
 
-const insightQueryBody = z.record(z.string(), z.unknown());
+/** Reference to a picked PostHog insight stored on a headline tile.
+ *  `shareToken` is minted on pick (PostHog SharingConfiguration access_token)
+ *  and used to embed the insight in an iframe at
+ *  `{cloudUrl}/embedded/{shareToken}`. `body` is kept so we can recover or
+ *  re-mint the share if it gets revoked. */
+export const headlineQueryRef = z.object({
+  posthogProjectId: z.number(),
+  body: z.record(z.string(), z.unknown()),
+  insightShortId: z.string().optional(),
+  shareToken: z.string().optional(),
+});
+export type HeadlineQueryRef = z.infer<typeof headlineQueryRef>;
 
 export const headlineTile = tileBase.extend({
   type: z.literal("headline"),
@@ -84,23 +95,25 @@ export const headlineTile = tileBase.extend({
   fallbackValue: z.string(),
   fallbackDelta: z.string(),
   fallbackSparkline: z.array(z.number()),
-  /** Reference to the picked PostHog insight. Present when the user has chosen
-   *  an insight via the picker; absent for fresh agent-proposed tiles which
-   *  still render fallback values. `shareToken` is minted on pick (PostHog
-   *  SharingConfiguration access_token) and used to embed the insight in an
-   *  iframe at `{cloudUrl}/embedded/{shareToken}`. `body` is kept so we can
-   *  recover or re-mint the share if it gets revoked. */
-  query: z
-    .object({
-      posthogProjectId: z.number(),
-      body: insightQueryBody,
-      insightShortId: z.string().optional(),
-      shareToken: z.string().optional(),
-    })
-    .optional(),
+  /** Present when the user has chosen an insight via the picker; absent for
+   *  fresh agent-proposed tiles which still render fallback values. */
+  query: headlineQueryRef.optional(),
   posthogUrl: z.string().optional(),
 });
 export type HeadlineTile = z.infer<typeof headlineTile>;
+
+/** Patch shape accepted by `updateHeadlineTile` across the renderer, tRPC
+ *  router, and main-process service. Each field is independently optional;
+ *  the service merges set fields into the persisted tile. */
+export interface HeadlineTilePatch {
+  label?: string;
+  liveLabel?: string;
+  query?: HeadlineQueryRef;
+  posthogUrl?: string;
+  fallbackValue?: string;
+  fallbackDelta?: string;
+  fallbackSparkline?: number[];
+}
 
 export const insightTile = tileBase.extend({
   type: z.literal("insight"),

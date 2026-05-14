@@ -10,6 +10,8 @@ import {
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type {
   GridSize,
+  HeadlineQueryRef,
+  HeadlineTilePatch,
   HeadlineTile as HeadlineTileType,
 } from "@shared/types/work-projects";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
@@ -24,24 +26,9 @@ interface HeadlineTileProps {
   currentGridSize: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
-  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
-  onUpdate?: (patch: {
-    label?: string;
-    liveLabel?: string;
-    query?: {
-      posthogProjectId: number;
-      body: Record<string, unknown>;
-      insightShortId?: string;
-      shareToken?: string;
-    };
-    posthogUrl?: string;
-    fallbackValue?: string;
-    fallbackDelta?: string;
-    fallbackSparkline?: number[];
-  }) => Promise<void>;
-  onClearQuery?: () => Promise<void>;
+  onUpdate?: (patch: HeadlineTilePatch) => Promise<void>;
 }
 
 function HeadlineTileImpl({
@@ -49,11 +36,9 @@ function HeadlineTileImpl({
   currentGridSize,
   onRemove,
   onResizeGrid,
-  onResizePreview,
   onApplyPending,
   onRejectPending,
   onUpdate,
-  onClearQuery,
 }: HeadlineTileProps) {
   const query = tile.query;
   const [picking, setPicking] = useState(false);
@@ -65,7 +50,6 @@ function HeadlineTileImpl({
         currentGridSize={currentGridSize}
         onRemove={onRemove}
         onResizeGrid={onResizeGrid}
-        onResizePreview={onResizePreview}
         onApplyPending={onApplyPending}
         onRejectPending={onRejectPending}
         onCancel={query ? () => setPicking(false) : undefined}
@@ -90,11 +74,9 @@ function HeadlineTileImpl({
       currentGridSize={currentGridSize}
       onRemove={onRemove}
       onResizeGrid={onResizeGrid}
-      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
       onEdit={onUpdate ? () => setPicking(true) : undefined}
-      onClearQuery={onClearQuery}
     />
   );
 }
@@ -104,11 +86,9 @@ interface LiveHeadlineProps {
   currentGridSize: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
-  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   onEdit?: () => void;
-  onClearQuery?: () => Promise<void>;
 }
 
 function LiveHeadline({
@@ -116,11 +96,9 @@ function LiveHeadline({
   currentGridSize,
   onRemove,
   onResizeGrid,
-  onResizePreview,
   onApplyPending,
   onRejectPending,
   onEdit,
-  onClearQuery: _onClearQuery,
 }: LiveHeadlineProps) {
   const shareToken = tile.query?.shareToken;
   const label = shareToken ? (tile.liveLabel ?? tile.label) : tile.label;
@@ -160,7 +138,6 @@ function LiveHeadline({
       currentGridSize={currentGridSize}
       onRemove={onRemove}
       onResizeGrid={onResizeGrid}
-      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >
@@ -223,12 +200,7 @@ interface InsightSummary {
 
 interface PickedInsight {
   label: string;
-  query: {
-    posthogProjectId: number;
-    body: Record<string, unknown>;
-    insightShortId?: string;
-    shareToken?: string;
-  };
+  query: HeadlineQueryRef;
   posthogUrl: string;
 }
 
@@ -237,7 +209,6 @@ interface InsightPickerProps {
   currentGridSize: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
-  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   onCancel?: () => void;
@@ -245,8 +216,10 @@ interface InsightPickerProps {
 }
 
 /** Pull the runnable query body out of an insight. PostHog wraps non-legacy
- *  insights in an `InsightVizNode` whose `source` is the actual TrendsQuery;
- *  legacy insights only have `filters` and aren't supported here. */
+ *  insights in an `InsightVizNode` whose `source` is the actual TrendsQuery
+ *  (or Funnels/Retention/etc); we unwrap that and return the inner node.
+ *  Legacy `filters`-only insights (no `kind`) return null and are filtered
+ *  out at the picker. */
 function extractQueryBody(
   raw: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
@@ -255,21 +228,14 @@ function extractQueryBody(
   if (kind === "InsightVizNode" && typeof raw.source === "object") {
     return raw.source as Record<string, unknown>;
   }
-  // Any node with a `kind` is a runnable `/query/` body. Legacy `filters`-only
-  // insights (no `kind`) aren't supported and are filtered out at the picker.
-  if (kind) return raw;
-  return null;
+  return kind ? raw : null;
 }
 
-/** Short kind chip shown next to each insight in the picker. Unwraps
- *  InsightVizNode to find the inner query kind. */
+/** Short kind chip shown next to each insight in the picker, e.g. "Trends",
+ *  "Funnels". Expects an already-unwrapped body from `extractQueryBody`. */
 function readKindLabel(body: Record<string, unknown>): string | null {
-  const top = typeof body.kind === "string" ? body.kind : null;
-  if (top === "InsightVizNode" && typeof body.source === "object") {
-    const inner = (body.source as Record<string, unknown>).kind;
-    if (typeof inner === "string") return inner.replace(/Query$/, "");
-  }
-  return top ? top.replace(/Query$/, "") : null;
+  const kind = typeof body.kind === "string" ? body.kind : null;
+  return kind ? kind.replace(/Query$/, "") : null;
 }
 
 function displayName(insight: InsightSummary): string {
@@ -282,7 +248,6 @@ function InsightPicker({
   currentGridSize,
   onRemove,
   onResizeGrid,
-  onResizePreview,
   onApplyPending,
   onRejectPending,
   onCancel,
@@ -379,7 +344,6 @@ function InsightPicker({
       currentGridSize={currentGridSize}
       onRemove={onRemove}
       onResizeGrid={onResizeGrid}
-      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >
@@ -501,13 +465,10 @@ function InsightPicker({
   );
 }
 
-// Headline tile fires a PostHog query – memoize so we don't refetch on every
-// unrelated parent re-render. Compare by tile identity + state; callbacks may
-// change identity but the tile content is what drives the expensive work.
+// Headline tile holds an iframe — memoize so we don't tear it down on every
+// unrelated parent re-render. Compare by tile identity; `onUpdate` may change
+// identity each render but the tile content is what drives expensive work.
 export const HeadlineTile = memo(
   HeadlineTileImpl,
-  (prev, next) =>
-    prev.tile === next.tile &&
-    prev.onUpdate === next.onUpdate &&
-    prev.onClearQuery === next.onClearQuery,
+  (prev, next) => prev.tile === next.tile && prev.onUpdate === next.onUpdate,
 );

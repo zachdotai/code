@@ -5,7 +5,7 @@ import {
   TrashSimple,
   X,
 } from "@phosphor-icons/react";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex, Text, Theme } from "@radix-ui/themes";
 import type { GridSize, Tile } from "@shared/types/work-projects";
 import {
   type ComponentType,
@@ -36,10 +36,6 @@ interface TileFrameProps {
   currentGridSize?: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
-  /** Legacy prop from when the canvas drove a per-cell resize preview. The
-   *  RGL canvas handles preview internally; this is accepted so existing
-   *  callers don't have to be updated. */
-  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   /** When true the frame omits its chrome (border, header, padding). Use for
@@ -214,7 +210,17 @@ export function TileFrame({
           </Flex>
         </Flex>
       )}
-      <Box className="min-h-0 flex-1 overflow-auto">{children}</Box>
+      {/* Body renders light-themed regardless of app appearance so the tile
+       *  contents match embedded PostHog insights (which render light). Radix's
+       *  gray scale flips inside this Theme: bg-white shows through, text
+       *  tokens like --gray-12 become near-black. */}
+      <Theme
+        appearance="light"
+        hasBackground={false}
+        className="min-h-0 flex-1 overflow-auto bg-white"
+      >
+        {children}
+      </Theme>
     </Box>
   );
 }

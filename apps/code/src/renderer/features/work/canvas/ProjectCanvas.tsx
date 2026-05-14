@@ -3,6 +3,7 @@ import { Box, Flex, Text } from "@radix-ui/themes";
 import type {
   GithubActivityType,
   GridSize,
+  HeadlineTilePatch,
   NewTileInput,
   ProjectIconId,
   ProjectMember,
@@ -81,17 +82,8 @@ interface ProjectCanvasProps {
   onRefreshGithubActivityTile: (tileId: string) => Promise<void>;
   onUpdateHeadlineTile: (
     tileId: string,
-    patch: {
-      label?: string;
-      liveLabel?: string;
-      query?: { posthogProjectId: number; body: Record<string, unknown> };
-      posthogUrl?: string;
-      fallbackValue?: string;
-      fallbackDelta?: string;
-      fallbackSparkline?: number[];
-    },
+    patch: HeadlineTilePatch,
   ) => Promise<void>;
-  onClearHeadlineTileQuery: (tileId: string) => Promise<void>;
 }
 
 export function ProjectCanvas({
@@ -110,7 +102,6 @@ export function ProjectCanvas({
   onUpdateGithubActivityTile,
   onRefreshGithubActivityTile,
   onUpdateHeadlineTile,
-  onClearHeadlineTileQuery,
 }: ProjectCanvasProps) {
   // Title tile is data-only – the project header renders the project's name,
   // icon, tagline, and members. Filter it out of the canvas so we don't
@@ -274,9 +265,6 @@ export function ProjectCanvas({
                         }}
                         onUpdateHeadlineTile={async (patch) => {
                           await onUpdateHeadlineTile(tile.id, patch);
-                        }}
-                        onClearHeadlineTileQuery={async () => {
-                          await onClearHeadlineTileQuery(tile.id);
                         }}
                         onRefreshGithubActivityTile={async () => {
                           await onRefreshGithubActivityTile(tile.id);

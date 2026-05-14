@@ -34,7 +34,6 @@ export function WorkProjectDetailView() {
     updateGithubActivityTile,
     refreshGithubActivityTile,
     updateHeadlineTile,
-    clearHeadlineTileQuery,
   } = useProjectCanvas(projectId);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -174,9 +173,6 @@ export function WorkProjectDetailView() {
               }}
               onUpdateHeadlineTile={async (tileId, patch) => {
                 await updateHeadlineTile(tileId, patch);
-              }}
-              onClearHeadlineTileQuery={async (tileId) => {
-                await clearHeadlineTileQuery(tileId);
               }}
             />
           </Box>

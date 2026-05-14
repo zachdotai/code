@@ -1,6 +1,7 @@
 import type {
   GithubActivityType,
   GridSize,
+  HeadlineTilePatch,
   ProjectIconId,
   ProjectMember,
   Tile,
@@ -20,7 +21,6 @@ interface TileRendererProps {
   currentGridSize: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
-  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   onUpdateTitleTile?: (patch: {
@@ -45,16 +45,7 @@ interface TileRendererProps {
     windowDays?: number;
   }) => Promise<void>;
   onRefreshGithubActivityTile?: () => Promise<void>;
-  onUpdateHeadlineTile?: (patch: {
-    label?: string;
-    liveLabel?: string;
-    query?: { posthogProjectId: number; body: Record<string, unknown> };
-    posthogUrl?: string;
-    fallbackValue?: string;
-    fallbackDelta?: string;
-    fallbackSparkline?: number[];
-  }) => Promise<void>;
-  onClearHeadlineTileQuery?: () => Promise<void>;
+  onUpdateHeadlineTile?: (patch: HeadlineTilePatch) => Promise<void>;
 }
 
 export function TileRenderer({
@@ -63,7 +54,6 @@ export function TileRenderer({
   currentGridSize,
   onRemove,
   onResizeGrid,
-  onResizePreview,
   onApplyPending,
   onRejectPending,
   onUpdateTitleTile,
@@ -73,7 +63,6 @@ export function TileRenderer({
   onUpdateGithubActivityTile,
   onRefreshGithubActivityTile,
   onUpdateHeadlineTile,
-  onClearHeadlineTileQuery,
 }: TileRendererProps) {
   switch (tile.type) {
     case "title":
@@ -93,11 +82,9 @@ export function TileRenderer({
           currentGridSize={currentGridSize}
           onRemove={onRemove}
           onResizeGrid={onResizeGrid}
-          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
           onUpdate={onUpdateHeadlineTile}
-          onClearQuery={onClearHeadlineTileQuery}
         />
       );
     case "insight":
@@ -107,7 +94,6 @@ export function TileRenderer({
           currentGridSize={currentGridSize}
           onRemove={onRemove}
           onResizeGrid={onResizeGrid}
-          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
         />
@@ -119,7 +105,6 @@ export function TileRenderer({
           currentGridSize={currentGridSize}
           onRemove={onRemove}
           onResizeGrid={onResizeGrid}
-          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
           onUpdate={onUpdateFileTile}
@@ -132,7 +117,6 @@ export function TileRenderer({
           currentGridSize={currentGridSize}
           onRemove={onRemove}
           onResizeGrid={onResizeGrid}
-          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
         />
@@ -144,7 +128,6 @@ export function TileRenderer({
           currentGridSize={currentGridSize}
           onRemove={onRemove}
           onResizeGrid={onResizeGrid}
-          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
           onUpdate={onUpdateNoteTile}
@@ -157,7 +140,6 @@ export function TileRenderer({
           currentGridSize={currentGridSize}
           onRemove={onRemove}
           onResizeGrid={onResizeGrid}
-          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
           onUpdateChecklistItems={onUpdateChecklistItems}
@@ -170,7 +152,6 @@ export function TileRenderer({
           currentGridSize={currentGridSize}
           onRemove={onRemove}
           onResizeGrid={onResizeGrid}
-          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
           onUpdateConfig={onUpdateGithubActivityTile}

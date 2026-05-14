@@ -23,7 +23,6 @@ interface FileTileProps {
   currentGridSize: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
-  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   onUpdate?: (patch: {
@@ -54,7 +53,6 @@ export function FileTile({
   currentGridSize,
   onRemove,
   onResizeGrid,
-  onResizePreview,
   onApplyPending,
   onRejectPending,
   onUpdate,
@@ -147,7 +145,6 @@ export function FileTile({
       currentGridSize={currentGridSize}
       onRemove={onRemove}
       onResizeGrid={onResizeGrid}
-      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >

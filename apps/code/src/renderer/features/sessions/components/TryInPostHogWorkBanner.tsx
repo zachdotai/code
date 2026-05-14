@@ -10,6 +10,14 @@ export function TryInPostHogWorkBanner({
   onDismiss,
 }: TryInPostHogWorkBannerProps) {
   const setMode = useNavigationStore((s) => s.setMode);
+  const navigateToWorkGenerate = useNavigationStore(
+    (s) => s.navigateToWorkGenerate,
+  );
+
+  const goToNewTask = () => {
+    setMode("work");
+    navigateToWorkGenerate();
+  };
 
   return (
     <Box className="mb-3 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-2) px-4 py-3">
@@ -39,7 +47,7 @@ export function TryInPostHogWorkBanner({
           variant="solid"
           color="gray"
           highContrast
-          onClick={() => setMode("work")}
+          onClick={goToNewTask}
         >
           <Text className="px-2 text-[12px]">Try in PostHog Work</Text>
         </Button>

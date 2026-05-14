@@ -25,7 +25,6 @@ interface GithubActivityTileProps {
   currentGridSize: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
-  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   onUpdateConfig?: (patch: {
@@ -69,6 +68,13 @@ const TYPE_ORDER: GithubActivityType[] = [
 
 const STALE_MS = 5 * 60 * 1000;
 
+const GRID_COLS: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+};
+
 function parseRepoString(raw: string): { owner: string; name: string } | null {
   const trimmed = raw.trim().replace(/^https?:\/\/github\.com\//, "");
   const match = trimmed.match(/^([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/);
@@ -81,7 +87,6 @@ export function GithubActivityTile({
   currentGridSize,
   onRemove,
   onResizeGrid,
-  onResizePreview,
   onApplyPending,
   onRejectPending,
   onUpdateConfig,
@@ -134,12 +139,24 @@ export function GithubActivityTile({
     }
   };
 
+  const headerStatus =
+    isConfigured && !editing
+      ? [
+          tile.summary?.fetchedAt
+            ? `Updated ${formatRelativeTimeShort(tile.summary.fetchedAt)} ago`
+            : null,
+          // Surface the lookback window inline so users don't have to look
+          // for a separate subtitle to know what window the counts cover.
+          `last ${tile.windowDays}d`,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
+
   const headerAction = (
     <Flex align="center" gap="2">
-      {isConfigured && !editing && tile.summary?.fetchedAt && (
-        <Text className="text-(--gray-10) text-[10px]">
-          Updated {formatRelativeTimeShort(tile.summary.fetchedAt)} ago
-        </Text>
+      {headerStatus && (
+        <Text className="text-(--gray-10) text-[10px]">{headerStatus}</Text>
       )}
       {isConfigured && !editing && onUpdateConfig && (
         <button
@@ -180,7 +197,6 @@ export function GithubActivityTile({
       currentGridSize={currentGridSize}
       onRemove={onRemove}
       onResizeGrid={onResizeGrid}
-      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >
@@ -414,26 +430,10 @@ function LiveBody({ tile, summary, refreshing }: LiveBodyProps) {
   );
   const showRelease = enabled.includes("release");
   const cellCount = countTypes.length + (showRelease ? 1 : 0);
-  const gridColsClass =
-    cellCount <= 1
-      ? "grid-cols-1"
-      : cellCount === 2
-        ? "grid-cols-2"
-        : cellCount === 3
-          ? "grid-cols-3"
-          : "grid-cols-4";
+  const gridColsClass = GRID_COLS[cellCount] ?? "grid-cols-4";
 
   return (
     <Flex direction="column" className="h-full min-h-0">
-      <Flex
-        align="center"
-        justify="between"
-        className="shrink-0 border-(--gray-4) border-b px-4 pt-2"
-      >
-        <Text className="text-(--gray-10) text-[10px] uppercase tracking-wide">
-          Last {summary.windowDays} day{summary.windowDays === 1 ? "" : "s"}
-        </Text>
-      </Flex>
       {cellCount > 0 && (
         <Box
           className={`grid shrink-0 ${gridColsClass} gap-2 border-(--gray-4) border-b px-4 py-2.5`}
@@ -531,19 +531,10 @@ function LatestReleaseCard({
       title={`${version}${release.name && release.name !== release.tagName ? ` — ${release.name}` : ""} · ${new Date(release.publishedAt).toLocaleString()}`}
       className="flex min-w-0 items-center justify-between gap-2 rounded-(--radius-2) bg-(--gray-2) px-2 py-1.5 transition-colors hover:bg-(--gray-3)"
     >
-      <Flex
-        direction="column"
-        align="start"
-        className="min-w-0 text-(--gray-11)"
-      >
-        <Flex align="center" gap="1">
-          <Icon size={11} weight="duotone" />
-          <Text className="truncate text-[10px] uppercase tracking-wide">
-            Latest
-          </Text>
-        </Flex>
-        <Text className="text-(--gray-10) text-[10px] leading-tight">
-          {formatRelativeTimeShort(release.publishedAt)} ago
+      <Flex align="center" gap="1" className="min-w-0 text-(--gray-11)">
+        <Icon size={11} weight="duotone" />
+        <Text className="truncate text-[10px] uppercase tracking-wide">
+          Latest
         </Text>
       </Flex>
       <Text

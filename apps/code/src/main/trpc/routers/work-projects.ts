@@ -2,6 +2,7 @@ import {
   createProjectInput,
   githubActivityType,
   gridSize,
+  headlineQueryRef,
   newTileInput,
   projectIconId,
   tileSize,
@@ -348,14 +349,7 @@ export const workProjectsRouter = router({
         tileId: z.string(),
         label: z.string().optional(),
         liveLabel: z.string().optional(),
-        query: z
-          .object({
-            posthogProjectId: z.number(),
-            body: z.record(z.string(), z.unknown()),
-            insightShortId: z.string().optional(),
-            shareToken: z.string().optional(),
-          })
-          .optional(),
+        query: headlineQueryRef.optional(),
         posthogUrl: z.string().optional(),
         fallbackValue: z.string().optional(),
         fallbackDelta: z.string().optional(),
