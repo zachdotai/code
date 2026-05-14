@@ -191,7 +191,45 @@ describe("GoalSpecDraftService", () => {
     expect(llmGateway.prompt).toHaveBeenCalledTimes(1);
   });
 
-  it("throws when the gateway response is not valid JSON", async () => {
+  it("retries once and recovers when the first response is not valid JSON", async () => {
+    llmGateway.prompt
+      .mockResolvedValueOnce({
+        content: "Sure — here you go!",
+        model: "claude-haiku-4-5",
+        stopReason: "end_turn",
+        usage: { inputTokens: 10, outputTokens: 5 },
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          kind: "ask_question",
+          question: "Which metric should improve?",
+        }),
+        model: "claude-haiku-4-5",
+        stopReason: "end_turn",
+        usage: { inputTokens: 10, outputTokens: 5 },
+      });
+
+    await expect(
+      service.respond({
+        transcript: [{ role: "user", content: "Improve checkout" }],
+      }),
+    ).resolves.toEqual({
+      kind: "ask_question",
+      question: "Which metric should improve?",
+    });
+
+    expect(llmGateway.prompt).toHaveBeenCalledTimes(2);
+    const retryCall = llmGateway.prompt.mock.calls[1];
+    expect(retryCall[0]).toHaveLength(3);
+    expect(retryCall[0][1]).toEqual({
+      role: "assistant",
+      content: "Sure — here you go!",
+    });
+    expect(retryCall[0][2].role).toBe("user");
+    expect(retryCall[0][2].content).toContain("not valid JSON");
+  });
+
+  it("throws a friendlier error when both attempts fail to parse", async () => {
     llmGateway.prompt.mockResolvedValue({
       content: "I cannot do that",
       model: "claude-haiku-4-5",
@@ -203,6 +241,9 @@ describe("GoalSpecDraftService", () => {
       service.respond({
         transcript: [{ role: "user", content: "Improve checkout" }],
       }),
-    ).rejects.toThrow("Goal draft response was not valid JSON");
+    ).rejects.toThrow(
+      "The goal-drafting model returned a response we couldn't read.",
+    );
+    expect(llmGateway.prompt).toHaveBeenCalledTimes(2);
   });
 });

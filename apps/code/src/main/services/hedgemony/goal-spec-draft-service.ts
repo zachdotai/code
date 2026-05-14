@@ -2,6 +2,7 @@ import { inject, injectable } from "inversify";
 import { z } from "zod";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
+import type { LlmMessage } from "../llm-gateway/schemas";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import {
   type GoalDraftRespondInput,
@@ -35,6 +36,17 @@ Rules:
 - Use requirement IDs like FR-001 and success criterion IDs like SC-001.
 - Make definitionOfDone concrete enough that a later hedgehog could judge completion.`;
 
+const JSON_ONLY_REMINDER = `Your previous reply was not valid JSON. Return ONLY a single JSON object matching one of the two shapes from the system prompt — no prose, no Markdown, no code fences, nothing before or after the JSON.`;
+
+export class GoalDraftParseError extends Error {
+  constructor() {
+    super(
+      "The goal-drafting model returned a response we couldn't read. Please try again, or rephrase your last message.",
+    );
+    this.name = "GoalDraftParseError";
+  }
+}
+
 const parsedGatewayResponse = z.union([
   z.object({
     kind: z.literal("ask_question"),
@@ -56,20 +68,43 @@ export class GoalSpecDraftService {
   ) {}
 
   async respond(input: GoalDraftRespondInput): Promise<GoalDraftResponse> {
-    const response = await this.llmGateway.prompt(
-      [
-        {
-          role: "user",
-          content: this.buildPrompt(input),
-        },
-      ],
-      {
-        system: SYSTEM_PROMPT,
-        maxTokens: 1400,
-      },
-    );
+    const userPrompt = this.buildPrompt(input);
+    const messages: LlmMessage[] = [{ role: "user", content: userPrompt }];
 
-    const parsed = this.parseResponse(response.content);
+    const firstResponse = await this.llmGateway.prompt(messages, {
+      system: SYSTEM_PROMPT,
+      maxTokens: 1400,
+    });
+
+    const firstAttempt = tryParseResponse(firstResponse.content);
+    let parsed: GoalDraftResponse;
+    if (firstAttempt.ok) {
+      parsed = firstAttempt.value;
+    } else {
+      log.warn("Goal draft response was not parseable, retrying once", {
+        error: firstAttempt.error.message,
+      });
+      const retryResponse = await this.llmGateway.prompt(
+        [
+          ...messages,
+          { role: "assistant", content: firstResponse.content },
+          { role: "user", content: JSON_ONLY_REMINDER },
+        ],
+        { system: SYSTEM_PROMPT, maxTokens: 1400 },
+      );
+      const secondAttempt = tryParseResponse(retryResponse.content);
+      if (!secondAttempt.ok) {
+        log.error("Goal draft response was unparseable after retry", {
+          firstError: firstAttempt.error.message,
+          secondError: secondAttempt.error.message,
+          firstContent: firstResponse.content,
+          retryContent: retryResponse.content,
+        });
+        throw new GoalDraftParseError();
+      }
+      parsed = secondAttempt.value;
+    }
+
     const normalized = goalDraftResponse.parse(parsed);
 
     if (
@@ -114,31 +149,6 @@ Transcript:
 ${transcript}${currentDraft}${mapContext}`;
   }
 
-  private parseResponse(content: string): GoalDraftResponse {
-    try {
-      const raw = extractJsonObject(content);
-      const parsed = parsedGatewayResponse.parse(JSON.parse(raw));
-      if (parsed.kind === "ask_question") {
-        return {
-          kind: "ask_question",
-          question: parsed.question.trim(),
-        };
-      }
-
-      const draft = parsed.draft;
-      return {
-        kind: "propose_spec",
-        draft: {
-          ...draft,
-          goalPrompt: buildGoalPrompt(draft),
-        },
-      };
-    } catch (error) {
-      log.error("Failed to parse goal draft response", { error, content });
-      throw new Error("Goal draft response was not valid JSON");
-    }
-  }
-
   private needsInitialClarification(
     transcript: GoalDraftTranscriptMessage[],
   ): boolean {
@@ -171,6 +181,36 @@ ${transcript}${currentDraft}${mapContext}`;
     return (
       specificitySignals.filter((signal) => lower.includes(signal)).length < 2
     );
+  }
+}
+
+type ParseResult =
+  | { ok: true; value: GoalDraftResponse }
+  | { ok: false; error: Error };
+
+function tryParseResponse(content: string): ParseResult {
+  try {
+    const raw = extractJsonObject(content);
+    const parsed = parsedGatewayResponse.parse(JSON.parse(raw));
+    if (parsed.kind === "ask_question") {
+      return {
+        ok: true,
+        value: { kind: "ask_question", question: parsed.question.trim() },
+      };
+    }
+    const draft = parsed.draft;
+    return {
+      ok: true,
+      value: {
+        kind: "propose_spec",
+        draft: { ...draft, goalPrompt: buildGoalPrompt(draft) },
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
   }
 }
 

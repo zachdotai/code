@@ -5,6 +5,7 @@ import type {
 } from "@main/services/hedgemony/schemas";
 import {
   Button,
+  Callout,
   Dialog,
   Flex,
   ScrollArea,
@@ -61,6 +62,10 @@ export function PlaceNestDialog({
   const [drafting, setDrafting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastDraftAttempt, setLastDraftAttempt] = useState<{
+    transcript: GoalDraftTranscriptMessage[];
+    currentDraft?: GoalSpecDraft;
+  } | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -75,6 +80,7 @@ export function PlaceNestDialog({
       setMapYValue(String(Math.round(mapY)));
       setSimpleMode(initialMode === "simple");
       setError(null);
+      setLastDraftAttempt(null);
       setDrafting(false);
       setSubmitting(false);
     }
@@ -97,6 +103,7 @@ export function PlaceNestDialog({
   ) => {
     setDrafting(true);
     setError(null);
+    setLastDraftAttempt({ transcript: nextTranscript, currentDraft });
     try {
       const response = await trpcClient.hedgemony.goalDraft.respond.mutate({
         transcript: nextTranscript,
@@ -115,6 +122,7 @@ export function PlaceNestDialog({
           { role: "assistant", content: response.question },
         ]);
         setAnswer("");
+        setLastDraftAttempt(null);
         return;
       }
 
@@ -128,12 +136,21 @@ export function PlaceNestDialog({
         { role: "assistant", content: formatDraftForTranscript(nextDraft) },
       ]);
       setAnswer("");
+      setLastDraftAttempt(null);
     } catch (e) {
       log.error("Failed to draft goal spec", { error: e });
       setError(e instanceof Error ? e.message : "Failed to draft goal spec");
     } finally {
       setDrafting(false);
     }
+  };
+
+  const handleRetryDraft = () => {
+    if (!lastDraftAttempt || drafting) return;
+    void requestDraft(
+      lastDraftAttempt.transcript,
+      lastDraftAttempt.currentDraft,
+    );
   };
 
   const handleStartDraft = () => {
@@ -165,6 +182,7 @@ export function PlaceNestDialog({
     }
     setSimpleMode((value) => !value);
     setError(null);
+    setLastDraftAttempt(null);
   };
 
   const handleSubmit = async () => {
@@ -274,9 +292,23 @@ export function PlaceNestDialog({
             </button>
 
             {error && (
-              <Text size="2" color="red">
-                {error}
-              </Text>
+              <Callout.Root color="red" size="1">
+                <Callout.Text>{error}</Callout.Text>
+                {lastDraftAttempt && (
+                  <Flex mt="2" gap="2">
+                    <Button
+                      size="1"
+                      variant="soft"
+                      color="red"
+                      onClick={handleRetryDraft}
+                      disabled={drafting || submitting}
+                      loading={drafting}
+                    >
+                      Try again
+                    </Button>
+                  </Flex>
+                )}
+              </Callout.Root>
             )}
           </Flex>
         </ScrollArea>
