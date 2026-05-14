@@ -61,6 +61,7 @@ import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import type { BuilderSpriteHandle } from "./BuilderSprite";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { DyingNestLayer } from "./DyingNestLayer";
+import { FinOpsPanel } from "./FinOpsPanel";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHotkeyHelper } from "./HedgemonyHotkeyHelper";
 import {
@@ -83,6 +84,7 @@ type Selection =
   | { type: "nest"; id: string }
   | { type: "builder" }
   | { type: "hedgehouse" }
+  | { type: "money-hog" }
   | { type: "hoglets"; ids: string[]; includeBuilder?: boolean }
   | null;
 
@@ -444,7 +446,7 @@ export function HedgemonyMapView() {
   const assignControlGroup = useControlGroupStore((s) => s.assign);
   const handleAssignControlGroup = useCallback(
     (slot: ControlGroupSlot) => {
-      if (!selection) {
+      if (!selection || selection.type === "money-hog") {
         toast(`Nothing selected for group ${slot}`, {
           description: "Select a unit or nest first, then assign.",
         });
@@ -1007,6 +1009,13 @@ export function HedgemonyMapView() {
           playSfx("select");
           setSelection({ type: "hedgehouse" });
         }}
+        moneyHogSelected={selection?.type === "money-hog"}
+        onMoneyHogSelect={() => {
+          playSfx("select");
+          setSelection((prev) =>
+            prev?.type === "money-hog" ? null : { type: "money-hog" },
+          );
+        }}
       >
         {nests.map((nest) => (
           <NestBroodCluster
@@ -1064,6 +1073,11 @@ export function HedgemonyMapView() {
             onSpawnWildHog={openSpawnHoglet}
             onClose={() => setSelection(null)}
           />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {selection?.type === "money-hog" && (
+          <FinOpsPanel onClose={() => setSelection(null)} />
         )}
       </AnimatePresence>
       <AnimatePresence>
