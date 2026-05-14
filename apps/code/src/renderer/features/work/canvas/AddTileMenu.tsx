@@ -2,6 +2,7 @@ import {
   ChartLineUp,
   FileText,
   GaugeIcon,
+  GithubLogo,
   Lightbulb,
   NoteIcon,
   Plus,
@@ -84,6 +85,18 @@ const WORK_OPTIONS: TileTypeOption[] = [
       type: "skill_output",
       skillName: "Untitled skill",
       size: "md",
+    }),
+  },
+  {
+    type: "github_activity",
+    label: "GitHub activity",
+    description: "Summary of a repo's PRs, issues, and releases.",
+    icon: GithubLogo,
+    factory: () => ({
+      type: "github_activity",
+      enabledTypes: ["pr_merged", "pr_opened", "issue_opened", "release"],
+      windowDays: 7,
+      size: "lg",
     }),
   },
 ];

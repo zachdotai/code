@@ -808,6 +808,45 @@ export class PostHogAPIClient {
     return data as Schemas.Team;
   }
 
+  async searchInsights(
+    projectId: number,
+    options: { search?: string; limit?: number } = {},
+  ): Promise<
+    Array<{
+      id: number;
+      short_id: string;
+      name: string | null;
+      derived_name: string | null;
+      description: string | null;
+      query: Record<string, unknown> | null;
+    }>
+  > {
+    const params = new URLSearchParams();
+    if (options.search) params.set("search", options.search);
+    params.set("limit", String(options.limit ?? 25));
+    const urlPath = `/api/projects/${projectId}/insights/?${params.toString()}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to search insights: ${response.statusText}`);
+    }
+    const data = (await response.json()) as {
+      results?: Array<{
+        id: number;
+        short_id: string;
+        name: string | null;
+        derived_name: string | null;
+        description: string | null;
+        query: Record<string, unknown> | null;
+      }>;
+    };
+    return data.results ?? [];
+  }
+
   async runQuery<TResult = unknown>(
     projectId: number,
     query: Record<string, unknown>,

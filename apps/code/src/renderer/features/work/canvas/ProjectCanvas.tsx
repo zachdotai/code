@@ -1,27 +1,33 @@
-import { PointerSensor } from "@dnd-kit/dom";
-import type { DragDropEvents } from "@dnd-kit/react";
-import { DragDropProvider } from "@dnd-kit/react";
-import { useSortable } from "@dnd-kit/react/sortable";
 import { FileText, GaugeIcon, NoteIcon } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type {
+  GithubActivityType,
   GridSize,
   NewTileInput,
   ProjectIconId,
   ProjectMember,
   Tile,
 } from "@shared/types/work-projects";
-import { AnimatePresence, motion } from "framer-motion";
-import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GridLayout, type Layout } from "react-grid-layout";
 import { AddTileMenu } from "./AddTileMenu";
-import { CanvasGridContext, type CanvasGridMetrics } from "./CanvasGridContext";
 import { resolveGridSize } from "./grid-utils";
+import { packTilesToLayout } from "./packLayout";
 import { TileRenderer } from "./TileRenderer";
 
-/** Grid layout constants. Row height is fixed so `row-span-N` is predictable
- *  across tile types. Gap matches the existing `gap-3` (12px) class. */
-const ROW_HEIGHT_PX = 140;
-const GAP_PX = 12;
+/** Grid constants. 12 columns matches the existing tile-sizing model. Row
+ *  height + margin reproduce the visual rhythm of the previous CSS grid. */
+const COLS = 12;
+const ROW_HEIGHT = 140;
+const MARGIN: [number, number] = [12, 12];
+const CONTAINER_PADDING: [number, number] = [0, 0];
+
+/** Selector for elements inside a tile that should NOT initiate a drag.
+ *  Lets the user click into inputs, buttons, links, and editable surfaces
+ *  without dragging the tile. The tile's chrome (border, header, padding)
+ *  is outside this selector so drag-from-chrome still works. */
+const DRAG_CANCEL_SELECTOR =
+  'textarea, input, select, button, a, [contenteditable="true"], .rgl-no-drag';
 
 interface ProjectCanvasProps {
   projectId: string;
@@ -30,7 +36,15 @@ interface ProjectCanvasProps {
   onAddTile: (tile: NewTileInput) => Promise<void>;
   onRemoveTile: (tileId: string) => Promise<void>;
   onResizeTileGrid: (tileId: string, size: GridSize) => Promise<void>;
-  onMoveTile: (tileId: string, toIndex: number) => Promise<void>;
+  onUpdateTileLayout: (
+    items: Array<{
+      tileId: string;
+      cols: number;
+      rows: number;
+      x: number;
+      y: number;
+    }>,
+  ) => Promise<void>;
   onApplyPending: (tileId: string) => Promise<void>;
   onRejectPending: (tileId: string) => Promise<void>;
   onUpdateTitleTile: (patch: {
@@ -53,36 +67,28 @@ interface ProjectCanvasProps {
     tileId: string,
     items: Array<{ text: string; done: boolean }>,
   ) => Promise<void>;
-}
-
-function SortableTile({
-  id,
-  index,
-  children,
-}: {
-  id: string;
-  index: number;
-  children: ReactNode;
-}) {
-  const { ref, isDragging } = useSortable({
-    id,
-    index,
-    group: "project-canvas-tiles",
-    transition: { duration: 160, easing: "ease-out" },
-  });
-
-  return (
-    <Box
-      ref={ref}
-      data-dragging={isDragging ? "true" : undefined}
-      // `cursor-grab` reads as a drag affordance on the tile chrome (header,
-      // border, padding); textareas/inputs/buttons inside naturally override
-      // with their own cursors so this doesn't fight text editing.
-      className="group/sortable relative h-full min-w-0 cursor-grab transition-[transform,box-shadow] duration-100 data-[dragging=true]:z-20 data-[dragging=true]:scale-[1.015] data-[dragging=true]:cursor-grabbing data-[dragging=true]:opacity-90 data-[dragging=true]:shadow-lg data-[dragging=true]:ring-(--accent-7) data-[dragging=true]:ring-1"
-    >
-      {children}
-    </Box>
-  );
+  onUpdateGithubActivityTile: (
+    tileId: string,
+    patch: {
+      repo?: { owner: string; name: string };
+      enabledTypes?: GithubActivityType[];
+      windowDays?: number;
+    },
+  ) => Promise<void>;
+  onRefreshGithubActivityTile: (tileId: string) => Promise<void>;
+  onUpdateHeadlineTile: (
+    tileId: string,
+    patch: {
+      label?: string;
+      liveLabel?: string;
+      query?: { posthogProjectId: number; body: Record<string, unknown> };
+      posthogUrl?: string;
+      fallbackValue?: string;
+      fallbackDelta?: string;
+      fallbackSparkline?: number[];
+    },
+  ) => Promise<void>;
+  onClearHeadlineTileQuery: (tileId: string) => Promise<void>;
 }
 
 export function ProjectCanvas({
@@ -91,15 +97,19 @@ export function ProjectCanvas({
   onAddTile,
   onRemoveTile,
   onResizeTileGrid,
-  onMoveTile,
+  onUpdateTileLayout,
   onApplyPending,
   onRejectPending,
   onUpdateTitleTile,
   onUpdateNoteTile,
   onUpdateFileTile,
   onUpdateChecklistItems,
+  onUpdateGithubActivityTile,
+  onRefreshGithubActivityTile,
+  onUpdateHeadlineTile,
+  onClearHeadlineTileQuery,
 }: ProjectCanvasProps) {
-  // Title tile is data-only — the project header renders the project's name,
+  // Title tile is data-only – the project header renders the project's name,
   // icon, tagline, and members. Filter it out of the canvas so we don't
   // double-render.
   const renderedTiles = useMemo(
@@ -107,211 +117,179 @@ export function ProjectCanvas({
     [tiles],
   );
 
-  // Per-tile in-flight resize preview. Keyed by tile id; cleared on release.
-  // Stored as React state so the affected tile re-renders with the preview
-  // span classes mid-drag without committing to the server.
-  const [previewById, setPreviewById] = useState<Record<string, GridSize>>({});
-
-  // True while ANY tile is being resized (corner-drag). Used to suppress
-  // framer-motion's per-tile `layout` animation during the drag — otherwise
-  // every cell-tick triggers a 120ms layout animation on every neighbor and
-  // the canvas wobbles. The user wants snap-feedback.
-  const isResizing = Object.keys(previewById).length > 0;
-
-  const gridRef = useRef<HTMLElement | null>(null);
-
-  const measure = useCallback((): CanvasGridMetrics | null => {
-    const el = gridRef.current;
-    if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    const totalGap = GAP_PX * 11; // gaps between 12 cols
-    const cellWidth = (rect.width - totalGap) / 12;
-    return { cols: 12, cellWidth, cellHeight: ROW_HEIGHT_PX, gap: GAP_PX };
+  // Measure container width so RGL knows the pixel size of one grid column.
+  // Resizes (e.g. user drags the chat panel's left edge) flow through via
+  // ResizeObserver.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && Number.isFinite(w)) setWidth(w);
+    });
+    observer.observe(el);
+    setWidth(el.getBoundingClientRect().width);
+    return () => observer.disconnect();
   }, []);
 
-  const gridContextValue = useMemo(() => ({ measure, gridRef }), [measure]);
+  // Layout is derived from tile state on every render. Tiles with a saved
+  // `gridPosition` keep it; new tiles are packed into the next free slot
+  // by `packTilesToLayout`.
+  const layout = useMemo(
+    () => packTilesToLayout(renderedTiles),
+    [renderedTiles],
+  );
 
-  // Only fire the actual reorder on drop, NOT on every dragover. dnd-kit's
-  // sortable still gives smooth visual feedback during drag via CSS transforms;
-  // we only persist the move once the user commits.
-  const handleDragEnd: DragDropEvents["dragend"] = useCallback(
-    (event) => {
-      const sourceId = event.operation.source?.id;
-      const targetId = event.operation.target?.id;
-      if (!sourceId || !targetId || sourceId === targetId) return;
-      const targetIndex = tiles.findIndex((t) => t.id === String(targetId));
-      if (targetIndex < 0) return;
-      void onMoveTile(String(sourceId), targetIndex);
+  // Persist any layout that diverges from the saved state. RGL calls this
+  // on initial mount and after every drag/resize. We diff against current
+  // tile data and skip the no-op case so the cache doesn't churn.
+  const handleLayoutChange = useCallback(
+    (nextLayout: Layout) => {
+      const changed: Array<{
+        tileId: string;
+        cols: number;
+        rows: number;
+        x: number;
+        y: number;
+      }> = [];
+      for (const item of nextLayout) {
+        const tile = renderedTiles.find((t) => t.id === item.i);
+        if (!tile) continue;
+        const size = resolveGridSize(tile);
+        const pos = tile.gridPosition;
+        const same =
+          size.cols === item.w &&
+          size.rows === item.h &&
+          pos?.x === item.x &&
+          pos?.y === item.y;
+        if (!same) {
+          changed.push({
+            tileId: item.i,
+            x: item.x,
+            y: item.y,
+            cols: item.w,
+            rows: item.h,
+          });
+        }
+      }
+      if (changed.length > 0) {
+        void onUpdateTileLayout(changed);
+      }
     },
-    [tiles, onMoveTile],
+    [renderedTiles, onUpdateTileLayout],
   );
 
   return (
-    <CanvasGridContext.Provider value={gridContextValue}>
-      <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
-        <Flex
-          direction="column"
-          gap="4"
-          className="mx-auto w-full max-w-[1000px] px-6 pt-6 pb-12"
-        >
-          <Flex align="center" justify="end" className="-mb-1">
-            <AddTileMenu
-              onAdd={(tile) => {
-                void onAddTile(tile);
-              }}
-            />
-          </Flex>
-          {renderedTiles.length === 0 ? (
-            <EmptyState onAdd={onAddTile} />
-          ) : (
-            <DragDropProvider
-              onDragEnd={handleDragEnd}
-              sensors={[
-                {
-                  plugin: PointerSensor,
-                  options: {
-                    activationConstraints: { distance: { value: 6 } },
-                  },
-                },
-              ]}
-            >
-              <Box
-                ref={(el) => {
-                  gridRef.current = el;
-                }}
-                className="grid grid-cols-12 gap-3"
-                style={{
-                  gridAutoRows: `${ROW_HEIGHT_PX}px`,
-                  // Dense packing: smaller tiles backfill gaps left when
-                  // larger tiles wrap to the next row. Keeps the bento
-                  // grid feeling solid, not sparse.
-                  gridAutoFlow: "row dense",
-                }}
-              >
-                <AnimatePresence mode="popLayout" initial={false}>
-                  {renderedTiles.map((tile, index) => {
-                    const effectiveSize =
-                      previewById[tile.id] ?? resolveGridSize(tile);
-                    const spanClass = spanClassFor(effectiveSize);
-                    const isThisResizing = !!previewById[tile.id];
-                    return (
-                      <motion.div
-                        key={tile.id}
-                        // Skip framer-motion's layout animation while a resize
-                        // is in flight (anywhere on the canvas) — otherwise
-                        // every cell-tick triggers a layout dance on every
-                        // neighbor and the canvas wobbles. CSS grid handles
-                        // the snap instantly; that's what the user wants.
-                        layout={isResizing ? false : "position"}
-                        initial={{ opacity: 0, scale: 0.96 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.92 }}
-                        transition={{
-                          duration: 0.14,
-                          ease: [0.32, 0.72, 0, 1],
-                        }}
-                        data-resizing={isThisResizing ? "true" : undefined}
-                        className={`${spanClass} group/tile relative min-w-0`}
-                      >
-                        <SortableTile id={tile.id} index={index}>
-                          <TileRenderer
-                            tile={tile}
-                            members={members}
-                            currentGridSize={effectiveSize}
-                            onRemove={() => {
-                              void onRemoveTile(tile.id);
-                            }}
-                            onResizeGrid={(next) => {
-                              void onResizeTileGrid(tile.id, next);
-                            }}
-                            onResizePreview={(next) => {
-                              setPreviewById((prev) => {
-                                if (next === null) {
-                                  if (!(tile.id in prev)) return prev;
-                                  const { [tile.id]: _drop, ...rest } = prev;
-                                  return rest;
-                                }
-                                return { ...prev, [tile.id]: next };
-                              });
-                            }}
-                            onApplyPending={
-                              tile.state !== "live"
-                                ? () => {
-                                    void onApplyPending(tile.id);
-                                  }
-                                : undefined
-                            }
-                            onRejectPending={
-                              tile.state !== "live"
-                                ? () => {
-                                    void onRejectPending(tile.id);
-                                  }
-                                : undefined
-                            }
-                            onUpdateTitleTile={(patch) => {
-                              void onUpdateTitleTile(patch);
-                            }}
-                            onUpdateNoteTile={(patch) => {
-                              void onUpdateNoteTile(tile.id, patch);
-                            }}
-                            onUpdateFileTile={(patch) => {
-                              void onUpdateFileTile(tile.id, patch);
-                            }}
-                            onUpdateChecklistItems={(items) => {
-                              void onUpdateChecklistItems(tile.id, items);
-                            }}
-                          />
-                        </SortableTile>
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
-              </Box>
-            </DragDropProvider>
-          )}
+    <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
+      <Flex
+        direction="column"
+        gap="4"
+        className="mx-auto w-full max-w-[1000px] px-6 pt-6 pb-12"
+      >
+        <Flex align="center" justify="end" className="-mb-1">
+          <AddTileMenu
+            onAdd={(tile) => {
+              void onAddTile(tile);
+            }}
+          />
         </Flex>
-      </Box>
-    </CanvasGridContext.Provider>
+        {renderedTiles.length === 0 ? (
+          <EmptyState onAdd={onAddTile} />
+        ) : (
+          <Box ref={containerRef} className="project-canvas-grid w-full">
+            {width > 0 && (
+              <GridLayout
+                layout={layout}
+                width={width}
+                gridConfig={{
+                  cols: COLS,
+                  rowHeight: ROW_HEIGHT,
+                  margin: MARGIN,
+                  containerPadding: CONTAINER_PADDING,
+                  maxRows: Number.POSITIVE_INFINITY,
+                }}
+                resizeConfig={{
+                  enabled: true,
+                  handles: ["se"],
+                }}
+                dragConfig={{
+                  enabled: true,
+                  bounded: false,
+                  cancel: DRAG_CANCEL_SELECTOR,
+                  threshold: 3,
+                }}
+                onLayoutChange={handleLayoutChange}
+                autoSize
+              >
+                {renderedTiles.map((tile) => {
+                  const effectiveSize = resolveGridSize(tile);
+                  return (
+                    <div
+                      key={tile.id}
+                      className="group/tile min-w-0 cursor-grab"
+                    >
+                      <TileRenderer
+                        tile={tile}
+                        members={members}
+                        currentGridSize={effectiveSize}
+                        onRemove={() => {
+                          void onRemoveTile(tile.id);
+                        }}
+                        onResizeGrid={(next) => {
+                          void onResizeTileGrid(tile.id, next);
+                        }}
+                        onApplyPending={
+                          tile.state !== "live"
+                            ? () => {
+                                void onApplyPending(tile.id);
+                              }
+                            : undefined
+                        }
+                        onRejectPending={
+                          tile.state !== "live"
+                            ? () => {
+                                void onRejectPending(tile.id);
+                              }
+                            : undefined
+                        }
+                        onUpdateTitleTile={(patch) => {
+                          void onUpdateTitleTile(patch);
+                        }}
+                        onUpdateNoteTile={(patch) => {
+                          void onUpdateNoteTile(tile.id, patch);
+                        }}
+                        onUpdateFileTile={(patch) => {
+                          void onUpdateFileTile(tile.id, patch);
+                        }}
+                        onUpdateChecklistItems={(items) => {
+                          void onUpdateChecklistItems(tile.id, items);
+                        }}
+                        onUpdateGithubActivityTile={async (patch) => {
+                          await onUpdateGithubActivityTile(tile.id, patch);
+                        }}
+                        onUpdateHeadlineTile={async (patch) => {
+                          await onUpdateHeadlineTile(tile.id, patch);
+                        }}
+                        onClearHeadlineTileQuery={async () => {
+                          await onClearHeadlineTileQuery(tile.id);
+                        }}
+                        onRefreshGithubActivityTile={async () => {
+                          await onRefreshGithubActivityTile(tile.id);
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </GridLayout>
+            )}
+          </Box>
+        )}
+      </Flex>
+    </Box>
   );
 }
-
-function spanClassFor(size: GridSize): string {
-  // Import-free local helper that mirrors grid-utils.spanClasses. We pull
-  // the same Tailwind class strings.
-  // biome-ignore lint/style/noNonNullAssertion: clamp keeps lookups in range
-  const col = colSpan(size.cols)!;
-  // biome-ignore lint/style/noNonNullAssertion: clamp keeps lookups in range
-  const row = rowSpan(size.rows)!;
-  return `${col} ${row}`;
-}
-
-function colSpan(n: number): string {
-  const c = Math.max(1, Math.min(12, n));
-  return COL_SPANS[c - 1];
-}
-
-function rowSpan(n: number): string {
-  const r = Math.max(1, Math.min(4, n));
-  return ROW_SPANS[r - 1];
-}
-
-// Tailwind needs these class names to appear as literals at build time.
-const COL_SPANS = [
-  "col-span-1",
-  "col-span-2",
-  "col-span-3",
-  "col-span-4",
-  "col-span-5",
-  "col-span-6",
-  "col-span-7",
-  "col-span-8",
-  "col-span-9",
-  "col-span-10",
-  "col-span-11",
-  "col-span-12",
-];
-
-const ROW_SPANS = ["row-span-1", "row-span-2", "row-span-3", "row-span-4"];
 
 function EmptyState({
   onAdd,
@@ -337,7 +315,7 @@ function EmptyState({
       factory: () => ({
         type: "headline",
         label: "Headline metric",
-        fallbackValue: "—",
+        fallbackValue: "–",
         fallbackDelta: "Set a target",
         fallbackSparkline: [0, 0, 0, 0, 0],
         size: "md",

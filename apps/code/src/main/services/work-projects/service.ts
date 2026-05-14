@@ -1,5 +1,7 @@
 import type {
   CreateProjectInput,
+  GithubActivitySummary,
+  GithubActivityType,
   GridSize,
   NewTileInput,
   ProjectIconId,
@@ -78,6 +80,8 @@ function defaultSizeFor(type: NewTileInput["type"]): TileSize {
       return "sm";
     case "artifact":
       return "md";
+    case "github_activity":
+      return "lg";
   }
 }
 
@@ -263,7 +267,22 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     const state = this.readState();
     return state.order
       .map((id) => state.projects[id])
-      .filter((p): p is WorkProject => !!p && !p.pendingDeletionAt);
+      .filter(
+        (p): p is WorkProject => !!p && !p.pendingDeletionAt && !p.archivedAt,
+      );
+  }
+
+  /** Projects the user has archived, most-recently-archived first. Pending-
+   *  deletion projects are still excluded (those are mid-undo and shouldn't
+   *  appear in either list). */
+  listArchived(): WorkProject[] {
+    const state = this.readState();
+    return state.order
+      .map((id) => state.projects[id])
+      .filter(
+        (p): p is WorkProject => !!p && !!p.archivedAt && !p.pendingDeletionAt,
+      )
+      .sort((a, b) => (b.archivedAt ?? "").localeCompare(a.archivedAt ?? ""));
   }
 
   get(projectId: string): WorkProject | null {
@@ -411,6 +430,41 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     this.emit("projects-changed", undefined);
   }
 
+  /** Archive a project. Hides it from `list()` and surfaces it in
+   *  `listArchived()`. Bypasses `mutateProject`'s pinned-only guard but
+   *  still respects pending-deletion. */
+  archive(projectId: string): WorkProject | null {
+    const state = this.readState();
+    const current = state.projects[projectId];
+    if (!current || current.pendingDeletionAt) return null;
+    if (current.archivedAt) return current;
+    const next: WorkProject = {
+      ...current,
+      archivedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    state.projects[projectId] = next;
+    this.writeState(state);
+    this.emitProjectChanged(projectId);
+    return next;
+  }
+
+  /** Unarchive (restore) a project. */
+  unarchive(projectId: string): WorkProject | null {
+    const state = this.readState();
+    const current = state.projects[projectId];
+    if (!current || !current.archivedAt) return null;
+    const { archivedAt: _drop, ...rest } = current;
+    const next: WorkProject = {
+      ...(rest as WorkProject),
+      updatedAt: new Date().toISOString(),
+    };
+    state.projects[projectId] = next;
+    this.writeState(state);
+    this.emitProjectChanged(projectId);
+    return next;
+  }
+
   pinProject(projectId: string): WorkProject | null {
     return this.mutateProject(projectId, (project) => {
       if (project.pinnedAt) return null;
@@ -521,6 +575,52 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     });
   }
 
+  /** Batch-update many tiles' positions and sizes. Used by the canvas grid
+   *  after a drag/resize so all neighbors that the compactor shifted around
+   *  get persisted in one write. Items not in the payload are left alone. */
+  updateTileLayout(
+    projectId: string,
+    items: Array<{
+      tileId: string;
+      cols: number;
+      rows: number;
+      x: number;
+      y: number;
+    }>,
+  ): WorkProject | null {
+    if (items.length === 0) return this.get(projectId);
+    const byId = new Map(items.map((it) => [it.tileId, it]));
+    return this.mutateProject(projectId, (project) => {
+      let mutated = false;
+      const tiles = project.tiles.map((t) => {
+        const it = byId.get(t.id);
+        if (!it) return t;
+        const cols = Math.max(1, Math.min(12, Math.round(it.cols)));
+        const rows = Math.max(1, Math.min(4, Math.round(it.rows)));
+        const x = Math.max(0, Math.min(11, Math.round(it.x)));
+        const y = Math.max(0, Math.round(it.y));
+        const prevSize = t.gridSize;
+        const prevPos = t.gridPosition;
+        if (
+          prevSize?.cols === cols &&
+          prevSize?.rows === rows &&
+          prevPos?.x === x &&
+          prevPos?.y === y
+        ) {
+          return t;
+        }
+        mutated = true;
+        return {
+          ...t,
+          gridSize: { cols, rows },
+          gridPosition: { x, y },
+        } as typeof t;
+      });
+      if (!mutated) return null;
+      return { ...project, tiles };
+    });
+  }
+
   updateTitleTile(
     projectId: string,
     patch: { name?: string; tagline?: string; iconId?: WorkProject["iconId"] },
@@ -612,6 +712,114 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
       });
       return { ...project, tiles };
     });
+  }
+
+  updateHeadlineTile(
+    projectId: string,
+    tileId: string,
+    patch: {
+      label?: string;
+      liveLabel?: string;
+      query?: { posthogProjectId: number; body: Record<string, unknown> };
+      posthogUrl?: string;
+      fallbackValue?: string;
+      fallbackDelta?: string;
+      fallbackSparkline?: number[];
+    },
+  ): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      const tiles = project.tiles.map((t) => {
+        if (t.id !== tileId || t.type !== "headline") return t;
+        return {
+          ...t,
+          ...(patch.label !== undefined ? { label: patch.label } : {}),
+          ...(patch.liveLabel !== undefined
+            ? { liveLabel: patch.liveLabel }
+            : {}),
+          ...(patch.query !== undefined ? { query: patch.query } : {}),
+          ...(patch.posthogUrl !== undefined
+            ? { posthogUrl: patch.posthogUrl }
+            : {}),
+          ...(patch.fallbackValue !== undefined
+            ? { fallbackValue: patch.fallbackValue }
+            : {}),
+          ...(patch.fallbackDelta !== undefined
+            ? { fallbackDelta: patch.fallbackDelta }
+            : {}),
+          ...(patch.fallbackSparkline !== undefined
+            ? { fallbackSparkline: patch.fallbackSparkline }
+            : {}),
+        };
+      });
+      return { ...project, tiles };
+    });
+  }
+
+  /** Clear the live insight on a headline tile (re-opens the picker in the
+   *  renderer). Separate from `updateHeadlineTile` because that patch shape
+   *  can't express "delete a key". */
+  clearHeadlineTileQuery(
+    projectId: string,
+    tileId: string,
+  ): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      const tiles = project.tiles.map((t) => {
+        if (t.id !== tileId || t.type !== "headline") return t;
+        const { query: _q, posthogUrl: _u, liveLabel: _l, ...rest } = t;
+        return rest as Tile;
+      });
+      return { ...project, tiles };
+    });
+  }
+
+  updateGithubActivityTile(
+    projectId: string,
+    tileId: string,
+    patch: {
+      repo?: { owner: string; name: string };
+      enabledTypes?: GithubActivityType[];
+      windowDays?: number;
+      summary?: GithubActivitySummary;
+    },
+  ): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      const tiles = project.tiles.map((t) => {
+        if (t.id !== tileId || t.type !== "github_activity") return t;
+        return {
+          ...t,
+          ...(patch.repo !== undefined ? { repo: patch.repo } : {}),
+          ...(patch.enabledTypes !== undefined
+            ? { enabledTypes: patch.enabledTypes }
+            : {}),
+          ...(patch.windowDays !== undefined
+            ? { windowDays: patch.windowDays }
+            : {}),
+          ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
+        };
+      });
+      return { ...project, tiles };
+    });
+  }
+
+  /** Read helper for the github_activity tile, used by the refresh path so the
+   *  service that does the gh fetch can look up the tile's config. */
+  getGithubActivityTileConfig(
+    projectId: string,
+    tileId: string,
+  ): {
+    repo: { owner: string; name: string };
+    enabledTypes: GithubActivityType[];
+    windowDays: number;
+  } | null {
+    const project = this.get(projectId);
+    if (!project) return null;
+    const tile = project.tiles.find((t) => t.id === tileId);
+    if (!tile || tile.type !== "github_activity" || !tile.repo) return null;
+    return {
+      repo: tile.repo,
+      enabledTypes: tile.enabledTypes,
+      windowDays: tile.windowDays,
+    };
   }
 
   applyPending(projectId: string, tileId: string): WorkProject | null {

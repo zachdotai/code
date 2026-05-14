@@ -14,7 +14,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { TileResizeHandle } from "./TileResizeHandle";
 
 /** Quick-pick presets for the tile options menu. Maps a human label to a
  *  canonical {cols, rows} so the user can jump to a known size without
@@ -33,11 +32,13 @@ interface TileFrameProps {
   /** Header right-side content (e.g. an "Open in PostHog" link). */
   headerAction?: ReactNode;
   children: ReactNode;
-  /** The current effective gridSize (including any in-flight preview).
-   *  Required when `onResizeGrid` is set so the handle knows the baseline. */
+  /** The current effective gridSize for the quick-pick menu's active state. */
   currentGridSize?: GridSize;
   onRemove?: () => void;
   onResizeGrid?: (size: GridSize) => void;
+  /** Legacy prop from when the canvas drove a per-cell resize preview. The
+   *  RGL canvas handles preview internally; this is accepted so existing
+   *  callers don't have to be updated. */
   onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
@@ -59,7 +60,6 @@ export function TileFrame({
   currentGridSize,
   onRemove,
   onResizeGrid,
-  onResizePreview,
   onApplyPending,
   onRejectPending,
   bare,
@@ -215,13 +215,6 @@ export function TileFrame({
         </Flex>
       )}
       <Box className="min-h-0 flex-1 overflow-auto">{children}</Box>
-      {onResizeGrid && currentGridSize && (
-        <TileResizeHandle
-          currentSize={currentGridSize}
-          onResize={onResizeGrid}
-          onPreview={onResizePreview}
-        />
-      )}
     </Box>
   );
 }

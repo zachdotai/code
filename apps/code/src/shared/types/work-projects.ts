@@ -16,6 +16,9 @@ export const projectIconId = z.enum([
   "compass",
   "target",
   "flask",
+  "lightning",
+  "sparkle",
+  "globe",
 ]);
 export type ProjectIconId = z.infer<typeof projectIconId>;
 
@@ -30,6 +33,15 @@ export const gridSize = z.object({
   rows: z.number().int().min(1).max(4),
 });
 export type GridSize = z.infer<typeof gridSize>;
+
+/** Absolute position on the 12-col grid. x in 0..11, y in 0..N.
+ *  When absent, the renderer packs the tile sequentially from order on
+ *  first render and persists the result via `updateTileLayout`. */
+export const gridPosition = z.object({
+  x: z.number().int().min(0).max(11),
+  y: z.number().int().min(0),
+});
+export type GridPosition = z.infer<typeof gridPosition>;
 
 export const tileState = z.enum([
   "live",
@@ -48,6 +60,9 @@ const tileBase = z.object({
   state: tileState,
   origin: tileOrigin,
   gridSize: gridSize.optional(),
+  /** Absolute (x, y) position on the 12-col canvas. When absent, the
+   *  renderer packs tiles sequentially using `order` as a fallback. */
+  gridPosition: gridPosition.optional(),
 });
 
 export const titleTile = tileBase.extend({
@@ -143,6 +158,61 @@ export const artifactTile = tileBase.extend({
 });
 export type ArtifactTile = z.infer<typeof artifactTile>;
 
+export const githubActivityType = z.enum([
+  "pr_merged",
+  "pr_opened",
+  "issue_opened",
+  "release",
+]);
+export type GithubActivityType = z.infer<typeof githubActivityType>;
+
+export const githubActivityItem = z.object({
+  id: z.string(),
+  type: githubActivityType,
+  title: z.string(),
+  url: z.string(),
+  actor: z.string().optional(),
+  /** ISO timestamp. */
+  when: z.string(),
+});
+export type GithubActivityItem = z.infer<typeof githubActivityItem>;
+
+export const githubActivitySummary = z.object({
+  /** ISO timestamp of the last successful (or failed) fetch. */
+  fetchedAt: z.string(),
+  /** Window the summary covers, in days. */
+  windowDays: z.number().int().min(1).max(90),
+  counts: z.object({
+    pr_merged: z.number().int().nonnegative(),
+    pr_opened: z.number().int().nonnegative(),
+    issue_opened: z.number().int().nonnegative(),
+    release: z.number().int().nonnegative(),
+  }),
+  /** Interleaved recent items across enabled types, sorted desc by `when`. */
+  recent: z.array(githubActivityItem),
+  /** Set when the fetch failed (gh not installed, not authed, repo missing). */
+  error: z.string().optional(),
+});
+export type GithubActivitySummary = z.infer<typeof githubActivitySummary>;
+
+export const githubActivityTile = tileBase.extend({
+  type: z.literal("github_activity"),
+  /** Watched repo. Undefined → empty/config mode in the renderer. */
+  repo: z
+    .object({
+      owner: z.string(),
+      name: z.string(),
+    })
+    .optional(),
+  /** Activity types to include in counts and the recent feed. */
+  enabledTypes: z.array(githubActivityType).min(1),
+  /** Lookback window in days for counts and the recent feed. */
+  windowDays: z.number().int().min(1).max(90),
+  /** Last fetched summary, populated by the main process. */
+  summary: githubActivitySummary.optional(),
+});
+export type GithubActivityTile = z.infer<typeof githubActivityTile>;
+
 export const tile = z.discriminatedUnion("type", [
   titleTile,
   headlineTile,
@@ -151,6 +221,7 @@ export const tile = z.discriminatedUnion("type", [
   skillOutputTile,
   noteTile,
   artifactTile,
+  githubActivityTile,
 ]);
 export type Tile = z.infer<typeof tile>;
 export type TileType = Tile["type"];
@@ -189,6 +260,10 @@ export const workProject = z.object({
    *  app boot, any project with `pendingDeletionAt` older than 30s is
    *  auto-committed (recovery from crashes during the grace window). */
   pendingDeletionAt: z.string().optional(),
+  /** ISO timestamp when the user archived the project. Archived projects are
+   *  hidden from `list()` but surfaced in `listArchived()` so the user can
+   *  browse and restore them. No auto-commit – archive is durable. */
+  archivedAt: z.string().optional(),
 });
 export type WorkProject = z.infer<typeof workProject>;
 
@@ -218,6 +293,11 @@ export const newTileInput = z.discriminatedUnion("type", [
     size: tileSize.optional(),
   }),
   artifactTile
+    .omit({ id: true, state: true, origin: true, size: true })
+    .extend({
+      size: tileSize.optional(),
+    }),
+  githubActivityTile
     .omit({ id: true, state: true, origin: true, size: true })
     .extend({
       size: tileSize.optional(),

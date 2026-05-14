@@ -43,6 +43,7 @@ import { FocusSyncService } from "../services/focus/sync-service";
 import { FoldersService } from "../services/folders/service";
 import { FsService } from "../services/fs/service";
 import { GitService } from "../services/git/service";
+import { GithubActivityService } from "../services/github-activity/service";
 import { GitHubIntegrationService } from "../services/github-integration/service";
 import { HandoffService } from "../services/handoff/service";
 import { InboxLinkService } from "../services/inbox-link/service";
@@ -127,6 +128,7 @@ container.bind(MAIN_TOKENS.FsService).to(FsService);
 container
   .bind(MAIN_TOKENS.GitHubIntegrationService)
   .to(GitHubIntegrationService);
+container.bind(MAIN_TOKENS.GithubActivityService).to(GithubActivityService);
 container.bind(MAIN_TOKENS.GitService).to(GitService);
 container.bind(MAIN_TOKENS.HandoffService).to(HandoffService);
 container

@@ -1,5 +1,6 @@
 import {
   createProjectInput,
+  githubActivityType,
   gridSize,
   newTileInput,
   projectIconId,
@@ -9,6 +10,7 @@ import {
 import { z } from "zod";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
+import type { GithubActivityService } from "../../services/github-activity/service";
 import type { WorkProjectsService } from "../../services/work-projects/service";
 import {
   getTemplateById,
@@ -18,6 +20,8 @@ import { publicProcedure, router } from "../trpc";
 
 const getService = () =>
   container.get<WorkProjectsService>(MAIN_TOKENS.WorkProjectsService);
+const getGithubActivityService = () =>
+  container.get<GithubActivityService>(MAIN_TOKENS.GithubActivityService);
 
 const templateCategory = z.enum([
   "growth",
@@ -40,6 +44,10 @@ const projectTemplateSummary = z.object({
 export const workProjectsRouter = router({
   list: publicProcedure.output(z.array(workProject)).query(() => {
     return getService().list();
+  }),
+
+  listArchived: publicProcedure.output(z.array(workProject)).query(() => {
+    return getService().listArchived();
   }),
 
   get: publicProcedure
@@ -89,6 +97,20 @@ export const workProjectsRouter = router({
     .mutation(({ input }) => {
       getService().commitDelete(input.projectId);
       return { ok: true };
+    }),
+
+  archive: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().archive(input.projectId);
+    }),
+
+  unarchive: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().unarchive(input.projectId);
     }),
 
   pin: publicProcedure
@@ -240,6 +262,26 @@ export const workProjectsRouter = router({
       );
     }),
 
+  updateTileLayout: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        items: z.array(
+          z.object({
+            tileId: z.string(),
+            cols: z.number().int().min(1).max(12),
+            rows: z.number().int().min(1).max(4),
+            x: z.number().int().min(0).max(11),
+            y: z.number().int().min(0),
+          }),
+        ),
+      }),
+    )
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().updateTileLayout(input.projectId, input.items);
+    }),
+
   updateTitleTile: publicProcedure
     .input(
       z.object({
@@ -289,6 +331,89 @@ export const workProjectsRouter = router({
       return getService().updateFileTile(input.projectId, input.tileId, {
         filename: input.filename,
         contents: input.contents,
+      });
+    }),
+
+  updateHeadlineTile: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        tileId: z.string(),
+        label: z.string().optional(),
+        liveLabel: z.string().optional(),
+        query: z
+          .object({
+            posthogProjectId: z.number(),
+            body: z.record(z.string(), z.unknown()),
+          })
+          .optional(),
+        posthogUrl: z.string().optional(),
+        fallbackValue: z.string().optional(),
+        fallbackDelta: z.string().optional(),
+        fallbackSparkline: z.array(z.number()).optional(),
+      }),
+    )
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().updateHeadlineTile(input.projectId, input.tileId, {
+        label: input.label,
+        liveLabel: input.liveLabel,
+        query: input.query,
+        posthogUrl: input.posthogUrl,
+        fallbackValue: input.fallbackValue,
+        fallbackDelta: input.fallbackDelta,
+        fallbackSparkline: input.fallbackSparkline,
+      });
+    }),
+
+  clearHeadlineTileQuery: publicProcedure
+    .input(z.object({ projectId: z.string(), tileId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().clearHeadlineTileQuery(input.projectId, input.tileId);
+    }),
+
+  updateGithubActivityTile: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        tileId: z.string(),
+        repo: z
+          .object({
+            owner: z.string().min(1),
+            name: z.string().min(1),
+          })
+          .optional(),
+        enabledTypes: z.array(githubActivityType).min(1).optional(),
+        windowDays: z.number().int().min(1).max(90).optional(),
+      }),
+    )
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().updateGithubActivityTile(
+        input.projectId,
+        input.tileId,
+        {
+          repo: input.repo,
+          enabledTypes: input.enabledTypes,
+          windowDays: input.windowDays,
+        },
+      );
+    }),
+
+  refreshGithubActivityTile: publicProcedure
+    .input(z.object({ projectId: z.string(), tileId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(async ({ input }) => {
+      const service = getService();
+      const config = service.getGithubActivityTileConfig(
+        input.projectId,
+        input.tileId,
+      );
+      if (!config) return service.get(input.projectId);
+      const summary = await getGithubActivityService().fetchActivity(config);
+      return service.updateGithubActivityTile(input.projectId, input.tileId, {
+        summary,
       });
     }),
 

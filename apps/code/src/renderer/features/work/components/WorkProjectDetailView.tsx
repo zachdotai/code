@@ -24,13 +24,17 @@ export function WorkProjectDetailView() {
     addTile,
     removeTile,
     resizeTileGrid,
-    moveTile,
+    updateTileLayout,
     applyPending,
     rejectPending,
     updateTitleTile,
     updateNoteTile,
     updateFileTile,
     updateChecklistItems,
+    updateGithubActivityTile,
+    refreshGithubActivityTile,
+    updateHeadlineTile,
+    clearHeadlineTileQuery,
   } = useProjectCanvas(projectId);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -141,8 +145,8 @@ export function WorkProjectDetailView() {
               onResizeTileGrid={async (tileId, size) => {
                 await resizeTileGrid(tileId, size);
               }}
-              onMoveTile={async (tileId, toIndex) => {
-                await moveTile(tileId, toIndex);
+              onUpdateTileLayout={async (items) => {
+                await updateTileLayout(items);
               }}
               onApplyPending={async (tileId) => {
                 await applyPending(tileId);
@@ -161,6 +165,18 @@ export function WorkProjectDetailView() {
               }}
               onUpdateChecklistItems={async (tileId, items) => {
                 await updateChecklistItems(tileId, items);
+              }}
+              onUpdateGithubActivityTile={async (tileId, patch) => {
+                await updateGithubActivityTile(tileId, patch);
+              }}
+              onRefreshGithubActivityTile={async (tileId) => {
+                await refreshGithubActivityTile(tileId);
+              }}
+              onUpdateHeadlineTile={async (tileId, patch) => {
+                await updateHeadlineTile(tileId, patch);
+              }}
+              onClearHeadlineTileQuery={async (tileId) => {
+                await clearHeadlineTileQuery(tileId);
               }}
             />
           </Box>

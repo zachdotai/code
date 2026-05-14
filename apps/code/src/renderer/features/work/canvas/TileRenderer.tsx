@@ -1,4 +1,5 @@
 import type {
+  GithubActivityType,
   GridSize,
   ProjectIconId,
   ProjectMember,
@@ -6,6 +7,7 @@ import type {
 } from "@shared/types/work-projects";
 import { ArtifactTile } from "./tiles/ArtifactTile";
 import { FileTile } from "./tiles/FileTile";
+import { GithubActivityTile } from "./tiles/GithubActivityTile";
 import { HeadlineTile } from "./tiles/HeadlineTile";
 import { InsightTile } from "./tiles/InsightTile";
 import { NoteTile } from "./tiles/NoteTile";
@@ -34,6 +36,22 @@ interface TileRendererProps {
   onUpdateChecklistItems?: (
     items: Array<{ text: string; done: boolean }>,
   ) => void;
+  onUpdateGithubActivityTile?: (patch: {
+    repo?: { owner: string; name: string };
+    enabledTypes?: GithubActivityType[];
+    windowDays?: number;
+  }) => Promise<void>;
+  onRefreshGithubActivityTile?: () => Promise<void>;
+  onUpdateHeadlineTile?: (patch: {
+    label?: string;
+    liveLabel?: string;
+    query?: { posthogProjectId: number; body: Record<string, unknown> };
+    posthogUrl?: string;
+    fallbackValue?: string;
+    fallbackDelta?: string;
+    fallbackSparkline?: number[];
+  }) => Promise<void>;
+  onClearHeadlineTileQuery?: () => Promise<void>;
 }
 
 export function TileRenderer({
@@ -49,6 +67,10 @@ export function TileRenderer({
   onUpdateNoteTile,
   onUpdateFileTile,
   onUpdateChecklistItems,
+  onUpdateGithubActivityTile,
+  onRefreshGithubActivityTile,
+  onUpdateHeadlineTile,
+  onClearHeadlineTileQuery,
 }: TileRendererProps) {
   switch (tile.type) {
     case "title":
@@ -71,6 +93,8 @@ export function TileRenderer({
           onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
+          onUpdate={onUpdateHeadlineTile}
+          onClearQuery={onClearHeadlineTileQuery}
         />
       );
     case "insight":
@@ -134,6 +158,20 @@ export function TileRenderer({
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
           onUpdateChecklistItems={onUpdateChecklistItems}
+        />
+      );
+    case "github_activity":
+      return (
+        <GithubActivityTile
+          tile={tile}
+          currentGridSize={currentGridSize}
+          onRemove={onRemove}
+          onResizeGrid={onResizeGrid}
+          onResizePreview={onResizePreview}
+          onApplyPending={onApplyPending}
+          onRejectPending={onRejectPending}
+          onUpdateConfig={onUpdateGithubActivityTile}
+          onRefresh={onRefreshGithubActivityTile}
         />
       );
   }

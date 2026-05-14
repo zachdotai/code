@@ -1,10 +1,13 @@
 import {
   Compass,
+  Globe,
   type IconProps,
   Lightbulb,
+  Lightning,
   Megaphone,
   Microphone,
   Rocket,
+  Sparkle,
   Target,
   TestTube,
 } from "@phosphor-icons/react";
@@ -22,14 +25,20 @@ export const PROJECT_ICON_MAP: Record<
   compass: Compass,
   target: Target,
   flask: TestTube,
+  lightning: Lightning,
+  sparkle: Sparkle,
+  globe: Globe,
 };
 
 export const PROJECT_ICON_OPTIONS: ProjectIconId[] = [
   "rocket",
-  "microphone",
-  "megaphone",
+  "lightning",
+  "sparkle",
   "lightbulb",
-  "compass",
   "target",
+  "compass",
+  "globe",
+  "megaphone",
+  "microphone",
   "flask",
 ];

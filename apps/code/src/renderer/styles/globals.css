@@ -54,6 +54,21 @@
 @import "react-resizable/css/styles.css";
 
 /*
+ * Override RGL's hardcoded `background: red; opacity: 0.2` on the drag /
+ * resize placeholder ghost. Uses gray, not accent: the app's Radix accent
+ * is orange/yellow, which on a placeholder reads as an error or warning
+ * state. !important guards against cascade / layer surprises since RGL
+ * ships its own un-layered styles.
+ */
+.react-grid-item.react-grid-placeholder,
+.react-grid-item.react-grid-placeholder.placeholder-resizing {
+  background: var(--gray-5) !important;
+  opacity: 0.8 !important;
+  border: 1px dashed var(--gray-8) !important;
+  border-radius: var(--radius-3) !important;
+}
+
+/*
  * Explicit @source directive alongside the import above. Tailwind v4's
  * `@config` legacy-compat mode (loading tailwind.config.js) appears to
  * ignore `@source` directives nested inside imported CSS files, so the

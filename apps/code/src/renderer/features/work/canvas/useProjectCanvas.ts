@@ -1,6 +1,7 @@
 import { trpcClient, useTRPC } from "@renderer/trpc";
 import { toast } from "@renderer/utils/toast";
 import type {
+  GithubActivityType,
   GridSize,
   NewTileInput,
   TileSize,
@@ -198,6 +199,45 @@ export function useProjectCanvas(projectId: string | undefined) {
     [projectId, runOptimistic],
   );
 
+  /** Batch-update layout (position + size) for many tiles at once. Called
+   *  by the canvas grid after any drag or resize so the compactor's
+   *  cascading neighbor shifts get persisted in a single round trip. */
+  const updateTileLayout = useCallback(
+    (
+      items: Array<{
+        tileId: string;
+        cols: number;
+        rows: number;
+        x: number;
+        y: number;
+      }>,
+    ): Promise<void> => {
+      if (items.length === 0) return Promise.resolve();
+      const byId = new Map(items.map((it) => [it.tileId, it]));
+      return runOptimistic(
+        "Update layout",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.map((t) => {
+            const it = byId.get(t.id);
+            if (!it) return t;
+            return {
+              ...t,
+              gridSize: { cols: it.cols, rows: it.rows },
+              gridPosition: { x: it.x, y: it.y },
+            } as typeof t;
+          }),
+        }),
+        () =>
+          trpcClient.workProjects.updateTileLayout.mutate({
+            projectId: projectId!,
+            items,
+          }),
+      );
+    },
+    [projectId, runOptimistic],
+  );
+
   const updateChecklistItems = useCallback(
     (
       tileId: string,
@@ -355,6 +395,135 @@ export function useProjectCanvas(projectId: string | undefined) {
     [projectId, runOptimistic],
   );
 
+  const updateHeadlineTile = useCallback(
+    (
+      tileId: string,
+      patch: {
+        label?: string;
+        liveLabel?: string;
+        query?: { posthogProjectId: number; body: Record<string, unknown> };
+        posthogUrl?: string;
+        fallbackValue?: string;
+        fallbackDelta?: string;
+        fallbackSparkline?: number[];
+      },
+    ): Promise<void> => {
+      return runOptimistic(
+        "Update headline metric",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.map((t) => {
+            if (t.id !== tileId || t.type !== "headline") return t;
+            return {
+              ...t,
+              ...(patch.label !== undefined ? { label: patch.label } : {}),
+              ...(patch.liveLabel !== undefined
+                ? { liveLabel: patch.liveLabel }
+                : {}),
+              ...(patch.query !== undefined ? { query: patch.query } : {}),
+              ...(patch.posthogUrl !== undefined
+                ? { posthogUrl: patch.posthogUrl }
+                : {}),
+              ...(patch.fallbackValue !== undefined
+                ? { fallbackValue: patch.fallbackValue }
+                : {}),
+              ...(patch.fallbackDelta !== undefined
+                ? { fallbackDelta: patch.fallbackDelta }
+                : {}),
+              ...(patch.fallbackSparkline !== undefined
+                ? { fallbackSparkline: patch.fallbackSparkline }
+                : {}),
+            };
+          }),
+        }),
+        () =>
+          trpcClient.workProjects.updateHeadlineTile.mutate({
+            projectId: projectId!,
+            tileId,
+            ...patch,
+          }),
+      );
+    },
+    [projectId, runOptimistic],
+  );
+
+  const clearHeadlineTileQuery = useCallback(
+    (tileId: string): Promise<void> => {
+      return runOptimistic(
+        "Clear headline metric",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.map((t) => {
+            if (t.id !== tileId || t.type !== "headline") return t;
+            const { query: _q, posthogUrl: _u, liveLabel: _l, ...rest } = t;
+            return rest as typeof t;
+          }),
+        }),
+        () =>
+          trpcClient.workProjects.clearHeadlineTileQuery.mutate({
+            projectId: projectId!,
+            tileId,
+          }),
+      );
+    },
+    [projectId, runOptimistic],
+  );
+
+  const updateGithubActivityTile = useCallback(
+    (
+      tileId: string,
+      patch: {
+        repo?: { owner: string; name: string };
+        enabledTypes?: GithubActivityType[];
+        windowDays?: number;
+      },
+    ): Promise<void> => {
+      return runOptimistic(
+        "Update GitHub activity",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.map((t) => {
+            if (t.id !== tileId || t.type !== "github_activity") return t;
+            return {
+              ...t,
+              ...(patch.repo !== undefined ? { repo: patch.repo } : {}),
+              ...(patch.enabledTypes !== undefined
+                ? { enabledTypes: patch.enabledTypes }
+                : {}),
+              ...(patch.windowDays !== undefined
+                ? { windowDays: patch.windowDays }
+                : {}),
+            };
+          }),
+        }),
+        () =>
+          trpcClient.workProjects.updateGithubActivityTile.mutate({
+            projectId: projectId!,
+            tileId,
+            ...patch,
+          }),
+      );
+    },
+    [projectId, runOptimistic],
+  );
+
+  const refreshGithubActivityTile = useCallback(
+    async (tileId: string): Promise<void> => {
+      if (!projectId) return;
+      try {
+        await trpcClient.workProjects.refreshGithubActivityTile.mutate({
+          projectId,
+          tileId,
+        });
+      } catch (err) {
+        toast.error("Refresh failed", {
+          description: err instanceof Error ? err.message : "Please try again.",
+        });
+      }
+    },
+    [projectId],
+  );
+
   const applyPending = useCallback(
     (tileId: string): Promise<void> => {
       return runOptimistic(
@@ -417,11 +586,16 @@ export function useProjectCanvas(projectId: string | undefined) {
     removeTile,
     resizeTile,
     resizeTileGrid,
+    updateTileLayout,
     moveTile,
     updateTitleTile,
     updateNoteTile,
     updateFileTile,
     updateChecklistItems,
+    updateHeadlineTile,
+    clearHeadlineTileQuery,
+    updateGithubActivityTile,
+    refreshGithubActivityTile,
     applyPending,
     rejectPending,
   };

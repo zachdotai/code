@@ -160,7 +160,7 @@ export function ProjectHeader({
           <Icon size={18} weight="regular" />
         </button>
         {iconPickerOpen && (
-          <Box className="absolute top-10 left-0 z-20 flex w-44 flex-wrap gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) p-2 shadow-lg">
+          <Box className="absolute top-11 left-0 z-20 grid grid-cols-5 gap-1.5 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) p-2 shadow-lg">
             {PROJECT_ICON_OPTIONS.map((id) => {
               const Opt = PROJECT_ICON_MAP[id];
               return (
@@ -171,9 +171,10 @@ export function ProjectHeader({
                     void onUpdateTitle({ iconId: id });
                     setIconPickerOpen(false);
                   }}
-                  className={`flex h-8 w-8 items-center justify-center rounded-(--radius-2) text-(--gray-11) hover:bg-(--gray-3) ${
+                  aria-label={`Use ${id} icon`}
+                  className={`flex h-8 w-8 items-center justify-center rounded-(--radius-2) text-(--gray-11) transition-colors hover:bg-(--gray-3) hover:text-(--gray-12) ${
                     id === project.iconId
-                      ? "bg-(--gray-3) text-(--gray-12)"
+                      ? "bg-(--gray-3) text-(--gray-12) ring-(--gray-7) ring-1"
                       : ""
                   }`}
                 >
