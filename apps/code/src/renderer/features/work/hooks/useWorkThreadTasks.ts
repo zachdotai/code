@@ -1,11 +1,11 @@
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useMeQuery } from "@hooks/useMeQuery";
 import type { Task } from "@shared/types";
-import { useMemo } from "react";
+import { logger } from "@utils/logger";
+import { useEffect, useMemo } from "react";
 import { useWorkThreadsStore } from "../stores/workThreadsStore";
 
-// (debug logger removed — filter now uses local workThreadsStore as the
-// primary signal so no diagnostic needed.)
+const log = logger.scope("work-thread-tasks");
 
 /**
  * HACKATHON SHORTCUT — Work-mode thread list.
@@ -28,10 +28,6 @@ export function useWorkThreadTasks() {
 
   const sorted = useMemo<Task[]>(() => {
     const tasks = query.data ?? [];
-    // The stub team-member picker (STUB_ORG_MEMBERS) uses email as the fake
-    // "uuid" because we don't have real PostHog uuids in the stub. Match on
-    // both uuid and email so this works regardless of which identifier
-    // James's app stuffed into `repository_config.collaborators`.
     const myIdentifiers = new Set(
       [currentUser?.uuid, currentUser?.email].filter(
         (v): v is string => typeof v === "string" && v.length > 0,
@@ -58,6 +54,43 @@ export function useWorkThreadTasks() {
         return tb - ta;
       });
   }, [query.data, currentUser?.uuid, currentUser?.email, localThreadIds]);
+
+  // TEMP HACKATHON DEBUG — paste this log to diagnose why a shared task isn't
+  // showing up. Look for any task whose `repository_config.collaborators`
+  // contains your uuid or email.
+  useEffect(() => {
+    if (!query.data) return;
+    const me = {
+      uuid: currentUser?.uuid,
+      email: currentUser?.email,
+    };
+    const tasksWithCollabs = query.data
+      .filter((t) => {
+        const config = t.repository_config as
+          | { collaborators?: unknown }
+          | null
+          | undefined;
+        return (
+          Array.isArray(config?.collaborators) &&
+          (config.collaborators as unknown[]).length > 0
+        );
+      })
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        created_by_email: t.created_by?.email,
+        collaborators: (
+          t.repository_config as { collaborators?: unknown } | null | undefined
+        )?.collaborators,
+      }));
+    log.info("useWorkThreadTasks debug", {
+      me,
+      totalTasks: query.data.length,
+      tasksWithAnyCollaborators: tasksWithCollabs.length,
+      matchedThreads: sorted.length,
+      sampleTasksWithCollabs: tasksWithCollabs.slice(0, 10),
+    });
+  }, [query.data, sorted.length, currentUser?.uuid, currentUser?.email]);
 
   return { ...query, data: sorted };
 }

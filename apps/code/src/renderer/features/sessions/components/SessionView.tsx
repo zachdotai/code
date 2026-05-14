@@ -266,6 +266,17 @@ export function SessionView({
       if (!text.trim()) return;
       onSendPrompt(text);
 
+      // TEMP HACKATHON DEBUG — find out why cross-user shares aren't landing.
+      if (isWorkThread && taskId) {
+        const uuids = extractTeamMemberUuidsFromXml(text);
+        log.info("handleSubmit team-mention check", {
+          taskId,
+          isWorkThread,
+          textPreview: text.slice(0, 120),
+          extractedUuids: uuids,
+        });
+      }
+
       if (!isWorkThread || !taskId) return;
       const uuids = extractTeamMemberUuidsFromXml(text);
       if (uuids.length === 0) return;
@@ -274,7 +285,9 @@ export function SessionView({
         try {
           const client = await getAuthenticatedClient();
           if (!client) return;
-          await client.addTaskCollaborators(taskId, uuids);
+          log.info("calling addTaskCollaborators", { taskId, uuids });
+          const result = await client.addTaskCollaborators(taskId, uuids);
+          log.info("addTaskCollaborators returned", { taskId, result });
         } catch (error) {
           log.error("Failed to add task collaborators", { error, uuids });
         }
