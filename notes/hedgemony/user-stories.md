@@ -4,6 +4,28 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 
 ---
 
+## Status snapshot (audited 2026-05-14)
+
+| Slice | Status | What's left |
+| --- | --- | --- |
+| 0 — Empty stadium | Done | — |
+| 1 — Builder two-button split | Done | — |
+| 2 — Spawn an ad-hoc wild hoglet | Done | — |
+| 3 — Adopt un-nested hoglet | Done | Nest → nest transfer still deferred |
+| 4 — Signals → unnested signal hoglets | Done | — |
+| 5 — Affinity router | Done | — |
+| 6 — Hedgehog brood management | Done | — |
+| 7 — Feedback routing (PR review + CI) | Done | — |
+| 8 — PR dependency graph + auto-rebase | Done | — |
+| 9 — Goal judgment + propose completion | **Partial** | `propose_completion` hedgehog tool + LLM judge missing; only operator-driven `nests.complete` exists |
+| 10 — Prickle + loadout editor | **Partial** | Selection + control groups + runtime loadout exist; no `loadoutDraftStore` or settings-style loadout editor panel |
+| TODO — Consolidate early Hedgemony migrations | Not done | Migrations still split across `0006_hedgemony_nest`, `0011_hedgemony_feedback`, `0012_hoglet_name`, `0013_nest_primary_repository` |
+| TODO — Backfill existing tasks as wild hoglets | Not done | No backfill path yet |
+
+The only remaining product work to call v1 done is the `propose_completion` tool + LLM judge in Slice 9 and the loadout editor UI in Slice 10. Everything else listed below is shipped — the per-slice scope is kept for history.
+
+---
+
 ## Slicing principles
 
 - **Every slice ships a demoable operator action.** "Operator does X, sees Y." No infra-only slices.
@@ -17,6 +39,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 ## Slice 0 — Empty stadium
 
 **As an operator,** I want to flip on Hedgemony in Command Center and see an empty map view, so I know the feature exists and the chassis works end to end.
+
+**Status: Done.**
 
 **In scope**
 
@@ -50,6 +74,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 ## Slice 1 — Builder two-button split: guided + simple nest creation (CRUD + natural-language bootstrap handoff, no hedgehog)
 
 **As an operator,** I want the Builder to offer two upfront paths — guided spec-writing for real work, or a simple form for low-ceremony work — so I'm not forced through a conversation when I just want to spawn an agent and go.
+
+**Status: Done.** `GoalSpecDraftService`, `local-bootstrap-handoff`, the `goalDraft.respond` / `nests.*` / `nestChat.list` routers, and both `BuilderCommandPanel` buttons are live; quick path atomically spawns one hoglet.
 
 **In scope**
 
@@ -97,6 +123,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 
 **As an operator,** I want to spawn a one-off agent without picking a nest _and without going through the Builder_, so I can fire off throwaway work that doesn't deserve a nest record at all.
 
+**Status: Done.** `HogletService.recordAdhoc`, `hoglets.recordAdhoc` / `hoglets.list({ wildOnly })` / `hoglets.watch`, and the wild-hoglet drawer/card UI are in place.
+
 **In scope**
 
 - Dedicated entry point separate from the Builder. Toolbar button or keyboard shortcut in the Hedgemony map toolbar — explicitly not part of `BuilderCommandPanel`.
@@ -128,6 +156,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 
 **As an operator,** I want to drag an un-nested hoglet onto a nest, so I can manually organize one-offs and signal-backed work around an objective.
 
+**Status: Done.** `hoglets.adopt` / `hoglets.release` plus drag-drop wiring through `DragDropProvider` and `NestDetailPanel`. Nest-to-nest transfer is still deferred.
+
 **In scope**
 
 - `UPDATE hedgemony_hoglet SET nest_id = ?`.
@@ -154,6 +184,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 ## Slice 4 — Signals become unnested signal hoglets
 
 **As an operator,** I want net-new PostHog signal reports from the Signals Inbox to appear in Hedgemony as signal-backed hoglets, so I can group related Inbox work into nests.
+
+**Status: Done.** Ingestion poll (~30s) via `useSignalIngestion` → `HogletService.recordSignalBacked`, dedupe on a UNIQUE `signal_report_id` index, staging UI present.
 
 **In scope**
 
@@ -183,6 +215,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 
 **As an operator,** I want incoming signals to auto-route to the most relevant nest, so I stop hand-sorting things that obviously belong together.
 
+**Status: Done.** `AffinityRouter` runs cosine similarity over nest spec embeddings before insert; threshold defaults to 0.65 and is env-tunable; score is persisted on the hoglet for tooltip display.
+
 **In scope**
 
 - On-the-fly `embedText`/similarity query over each active nest's goal spec, definition of done, and grouped-signal summaries.
@@ -211,6 +245,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 ## Slice 6 — Hedgehog: brood management only
 
 **As an operator,** I want a hedgehog per nest that autonomously raises and coordinates hoglets, while leaving a clear chat/audit trail of what it did and why.
+
+**Status: Done.** `HedgehogTickService` ticks on heartbeat + event bus, persists to `hedgemony_hedgehog_state.serialized_state_json`, resumes cleanly after restart. Tool surface covers spawn/raise/kill/message/audit (plus the PR-graph tools added in Slice 8). Nest sprite glow wired.
 
 **In scope**
 
@@ -242,6 +278,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 
 **As an operator,** I want PR review comments and CI failures to land back on the originating hoglet automatically, so I don't have to click "Fix with agent" myself.
 
+**Status: Done.** `FeedbackRoutingService` polls (~60s), dedupes on `(taskId, source, payloadHash)`, emits `injectPrompt` events. Renderer hook dispatches into the live session or spawns a follow-up.
+
 **In scope**
 
 - `hedgemony_feedback_event` writes (dedupes routing).
@@ -272,6 +310,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 
 **As an operator,** I want stacked hoglet PRs to rebase automatically when their parent merges, so I'm not manually unblocking a chain every time something lands.
 
+**Status: Done.** `hedgemony_pr_dependency` edges (`pending` / `satisfied` / `broken`), `PrGraphService` with ~60s rebase polling, hedgehog tools `link_pr_dependency` / `unlink_pr_dependency` / `rebase_child` wired through `worktree-manager`, and `NestPrGraphOverlay` draws the arrows.
+
 **In scope**
 
 - `hedgemony_pr_dependency` edges with `pending → satisfied → broken` state machine.
@@ -298,6 +338,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 ## Slice 9 — Goal judgment + propose completion
 
 **As an operator,** I want the hedgehog to tell me when she thinks a nest's goal is satisfied and then compact the finished nest, so closing nests doesn't become my job to remember and the local DB stays healthy.
+
+**Status: Partial.** `nests.complete` + `nests.forgetCompletedContext` are wired (dormant transition, compaction message, audit trail preserved). The **`propose_completion` hedgehog tool and the LLM judge over goal spec / DoD / merged PRs / resolved signals are not implemented yet** — completion is operator-driven only. This is the last gap on the autonomy path before v1.
 
 **In scope**
 
@@ -332,6 +374,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 ## Slice 10 — Prickle + loadout editor (polish)
 
 **As an operator,** I want to select multiple hoglets at once and edit a nest's loadout, so power-user flows feel like an RTS instead of a form.
+
+**Status: Partial.** The "prickle" half is done: marquee drag-select, ctrl+click toggle, and ctrl+1/2/3 control groups via `controlGroupStore`; runtime loadout (`hoglet-runtime-preferences`) already influences model / reasoning / environment. **The loadout editor itself is not built yet — there's no `loadoutDraftStore` and no settings-style panel for editing skills / MCPs / docs / `target_metric_id`.**
 
 **In scope**
 
@@ -371,5 +415,5 @@ The open product questions in `spec.md` (nest placement auto vs manual, idle hog
 
 ## TODOs After Core Slices
 
-- Consolidate the early Hedgemony sqlite migrations before this ships broadly.
-- Backfill existing PostHog Code tasks as wild hoglets so the map can represent work that predates Hedgemony.
+- **Not done** — Consolidate the early Hedgemony sqlite migrations before this ships broadly. Still split across `0006_hedgemony_nest.sql`, `0011_hedgemony_feedback.sql`, `0012_hoglet_name.sql`, and `0013_nest_primary_repository.sql`.
+- **Not done** — Backfill existing PostHog Code tasks as wild hoglets so the map can represent work that predates Hedgemony.
