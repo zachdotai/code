@@ -668,7 +668,7 @@ export async function fetchSessionLogs(
 
       const response = await fetch(
         `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/session_logs/?${params}`,
-        { headers },
+        { headers, signal: AbortSignal.timeout(10_000) },
       );
 
       if (!response.ok) {

@@ -807,6 +807,7 @@ async function fetchAllSessionLogs(
   let offset = 0;
 
   while (true) {
+    if (watcher.stopped || watcher.failed) return null;
     try {
       const page = await fetchSessionLogs(watcher.taskId, watcher.runId, {
         limit: SESSION_LOG_PAGE_LIMIT,
