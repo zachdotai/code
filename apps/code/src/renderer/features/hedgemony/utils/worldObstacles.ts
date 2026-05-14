@@ -16,6 +16,11 @@ export const NEST_OBSTACLE_RADIUS = 78;
 // entry, agents walked straight through it — pathfinding was added before
 // the Hedgehouse existed and never picked it up.
 export const HEDGEHOUSE_OBSTACLE_RADIUS = 100;
+// Buffer past the visible hoglet sprite so the art never overlaps an obstacle
+// after path-snapping. Wild hoglets are 40px, brood are 44px; 24 keeps both
+// clear. Lives here so the right-click handler, brood re-layout, and wild
+// re-layout all inflate obstacles by the same amount.
+export const HOGLET_RADIUS = 24;
 
 interface WorldObstacleOptions {
   /** A nest the builder is en-route to construct. Not in `nests` yet, but

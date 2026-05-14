@@ -37,7 +37,7 @@ import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { collectHogletWorldPositions } from "../utils/hogletPositions";
 import { findPath } from "../utils/pathfinding";
-import { worldObstacles } from "../utils/worldObstacles";
+import { HOGLET_RADIUS, worldObstacles } from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
@@ -60,11 +60,6 @@ import { SpawnHogletPanel } from "./SpawnHogletPanel";
 import { WildHogletFlock } from "./WildHogletFlock";
 
 const log = logger.scope("hedgemony-map-view");
-
-// Wild hoglet sprite is 40px wide, brood is 44 — 24 gives a small clearance
-// buffer beyond the sprite so the visible art never overlaps obstacles after
-// snapping. Obstacle radii are centralized in `worldObstacles`.
-const HOGLET_RADIUS = 24;
 
 type Selection =
   | { type: "nest"; id: string }

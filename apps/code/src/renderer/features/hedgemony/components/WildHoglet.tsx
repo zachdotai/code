@@ -4,12 +4,14 @@ import { Tooltip } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useTransitPath } from "../hooks/useTransitPath";
 import { useWalkTo } from "../hooks/useWalkTo";
 import {
   selectHogletWalkPath,
   useHogletPositionStore,
 } from "../stores/hogletPositionStore";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
+import { HOGLET_RADIUS } from "../utils/worldObstacles";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
 import {
@@ -51,7 +53,17 @@ export function WildHoglet({
   });
 
   const walkPath = useHogletPositionStore(selectHogletWalkPath(hoglet.id));
-  const { motionX, motionY, isWalking, facing } = useWalkTo(x, y, walkPath);
+  const computedPath = useTransitPath(
+    x,
+    y,
+    HOGLET_RADIUS,
+    walkPath === undefined,
+  );
+  const { motionX, motionY, isWalking, facing } = useWalkTo(
+    x,
+    y,
+    walkPath ?? computedPath,
+  );
 
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
