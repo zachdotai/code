@@ -523,11 +523,6 @@ export function HedgemonyMapSurface({
           Right-click the map to move the builder
         </div>
       )}
-      {!placementMode && selectedNest && (
-        <div className="-translate-x-1/2 pointer-events-none absolute top-3 left-1/2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-3 py-1 text-(--gray-11) text-[12px] shadow-sm">
-          Use Relocate in the panel to move this nest
-        </div>
-      )}
     </div>
   );
 }
