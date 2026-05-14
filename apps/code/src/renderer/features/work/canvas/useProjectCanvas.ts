@@ -1,6 +1,7 @@
 import { trpcClient, useTRPC } from "@renderer/trpc";
 import { toast } from "@renderer/utils/toast";
 import type {
+  GridSize,
   NewTileInput,
   TileSize,
   WorkProject,
@@ -168,6 +169,55 @@ export function useProjectCanvas(projectId: string | undefined) {
             projectId: projectId!,
             tileId,
             size,
+          }),
+      );
+    },
+    [projectId, runOptimistic],
+  );
+
+  const resizeTileGrid = useCallback(
+    (tileId: string, nextGridSize: GridSize): Promise<void> => {
+      return runOptimistic(
+        "Resize tile",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.map((t) =>
+            t.id === tileId
+              ? ({ ...t, gridSize: nextGridSize } as typeof t)
+              : t,
+          ),
+        }),
+        () =>
+          trpcClient.workProjects.resizeTileGrid.mutate({
+            projectId: projectId!,
+            tileId,
+            gridSize: nextGridSize,
+          }),
+      );
+    },
+    [projectId, runOptimistic],
+  );
+
+  const updateChecklistItems = useCallback(
+    (
+      tileId: string,
+      items: Array<{ text: string; done: boolean }>,
+    ): Promise<void> => {
+      return runOptimistic(
+        "Update checklist",
+        (project) => ({
+          ...project,
+          tiles: project.tiles.map((t) => {
+            if (t.id !== tileId) return t;
+            if (t.type !== "artifact" || t.kind !== "checklist") return t;
+            return { ...t, data: { ...t.data, items } } as typeof t;
+          }),
+        }),
+        () =>
+          trpcClient.workProjects.updateChecklistTile.mutate({
+            projectId: projectId!,
+            tileId,
+            items,
           }),
       );
     },
@@ -366,10 +416,12 @@ export function useProjectCanvas(projectId: string | undefined) {
     addTile,
     removeTile,
     resizeTile,
+    resizeTileGrid,
     moveTile,
     updateTitleTile,
     updateNoteTile,
     updateFileTile,
+    updateChecklistItems,
     applyPending,
     rejectPending,
   };

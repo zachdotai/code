@@ -5,17 +5,23 @@ import { useSortable } from "@dnd-kit/react/sortable";
 import { FileText, GaugeIcon, NoteIcon } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type {
+  GridSize,
   NewTileInput,
   ProjectIconId,
   ProjectMember,
   Tile,
-  TileSize,
 } from "@shared/types/work-projects";
 import { AnimatePresence, motion } from "framer-motion";
-import { type ReactNode, useCallback, useMemo } from "react";
+import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import { AddTileMenu } from "./AddTileMenu";
-import { SIZE_TO_COLSPAN } from "./TileFrame";
+import { CanvasGridContext, type CanvasGridMetrics } from "./CanvasGridContext";
+import { resolveGridSize } from "./grid-utils";
 import { TileRenderer } from "./TileRenderer";
+
+/** Grid layout constants. Row height is fixed so `row-span-N` is predictable
+ *  across tile types. Gap matches the existing `gap-3` (12px) class. */
+const ROW_HEIGHT_PX = 140;
+const GAP_PX = 12;
 
 interface ProjectCanvasProps {
   projectId: string;
@@ -23,7 +29,7 @@ interface ProjectCanvasProps {
   members: ProjectMember[];
   onAddTile: (tile: NewTileInput) => Promise<void>;
   onRemoveTile: (tileId: string) => Promise<void>;
-  onResizeTile: (tileId: string, size: TileSize) => Promise<void>;
+  onResizeTileGrid: (tileId: string, size: GridSize) => Promise<void>;
   onMoveTile: (tileId: string, toIndex: number) => Promise<void>;
   onApplyPending: (tileId: string) => Promise<void>;
   onRejectPending: (tileId: string) => Promise<void>;
@@ -42,6 +48,10 @@ interface ProjectCanvasProps {
   onUpdateFileTile: (
     tileId: string,
     patch: { filename?: string; contents?: string },
+  ) => Promise<void>;
+  onUpdateChecklistItems: (
+    tileId: string,
+    items: Array<{ text: string; done: boolean }>,
   ) => Promise<void>;
 }
 
@@ -64,7 +74,7 @@ function SortableTile({
   return (
     <Box
       ref={ref}
-      className="min-w-0"
+      className="h-full min-w-0"
       style={{
         opacity: isDragging ? 0.5 : 1,
         cursor: isDragging ? "grabbing" : undefined,
@@ -80,13 +90,14 @@ export function ProjectCanvas({
   members,
   onAddTile,
   onRemoveTile,
-  onResizeTile,
+  onResizeTileGrid,
   onMoveTile,
   onApplyPending,
   onRejectPending,
   onUpdateTitleTile,
   onUpdateNoteTile,
   onUpdateFileTile,
+  onUpdateChecklistItems,
 }: ProjectCanvasProps) {
   // Title tile is data-only — the project header renders the project's name,
   // icon, tagline, and members. Filter it out of the canvas so we don't
@@ -95,6 +106,24 @@ export function ProjectCanvas({
     () => tiles.filter((t) => t.type !== "title"),
     [tiles],
   );
+
+  // Per-tile in-flight resize preview. Keyed by tile id; cleared on release.
+  // Stored as React state so the affected tile re-renders with the preview
+  // span classes mid-drag without committing to the server.
+  const [previewById, setPreviewById] = useState<Record<string, GridSize>>({});
+
+  const gridRef = useRef<HTMLElement | null>(null);
+
+  const measure = useCallback((): CanvasGridMetrics | null => {
+    const el = gridRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    const totalGap = GAP_PX * 11; // gaps between 12 cols
+    const cellWidth = (rect.width - totalGap) / 12;
+    return { cols: 12, cellWidth, cellHeight: ROW_HEIGHT_PX, gap: GAP_PX };
+  }, []);
+
+  const gridContextValue = useMemo(() => ({ measure, gridRef }), [measure]);
 
   // Only fire the actual reorder on drop, NOT on every dragover. dnd-kit's
   // sortable still gives smooth visual feedback during drag via CSS transforms;
@@ -112,93 +141,160 @@ export function ProjectCanvas({
   );
 
   return (
-    <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
-      <Flex
-        direction="column"
-        gap="4"
-        className="mx-auto w-full max-w-[1000px] px-6 pt-6 pb-12"
-      >
-        <Flex align="center" justify="end" className="-mb-1">
-          <AddTileMenu
-            onAdd={(tile) => {
-              void onAddTile(tile);
-            }}
-          />
-        </Flex>
-        {renderedTiles.length === 0 ? (
-          <EmptyState onAdd={onAddTile} />
-        ) : (
-          <DragDropProvider
-            onDragEnd={handleDragEnd}
-            sensors={[
-              {
-                plugin: PointerSensor,
-                options: {
-                  activationConstraints: { distance: { value: 6 } },
+    <CanvasGridContext.Provider value={gridContextValue}>
+      <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
+        <Flex
+          direction="column"
+          gap="4"
+          className="mx-auto w-full max-w-[1000px] px-6 pt-6 pb-12"
+        >
+          <Flex align="center" justify="end" className="-mb-1">
+            <AddTileMenu
+              onAdd={(tile) => {
+                void onAddTile(tile);
+              }}
+            />
+          </Flex>
+          {renderedTiles.length === 0 ? (
+            <EmptyState onAdd={onAddTile} />
+          ) : (
+            <DragDropProvider
+              onDragEnd={handleDragEnd}
+              sensors={[
+                {
+                  plugin: PointerSensor,
+                  options: {
+                    activationConstraints: { distance: { value: 6 } },
+                  },
                 },
-              },
-            ]}
-          >
-            <Box className="grid auto-rows-min grid-cols-12 gap-3">
-              <AnimatePresence mode="popLayout" initial={false}>
-                {renderedTiles.map((tile, index) => (
-                  <motion.div
-                    key={tile.id}
-                    layout="position"
-                    initial={{ opacity: 0, scale: 0.96 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.92 }}
-                    transition={{
-                      duration: 0.18,
-                      ease: [0.32, 0.72, 0, 1],
-                    }}
-                    className={`${SIZE_TO_COLSPAN[tile.size]} min-w-0`}
-                  >
-                    <SortableTile id={tile.id} index={index}>
-                      <TileRenderer
-                        tile={tile}
-                        members={members}
-                        onRemove={() => {
-                          void onRemoveTile(tile.id);
+              ]}
+            >
+              <Box
+                ref={(el) => {
+                  gridRef.current = el;
+                }}
+                className="grid grid-cols-12 gap-3"
+                style={{
+                  gridAutoRows: `${ROW_HEIGHT_PX}px`,
+                }}
+              >
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {renderedTiles.map((tile, index) => {
+                    const effectiveSize =
+                      previewById[tile.id] ?? resolveGridSize(tile);
+                    const spanClass = spanClassFor(effectiveSize);
+                    return (
+                      <motion.div
+                        key={tile.id}
+                        layout="position"
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.92 }}
+                        transition={{
+                          duration: 0.18,
+                          ease: [0.32, 0.72, 0, 1],
                         }}
-                        onResize={(size) => {
-                          void onResizeTile(tile.id, size);
-                        }}
-                        onApplyPending={
-                          tile.state !== "live"
-                            ? () => {
-                                void onApplyPending(tile.id);
-                              }
-                            : undefined
-                        }
-                        onRejectPending={
-                          tile.state !== "live"
-                            ? () => {
-                                void onRejectPending(tile.id);
-                              }
-                            : undefined
-                        }
-                        onUpdateTitleTile={(patch) => {
-                          void onUpdateTitleTile(patch);
-                        }}
-                        onUpdateNoteTile={(patch) => {
-                          void onUpdateNoteTile(tile.id, patch);
-                        }}
-                        onUpdateFileTile={(patch) => {
-                          void onUpdateFileTile(tile.id, patch);
-                        }}
-                      />
-                    </SortableTile>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </Box>
-          </DragDropProvider>
-        )}
-      </Flex>
-    </Box>
+                        className={`${spanClass} group/tile relative min-w-0`}
+                      >
+                        <SortableTile id={tile.id} index={index}>
+                          <TileRenderer
+                            tile={tile}
+                            members={members}
+                            currentGridSize={effectiveSize}
+                            onRemove={() => {
+                              void onRemoveTile(tile.id);
+                            }}
+                            onResizeGrid={(next) => {
+                              void onResizeTileGrid(tile.id, next);
+                            }}
+                            onResizePreview={(next) => {
+                              setPreviewById((prev) => {
+                                if (next === null) {
+                                  if (!(tile.id in prev)) return prev;
+                                  const { [tile.id]: _drop, ...rest } = prev;
+                                  return rest;
+                                }
+                                return { ...prev, [tile.id]: next };
+                              });
+                            }}
+                            onApplyPending={
+                              tile.state !== "live"
+                                ? () => {
+                                    void onApplyPending(tile.id);
+                                  }
+                                : undefined
+                            }
+                            onRejectPending={
+                              tile.state !== "live"
+                                ? () => {
+                                    void onRejectPending(tile.id);
+                                  }
+                                : undefined
+                            }
+                            onUpdateTitleTile={(patch) => {
+                              void onUpdateTitleTile(patch);
+                            }}
+                            onUpdateNoteTile={(patch) => {
+                              void onUpdateNoteTile(tile.id, patch);
+                            }}
+                            onUpdateFileTile={(patch) => {
+                              void onUpdateFileTile(tile.id, patch);
+                            }}
+                            onUpdateChecklistItems={(items) => {
+                              void onUpdateChecklistItems(tile.id, items);
+                            }}
+                          />
+                        </SortableTile>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </Box>
+            </DragDropProvider>
+          )}
+        </Flex>
+      </Box>
+    </CanvasGridContext.Provider>
   );
 }
+
+function spanClassFor(size: GridSize): string {
+  // Import-free local helper that mirrors grid-utils.spanClasses. We pull
+  // the same Tailwind class strings.
+  // biome-ignore lint/style/noNonNullAssertion: clamp keeps lookups in range
+  const col = colSpan(size.cols)!;
+  // biome-ignore lint/style/noNonNullAssertion: clamp keeps lookups in range
+  const row = rowSpan(size.rows)!;
+  return `${col} ${row}`;
+}
+
+function colSpan(n: number): string {
+  const c = Math.max(1, Math.min(12, n));
+  return COL_SPANS[c - 1];
+}
+
+function rowSpan(n: number): string {
+  const r = Math.max(1, Math.min(4, n));
+  return ROW_SPANS[r - 1];
+}
+
+// Tailwind needs these class names to appear as literals at build time.
+const COL_SPANS = [
+  "col-span-1",
+  "col-span-2",
+  "col-span-3",
+  "col-span-4",
+  "col-span-5",
+  "col-span-6",
+  "col-span-7",
+  "col-span-8",
+  "col-span-9",
+  "col-span-10",
+  "col-span-11",
+  "col-span-12",
+];
+
+const ROW_SPANS = ["row-span-1", "row-span-2", "row-span-3", "row-span-4"];
 
 function EmptyState({
   onAdd,

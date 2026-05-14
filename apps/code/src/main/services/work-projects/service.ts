@@ -1,5 +1,6 @@
 import type {
   CreateProjectInput,
+  GridSize,
   NewTileInput,
   ProjectIconId,
   Tile,
@@ -75,6 +76,8 @@ function defaultSizeFor(type: NewTileInput["type"]): TileSize {
       return "md";
     case "note":
       return "sm";
+    case "artifact":
+      return "md";
   }
 }
 
@@ -558,6 +561,36 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
           ...(patch.body !== undefined ? { body: patch.body } : {}),
           ...(patch.tone !== undefined ? { tone: patch.tone } : {}),
         };
+      });
+      return { ...project, tiles };
+    });
+  }
+
+  updateTileGridSize(
+    projectId: string,
+    tileId: string,
+    gridSize: GridSize,
+  ): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      const tiles = project.tiles.map((t) =>
+        t.id === tileId ? ({ ...t, gridSize } as Tile) : t,
+      );
+      return { ...project, tiles };
+    });
+  }
+
+  /** Replace the checklist items on an artifact tile of kind "checklist".
+   *  No-ops on the wrong tile type / wrong kind. */
+  updateChecklistTile(
+    projectId: string,
+    tileId: string,
+    items: Array<{ text: string; done: boolean }>,
+  ): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      const tiles = project.tiles.map((t) => {
+        if (t.id !== tileId) return t;
+        if (t.type !== "artifact" || t.kind !== "checklist") return t;
+        return { ...t, data: { ...t.data, items } } as Tile;
       });
       return { ...project, tiles };
     });

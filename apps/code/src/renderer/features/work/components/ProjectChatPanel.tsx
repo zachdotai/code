@@ -113,6 +113,17 @@ ${summarizeTilesForPrompt(project)}
   hypotheses, briefs. Bullets > paragraphs. ≤ ~1500 chars.
 - \`mcp__projectCanvas__propose_tile_note\` — short sticky-note callouts
   (≤ 280 chars). Don't dump prose here — that's what file tiles are for.
+- \`mcp__projectCanvas__propose_tile_artifact\` — rich tile with multiple
+  renderers. ONE tool, FIVE shapes via the \`kind\` field:
+  - kind="checklist": data = { items: [{ text: string, done: boolean }, …] }
+    — the user can tick items off live.
+  - kind="table": data = { headers: string[], rows: string[][] } — read-only.
+  - kind="chart": data = { chartKind: "bar"|"line", series: [{ label, value }, …], unit?: string }
+    — inline bar or line. Great for funnel breakdowns, top-N lists.
+  - kind="code": data = { language: string, body: string } — fenced code.
+  - kind="embed": data = { url: string, description?: string } — link-out card.
+  Skills running in this chat can also call this — it's the right way to
+  surface structured findings rich-fully.
 - \`mcp__projectCanvas__update_project_meta\` — rename the project / change
   the icon (rocket, microphone, megaphone, lightbulb, compass, target,
   flask). Use sparingly.

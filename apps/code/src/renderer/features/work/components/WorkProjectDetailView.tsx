@@ -23,13 +23,14 @@ export function WorkProjectDetailView() {
     isLoading,
     addTile,
     removeTile,
-    resizeTile,
+    resizeTileGrid,
     moveTile,
     applyPending,
     rejectPending,
     updateTitleTile,
     updateNoteTile,
     updateFileTile,
+    updateChecklistItems,
   } = useProjectCanvas(projectId);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -137,8 +138,8 @@ export function WorkProjectDetailView() {
               onRemoveTile={async (tileId) => {
                 await removeTile(tileId);
               }}
-              onResizeTile={async (tileId, size) => {
-                await resizeTile(tileId, size);
+              onResizeTileGrid={async (tileId, size) => {
+                await resizeTileGrid(tileId, size);
               }}
               onMoveTile={async (tileId, toIndex) => {
                 await moveTile(tileId, toIndex);
@@ -157,6 +158,9 @@ export function WorkProjectDetailView() {
               }}
               onUpdateFileTile={async (tileId, patch) => {
                 await updateFileTile(tileId, patch);
+              }}
+              onUpdateChecklistItems={async (tileId, items) => {
+                await updateChecklistItems(tileId, items);
               }}
             />
           </Box>

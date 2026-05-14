@@ -1,6 +1,9 @@
 import { NoteIcon } from "@phosphor-icons/react";
 import { Box, Flex } from "@radix-ui/themes";
-import type { NoteTile as NoteTileType } from "@shared/types/work-projects";
+import type {
+  GridSize,
+  NoteTile as NoteTileType,
+} from "@shared/types/work-projects";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TileFrame } from "../TileFrame";
 
@@ -34,8 +37,10 @@ const TONE_ORDER: NoteTone[] = ["yellow", "blue", "green", "pink", "neutral"];
 
 interface NoteTileProps {
   tile: NoteTileType;
+  currentGridSize: GridSize;
   onRemove?: () => void;
-  onResize?: Parameters<typeof TileFrame>[0]["onResize"];
+  onResizeGrid?: (size: GridSize) => void;
+  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   onUpdate?: (patch: { body?: string; tone?: NoteTone }) => void;
@@ -43,8 +48,10 @@ interface NoteTileProps {
 
 export function NoteTile({
   tile,
+  currentGridSize,
   onRemove,
-  onResize,
+  onResizeGrid,
+  onResizePreview,
   onApplyPending,
   onRejectPending,
   onUpdate,
@@ -121,8 +128,10 @@ export function NoteTile({
       icon={NoteIcon}
       label="Note"
       headerAction={headerAction}
+      currentGridSize={currentGridSize}
       onRemove={onRemove}
-      onResize={onResize}
+      onResizeGrid={onResizeGrid}
+      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >

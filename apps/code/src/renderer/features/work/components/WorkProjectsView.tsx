@@ -3,7 +3,10 @@ import {
   Check,
   MagnifyingGlass,
   Plus,
+  PushPin,
+  PushPinSlash,
   SortAscending,
+  TrashSimple,
   X,
 } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
@@ -12,6 +15,8 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PROJECT_ICON_MAP } from "../canvas/icons";
 import { useWorkProjects } from "../canvas/useProjectCanvas";
+import { useDeleteProjectWithUndo } from "../hooks/useDeleteProjectWithUndo";
+import { usePinProject } from "../hooks/usePinProject";
 import { TemplateGallery } from "../templates/TemplateGallery";
 
 type SortKey = "recent" | "name" | "tiles";
@@ -72,14 +77,35 @@ function ProjectCard({ project }: { project: WorkProject }) {
   const navigateToWorkProjectDetail = useNavigationStore(
     (s) => s.navigateToWorkProjectDetail,
   );
+  const pinProject = usePinProject();
+  const deleteWithUndo = useDeleteProjectWithUndo();
   const Icon = PROJECT_ICON_MAP[project.iconId] ?? PROJECT_ICON_MAP.lightbulb;
   const tileCount = countContentTiles(project);
+  const isPinned = !!project.pinnedAt;
+
+  const handleTogglePin = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    void pinProject(project.id, !isPinned);
+  };
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    void deleteWithUndo(project);
+  };
 
   return (
-    <button
-      type="button"
+    // biome-ignore lint/a11y/useSemanticElements: need nested action buttons; <button>-in-<button> is invalid HTML.
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => navigateToWorkProjectDetail(project.id)}
-      className="group flex h-full cursor-pointer flex-col gap-3 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-4 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          navigateToWorkProjectDetail(project.id);
+        }
+      }}
+      className="group relative flex h-full cursor-pointer flex-col gap-3 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-4 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) focus:outline-none focus-visible:border-(--gray-8) focus-visible:ring-(--gray-7) focus-visible:ring-2"
     >
       <Flex align="center" justify="between" gap="2">
         <Flex
@@ -93,13 +119,22 @@ function ProjectCard({ project }: { project: WorkProject }) {
       </Flex>
 
       <Box className="min-h-0 flex-1">
-        <Text
-          as="div"
-          weight="medium"
-          className="truncate text-(--gray-12) text-[14px]"
-        >
-          {project.name}
-        </Text>
+        <Flex align="center" gap="1.5">
+          {isPinned && (
+            <PushPin
+              size={11}
+              weight="fill"
+              className="shrink-0 text-(--gray-10)"
+            />
+          )}
+          <Text
+            as="div"
+            weight="medium"
+            className="truncate text-(--gray-12) text-[14px]"
+          >
+            {project.name}
+          </Text>
+        </Flex>
         <Text
           as="div"
           className="line-clamp-2 text-(--gray-11) text-[12px] leading-snug"
@@ -116,7 +151,37 @@ function ProjectCard({ project }: { project: WorkProject }) {
           {formatUpdated(project.updatedAt)}
         </Text>
       </Flex>
-    </button>
+
+      {/* Hover-visible action buttons. Pinned tiles stay pinnable. */}
+      <Flex
+        align="center"
+        gap="1"
+        className="absolute top-3 right-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      >
+        <button
+          type="button"
+          onClick={handleTogglePin}
+          aria-label={isPinned ? "Unpin project" : "Pin project"}
+          title={isPinned ? "Unpin from sidebar" : "Pin to sidebar"}
+          className="flex h-6 w-6 items-center justify-center rounded-(--radius-2) bg-(--gray-1) text-(--gray-11) shadow-sm transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+        >
+          {isPinned ? (
+            <PushPinSlash size={12} weight="bold" />
+          ) : (
+            <PushPin size={12} weight="bold" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={handleDelete}
+          aria-label="Delete project"
+          title="Delete project"
+          className="flex h-6 w-6 items-center justify-center rounded-(--radius-2) bg-(--gray-1) text-(--gray-11) shadow-sm transition-colors hover:bg-(--red-3) hover:text-(--red-11)"
+        >
+          <TrashSimple size={12} weight="bold" />
+        </button>
+      </Flex>
+    </div>
   );
 }
 

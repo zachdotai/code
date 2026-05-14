@@ -6,7 +6,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import type { Tile, TileSize } from "@shared/types/work-projects";
+import type { GridSize, Tile } from "@shared/types/work-projects";
 import {
   type ComponentType,
   type ReactNode,
@@ -14,22 +14,17 @@ import {
   useRef,
   useState,
 } from "react";
+import { TileResizeHandle } from "./TileResizeHandle";
 
-export const SIZE_TO_COLSPAN: Record<TileSize, string> = {
-  sm: "col-span-12 md:col-span-6 lg:col-span-3",
-  md: "col-span-12 md:col-span-6",
-  lg: "col-span-12 lg:col-span-8",
-  full: "col-span-12",
-};
-
-const SIZE_LABEL: Record<TileSize, string> = {
-  sm: "Small",
-  md: "Medium",
-  lg: "Large",
-  full: "Full width",
-};
-
-const SIZE_ORDER: TileSize[] = ["sm", "md", "lg", "full"];
+/** Quick-pick presets for the tile options menu. Maps a human label to a
+ *  canonical {cols, rows} so the user can jump to a known size without
+ *  dragging. The corner drag handles arbitrary positions in between. */
+const QUICK_SIZES: { label: string; size: GridSize }[] = [
+  { label: "Small", size: { cols: 3, rows: 1 } },
+  { label: "Medium", size: { cols: 6, rows: 2 } },
+  { label: "Large", size: { cols: 8, rows: 2 } },
+  { label: "Full width", size: { cols: 12, rows: 2 } },
+];
 
 interface TileFrameProps {
   tile: Tile;
@@ -38,13 +33,21 @@ interface TileFrameProps {
   /** Header right-side content (e.g. an "Open in PostHog" link). */
   headerAction?: ReactNode;
   children: ReactNode;
+  /** The current effective gridSize (including any in-flight preview).
+   *  Required when `onResizeGrid` is set so the handle knows the baseline. */
+  currentGridSize?: GridSize;
   onRemove?: () => void;
-  onResize?: (size: TileSize) => void;
+  onResizeGrid?: (size: GridSize) => void;
+  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   /** When true the frame omits its chrome (border, header, padding). Use for
    *  title tiles that own their own presentation. */
   bare?: boolean;
+}
+
+function isSameSize(a: GridSize, b: GridSize): boolean {
+  return a.cols === b.cols && a.rows === b.rows;
 }
 
 export function TileFrame({
@@ -53,8 +56,10 @@ export function TileFrame({
   label,
   headerAction,
   children,
+  currentGridSize,
   onRemove,
-  onResize,
+  onResizeGrid,
+  onResizePreview,
   onApplyPending,
   onRejectPending,
   bare,
@@ -113,7 +118,7 @@ export function TileFrame({
           onReject={onRejectPending}
         />
       )}
-      {(label || headerAction || onRemove || onResize) && (
+      {(label || headerAction || onRemove || onResizeGrid) && (
         <Flex
           align="center"
           justify="between"
@@ -134,7 +139,7 @@ export function TileFrame({
           </Flex>
           <Flex align="center" gap="2" className="shrink-0">
             {headerAction}
-            {(onResize || onRemove) && (
+            {(onResizeGrid || onRemove) && (
               <Box className="relative" ref={menuRef}>
                 <button
                   type="button"
@@ -143,33 +148,49 @@ export function TileFrame({
                     setMenuOpen((v) => !v);
                   }}
                   aria-label="Tile options"
-                  className="flex h-6 w-6 items-center justify-center rounded-(--radius-2) text-(--gray-10) opacity-0 transition-opacity hover:bg-(--gray-3) hover:text-(--gray-12) group-hover:opacity-100"
+                  className="flex h-6 w-6 items-center justify-center rounded-(--radius-2) text-(--gray-10) opacity-0 transition-opacity hover:bg-(--gray-3) hover:text-(--gray-12) group-hover/tile:opacity-100"
                 >
                   <DotsThree size={14} weight="bold" />
                 </button>
                 {menuOpen && (
                   <Box className="absolute top-7 right-0 z-10 w-44 overflow-hidden rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) shadow-lg">
-                    {onResize &&
-                      SIZE_ORDER.map((s) => (
-                        <button
-                          type="button"
-                          key={s}
-                          onClick={() => {
-                            onResize(s);
-                            setMenuOpen(false);
-                          }}
-                          className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-[12px] hover:bg-(--gray-3) ${
-                            tile.size === s
-                              ? "text-(--gray-12)"
-                              : "text-(--gray-11)"
-                          }`}
+                    {onResizeGrid && currentGridSize && (
+                      <Box className="border-(--gray-4) border-b px-3 py-2">
+                        <Text
+                          as="div"
+                          className="mb-1 text-(--gray-10) text-[10px] uppercase tracking-wide"
                         >
-                          {SIZE_LABEL[s]}
-                          {tile.size === s && <Check size={12} weight="bold" />}
-                        </button>
-                      ))}
-                    {onRemove && onResize && (
-                      <Box className="border-(--gray-4) border-t" />
+                          Size
+                        </Text>
+                        <Flex gap="1" wrap="wrap">
+                          {QUICK_SIZES.map(({ label: l, size }) => {
+                            const active = isSameSize(currentGridSize, size);
+                            return (
+                              <button
+                                type="button"
+                                key={l}
+                                onClick={() => {
+                                  onResizeGrid(size);
+                                  setMenuOpen(false);
+                                }}
+                                className={`rounded-(--radius-2) border px-2 py-0.5 text-[11px] transition-colors ${
+                                  active
+                                    ? "border-(--gray-12) bg-(--gray-12) text-(--gray-1)"
+                                    : "border-(--gray-5) bg-(--gray-1) text-(--gray-11) hover:border-(--gray-7) hover:text-(--gray-12)"
+                                }`}
+                              >
+                                {l}
+                              </button>
+                            );
+                          })}
+                        </Flex>
+                        <Text
+                          as="div"
+                          className="mt-1.5 text-(--gray-10) text-[10px]"
+                        >
+                          or drag the corner
+                        </Text>
+                      </Box>
                     )}
                     {onRemove && (
                       <button
@@ -192,6 +213,13 @@ export function TileFrame({
         </Flex>
       )}
       <Box className="min-h-0 flex-1 overflow-auto">{children}</Box>
+      {onResizeGrid && currentGridSize && (
+        <TileResizeHandle
+          currentSize={currentGridSize}
+          onResize={onResizeGrid}
+          onPreview={onResizePreview}
+        />
+      )}
     </Box>
   );
 }

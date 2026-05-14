@@ -2,8 +2,8 @@ import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { ArrowSquareOut, GaugeIcon } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type {
+  GridSize,
   HeadlineTile as HeadlineTileType,
-  TileSize,
 } from "@shared/types/work-projects";
 import { openUrlInBrowser } from "@utils/browser";
 import { memo } from "react";
@@ -95,16 +95,20 @@ function SparklineBars({
 
 interface HeadlineTileProps {
   tile: HeadlineTileType;
+  currentGridSize: GridSize;
   onRemove?: () => void;
-  onResize?: (size: TileSize) => void;
+  onResizeGrid?: (size: GridSize) => void;
+  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
 }
 
 function HeadlineTileImpl({
   tile,
+  currentGridSize,
   onRemove,
-  onResize,
+  onResizeGrid,
+  onResizePreview,
   onApplyPending,
   onRejectPending,
 }: HeadlineTileProps) {
@@ -173,8 +177,10 @@ function HeadlineTileImpl({
           </button>
         ) : undefined
       }
+      currentGridSize={currentGridSize}
       onRemove={onRemove}
-      onResize={onResize}
+      onResizeGrid={onResizeGrid}
+      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >

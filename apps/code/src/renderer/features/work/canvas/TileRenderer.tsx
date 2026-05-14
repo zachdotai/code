@@ -1,9 +1,10 @@
 import type {
+  GridSize,
   ProjectIconId,
   ProjectMember,
   Tile,
-  TileSize,
 } from "@shared/types/work-projects";
+import { ArtifactTile } from "./tiles/ArtifactTile";
 import { FileTile } from "./tiles/FileTile";
 import { HeadlineTile } from "./tiles/HeadlineTile";
 import { InsightTile } from "./tiles/InsightTile";
@@ -14,8 +15,10 @@ import { TitleTile } from "./tiles/TitleTile";
 interface TileRendererProps {
   tile: Tile;
   members: ProjectMember[];
+  currentGridSize: GridSize;
   onRemove?: () => void;
-  onResize?: (size: TileSize) => void;
+  onResizeGrid?: (size: GridSize) => void;
+  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   onUpdateTitleTile?: (patch: {
@@ -28,18 +31,24 @@ interface TileRendererProps {
     tone?: "yellow" | "blue" | "green" | "pink" | "neutral";
   }) => void;
   onUpdateFileTile?: (patch: { filename?: string; contents?: string }) => void;
+  onUpdateChecklistItems?: (
+    items: Array<{ text: string; done: boolean }>,
+  ) => void;
 }
 
 export function TileRenderer({
   tile,
   members,
+  currentGridSize,
   onRemove,
-  onResize,
+  onResizeGrid,
+  onResizePreview,
   onApplyPending,
   onRejectPending,
   onUpdateTitleTile,
   onUpdateNoteTile,
   onUpdateFileTile,
+  onUpdateChecklistItems,
 }: TileRendererProps) {
   switch (tile.type) {
     case "title":
@@ -56,8 +65,10 @@ export function TileRenderer({
       return (
         <HeadlineTile
           tile={tile}
+          currentGridSize={currentGridSize}
           onRemove={onRemove}
-          onResize={onResize}
+          onResizeGrid={onResizeGrid}
+          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
         />
@@ -66,8 +77,10 @@ export function TileRenderer({
       return (
         <InsightTile
           tile={tile}
+          currentGridSize={currentGridSize}
           onRemove={onRemove}
-          onResize={onResize}
+          onResizeGrid={onResizeGrid}
+          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
         />
@@ -76,8 +89,10 @@ export function TileRenderer({
       return (
         <FileTile
           tile={tile}
+          currentGridSize={currentGridSize}
           onRemove={onRemove}
-          onResize={onResize}
+          onResizeGrid={onResizeGrid}
+          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
           onUpdate={onUpdateFileTile}
@@ -87,8 +102,10 @@ export function TileRenderer({
       return (
         <SkillOutputTile
           tile={tile}
+          currentGridSize={currentGridSize}
           onRemove={onRemove}
-          onResize={onResize}
+          onResizeGrid={onResizeGrid}
+          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
         />
@@ -97,11 +114,26 @@ export function TileRenderer({
       return (
         <NoteTile
           tile={tile}
+          currentGridSize={currentGridSize}
           onRemove={onRemove}
-          onResize={onResize}
+          onResizeGrid={onResizeGrid}
+          onResizePreview={onResizePreview}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
           onUpdate={onUpdateNoteTile}
+        />
+      );
+    case "artifact":
+      return (
+        <ArtifactTile
+          tile={tile}
+          currentGridSize={currentGridSize}
+          onRemove={onRemove}
+          onResizeGrid={onResizeGrid}
+          onResizePreview={onResizePreview}
+          onApplyPending={onApplyPending}
+          onRejectPending={onRejectPending}
+          onUpdateChecklistItems={onUpdateChecklistItems}
         />
       );
   }

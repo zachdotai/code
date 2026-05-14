@@ -1,5 +1,6 @@
 import {
   createProjectInput,
+  gridSize,
   newTileInput,
   projectIconId,
   tileSize,
@@ -180,6 +181,45 @@ export const workProjectsRouter = router({
         input.projectId,
         input.tileId,
         input.size,
+      );
+    }),
+
+  resizeTileGrid: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        tileId: z.string(),
+        gridSize,
+      }),
+    )
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().updateTileGridSize(
+        input.projectId,
+        input.tileId,
+        input.gridSize,
+      );
+    }),
+
+  updateChecklistTile: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        tileId: z.string(),
+        items: z.array(
+          z.object({
+            text: z.string(),
+            done: z.boolean(),
+          }),
+        ),
+      }),
+    )
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().updateChecklistTile(
+        input.projectId,
+        input.tileId,
+        input.items,
       );
     }),
 

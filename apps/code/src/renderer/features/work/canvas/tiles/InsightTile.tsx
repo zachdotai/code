@@ -1,16 +1,18 @@
 import { ArrowSquareOut, ChartLineUp } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type {
+  GridSize,
   InsightTile as InsightTileType,
-  TileSize,
 } from "@shared/types/work-projects";
 import { openUrlInBrowser } from "@utils/browser";
 import { TileFrame } from "../TileFrame";
 
 interface InsightTileProps {
   tile: InsightTileType;
+  currentGridSize: GridSize;
   onRemove?: () => void;
-  onResize?: (size: TileSize) => void;
+  onResizeGrid?: (size: GridSize) => void;
+  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
 }
@@ -72,8 +74,10 @@ function PreviewSketch({ seed }: { seed: string }) {
 
 export function InsightTile({
   tile,
+  currentGridSize,
   onRemove,
-  onResize,
+  onResizeGrid,
+  onResizePreview,
   onApplyPending,
   onRejectPending,
 }: InsightTileProps) {
@@ -92,8 +96,10 @@ export function InsightTile({
           <ArrowSquareOut size={10} weight="bold" />
         </button>
       }
+      currentGridSize={currentGridSize}
       onRemove={onRemove}
-      onResize={onResize}
+      onResizeGrid={onResizeGrid}
+      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >

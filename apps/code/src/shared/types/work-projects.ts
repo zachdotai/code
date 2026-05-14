@@ -22,6 +22,15 @@ export type ProjectIconId = z.infer<typeof projectIconId>;
 export const tileSize = z.enum(["sm", "md", "lg", "full"]);
 export type TileSize = z.infer<typeof tileSize>;
 
+/** Snap-to-grid sizing. cols 1..12, rows 1..4. When set, takes precedence
+ *  over the legacy `size` enum. The renderer derives grid-column-span and
+ *  grid-row-span CSS from this. */
+export const gridSize = z.object({
+  cols: z.number().int().min(1).max(12),
+  rows: z.number().int().min(1).max(4),
+});
+export type GridSize = z.infer<typeof gridSize>;
+
 export const tileState = z.enum([
   "live",
   "pending_add",
@@ -38,6 +47,7 @@ const tileBase = z.object({
   size: tileSize,
   state: tileState,
   origin: tileOrigin,
+  gridSize: gridSize.optional(),
 });
 
 export const titleTile = tileBase.extend({
@@ -110,6 +120,29 @@ export const noteTile = tileBase.extend({
 });
 export type NoteTile = z.infer<typeof noteTile>;
 
+/** Artifact tile — a single tile type whose `kind` selects the renderer.
+ *  The data payload is per-kind and loosely typed at the schema layer; the
+ *  renderer is defensive when reading it. Lets the agent (and skills) create
+ *  rich tile content without growing the discriminated union. */
+export const artifactKind = z.enum([
+  "checklist",
+  "table",
+  "chart",
+  "code",
+  "embed",
+]);
+export type ArtifactKind = z.infer<typeof artifactKind>;
+
+export const artifactTile = tileBase.extend({
+  type: z.literal("artifact"),
+  kind: artifactKind,
+  title: z.string().max(80),
+  /** Per-kind payload. Shapes documented in the MCP tool description and in
+   *  the renderer's per-kind components. */
+  data: z.record(z.string(), z.unknown()),
+});
+export type ArtifactTile = z.infer<typeof artifactTile>;
+
 export const tile = z.discriminatedUnion("type", [
   titleTile,
   headlineTile,
@@ -117,6 +150,7 @@ export const tile = z.discriminatedUnion("type", [
   fileTile,
   skillOutputTile,
   noteTile,
+  artifactTile,
 ]);
 export type Tile = z.infer<typeof tile>;
 export type TileType = Tile["type"];
@@ -183,6 +217,11 @@ export const newTileInput = z.discriminatedUnion("type", [
   noteTile.omit({ id: true, state: true, origin: true, size: true }).extend({
     size: tileSize.optional(),
   }),
+  artifactTile
+    .omit({ id: true, state: true, origin: true, size: true })
+    .extend({
+      size: tileSize.optional(),
+    }),
 ]);
 export type NewTileInput = z.infer<typeof newTileInput>;
 

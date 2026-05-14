@@ -382,6 +382,53 @@ export class ProjectCanvasMcpService {
     );
 
     server.tool(
+      "propose_tile_artifact",
+      `Propose a rich "artifact" tile on the canvas — checklist, table, chart, code, or embed. ONE tile type, multiple kinds. Use this when none of propose_tile_{headline,insight,file,note} fit. Pass the right shape in \`data\` for the chosen \`kind\`:
+
+- kind="checklist": data = { items: [{ text: string, done: boolean }, ...] }
+- kind="table":     data = { headers: string[], rows: string[][] }
+- kind="chart":     data = { chartKind: "bar" | "line", series: [{ label: string, value: number }, ...], unit?: string }
+- kind="code":      data = { language: string, body: string }
+- kind="embed":     data = { url: string, description?: string }
+
+Arrives as a ghost tile the user reviews before it's accepted.`,
+      {
+        projectId: projectIdField,
+        kind: z
+          .enum(["checklist", "table", "chart", "code", "embed"])
+          .describe("Artifact renderer to dispatch to."),
+        title: z.string().max(80).describe("Tile title shown in the header."),
+        data: z
+          .record(z.string(), z.unknown())
+          .describe(
+            "Per-kind payload. See the tool description for the shape of each kind.",
+          ),
+      },
+      async (args) => {
+        log.info("Tool call: propose_tile_artifact", {
+          projectId: args.projectId,
+          kind: args.kind,
+          title: args.title,
+        });
+        const updated = this.workProjects.addTile(
+          args.projectId,
+          {
+            type: "artifact",
+            kind: args.kind,
+            title: args.title,
+            data: args.data,
+          },
+          { state: "pending_add", origin: "chat" },
+        );
+        return toolText(
+          updated
+            ? `Artifact tile (${args.kind}) proposed on project ${args.projectId}.`
+            : `Project ${args.projectId} not found.`,
+        );
+      },
+    );
+
+    server.tool(
       "update_project_meta",
       "Rename the project, update its tagline, or change its icon. Use sparingly — only when the project should clearly be called something different than its current name.",
       {
