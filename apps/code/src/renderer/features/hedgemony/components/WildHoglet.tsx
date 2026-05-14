@@ -1,29 +1,11 @@
 import { useSortable } from "@dnd-kit/react/sortable";
 import type { Hoglet } from "@main/services/hedgemony/schemas";
 import { Tooltip } from "@radix-ui/themes";
-import { useTRPC } from "@renderer/trpc";
-import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { useCallback } from "react";
-import { HEDGEMONY_CONFIG } from "../config";
-import { useTransitPath } from "../hooks/useTransitPath";
-import { useWalkTo } from "../hooks/useWalkTo";
-import {
-  selectHogletWalkPath,
-  useHogletPositionStore,
-} from "../stores/hogletPositionStore";
-import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
-import { selectNests, useNestStore } from "../stores/nestStore";
-import { useCollisionResolvedPosition } from "../utils/collisionResolution";
-import { selectHogletAnimation } from "../utils/selectHogletAnimation";
-import { HOGLET_RADIUS, worldObstacles } from "../utils/worldObstacles";
+import { useHogletVisuals } from "../hooks/useHogletVisuals";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
-import {
-  FPS_BY_TASK_STATUS,
-  PR_DOT_COLOR,
-  type TaskStatus,
-} from "./hogletStatus";
+import { PR_DOT_COLOR } from "./hogletStatus";
 
 const SPRITE_SIZE = 40;
 
@@ -46,9 +28,6 @@ export function WildHoglet({
   dimmed: dimmedByAffiliation,
   onSelect,
 }: WildHogletProps) {
-  const summary = useHogletStore(selectTaskSummary(hoglet.taskId));
-  const trpc = useTRPC();
-
   const { ref, isDragging } = useSortable({
     id: hoglet.id,
     index,
@@ -57,50 +36,17 @@ export function WildHoglet({
     transition: { duration: 200, easing: "ease" },
   });
 
-  const walkPath = useHogletPositionStore(selectHogletWalkPath(hoglet.id));
-  const computedPath = useTransitPath(
-    x,
-    y,
-    HOGLET_RADIUS,
-    walkPath === undefined,
-    hoglet.id,
-  );
-  const { motionX, motionY, isWalking, facing } = useWalkTo(
-    x,
-    y,
-    walkPath ?? computedPath,
-  );
-  const nests = useNestStore(selectNests);
-  const getStaticObstacles = useCallback(() => worldObstacles(nests), [nests]);
-  const { resolvedX, resolvedY } = useCollisionResolvedPosition(
-    hoglet.id,
+  const {
     motionX,
     motionY,
-    HOGLET_RADIUS,
-    getStaticObstacles,
-    { visualRegistryId: hoglet.id },
-  );
-
-  const prStatusQuery = useQuery(
-    trpc.workspace.getTaskPrStatus.queryOptions(
-      { taskId: hoglet.taskId, cloudPrUrl: null },
-      { staleTime: HEDGEMONY_CONFIG.polling.prStatusStaleMs },
-    ),
-  );
-
-  const status: TaskStatus = (summary?.latest_run?.status ??
-    "not_started") as TaskStatus;
-  const title = summary?.title ?? hoglet.taskId.slice(0, 8);
-  const prState = prStatusQuery.data?.prState ?? null;
-  const animationKey = selectHogletAnimation(
+    facing,
     status,
-    isWalking,
-    hoglet.signalReportId !== null,
-  );
-  const fps = isWalking
-    ? HEDGEMONY_CONFIG.animation.fps.walk
-    : FPS_BY_TASK_STATUS[status ?? "not_started"];
-  const cancelled = status === "cancelled";
+    animationKey,
+    fps,
+    prState,
+    title,
+    cancelled,
+  } = useHogletVisuals(hoglet, x, y);
 
   const handleClick = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -111,8 +57,8 @@ export function WildHoglet({
     <motion.div
       className="absolute top-1/2 left-1/2"
       style={{
-        x: resolvedX,
-        y: resolvedY,
+        x: motionX,
+        y: motionY,
         opacity: isDragging
           ? 0.4
           : dimmedByAffiliation
