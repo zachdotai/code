@@ -23,6 +23,11 @@ import { moveNest } from "../service/nestMutations";
 import { initializeNestStore } from "../service/nestSubscriptionService";
 import { initializePrGraphForNest } from "../service/prGraphSubscriptionService";
 import {
+  type ControlGroupSelection,
+  type ControlGroupSlot,
+  useControlGroupStore,
+} from "../stores/controlGroupStore";
+import {
   type BookmarkSlot,
   useHedgemonyViewStore,
 } from "../stores/hedgemonyViewStore";
@@ -274,22 +279,25 @@ export function HedgemonyMapView() {
     (slot: BookmarkSlot) => {
       saveBookmark(slot);
       toast(`Saved view ${slot}`, {
-        description: `Press ${slot} to jump back.`,
+        description: `Press F${4 + slot} to jump back.`,
       });
     },
     [saveBookmark],
   );
 
-  useHotkeys("1", () => recallBookmark(1), mapHotkeyOptions, [recallBookmark]);
-  useHotkeys("2", () => recallBookmark(2), mapHotkeyOptions, [recallBookmark]);
-  useHotkeys("3", () => recallBookmark(3), mapHotkeyOptions, [recallBookmark]);
-  useHotkeys("shift+1", () => handleSaveBookmark(1), mapHotkeyOptions, [
+  // Camera bookmarks live on F5..F7 so the bare digit keys are free for
+  // SC-style control groups. F-keys read as "view" anyway (next to F11 for
+  // fullscreen).
+  useHotkeys("f5", () => recallBookmark(1), mapHotkeyOptions, [recallBookmark]);
+  useHotkeys("f6", () => recallBookmark(2), mapHotkeyOptions, [recallBookmark]);
+  useHotkeys("f7", () => recallBookmark(3), mapHotkeyOptions, [recallBookmark]);
+  useHotkeys("shift+f5", () => handleSaveBookmark(1), mapHotkeyOptions, [
     handleSaveBookmark,
   ]);
-  useHotkeys("shift+2", () => handleSaveBookmark(2), mapHotkeyOptions, [
+  useHotkeys("shift+f6", () => handleSaveBookmark(2), mapHotkeyOptions, [
     handleSaveBookmark,
   ]);
-  useHotkeys("shift+3", () => handleSaveBookmark(3), mapHotkeyOptions, [
+  useHotkeys("shift+f7", () => handleSaveBookmark(3), mapHotkeyOptions, [
     handleSaveBookmark,
   ]);
 
@@ -379,6 +387,197 @@ export function HedgemonyMapView() {
   useHotkeys("f3", () => cycleNest(1), mapHotkeyOptions, [cycleNest]);
   useHotkeys("shift+f3", () => cycleNest(-1), mapHotkeyOptions, [cycleNest]);
 
+  // SC-style control groups: Mod+Shift+N saves the current selection into
+  // slot N; bare N recalls it. Hoglet IDs are filtered against the live
+  // store on recall so retired hoglets drop out instead of resurrecting.
+  const assignControlGroup = useControlGroupStore((s) => s.assign);
+  const handleAssignControlGroup = useCallback(
+    (slot: ControlGroupSlot) => {
+      if (!selection) {
+        toast(`Nothing selected for group ${slot}`, {
+          description: "Select a unit or nest first, then assign.",
+        });
+        return;
+      }
+      const snapshot: ControlGroupSelection =
+        selection.type === "hoglets"
+          ? {
+              type: "hoglets",
+              ids: [...selection.ids],
+              includeBuilder: selection.includeBuilder,
+            }
+          : selection;
+      assignControlGroup(slot, snapshot);
+      playSfx("select");
+      toast(`Saved control group ${slot}`, {
+        description: `Press ${slot} to recall.`,
+      });
+    },
+    [selection, assignControlGroup],
+  );
+
+  const recallControlGroup = useCallback(
+    (slot: ControlGroupSlot) => {
+      const saved = useControlGroupStore.getState().groups[slot];
+      if (!saved) {
+        toast(`No group ${slot} saved`, {
+          description: `Select something and press Mod+Shift+${slot} to save.`,
+        });
+        return;
+      }
+
+      // Filter stale hoglet refs against the live store so retiring a hoglet
+      // doesn't break the group. Empty after filtering = the group decayed.
+      let recalled: Selection = saved;
+      let centerPoint: { x: number; y: number } | null = null;
+      if (saved.type === "hoglets") {
+        const byBucket = useHogletStore.getState().byBucket;
+        const liveIds = new Set<string>();
+        for (const bucket of Object.values(byBucket)) {
+          for (const h of bucket) liveIds.add(h.id);
+        }
+        const aliveIds = saved.ids.filter((id) => liveIds.has(id));
+        if (aliveIds.length === 0 && !saved.includeBuilder) {
+          toast(`Group ${slot} is empty`, {
+            description: "All members were retired.",
+          });
+          return;
+        }
+        recalled = {
+          type: "hoglets",
+          ids: aliveIds,
+          includeBuilder: saved.includeBuilder,
+        };
+        if (aliveIds.length > 0) {
+          const positions = collectHogletWorldPositions(
+            nests,
+            byBucket,
+            useHogletPositionStore.getState().positions,
+          );
+          const alivePositions = positions.filter((p) =>
+            aliveIds.includes(p.hogletId),
+          );
+          if (alivePositions.length > 0) {
+            const sumX = alivePositions.reduce((s, p) => s + p.x, 0);
+            const sumY = alivePositions.reduce((s, p) => s + p.y, 0);
+            centerPoint = {
+              x: sumX / alivePositions.length,
+              y: sumY / alivePositions.length,
+            };
+          }
+        }
+        if (!centerPoint && saved.includeBuilder) {
+          centerPoint = builder.visualPosRef.current;
+        }
+      } else if (saved.type === "nest") {
+        const nest = nests.find((n) => n.id === saved.id);
+        if (!nest) {
+          toast(`Group ${slot} is empty`, {
+            description: "The saved nest was archived.",
+          });
+          return;
+        }
+        centerPoint = { x: nest.mapX, y: nest.mapY };
+      } else if (saved.type === "builder") {
+        centerPoint = builder.visualPosRef.current;
+      } else if (saved.type === "hedgehouse") {
+        centerPoint = { x: HEDGEHOUSE_MAP_X, y: HEDGEHOUSE_MAP_Y };
+      }
+
+      playSfx("select");
+      playVoice("hoglet:select");
+      setSelection(recalled);
+      if (centerPoint) {
+        surfaceRef.current?.centerOnPoint(centerPoint.x, centerPoint.y);
+      }
+    },
+    [nests, builder.visualPosRef],
+  );
+
+  // useHotkeys can't be invoked in a loop, so unroll the nine slots. Each
+  // pair shares the same options object as the other map hotkeys (disabled
+  // in dialogs, not in form fields).
+  useHotkeys("1", () => recallControlGroup(1), mapHotkeyOptions, [
+    recallControlGroup,
+  ]);
+  useHotkeys("2", () => recallControlGroup(2), mapHotkeyOptions, [
+    recallControlGroup,
+  ]);
+  useHotkeys("3", () => recallControlGroup(3), mapHotkeyOptions, [
+    recallControlGroup,
+  ]);
+  useHotkeys("4", () => recallControlGroup(4), mapHotkeyOptions, [
+    recallControlGroup,
+  ]);
+  useHotkeys("5", () => recallControlGroup(5), mapHotkeyOptions, [
+    recallControlGroup,
+  ]);
+  useHotkeys("6", () => recallControlGroup(6), mapHotkeyOptions, [
+    recallControlGroup,
+  ]);
+  useHotkeys("7", () => recallControlGroup(7), mapHotkeyOptions, [
+    recallControlGroup,
+  ]);
+  useHotkeys("8", () => recallControlGroup(8), mapHotkeyOptions, [
+    recallControlGroup,
+  ]);
+  useHotkeys("9", () => recallControlGroup(9), mapHotkeyOptions, [
+    recallControlGroup,
+  ]);
+  useHotkeys(
+    "mod+shift+1",
+    () => handleAssignControlGroup(1),
+    mapHotkeyOptions,
+    [handleAssignControlGroup],
+  );
+  useHotkeys(
+    "mod+shift+2",
+    () => handleAssignControlGroup(2),
+    mapHotkeyOptions,
+    [handleAssignControlGroup],
+  );
+  useHotkeys(
+    "mod+shift+3",
+    () => handleAssignControlGroup(3),
+    mapHotkeyOptions,
+    [handleAssignControlGroup],
+  );
+  useHotkeys(
+    "mod+shift+4",
+    () => handleAssignControlGroup(4),
+    mapHotkeyOptions,
+    [handleAssignControlGroup],
+  );
+  useHotkeys(
+    "mod+shift+5",
+    () => handleAssignControlGroup(5),
+    mapHotkeyOptions,
+    [handleAssignControlGroup],
+  );
+  useHotkeys(
+    "mod+shift+6",
+    () => handleAssignControlGroup(6),
+    mapHotkeyOptions,
+    [handleAssignControlGroup],
+  );
+  useHotkeys(
+    "mod+shift+7",
+    () => handleAssignControlGroup(7),
+    mapHotkeyOptions,
+    [handleAssignControlGroup],
+  );
+  useHotkeys(
+    "mod+shift+8",
+    () => handleAssignControlGroup(8),
+    mapHotkeyOptions,
+    [handleAssignControlGroup],
+  );
+  useHotkeys(
+    "mod+shift+9",
+    () => handleAssignControlGroup(9),
+    mapHotkeyOptions,
+    [handleAssignControlGroup],
+  );
   const flashMoveMarker = useCallback((x: number, y: number) => {
     const id = Date.now();
     setMoveMarker({ id, x, y });

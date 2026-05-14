@@ -40,14 +40,14 @@ export const HEDGEMONY_HOTKEYS: HedgemonyHotkey[] = [
   },
   {
     id: "camera-recall",
-    keys: "1",
-    description: "Recall camera bookmark 1 / 2 / 3",
+    keys: "f5",
+    description: "Recall camera bookmark (F5 / F6 / F7)",
     context: "camera",
   },
   {
     id: "camera-save",
-    keys: "shift+1",
-    description: "Save camera bookmark 1 / 2 / 3",
+    keys: "shift+f5",
+    description: "Save camera bookmark (Shift+F5 / F6 / F7)",
     context: "camera",
   },
   {
@@ -98,6 +98,18 @@ export const HEDGEMONY_HOTKEYS: HedgemonyHotkey[] = [
     id: "selection-cycle-nest",
     keys: "f3",
     description: "Cycle nests (Shift+F3 reverse)",
+    context: "selection",
+  },
+  {
+    id: "selection-group-recall",
+    keys: "1",
+    description: "Recall control group 1–9",
+    context: "selection",
+  },
+  {
+    id: "selection-group-assign",
+    keys: "mod+shift+1",
+    description: "Assign selection to control group 1–9",
     context: "selection",
   },
   {
