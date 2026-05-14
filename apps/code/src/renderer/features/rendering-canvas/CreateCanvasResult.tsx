@@ -4,6 +4,7 @@ import {
   type ToolViewProps,
   useToolCallStatus,
 } from "@features/sessions/components/session-update/toolCallUtils";
+import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { ArrowSquareOutIcon, RobotIcon } from "@phosphor-icons/react";
 import { Button, Dialog, Flex } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -63,6 +64,7 @@ export function CreateCanvasResult({
   const navigateToCanvasInput = useNavigationStore(
     (s) => s.navigateToCanvasInput,
   );
+  const setActiveTab = useSidebarStore((s) => s.setActiveTab);
   const [open, setOpen] = useState(false);
 
   if (!isComplete || isFailed || wasCancelled) return null;
@@ -82,6 +84,7 @@ export function CreateCanvasResult({
 
   const handleOpenInView = () => {
     setOpen(false);
+    setActiveTab("files");
     navigateToCanvasInput(canvas.id);
   };
 

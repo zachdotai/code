@@ -5,7 +5,7 @@ import { ScrollArea } from "@posthog/quill";
 import { Flex } from "@radix-ui/themes";
 import type { RenderingCanvas } from "@renderer/api/posthogClient";
 import { useNavigationStore } from "@stores/navigationStore";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SidebarItem } from "./SidebarItem";
 
 interface CanvasTreeNode {
@@ -69,11 +69,18 @@ function buildCanvasTree(canvases: RenderingCanvas[]): CanvasTreeNode[] {
 interface CanvasRowProps {
   node: CanvasTreeNode;
   expanded: Set<string>;
+  activeCanvasId: string | null;
   onToggle: (path: string) => void;
   onSelect: (canvasId: string) => void;
 }
 
-function CanvasRow({ node, expanded, onToggle, onSelect }: CanvasRowProps) {
+function CanvasRow({
+  node,
+  expanded,
+  activeCanvasId,
+  onToggle,
+  onSelect,
+}: CanvasRowProps) {
   const hasChildren = node.children.length > 0;
   const isOpen = expanded.has(node.path);
 
@@ -111,6 +118,7 @@ function CanvasRow({ node, expanded, onToggle, onSelect }: CanvasRowProps) {
         depth={node.depth}
         icon={icon}
         label={node.name}
+        isActive={!!node.canvasId && node.canvasId === activeCanvasId}
         onClick={
           node.canvasId
             ? () => onSelect(node.canvasId!)
@@ -123,6 +131,7 @@ function CanvasRow({ node, expanded, onToggle, onSelect }: CanvasRowProps) {
               key={child.path}
               node={child}
               expanded={expanded}
+              activeCanvasId={activeCanvasId}
               onToggle={onToggle}
               onSelect={onSelect}
             />
@@ -137,6 +146,9 @@ export function ProjectTreeView() {
   const navigateToCanvasInput = useNavigationStore(
     (s) => s.navigateToCanvasInput,
   );
+  const activeCanvasId = useNavigationStore((s) =>
+    s.view.type === "canvas-input" ? (s.view.canvasId ?? null) : null,
+  );
 
   const { data, isLoading } = useAuthenticatedQuery(
     ["rendering-canvases"] as const,
@@ -144,6 +156,21 @@ export function ProjectTreeView() {
   );
 
   const tree = useMemo(() => buildCanvasTree(data?.results ?? []), [data]);
+
+  useEffect(() => {
+    if (!activeCanvasId) return;
+    const canvas = data?.results?.find((c) => c.id === activeCanvasId);
+    if (!canvas) return;
+    const segments = (canvas.path ?? "").split("/").filter(Boolean);
+    if (segments.length === 0) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (let i = 0; i < segments.length; i++) {
+        next.add(segments.slice(0, i + 1).join("/"));
+      }
+      return next;
+    });
+  }, [activeCanvasId, data]);
 
   const toggle = (path: string) => {
     setExpanded((prev) => {
@@ -172,6 +199,7 @@ export function ProjectTreeView() {
               key={node.path}
               node={node}
               expanded={expanded}
+              activeCanvasId={activeCanvasId}
               onToggle={toggle}
               onSelect={navigateToCanvasInput}
             />
