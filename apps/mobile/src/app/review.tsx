@@ -1,6 +1,5 @@
 import { Text } from "@components/text";
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
@@ -12,7 +11,6 @@ import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
 import { useThemeColors } from "@/lib/theme";
 
 export default function ReviewScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const themeColors = useThemeColors();
   const dismissedIds = useDismissedReportsStore((s) => s.dismissedIds);
@@ -34,13 +32,6 @@ export default function ReviewScreen() {
     setCurrentIndex(0);
   }, [setCurrentIndex]);
 
-  const handleTaskStarted = useCallback(
-    (taskId: string) => {
-      router.push(`/task/${taskId}`);
-    },
-    [router],
-  );
-
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -58,7 +49,6 @@ export default function ReviewScreen() {
         <TinderView
           reports={tinderReports}
           repositoryOptions={repositoryOptions}
-          onTaskStarted={handleTaskStarted}
         />
       </View>
     </View>

@@ -269,7 +269,7 @@ function CardContent({
         {report.summary && <MarkdownText content={report.summary} />}
       </View>
 
-      {/* Footer: signal count + time */}
+      {/* Footer: signal count + time + repo */}
       <View className="mt-3 flex-row items-center gap-3">
         <View className="flex-row items-center gap-1">
           <Lightning size={13} color={themeColors.gray[9]} weight="fill" />
@@ -279,19 +279,18 @@ function CardContent({
         </View>
         <Text className="text-[12px] text-gray-9">·</Text>
         <Text className="text-[12px] text-gray-9">{updatedAt}</Text>
+        {repo && (
+          <>
+            <Text className="text-[12px] text-gray-9">·</Text>
+            <View className="flex-row items-center gap-1 rounded-full border border-gray-6 bg-gray-2 px-2 py-0.5">
+              <GithubLogo size={10} color={themeColors.gray[9]} weight="fill" />
+              <Text className="text-[11px] text-gray-9" numberOfLines={1}>
+                {repo}
+              </Text>
+            </View>
+          </>
+        )}
       </View>
-
-      {/* Repo pill */}
-      {repo && (
-        <View className="mt-3 flex-row">
-          <View className="flex-row items-center gap-1.5 rounded-full border border-gray-6 bg-gray-2 px-2.5 py-1">
-            <GithubLogo size={12} color={themeColors.gray[9]} weight="fill" />
-            <Text className="text-[11px] text-gray-9" numberOfLines={1}>
-              {repo}
-            </Text>
-          </View>
-        </View>
-      )}
     </View>
   );
 }

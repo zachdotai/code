@@ -58,13 +58,6 @@ export default function InboxScreen() {
     [router],
   );
 
-  const handleTaskStarted = useCallback(
-    (taskId: string) => {
-      router.push(`/task/${taskId}`);
-    },
-    [router],
-  );
-
   // Header occupies insets.top + 6 (top pad) + 40 (MenuButton) + 8 (bottom
   // pad), plus a small buffer so the first row isn't hugging the fade edge.
   const headerHeight = insets.top + 60;
@@ -81,7 +74,6 @@ export default function InboxScreen() {
           <TinderView
             reports={tinderReports}
             repositoryOptions={repositoryOptions}
-            onTaskStarted={handleTaskStarted}
             isLoading={isLoading}
           />
         </View>

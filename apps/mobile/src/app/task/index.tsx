@@ -62,7 +62,10 @@ import { RepositoryPickerSheet } from "@/features/tasks/composer/RepositoryPicke
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
-import type { RepositorySelection } from "@/features/tasks/types";
+import type {
+  CreateTaskOptions,
+  RepositorySelection,
+} from "@/features/tasks/types";
 import {
   findRepositoryOption,
   isRepositorySelectionComplete,
@@ -256,11 +259,12 @@ export default function NewTaskScreen() {
         github_integration: selection.integrationId ?? undefined,
         ...(signalReport
           ? {
+              origin_product: "signal_report",
               signal_report: signalReport,
               signal_report_task_relationship: "implementation",
             }
           : {}),
-      });
+      } as CreateTaskOptions);
 
       const pendingUserMessage =
         attachments.length > 0
@@ -277,6 +281,12 @@ export default function NewTaskScreen() {
         model,
         reasoningEffort: supportsReasoning ? reasoning : undefined,
         initialPermissionMode: mode,
+        ...(signalReport
+          ? {
+              runSource: "signal_report" as const,
+              signalReportId: signalReport,
+            }
+          : {}),
       });
 
       router.replace(`/task/${task.id}`);
