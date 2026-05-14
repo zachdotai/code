@@ -25,6 +25,8 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 - Empty `hedgemony` tRPC router/services can be registered normally, but stay side-effect-free when the flag is off.
 - New `features/hedgemony/` folder + Command Center view-mode option.
 - Pan/zoom map surface with an empty-state.
+- Persistent **Builder hedgehog** unit on the map (client-side, no sqlite row). Left-click selects, right-click moves, Esc clears selection. Selection docks `BuilderCommandPanel` at the bottom; panel currently has one "Build nest" button (two-button split lands with Slice 1).
+- RTS-style map controls: left-click select, right-click move, Esc cancel. Build mode (crosshair + ghost circle) wired through the Builder.
 
 **Out of scope**
 - Any nest, hoglet, or signal logic.
@@ -41,21 +43,22 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 
 ---
 
-## Slice 1 — Create a nest through goal writing (CRUD + bounded draft agent, no hedgehog)
+## Slice 1 — Builder two-button split: guided + simple nest creation (CRUD + bounded draft agent, no hedgehog)
 
-**As an operator,** I want to create a nest through a lightweight spec-writing conversation, so the goal has enough definition of done for a hedgehog to manage later.
+**As an operator,** I want the Builder to offer two upfront paths — guided spec-writing for real work, or a simple form for low-ceremony work — so I'm not forced through a conversation when I just want to spawn an agent and go.
 
 **In scope**
-- `hedgemony_nest` CRUD for `name`, `goal_prompt`, nullable `definition_of_done`, `map_x` / `map_y`, `status`, and empty/default `loadout_json`.
-- `GoalSpecDraftService` drives a bounded back-and-forth goal-writing flow before the nest exists. It takes the current transcript + optional map context and returns either the next clarifying question or a draft `{ name, goalPrompt, definitionOfDone }`.
-- The draft agent is a lightweight LLM call through the existing main-process LLM gateway/auth path, not a `Task`, not a hedgehog tick, and not an agent harness session. No tools, worktree access, hoglet creation, or autonomous actions are available during this flow.
+- `BuilderCommandPanel` exposes **two buttons**:
+  - **Build nest** (guided): enters `GoalSpecDraftService` conversational flow → editable draft fields → place nest, no auto-spawned hoglet.
+  - **Quick nest** (simple): one-field form (prompt; name optional, defaults from prompt) → enter build mode → place nest with `creationMode: "quick"` → atomically spawns one hoglet inside it.
+- `hedgemony_nest` CRUD for `name`, `goal_prompt`, nullable `definition_of_done`, `map_x` / `map_y`, `status`, `creation_mode` (`"guided" | "quick"`), and empty/default `loadout_json`.
+- `GoalSpecDraftService` drives the guided back-and-forth before the nest exists. It takes the current transcript + optional map context and returns either the next clarifying question or a draft `{ name, goalPrompt, definitionOfDone }`. Lightweight LLM call through the existing main-process LLM gateway/auth path, not a `Task`, not a hedgehog tick, no tools, no worktree, no autonomous actions.
 - The renderer owns the in-progress draft transcript until the operator clicks "Create nest". `nests.create` accepts the accepted draft plus `creationTranscript`; `hedgemony_nest_message` writes that transcript plus the initial "nest created" audit entry as durable creation context.
-- `NestService.create / get / list / update / archive` plus the matching sqlite repository. Archive is a soft status change; no row deletion.
+- `NestService.create / get / list / update / archive` plus the matching sqlite repository. `create` accepts an optional `spawnFirstHoglet` flag (set by the Quick nest path) that triggers a one-hoglet `task-creation` saga inside the same transaction.
 - `NestChatService.list` can read creation transcript/audit rows for a nest, but does not yet accept live operator commands.
 - tRPC: `goalDraft.respond`, `nests.create`, `nests.get`, `nests.list`, `nests.update`, `nests.archive`, optional lightweight `nests.watch` for CRUD refreshes, and `nestChat.list`.
 - `nestStore` driven by `nests.list` plus `nests.watch` if present; `nestChatStore` is read-only and only shows accepted creation-time transcript/audit context.
-- Nest sprite component, nest detail panel, and "create nest" flow with a conversational draft panel, editable generated fields, and click/manual map coords.
-- "Eject to simple form" path for operators who want name + rough goal without the full goal-writing conversation. The simple form still creates a valid nest with a saved goal prompt, nullable definition of done, and a short synthetic creation transcript.
+- Nest sprite component, nest detail panel, and the Builder-driven create flow (both paths share the build-mode click-to-place gesture from Slice 0).
 
 **Out of scope**
 - No hedgehog orchestrator spawn (deferred to Slice 6).
@@ -66,24 +69,26 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 - No loadout editor beyond saving an empty/default `loadout_json` placeholder (deferred to Slice 10).
 
 **Acceptance criteria**
-- Place 3 nests at distinct coords → all persist across app restart.
+- `BuilderCommandPanel` shows both buttons; either path produces a valid nest.
+- Place 3 nests via mixed paths (some guided, some quick) → all persist across app restart with correct `creation_mode`.
 - Opening a nest detail panel shows the saved goal prompt/spec, definition of done when present, and the creation transcript/audit context.
 - `nests.update` can move/rename/edit an active nest without recreating it.
 - Archive flips status without dropping the row; archived nests disappear from the default active map list but remain queryable for history/debugging.
-- Goal-writing flow asks at least one clarifying question when the initial prompt is under-specified, then produces editable `name`, `goalPrompt`, and `definitionOfDone` fields.
+- Guided flow asks at least one clarifying question when the initial prompt is under-specified, then produces editable `name`, `goalPrompt`, and `definitionOfDone` fields.
 - The accepted draft transcript is persisted only after `nests.create`; refreshing mid-draft loses the unsaved conversation, while refreshing after create shows the saved creation transcript.
-- Simple-form eject still creates a valid nest with nullable definition of done.
+- Quick path creates a nest with nullable `definition_of_done` and auto-spawns exactly one hoglet inside it in the same transaction (rollback if the hoglet spawn fails).
 
 **Demo moment**
-- Create a nest through the goal-writing flow, restart app, confirm it reappears with its saved goal spec and initial chat/audit context.
+- Click Builder → "Quick nest" → type "fix typo in login error" → enter → nest + first hoglet running in 3 clicks. Separately: Builder → "Build nest" → walk through a clarifying question → land a fully-spec'd nest. Restart app, both reappear correctly.
 
 ---
 
 ## Slice 2 — Spawn an ad-hoc wild hoglet
 
-**As an operator,** I want to spawn a one-off agent without picking a nest, so I can dispatch unstructured work and still see it in Hedgemony.
+**As an operator,** I want to spawn a one-off agent without picking a nest *and without going through the Builder*, so I can fire off throwaway work that doesn't deserve a nest record at all.
 
 **In scope**
+- Dedicated entry point separate from the Builder. Toolbar button or keyboard shortcut in the Hedgemony map toolbar — explicitly not part of `BuilderCommandPanel`.
 - `hedgemony_hoglet` writes with `nest_id = null`, `signal_report_id = null`.
 - `HogletService.spawnAdhoc` reuses the existing `task-creation.ts` saga, then inserts the sidecar row.
 - tRPC: `hoglets.spawnAdhoc`, `hoglets.list({ wildOnly: true })`, `hoglets.watch`.

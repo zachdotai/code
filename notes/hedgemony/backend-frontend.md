@@ -102,6 +102,25 @@ Renderer-facing stores stay engine-agnostic. If the budget or product direction 
 
 ---
 
+## Builder unit + map controls
+
+The Builder is a client-side hedgehog unit persistent on the map. No sqlite row; position lives in renderer state. It's the only entry point for nest creation; ad-hoc wild hoglet spawn is a separate toolbar/keyboard action.
+
+**RTS controls:**
+- **Left-click** a unit (Builder, nest) → select it; selection ring appears. Click empty map → deselect.
+- **Right-click** empty map with a unit selected → issue move command. Animated slide + destination ripple marker.
+- **Esc** → clears selection, or cancels build mode if active.
+
+**BuilderCommandPanel** (docks at bottom of map when Builder is selected) exposes two buttons:
+- **Build nest** (guided): triggers `GoalSpecDraftService` conversational flow, then enters build mode for placement.
+- **Quick nest** (simple): one-field form for prompt (name optional), then enters build mode; on placement, `nests.create` runs with `creationMode: "quick"` and an atomic first-hoglet spawn.
+
+**Build mode UX:** crosshair cursor + dashed ghost circle following the pointer + top banner indicating "Click to place nest, Esc to cancel." Click empty ground places; right-click or Esc cancels.
+
+**Why Builder is right-click-only for movement** (not drag): the command panel docks below the unit when selected; allowing drag on the Builder leads to accidental repositioning while the operator reaches for the panel. Nest sprites support drag-to-move as a faster alternative to right-click — they have no docked panel to interfere with.
+
+---
+
 ## Selection model (prickle)
 
 - **Drag-select**: pointer-down on empty map → draw selection box → all hoglets intersected go into `selectionStore.selected`.

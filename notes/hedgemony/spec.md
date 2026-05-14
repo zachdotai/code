@@ -21,7 +21,8 @@ Inspired by AgentCraft. Hedgemony is the PostHog-Code-native version, grounded i
 
 | Game term | What it is | PostHog Code primitive |
 |---|---|---|
-| **Nest** | A goal, placed on the map like an AoE city. The operator creates it through a conversational goal-writing flow that produces a lightweight spec: intent, useful context, likely repos/worktrees/products, and definition of done. Scope is inferred from the natural-language goal, grouped signals, and hoglet history; it does not have to be declared up front. Optionally tagged with a metric, but not required. | New — thin record referencing existing primitives. |
+| **Builder** | A persistent hedgehog unit on the map. The only entry point for nest creation. Selecting it docks a command panel with two options: **Build nest** (guided conversational goal-writing flow → full spec + definition of done) and **Quick nest** (simple one-field form → minimal spec + immediate first hoglet). Either path enters build mode (crosshair, ghost circle following the pointer) so the operator clicks the ground to place. Builder itself is moved with right-click like any unit. | New — client-side unit, no sqlite row. |
+| **Nest** | A goal, placed on the map like an AoE city. The operator creates it through the Builder, either via the guided conversational flow (full goal spec + definition of done) or the simple form (minimal name + prompt + auto-spawned first hoglet). Scope is inferred from the natural-language goal, grouped signals, and hoglet history; it does not have to be declared up front. Optionally tagged with a metric, but not required. | New — thin record referencing existing primitives. |
 | **Hibernacula** | The data store behind a nest. sqlite tables (alongside posthog-code's existing `better-sqlite3` db at `apps/code/src/main/db/`) for structured state — nest config, hedgehog scratchpad, nest chat/audit log, PR dependency graph, operator-override memory, tick log, hoglet sidecar rows. Long-form context as markdown in the nest's worktree. | New tables in the existing sqlite db; existing worktree filesystem. |
 | **Hedgehog** | The nest's orchestrator. One per nest. Raises hoglets, tracks stacked PRs and their dependencies, routes review feedback + CI failures back to the originating hoglet, judges goal completion against the goal spec, and talks with the operator through nest chat. Ephemeral per-tick, re-instantiable from the hibernacula. | Not a `Task`. A stateless function over persisted state, dispatched by `HedgehogTickService`. |
 | **Hoglet** | The agent. A posthog-code task with a sidecar row in `hedgemony_hoglet` adding `nest_id` and `signal_report_id`. Tasks themselves are server-owned by PostHog Django and fetched via `PosthogAPIClient`. | Cloud Task + local sidecar row. |
@@ -60,9 +61,24 @@ Operator can override any decision — kill a hoglet, redirect, pause the nest, 
 
 ## Ad-hoc and wild
 
-- **Ad-hoc agent**: operator clicks empty map → wild hoglet spawns with operator-provided prompt. Ships PR, dies. No hedgehog unless the operator later adopts it into a nest.
+The map has three creation surfaces. They co-exist deliberately: the operator picks the path that matches the work, no forced funnel.
+
+- **Builder → Build nest** (guided): conversational draft agent produces a full spec + definition of done before the nest row exists. Operator places the nest on the map. Hedgehog manages it.
+- **Builder → Quick nest** (simple): one-field form, minimal nest, auto-spawned first hoglet inside it. For "this is real work but I'm not writing a spec for it."
+- **Wild hoglet (ad-hoc)**: dedicated toolbar/keyboard action, separate from the Builder. Spawns a hoglet with `nest_id = null`, `signal_report_id = null`. Ships PR, dies. No hedgehog unless the operator later adopts it into a nest. For genuine one-offs that don't deserve a nest record at all.
 - **No-match signal**: signal-backed hoglet appears in an Inbox-backed staging area, not the ad-hoc wild area. Operator groups it into a nest, spawns a new nest around related signals, or dismisses/suppresses the Inbox item.
 - **Adoption**: any wild or unnested signal hoglet can be dragged into a nest; that nest's goal spec and inferred loadout apply from then on.
+
+---
+
+## Map controls (RTS conventions)
+
+- **Left-click** on a unit (Builder, nest) selects it; selection ring appears. Click empty map to deselect.
+- **Right-click** on empty map issues a move command for the selected unit. Animated slide + destination ripple marker.
+- **Esc** clears selection, or cancels build mode if active.
+- **Build mode**: triggered from the Builder's command panel. Crosshair cursor + dashed ghost circle follows the pointer; click ground to place; right-click or Esc cancels.
+
+Drag-to-move on sprites is supported for nests as a faster alternative to right-click positioning. The Builder is right-click-only so its command panel doesn't get accidentally repositioned mid-drag.
 
 ---
 
