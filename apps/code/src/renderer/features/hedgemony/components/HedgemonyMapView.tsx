@@ -152,13 +152,36 @@ export function HedgemonyMapView() {
   }, []);
 
   // Slice 8 — bootstrap a PR-graph edge subscription per nest. Each nest
-  // disposer is keyed by id so adding/removing nests cleans up cleanly.
+  // disposer is keyed by id in a ref so we open/close incrementally when nests
+  // are added/removed, rather than tearing down every subscription whenever
+  // the `nests` array reshuffles (e.g. on status updates that mutate the
+  // record but keep the same membership).
+  const prGraphDisposersRef = useRef<Map<string, () => void>>(new Map());
+  const nestIdsKey = useMemo(() => nests.map((n) => n.id).join(","), [nests]);
   useEffect(() => {
-    const disposers = nests.map((nest) => initializePrGraphForNest(nest.id));
+    const disposers = prGraphDisposersRef.current;
+    const liveIds = new Set(nestIdsKey ? nestIdsKey.split(",") : []);
+    for (const id of liveIds) {
+      if (!disposers.has(id)) {
+        disposers.set(id, initializePrGraphForNest(id));
+      }
+    }
+    for (const [id, dispose] of disposers) {
+      if (!liveIds.has(id)) {
+        dispose();
+        disposers.delete(id);
+      }
+    }
+  }, [nestIdsKey]);
+
+  // Tear down all PR-graph subscriptions when the map view unmounts.
+  useEffect(() => {
+    const disposers = prGraphDisposersRef.current;
     return () => {
-      for (const dispose of disposers) dispose();
+      for (const dispose of disposers.values()) dispose();
+      disposers.clear();
     };
-  }, [nests]);
+  }, []);
 
   // Keep the store flag in sync with the DOM's actual fullscreen state — the
   // OS may exit fullscreen via its own controls (Esc from the browser, the

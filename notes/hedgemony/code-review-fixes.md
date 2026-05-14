@@ -119,7 +119,7 @@ of holding them in memory.
 
 ## Fix before dogfood (performance / architecture)
 
-### 9. `selectNests` selector causes cascade re-renders
+### 9. `selectNests` selector causes cascade re-renders — DONE
 
 **File:** `nestStore.ts` (~line 58-59)
 
@@ -134,7 +134,7 @@ underlying `nests` record hasn't changed. Options:
 - Use Zustand's `useShallow` or a custom equality function
 - Use `createSelector` from reselect
 
-### 10. PR-graph subscription thrashing
+### 10. PR-graph subscription thrashing — DONE
 
 **File:** `HedgemonyMapView.tsx` (~line 137-142)
 

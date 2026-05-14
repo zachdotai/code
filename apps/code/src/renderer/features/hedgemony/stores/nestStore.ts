@@ -55,8 +55,22 @@ export const useNestStore = create<NestStore>()((set) => ({
     })),
 }));
 
-export const selectNests = (state: NestStore): Nest[] =>
-  Object.values(state.nests).filter((n) => n.status !== "archived");
+// Cache by `state.nests` reference. Hedgehog ticks replace
+// `hedgehogStateByNestId` but leave `state.nests` untouched, so this returns a
+// stable array for every consumer between actual nest CRUD events — avoiding a
+// cascade of re-renders (and PR-graph subscription churn in HedgemonyMapView)
+// on every 30s tick.
+let cachedNestsInput: Record<string, Nest> | null = null;
+let cachedNestsOutput: Nest[] = [];
+
+export const selectNests = (state: NestStore): Nest[] => {
+  if (state.nests === cachedNestsInput) return cachedNestsOutput;
+  cachedNestsInput = state.nests;
+  cachedNestsOutput = Object.values(state.nests).filter(
+    (n) => n.status !== "archived",
+  );
+  return cachedNestsOutput;
+};
 
 export const selectHedgehogState =
   (nestId: string | null) =>
