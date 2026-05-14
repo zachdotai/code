@@ -431,7 +431,6 @@ export function HedgemonyMapView() {
         hedgehouseSelected={hedgehouseSelected}
         onHedgehouseSelect={() => {
           playSfx("select");
-          playVoice("hoglet:select");
           setSelection({ type: "hedgehouse" });
         }}
       >
