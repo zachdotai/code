@@ -10,6 +10,7 @@ import {
   useNestStore,
 } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
+import { findPath, type Obstacle, type Vec2 } from "../utils/pathfinding";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import type { BuilderAnimation } from "./BuilderSprite";
 import { HedgemonyEmptyState } from "./HedgemonyEmptyState";
@@ -26,6 +27,8 @@ import { SpawnHogletDialog } from "./SpawnHogletDialog";
 const log = logger.scope("hedgemony-map-view");
 
 const BUILD_ANIMATION_MS = 1500;
+const NEST_OBSTACLE_RADIUS = 56;
+const INITIAL_BUILDER_POS: Vec2 = { x: 0, y: 0 };
 
 type Selection = { type: "nest"; id: string } | { type: "builder" } | null;
 
@@ -43,8 +46,8 @@ export function HedgemonyMapView() {
     y: number;
   } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
-  const [builderPos, setBuilderPos] = useState({ x: 0, y: 0 });
-  const [builderFacing, setBuilderFacing] = useState<"left" | "right">("right");
+  const [builderPath, setBuilderPath] = useState<Vec2[]>([INITIAL_BUILDER_POS]);
+  const [lastReachedIndex, setLastReachedIndex] = useState(0);
   const [builderState, setBuilderState] = useState<BuilderState>({
     kind: "idle",
   });
@@ -56,6 +59,8 @@ export function HedgemonyMapView() {
   const buildingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spawnHogletOpen = useSpawnDialogStore((s) => s.spawnHogletOpen);
   const closeSpawnHoglet = useSpawnDialogStore((s) => s.closeSpawnHoglet);
+
+  const builderPos: Vec2 = builderPath[lastReachedIndex] ?? INITIAL_BUILDER_POS;
 
   useEffect(() => {
     return initializeNestStore();
@@ -153,21 +158,30 @@ export function HedgemonyMapView() {
   }, []);
 
   const startWalk = useCallback(
-    (target: { x: number; y: number }, onArrive: "idle" | "build") => {
+    (target: Vec2, onArrive: "idle" | "build") => {
       if (buildingTimerRef.current) {
         clearTimeout(buildingTimerRef.current);
         buildingTimerRef.current = null;
       }
-      if (target.x === builderPos.x && target.y === builderPos.y) {
+      const from = builderPath[lastReachedIndex] ?? INITIAL_BUILDER_POS;
+      const obstacles: Obstacle[] = nests.map((nest) => ({
+        x: nest.mapX,
+        y: nest.mapY,
+        radius: NEST_OBSTACLE_RADIUS,
+      }));
+      const path = findPath(from, target, obstacles);
+      if (path.length < 2) {
+        setBuilderPath(path.length === 1 ? path : [from]);
+        setLastReachedIndex(0);
         if (onArrive === "build") enterBuilding();
         else setBuilderState({ kind: "idle" });
         return;
       }
-      setBuilderFacing(target.x >= builderPos.x ? "right" : "left");
-      setBuilderPos(target);
+      setBuilderPath(path);
+      setLastReachedIndex(0);
       setBuilderState({ kind: "walking", onArrive });
     },
-    [builderPos.x, builderPos.y, enterBuilding],
+    [builderPath, lastReachedIndex, nests, enterBuilding],
   );
 
   const handleBuilderArrive = useCallback(() => {
@@ -180,6 +194,10 @@ export function HedgemonyMapView() {
       return { kind: "idle" };
     });
   }, [enterBuilding]);
+
+  const handleBuilderSegmentComplete = useCallback((index: number) => {
+    setLastReachedIndex(index);
+  }, []);
 
   const handleMapClick = (x: number, y: number) => {
     if (relocatingNestId) {
@@ -276,11 +294,10 @@ export function HedgemonyMapView() {
         nests={nests}
         selectedNestId={activeNest?.id ?? null}
         relocatingNestId={relocatingNestId}
-        builderX={builderPos.x}
-        builderY={builderPos.y}
+        builderPath={builderPath}
+        builderPos={builderPos}
         builderSelected={builderSelected}
         builderAnimation={builderAnimation}
-        builderFacing={builderFacing}
         buildMode={buildMode}
         moveMarker={moveMarker}
         commandPath={commandPath}
@@ -294,6 +311,7 @@ export function HedgemonyMapView() {
         onNestSelect={(nest) => setSelection({ type: "nest", id: nest.id })}
         onBuilderSelect={() => setSelection({ type: "builder" })}
         onBuilderArrive={handleBuilderArrive}
+        onBuilderSegmentComplete={handleBuilderSegmentComplete}
       />
       {activeNest && (
         <NestDetailPanel

@@ -8,6 +8,7 @@ import {
   HEDGEMONY_ZOOM_MIN,
   useHedgemonyViewStore,
 } from "../stores/hedgemonyViewStore";
+import type { Vec2 } from "../utils/pathfinding";
 import { BgmControl } from "./BgmControl";
 import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
 import { NestSprite } from "./NestSprite";
@@ -36,11 +37,10 @@ interface HedgemonyMapSurfaceProps {
   nests: Nest[];
   selectedNestId: string | null;
   relocatingNestId: string | null;
-  builderX: number;
-  builderY: number;
+  builderPath: Vec2[];
+  builderPos: Vec2;
   builderSelected: boolean;
   builderAnimation: BuilderAnimation;
-  builderFacing: "left" | "right";
   buildMode: boolean;
   moveMarker: MoveMarker | null;
   commandPath: CommandPath | null;
@@ -53,17 +53,17 @@ interface HedgemonyMapSurfaceProps {
   onNestSelect?: (nest: Nest) => void;
   onBuilderSelect?: () => void;
   onBuilderArrive?: () => void;
+  onBuilderSegmentComplete?: (reachedIndex: number) => void;
 }
 
 export function HedgemonyMapSurface({
   nests,
   selectedNestId,
   relocatingNestId,
-  builderX,
-  builderY,
+  builderPath,
+  builderPos,
   builderSelected,
   builderAnimation,
-  builderFacing,
   buildMode,
   moveMarker,
   commandPath,
@@ -74,6 +74,7 @@ export function HedgemonyMapSurface({
   onNestSelect,
   onBuilderSelect,
   onBuilderArrive,
+  onBuilderSegmentComplete,
 }: HedgemonyMapSurfaceProps) {
   const panX = useHedgemonyViewStore((s) => s.panX);
   const panY = useHedgemonyViewStore((s) => s.panY);
@@ -120,8 +121,8 @@ export function HedgemonyMapSurface({
     const points =
       nests.length > 0
         ? nests.map((nest) => ({ x: nest.mapX, y: nest.mapY }))
-        : [{ x: builderX, y: builderY }];
-    if (nests.length > 0) points.push({ x: builderX, y: builderY });
+        : [{ x: builderPos.x, y: builderPos.y }];
+    if (nests.length > 0) points.push({ x: builderPos.x, y: builderPos.y });
 
     const minX = Math.min(...points.map((point) => point.x));
     const maxX = Math.max(...points.map((point) => point.x));
@@ -146,7 +147,7 @@ export function HedgemonyMapSurface({
       centerOnWorldPoint(selectedNest.mapX, selectedNest.mapY);
       return;
     }
-    if (builderSelected) centerOnWorldPoint(builderX, builderY);
+    if (builderSelected) centerOnWorldPoint(builderPos.x, builderPos.y);
   };
 
   const handleResetView = () => {
@@ -283,13 +284,12 @@ export function HedgemonyMapSurface({
           />
         ))}
         <BuilderSprite
-          x={builderX}
-          y={builderY}
+          path={builderPath}
           selected={builderSelected}
           animation={builderAnimation}
-          facing={builderFacing}
           onSelect={onBuilderSelect}
           onArrive={onBuilderArrive}
+          onSegmentComplete={onBuilderSegmentComplete}
         />
         {placementMode && placementPointer && (
           <div

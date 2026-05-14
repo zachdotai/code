@@ -1,9 +1,17 @@
 import { Tooltip } from "@radix-ui/themes";
-import { motion } from "framer-motion";
+import {
+  type AnimationPlaybackControls,
+  animate,
+  motion,
+  useMotionValue,
+} from "framer-motion";
+import { useEffect, useState } from "react";
+import type { Vec2 } from "../utils/pathfinding";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 
 const SPRITE_SIZE = 72;
 const SELECTION_RING_SIZE = SPRITE_SIZE + 18;
+const SPEED = 150;
 
 export type BuilderAnimation = "idle" | "walking" | "building";
 
@@ -20,31 +28,91 @@ const ANIMATION_FPS: Record<BuilderAnimation, number> = {
 };
 
 interface BuilderSpriteProps {
-  x: number;
-  y: number;
+  path: Vec2[];
   selected?: boolean;
   animation: BuilderAnimation;
-  facing: "left" | "right";
   onSelect?: () => void;
   onArrive?: () => void;
+  onSegmentComplete?: (reachedIndex: number) => void;
 }
 
 export function BuilderSprite({
-  x,
-  y,
+  path,
   selected,
   animation,
-  facing,
   onSelect,
   onArrive,
+  onSegmentComplete,
 }: BuilderSpriteProps) {
+  const initial = path[0] ?? { x: 0, y: 0 };
+  const motionX = useMotionValue(initial.x);
+  const motionY = useMotionValue(initial.y);
+  const [facing, setFacing] = useState<"left" | "right">("right");
+
+  useEffect(() => {
+    if (path.length === 0) return;
+    if (path.length === 1) {
+      motionX.set(path[0].x);
+      motionY.set(path[0].y);
+      const fire = onArrive;
+      if (fire) queueMicrotask(fire);
+      return;
+    }
+
+    let cancelled = false;
+    let index = 0;
+    let xControls: AnimationPlaybackControls | null = null;
+    let yControls: AnimationPlaybackControls | null = null;
+
+    const runSegment = () => {
+      if (cancelled) return;
+      const from = path[index];
+      const to = path[index + 1];
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      if (dx > 0) setFacing("right");
+      else if (dx < 0) setFacing("left");
+      const dist = Math.hypot(dx, dy);
+      if (dist < 0.01) {
+        advance();
+        return;
+      }
+      const duration = dist / SPEED;
+      xControls = animate(motionX, to.x, { duration, ease: "linear" });
+      yControls = animate(motionY, to.y, {
+        duration,
+        ease: "linear",
+        onComplete: () => {
+          if (cancelled) return;
+          advance();
+        },
+      });
+    };
+
+    const advance = () => {
+      if (cancelled) return;
+      index += 1;
+      onSegmentComplete?.(index);
+      if (index >= path.length - 1) {
+        onArrive?.();
+        return;
+      }
+      runSegment();
+    };
+
+    runSegment();
+
+    return () => {
+      cancelled = true;
+      xControls?.stop();
+      yControls?.stop();
+    };
+  }, [path, motionX, motionY, onArrive, onSegmentComplete]);
+
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
-      initial={false}
-      animate={{ x, y }}
-      transition={{ type: "spring", damping: 24, stiffness: 90, mass: 0.7 }}
-      onAnimationComplete={() => onArrive?.()}
+      style={{ x: motionX, y: motionY }}
     >
       <Tooltip content="Builder hedgehog · click to select" side="bottom">
         <motion.button
