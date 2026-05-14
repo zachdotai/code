@@ -44,7 +44,6 @@ export default function TabsLayout() {
         <Stack.Screen name="tasks" />
         <Stack.Screen name="inbox" />
         <Stack.Screen name="automations" />
-        <Stack.Screen name="settings" />
         <Stack.Screen name="index" />
       </Stack>
       <NavDrawer />

@@ -81,15 +81,15 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
       {/* Tinder-style inbox review */}
       <Stack.Screen name="review" options={{ headerShown: false }} />
 
-      {/* Report detail - modal presentation */}
+      {/* Settings — pushed on top of whatever the user was viewing, so
+          back / iOS swipe-back / Android hardware-back all return to it. */}
+      <Stack.Screen name="settings/index" options={{ headerShown: false }} />
+
+      {/* Report detail - modal presentation, no native header
+          (the in-content title block is the canonical header). */}
       <Stack.Screen
         name="report/[id]"
-        options={{
-          presentation: "modal",
-          headerShown: true,
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.gray[12],
-        }}
+        options={{ presentation: "modal", headerShown: false }}
       />
 
       {/* Task routes - modal presentation, no native header. */}
@@ -135,7 +135,15 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
 }
 
 export default function RootLayout() {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme, setColorScheme } = useColorScheme();
+  const themePreference = usePreferencesStore((s) => s.theme);
+
+  // Sync the user's theme preference into NativeWind's color scheme so the
+  // entire app honours it (including light/dark/system).
+  useEffect(() => {
+    setColorScheme(themePreference);
+  }, [themePreference, setColorScheme]);
+
   const themeVars = colorScheme === "dark" ? darkTheme : lightTheme;
   const { isConnected } = useNetworkStatus();
 

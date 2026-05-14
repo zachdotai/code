@@ -29,6 +29,7 @@ import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useVoiceRecording } from "@/features/chat";
+import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
 import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
@@ -164,7 +165,15 @@ export default function NewTaskScreen() {
     },
     [setLastRepository],
   );
-  const [mode, setMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE);
+  const [mode, setMode] = useState<ExecutionMode>(() => {
+    const prefs = usePreferencesStore.getState();
+    if (prefs.defaultInitialTaskMode === "last_used") {
+      const last = prefs.lastNewTaskMode;
+      const isValidMode = EXECUTION_MODES.some((m) => m.value === last);
+      if (isValidMode) return last as ExecutionMode;
+    }
+    return DEFAULT_EXECUTION_MODE;
+  });
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
   const [reasoning, setReasoning] =
     useState<ReasoningEffort>(DEFAULT_REASONING);
@@ -583,7 +592,11 @@ export default function NewTaskScreen() {
         open={modeSheetOpen}
         title="Execution mode"
         value={mode}
-        onChange={(value) => setMode(value as ExecutionMode)}
+        onChange={(value) => {
+          const next = value as ExecutionMode;
+          setMode(next);
+          usePreferencesStore.getState().setLastNewTaskMode(next);
+        }}
         onClose={() => setModeSheetOpen(false)}
         options={EXECUTION_MODES.map((executionMode) => ({
           value: executionMode.value,
