@@ -59,6 +59,7 @@ import {
 } from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { DyingHogletLayer } from "./DyingHogletLayer";
+import { DyingNestLayer } from "./DyingNestLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHotkeyHelper } from "./HedgemonyHotkeyHelper";
 import {
@@ -1008,6 +1009,7 @@ export function HedgemonyMapView() {
           onHogletSelect={handleHogletSelect}
         />
         <DyingHogletLayer />
+        <DyingNestLayer />
       </HedgemonyMapSurface>
       <AnimatePresence>
         {activeNest && (

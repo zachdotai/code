@@ -212,10 +212,10 @@ export function NestDetailPanel({
     setArchiving(true);
     setError(null);
     try {
-      const archived = await trpcClient.hedgemony.nests.archive.mutate({
+      await trpcClient.hedgemony.nests.archive.mutate({
         id: nest.id,
       });
-      useNestStore.getState().remove(archived.id);
+      useNestStore.getState().startDying(nest.id, nest.mapX, nest.mapY);
       onClose();
     } catch (e) {
       log.error("Failed to archive nest", { id: nest.id, error: e });

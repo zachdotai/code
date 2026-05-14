@@ -35,6 +35,7 @@ export const HEDGEHOG_ANIMATIONS = {
   fall: "skins/default/fall/tile",
   death: "skins/default/death/tile",
   ghost: "skins/ghost/idle/tile",
+  fire: "overlays/fire/tile",
   idleRobo: "skins/robohog/idle/tile",
   walkRobo: "skins/robohog/walk/tile",
   waveRobo: "skins/robohog/wave/tile",
