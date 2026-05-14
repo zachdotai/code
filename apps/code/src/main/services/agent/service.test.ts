@@ -220,6 +220,11 @@ describe("AgentService", () => {
       deps.bundledResources as never,
       deps.appMeta as never,
       deps.storagePaths as never,
+      {
+        list: async () => [],
+        get: async () => "",
+        getRoot: () => "",
+      } as never,
     );
   });
 

@@ -43,6 +43,7 @@ export function ChatConversation({ chatId }: ChatConversationProps) {
     session,
     repoPath: repoPath ?? null,
     isCloud: false,
+    isChat: true,
   });
 
   const {

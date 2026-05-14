@@ -67,7 +67,6 @@ interface ViewState {
     | "archived"
     | "command-center"
     | "skills"
-    | "memory"
     | "mcp-servers"
     | "setup";
   data?: Task;

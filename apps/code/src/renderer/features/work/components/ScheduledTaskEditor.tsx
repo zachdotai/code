@@ -83,8 +83,8 @@ function applyEditOverride(base: Draft, override: PendingEditDraft): Draft {
 
 export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const showList = useNavigationStore((s) => s.navigateToWorkScheduledList);
-  const navigateToMcpServers = useNavigationStore(
-    (s) => s.navigateToMcpServers,
+  const navigateToWorkDataSources = useNavigationStore(
+    (s) => s.navigateToWorkDataSources,
   );
   const consumePendingCreateDraft = useWorkStore(
     (s) => s.consumePendingCreateDraft,
@@ -163,34 +163,37 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const missingFields = !nameTrimmed || !promptTrimmed || !parsedSchedule;
   const canSave = !missingFields && !isSaving;
 
-  const handleConnectMore = useCallback(() => {
-    if (isEditing && existing) {
-      setPendingEditDraft({
-        id: existing.id,
-        name: draft.name,
-        prompt: draft.promptBody,
-        sources: draft.sources,
-        scheduleText: draft.scheduleText,
-        enabled: draft.enabled,
-      });
-    } else {
-      setPendingCreateDraft({
-        name: draft.name,
-        prompt: draft.promptBody,
-        sources: draft.sources,
-        scheduleText: draft.scheduleText,
-        enabled: draft.enabled,
-      });
-    }
-    navigateToMcpServers();
-  }, [
-    isEditing,
-    existing,
-    draft,
-    setPendingEditDraft,
-    setPendingCreateDraft,
-    navigateToMcpServers,
-  ]);
+  const handleConfigureSource = useCallback(
+    (_sourceId: string) => {
+      if (isEditing && existing) {
+        setPendingEditDraft({
+          id: existing.id,
+          name: draft.name,
+          prompt: draft.promptBody,
+          sources: draft.sources,
+          scheduleText: draft.scheduleText,
+          enabled: draft.enabled,
+        });
+      } else {
+        setPendingCreateDraft({
+          name: draft.name,
+          prompt: draft.promptBody,
+          sources: draft.sources,
+          scheduleText: draft.scheduleText,
+          enabled: draft.enabled,
+        });
+      }
+      navigateToWorkDataSources();
+    },
+    [
+      isEditing,
+      existing,
+      draft,
+      setPendingEditDraft,
+      setPendingCreateDraft,
+      navigateToWorkDataSources,
+    ],
+  );
 
   const headerContent = useMemo(
     () => (
@@ -278,11 +281,11 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const handleRunNow = async () => {
     if (!isEditing) return;
     try {
-      await runScheduledTaskNow.mutateAsync(existing.id);
-      toast.success("Running now — opening the task to follow along");
-      // After the run is triggered the automation row gets new last_task_id /
-      // last_task_run_id values on the next refetch. We don't deep-link
-      // immediately because the task may take a moment to appear in cache.
+      const updated = await runScheduledTaskNow.mutateAsync(existing.id);
+      toast.success("Running now");
+      if (updated.last_task_id) {
+        await openLastRun(updated.last_task_id, updated.last_task_run_id);
+      }
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to run scheduled task",
@@ -392,7 +395,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
             <SourcesPicker
               value={draft.sources}
               onChange={(sources) => setDraft((d) => ({ ...d, sources }))}
-              onConnectMore={handleConnectMore}
+              onConfigureSource={handleConfigureSource}
             />
 
             {isEditing && (

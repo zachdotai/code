@@ -215,6 +215,7 @@ export interface ConnectParams {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+  isChat?: boolean;
 }
 
 // --- Singleton Service Instance ---
@@ -338,6 +339,7 @@ export class SessionService {
       adapter,
       model,
       reasoningLevel,
+      isChat,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
     const taskTitle = task.title || task.description || "Task";
@@ -389,7 +391,9 @@ export class SessionService {
         }
 
         const [workspaceResult, logResult] = await Promise.all([
-          trpcClient.workspace.verify.query({ taskId }),
+          isChat
+            ? Promise.resolve({ exists: true as const })
+            : trpcClient.workspace.verify.query({ taskId }),
           this.fetchSessionLogs(latestRun.log_url, latestRun.id),
         ]);
 

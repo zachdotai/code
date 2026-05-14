@@ -21,8 +21,7 @@ type ViewType =
   | "command-center"
   | "skills"
   | "mcp-servers"
-  | "setup"
-  | "memory";
+  | "setup";
 
 export interface TaskInputReportAssociation {
   reportId: string;
@@ -44,10 +43,13 @@ export type WorkView =
   | "skill-detail"
   | "library"
   | "scheduled-list"
+  | "scheduled-create-prompt"
   | "scheduled-edit"
   | "data-sources"
   | "projects"
-  | "project-detail";
+  | "project-detail"
+  | "memory"
+  | "task-detail";
 
 export type ChatView = "home" | "conversation";
 
@@ -71,16 +73,20 @@ interface NavigationStore {
   workSelectedSkillId?: string;
   workScheduledEditId?: string;
   workSelectedProjectId?: string;
+  workTaskDetailTask?: Task;
   navigateToWorkHome: () => void;
   navigateToWorkGenerate: () => void;
   navigateToWorkSkill: (skillId: string) => void;
   navigateToWorkLibrary: () => void;
   navigateToWorkScheduledList: () => void;
+  navigateToWorkScheduledCreatePrompt: () => void;
   navigateToWorkScheduledCreate: () => void;
   navigateToWorkScheduledEdit: (scheduledId: string) => void;
   navigateToWorkDataSources: () => void;
+  navigateToWorkMemory: () => void;
   navigateToWorkProjects: () => void;
   navigateToWorkProjectDetail: (projectId: string) => void;
+  navigateToWorkTaskDetail: (task: Task) => void;
   chatView: ChatView;
   activeChatId: string | null;
   navigateToChatHome: () => void;
@@ -103,7 +109,6 @@ interface NavigationStore {
   navigateToArchived: () => void;
   navigateToCommandCenter: () => void;
   navigateToSkills: () => void;
-  navigateToMemory: () => void;
   navigateToMcpServers: () => void;
   navigateToSetup: () => void;
   goBack: () => void;
@@ -137,9 +142,6 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
     return true;
   }
   if (view1.type === "skills" && view2.type === "skills") {
-    return true;
-  }
-  if (view1.type === "memory" && view2.type === "memory") {
     return true;
   }
   if (view1.type === "mcp-servers" && view2.type === "mcp-servers") {
@@ -205,6 +207,12 @@ export const useNavigationStore = create<NavigationStore>()(
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
           }),
+        navigateToWorkScheduledCreatePrompt: () =>
+          set({
+            workView: "scheduled-create-prompt",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+          }),
         navigateToWorkScheduledCreate: () =>
           set({
             workView: "scheduled-edit",
@@ -223,6 +231,12 @@ export const useNavigationStore = create<NavigationStore>()(
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
           }),
+        navigateToWorkMemory: () =>
+          set({
+            workView: "memory",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+          }),
         navigateToWorkProjects: () =>
           set({
             workView: "projects",
@@ -236,6 +250,13 @@ export const useNavigationStore = create<NavigationStore>()(
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workSelectedProjectId: projectId,
+          }),
+        navigateToWorkTaskDetail: (task: Task) =>
+          set({
+            workView: "task-detail",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+            workTaskDetailTask: task,
           }),
         chatView: "home",
         activeChatId: null,
@@ -430,10 +451,6 @@ export const useNavigationStore = create<NavigationStore>()(
           navigate({ type: "skills" });
         },
 
-        navigateToMemory: () => {
-          navigate({ type: "memory" });
-        },
-
         navigateToMcpServers: () => {
           navigate({ type: "mcp-servers" });
         },
@@ -493,7 +510,14 @@ export const useNavigationStore = create<NavigationStore>()(
       partialize: (state) => ({
         mode: state.mode,
         workOnboardingSkipped: state.workOnboardingSkipped,
-        workView: state.workView,
+        // task-detail and scheduled-create-prompt are transient — they depend
+        // on in-memory state (workTaskDetailTask, pendingCreateDraft) we don't
+        // persist. Roll them back to the closest list view on reload.
+        workView:
+          state.workView === "task-detail" ||
+          state.workView === "scheduled-create-prompt"
+            ? "scheduled-list"
+            : state.workView,
         workSelectedSkillId: state.workSelectedSkillId,
         workScheduledEditId: state.workScheduledEditId,
         workSelectedProjectId: state.workSelectedProjectId,

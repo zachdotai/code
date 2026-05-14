@@ -51,6 +51,7 @@ import { LlmGatewayService } from "../services/llm-gateway/service";
 import { McpAppsService } from "../services/mcp-apps/service";
 import { McpCallbackService } from "../services/mcp-callback/service";
 import { McpProxyService } from "../services/mcp-proxy/service";
+import { MemoryService } from "../services/memory/service";
 import { NotificationService } from "../services/notification/service";
 import { OAuthService } from "../services/oauth/service";
 import { PosthogPluginService } from "../services/posthog-plugin/service";
@@ -142,5 +143,6 @@ container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);
 container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
+container.bind(MAIN_TOKENS.MemoryService).to(MemoryService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

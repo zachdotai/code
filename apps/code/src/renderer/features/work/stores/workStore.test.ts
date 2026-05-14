@@ -60,7 +60,9 @@ describe("workStore", () => {
       name: "in-flight",
       sources: ["src"],
     });
-    expect(useWorkStore.getState().consumePendingEditDraft("task-2")).toBeNull();
+    expect(
+      useWorkStore.getState().consumePendingEditDraft("task-2"),
+    ).toBeNull();
     expect(useWorkStore.getState().pendingEditDraft).not.toBeNull();
     expect(useWorkStore.getState().consumePendingEditDraft("task-1")).toEqual({
       id: "task-1",

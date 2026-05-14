@@ -31,7 +31,7 @@ const STATIC_ITEMS: WorkSidebarItemSpec[] = [
   },
   { icon: Notebook, label: "Artifacts" },
   { icon: Plugs, label: "Data sources" },
-  { icon: Brain, label: "Memory" },
+  { icon: Brain, label: "Memory", workView: "memory" },
 ];
 
 export function WorkSidebarMenu() {
@@ -52,14 +52,20 @@ export function WorkSidebarMenu() {
   const navigateToWorkProjects = useNavigationStore(
     (s) => s.navigateToWorkProjects,
   );
+  const navigateToWorkMemory = useNavigationStore(
+    (s) => s.navigateToWorkMemory,
+  );
 
   const isHomeActive = workView === "home";
   const isGenerateActive = workView === "generate";
   const isLibraryActive = workView === "library";
   const isScheduledActive =
-    workView === "scheduled-list" || workView === "scheduled-edit";
+    workView === "scheduled-list" ||
+    workView === "scheduled-create-prompt" ||
+    workView === "scheduled-edit";
   const isDataSourcesActive = workView === "data-sources";
   const isProjectsActive = workView === "projects";
+  const isMemoryActive = workView === "memory";
 
   return (
     <Box height="100%" position="relative">
@@ -78,17 +84,21 @@ export function WorkSidebarMenu() {
             const isScheduled = item.workView === "scheduled-section";
             const isDataSources = item.label === "Data sources";
             const isProjects = item.label === "Projects";
+            const isMemory = item.workView === "memory";
             const isActive =
               (isScheduled && isScheduledActive) ||
               (isDataSources && isDataSourcesActive) ||
-              (isProjects && isProjectsActive);
+              (isProjects && isProjectsActive) ||
+              (isMemory && isMemoryActive);
             const onClick = isScheduled
               ? navigateToWorkScheduledList
               : isDataSources
                 ? navigateToWorkDataSources
                 : isProjects
                   ? navigateToWorkProjects
-                  : undefined;
+                  : isMemory
+                    ? navigateToWorkMemory
+                    : undefined;
             return (
               <Box key={item.label}>
                 <SidebarItem
