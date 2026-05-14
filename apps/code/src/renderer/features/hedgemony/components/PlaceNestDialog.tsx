@@ -1,5 +1,6 @@
 import type {
   GoalDraftTranscriptMessage,
+  GoalSpecBootstrapContext,
   GoalSpecDraft,
   Nest,
 } from "@main/services/hedgemony/schemas";
@@ -155,6 +156,12 @@ export function PlaceNestDialog({
       const effectiveName = simpleMode
         ? suggestName(trimmedGoalPrompt)
         : name.trim();
+
+      const creationBootstrap =
+        !simpleMode && draft?.bootstrapContext
+          ? draft.bootstrapContext
+          : undefined;
+
       const creationTranscript = simpleMode
         ? buildSimpleTranscript({ goalPrompt: trimmedGoalPrompt })
         : transcript;
@@ -167,6 +174,7 @@ export function PlaceNestDialog({
         mapY: roundedMapY,
         creationMode: simpleMode ? "simple" : "guided",
         creationTranscript,
+        creationBootstrap,
       });
       onCreated?.(created);
       onClose();
@@ -412,15 +420,20 @@ function GoalDraftFlow({
       )}
 
       {draft && (
-        <SpecFields
-          name={name}
-          goalPrompt={goalPrompt}
-          definitionOfDone={definitionOfDone}
-          disabled={submitting}
-          onNameChange={onNameChange}
-          onGoalPromptChange={onGoalPromptChange}
-          onDefinitionOfDoneChange={onDefinitionOfDoneChange}
-        />
+        <>
+          {draft.bootstrapContext && (
+            <BootstrapContextPanel context={draft.bootstrapContext} />
+          )}
+          <SpecFields
+            name={name}
+            goalPrompt={goalPrompt}
+            definitionOfDone={definitionOfDone}
+            disabled={submitting}
+            onNameChange={onNameChange}
+            onGoalPromptChange={onGoalPromptChange}
+            onDefinitionOfDoneChange={onDefinitionOfDoneChange}
+          />
+        </>
       )}
     </>
   );
@@ -504,6 +517,27 @@ function SpecFields({
         />
       </LabeledField>
     </Flex>
+  );
+}
+
+function BootstrapContextPanel({
+  context,
+}: {
+  context: GoalSpecBootstrapContext;
+}) {
+  const repositories =
+    context.repositories.length > 0
+      ? context.repositories.join(", ")
+      : "from the goal text";
+  return (
+    <div className="rounded-(--radius-2) border border-(--accent-5) bg-(--accent-2) px-3 py-2 text-(--accent-12)">
+      <Text size="1" weight="medium" className="block">
+        Local bootstrap
+      </Text>
+      <Text size="2" className="block">
+        {repositories}
+      </Text>
+    </div>
   );
 }
 

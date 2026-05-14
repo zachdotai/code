@@ -6,8 +6,10 @@ import type { NestChatService } from "../../services/hedgemony/nest-chat-service
 import type { NestService } from "../../services/hedgemony/nest-service";
 import {
   adoptHogletInput,
+  completeNestInput,
   createNestInput,
   dismissSignalHogletInput,
+  forgetCompletedNestContextInput,
   goalDraftRespondInput,
   goalDraftResponse,
   HedgemonyEvent,
@@ -20,7 +22,9 @@ import {
   listNestsOutput,
   nest,
   nestIdInput,
+  nestMessage,
   recordAdhocHogletInput,
+  recordBootstrapHandoffInput,
   recordSignalBackedHogletInput,
   releaseHogletInput,
   updateNestInput,
@@ -67,6 +71,16 @@ export const hedgemonyRouter = router({
       .output(nest)
       .mutation(({ input }) => getService().archive(input)),
 
+    complete: publicProcedure
+      .input(completeNestInput)
+      .output(nest)
+      .mutation(({ input }) => getService().complete(input)),
+
+    forgetCompletedContext: publicProcedure
+      .input(forgetCompletedNestContextInput)
+      .output(nest)
+      .mutation(({ input }) => getService().forgetCompletedContext(input)),
+
     unarchive: publicProcedure
       .input(nestIdInput)
       .output(nest)
@@ -96,6 +110,13 @@ export const hedgemonyRouter = router({
       .input(listNestChatInput)
       .output(listNestChatOutput)
       .query(({ input }) => getNestChatService().list(input)),
+
+    recordBootstrapHandoff: publicProcedure
+      .input(recordBootstrapHandoffInput)
+      .output(nestMessage)
+      .mutation(({ input }) =>
+        getNestChatService().recordBootstrapHandoff(input),
+      ),
   }),
   hoglets: router({
     recordAdhoc: publicProcedure

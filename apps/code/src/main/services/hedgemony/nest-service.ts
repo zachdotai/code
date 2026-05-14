@@ -1,11 +1,17 @@
 import { inject, injectable } from "inversify";
 import type { NestRepository } from "../../db/repositories/nest-repository";
+import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
+import type { FoldersService } from "../folders/service";
+import type { GitService } from "../git/service";
+import { buildLocalBootstrapHandoff } from "./local-bootstrap-handoff";
 import type { NestChatService } from "./nest-chat-service";
 import {
+  type CompleteNestInput,
   type CreateNestInput,
+  type ForgetCompletedNestContextInput,
   HedgemonyEvent,
   type HedgemonyEvents,
   type Nest,
@@ -23,6 +29,12 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     private readonly nests: NestRepository,
     @inject(MAIN_TOKENS.NestChatService)
     private readonly nestChat: NestChatService,
+    @inject(MAIN_TOKENS.RepositoryRepository)
+    private readonly repositories: RepositoryRepository,
+    @inject(MAIN_TOKENS.GitService)
+    private readonly git: GitService,
+    @inject(MAIN_TOKENS.FoldersService)
+    private readonly folders: FoldersService,
   ) {
     super();
   }
@@ -39,7 +51,7 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     return found;
   }
 
-  create(input: CreateNestInput): Nest {
+  async create(input: CreateNestInput): Promise<Nest> {
     const created = this.nests.create({
       name: input.name,
       goalPrompt: input.goalPrompt,
@@ -48,6 +60,27 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
       mapY: input.mapY,
     });
     this.nestChat.recordCreationContext(created, input);
+    if (input.creationBootstrap) {
+      this.nestChat.recordBootstrapHandoff(
+        await buildLocalBootstrapHandoff(
+          created.id,
+          input.creationBootstrap,
+          this.repositories.findAll(),
+          {
+            cloneRepository: (repoUrl, targetPath) =>
+              this.git
+                .cloneRepository(
+                  repoUrl,
+                  targetPath,
+                  `hedgemony-bootstrap-${created.id}`,
+                )
+                .then(() => undefined),
+            registerFolder: (folderPath, remoteUrl) =>
+              this.folders.addFolder(folderPath, { remoteUrl }),
+          },
+        ),
+      );
+    }
     log.info("Nest created", { id: created.id, name: created.name });
     this.emitChange(created, { kind: "status", nest: created });
     return created;
@@ -71,6 +104,40 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     log.info("Nest archived", { id: archived.id });
     this.emitChange(archived, { kind: "archived", nest: archived });
     return archived;
+  }
+
+  complete(input: CompleteNestInput): Nest {
+    const existing = this.nests.findById(input.id);
+    if (!existing) {
+      throw new Error(`Nest not found: ${input.id}`);
+    }
+    if (existing.status === "archived") {
+      throw new Error("archived_nest_cannot_complete");
+    }
+
+    const completed = this.nests.update(input.id, { status: "dormant" });
+    if (!completed) {
+      throw new Error(`Nest not found: ${input.id}`);
+    }
+    this.nestChat.recordCompletionContext(completed, input);
+    log.info("Nest completed", { id: completed.id });
+    this.emitChange(completed, { kind: "completed", nest: completed });
+    return completed;
+  }
+
+  forgetCompletedContext(input: ForgetCompletedNestContextInput): Nest {
+    const nest = this.nests.findById(input.id);
+    if (!nest) {
+      throw new Error(`Nest not found: ${input.id}`);
+    }
+    if (nest.status !== "dormant") {
+      throw new Error("nest_must_be_dormant_to_forget_context");
+    }
+
+    this.nestChat.forgetCompletedContext(nest, input);
+    log.info("Completed nest context forgotten", { id: nest.id });
+    this.emitChange(nest, { kind: "status", nest });
+    return nest;
   }
 
   unarchive(input: NestIdInput): Nest {

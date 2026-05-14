@@ -51,6 +51,16 @@ export const goalSpecSuccessCriterion = z.object({
   text: z.string().trim().min(1),
 });
 
+export const goalSpecBootstrapContext = z.object({
+  mode: z.literal("agent_bootstrap"),
+  repositories: z.array(z.string().trim().min(1)).max(10),
+  primaryRepository: z.string().trim().min(1).nullable(),
+  prompt: z.string().trim().min(1),
+  handoffInstructions: z.string().trim().min(1),
+  taskId: z.string().trim().min(1).optional(),
+});
+export type GoalSpecBootstrapContext = z.infer<typeof goalSpecBootstrapContext>;
+
 export const goalSpecDraftCore = z.object({
   name: z.string().trim().min(1).max(120),
   summary: z.string().trim().min(1),
@@ -65,6 +75,7 @@ export const goalSpecDraftCore = z.object({
 
 export const goalSpecDraft = goalSpecDraftCore.extend({
   goalPrompt: z.string().trim().min(1),
+  bootstrapContext: goalSpecBootstrapContext.optional(),
 });
 export type GoalSpecDraft = z.infer<typeof goalSpecDraft>;
 
@@ -101,6 +112,7 @@ export const createNestInput = z.object({
   mapY: z.number().int(),
   creationMode: z.enum(["guided", "simple"]).optional(),
   creationTranscript: z.array(goalDraftTranscriptMessage).max(16).optional(),
+  creationBootstrap: goalSpecBootstrapContext.optional(),
 });
 export type CreateNestInput = z.infer<typeof createNestInput>;
 
@@ -117,6 +129,34 @@ export type UpdateNestInput = z.infer<typeof updateNestInput>;
 
 export const nestIdInput = z.object({ id: z.string() });
 export type NestIdInput = z.infer<typeof nestIdInput>;
+
+export const completeNestInput = nestIdInput.extend({
+  summary: z.string().trim().min(1).max(8000),
+  prUrls: z.array(z.string().trim().min(1)).max(25).optional(),
+  taskIds: z.array(z.string().trim().min(1)).max(50).optional(),
+  caveats: z.array(z.string().trim().min(1)).max(10).optional(),
+});
+export type CompleteNestInput = z.infer<typeof completeNestInput>;
+
+export const forgetCompletedNestContextInput = nestIdInput.extend({
+  reason: z.string().trim().min(1).max(1000).optional(),
+});
+export type ForgetCompletedNestContextInput = z.infer<
+  typeof forgetCompletedNestContextInput
+>;
+
+export const recordBootstrapHandoffInput = z.object({
+  nestId: z.string().min(1),
+  taskId: z.string().min(1),
+  runId: z.string().min(1).optional(),
+  repositories: z.array(z.string().trim().min(1)).max(10),
+  primaryRepository: z.string().trim().min(1).nullable().optional(),
+  handoffMarkdown: z.string().trim().min(1).max(30000),
+  outputJson: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+export type RecordBootstrapHandoffInput = z.infer<
+  typeof recordBootstrapHandoffInput
+>;
 
 export const listNestsOutput = z.array(nest);
 
@@ -159,6 +199,7 @@ export const listNestChatOutput = z.array(nestMessage);
  */
 export const nestWatchEvent = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("status"), nest }),
+  z.object({ kind: z.literal("completed"), nest }),
   z.object({ kind: z.literal("archived"), nest }),
 ]);
 export type NestWatchEvent = z.infer<typeof nestWatchEvent>;

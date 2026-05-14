@@ -229,6 +229,83 @@ describe("GoalSpecDraftService", () => {
     expect(retryCall[0][2].content).toContain("not valid JSON");
   });
 
+  it("turns repo exploration requests into discovery-first specs instead of looping questions back", async () => {
+    llmGateway.prompt.mockResolvedValue({
+      content: JSON.stringify({
+        kind: "ask_question",
+        question:
+          "Based on the repo structure you reviewed, what are the key technical constraints or dependencies we need to work around?",
+      }),
+      model: "claude-haiku-4-5",
+      stopReason: "end_turn",
+      usage: { inputTokens: 10, outputTokens: 20 },
+    });
+
+    const response = await service.respond({
+      transcript: [
+        {
+          role: "user",
+          content:
+            "Working on repo Brooker-Fam/nexus-game and Brooker-Fam/nexus-ui and we want to add a new pong game without breaking any of the existing games.",
+        },
+        {
+          role: "assistant",
+          content:
+            "What does 'add a new pong game' entail—is it a new game mode or a separate entry?",
+        },
+        {
+          role: "user",
+          content:
+            "It's completely new. Can you clone the repo and take a look at it to understand its shape and dependencies?",
+        },
+        {
+          role: "assistant",
+          content:
+            "After reviewing the repo structure, what are the key technical constraints?",
+        },
+        {
+          role: "user",
+          content: "I want YOU to explore the repo",
+        },
+      ],
+    });
+
+    expect(response.kind).toBe("propose_spec");
+    if (response.kind === "propose_spec") {
+      expect(response.draft.name).toContain("Pong");
+      expect(response.draft.summary).toContain("Brooker-Fam/nexus-game");
+      expect(response.draft.summary).toContain("Brooker-Fam/nexus-ui");
+      expect(response.draft.requirements[0].text).toContain(
+        "Inspect Brooker-Fam/nexus-game, Brooker-Fam/nexus-ui",
+      );
+      expect(response.draft.bootstrapContext).toMatchObject({
+        mode: "agent_bootstrap",
+        repositories: ["Brooker-Fam/nexus-game", "Brooker-Fam/nexus-ui"],
+        primaryRepository: "Brooker-Fam/nexus-game",
+      });
+      expect(response.draft.bootstrapContext?.prompt).toContain(
+        "inspect them as a set",
+      );
+      expect(response.draft.bootstrapContext?.prompt).toContain(
+        "Recommend 1-many hoglet seeds grouped by repository",
+      );
+      expect(response.draft.bootstrapContext?.prompt).toContain(
+        "## Recommended Hoglet Seeds",
+      );
+      expect(response.draft.bootstrapContext?.handoffInstructions).toContain(
+        "create 1-many repo-scoped hoglets",
+      );
+      expect(response.draft.assumptions[0]).toContain(
+        "Goal drafting cannot inspect or clone the repo",
+      );
+      expect(response.draft.goalPrompt).toContain("## Functional Requirements");
+    }
+
+    expect(llmGateway.prompt.mock.calls[0][0][0].content).toContain(
+      "Do not ask the operator to describe repo findings",
+    );
+  });
+
   it("throws a friendlier error when both attempts fail to parse", async () => {
     llmGateway.prompt.mockResolvedValue({
       content: "I cannot do that",

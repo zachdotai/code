@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { hedgemonyNestMessages } from "../schema";
@@ -23,8 +23,16 @@ export interface CreateNestMessageData {
   payloadJson?: string | null;
 }
 
+export interface CompactNestContextResult {
+  deletedDetailMessages: number;
+  compactedContextMessages: number;
+}
+
 const byNestId = (nestId: string) => eq(hedgemonyNestMessages.nestId, nestId);
 const now = () => new Date().toISOString();
+
+const COMPACTED_CONTEXT_BODY =
+  "Earlier nest context was compacted after completion. The nest goal, definition of done, completion summary, task handles, and PR handles remain available.";
 
 @injectable()
 export class NestMessageRepository {
@@ -72,5 +80,35 @@ export class NestMessageRepository {
     }
 
     return created;
+  }
+
+  compactCompletedContext(nestId: string): CompactNestContextResult {
+    const deletedDetailMessages = this.db
+      .delete(hedgemonyNestMessages)
+      .where(
+        and(byNestId(nestId), eq(hedgemonyNestMessages.visibility, "detail")),
+      )
+      .run().changes;
+
+    const compactedContextMessages = this.db
+      .update(hedgemonyNestMessages)
+      .set({
+        body: COMPACTED_CONTEXT_BODY,
+        payloadJson: null,
+        visibility: "summary",
+      })
+      .where(
+        and(
+          byNestId(nestId),
+          or(
+            eq(hedgemonyNestMessages.kind, "user_message"),
+            eq(hedgemonyNestMessages.kind, "tool_result"),
+            eq(hedgemonyNestMessages.kind, "hoglet_summary"),
+          ),
+        ),
+      )
+      .run().changes;
+
+    return { deletedDetailMessages, compactedContextMessages };
   }
 }
