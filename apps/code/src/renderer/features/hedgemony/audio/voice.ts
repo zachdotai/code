@@ -24,7 +24,6 @@ const voiceFiles = import.meta.glob<string>(
   { eager: true, query: "?url", import: "default" },
 );
 
-const REGISTRY = buildRegistry();
 const lastPlayedAt = new Map<VoiceIntent, number>();
 const lastUrl = new Map<VoiceIntent, string>();
 
@@ -116,3 +115,5 @@ function buildRegistry(): GenderedRegistry {
   }
   return out;
 }
+
+const REGISTRY = buildRegistry();
