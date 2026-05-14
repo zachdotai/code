@@ -344,21 +344,24 @@ export function WorkSkillsView() {
 
   const userCatalog = useMemo(() => getUserCatalog(), []);
 
-  // Seed defaults on first hydration — for any catalog entry flagged
-  // defaultActive that has no matching WorkSkill, add it. Safe to re-run
-  // because we no-op when a matching entry already exists.
+  // Seed defaults on first hydration only. Each defaultActive catalog entry
+  // is auto-added once and recorded in seededCatalogIds; after that the user's
+  // disable persists across navigations and restarts.
   // biome-ignore lint/correctness/useExhaustiveDependencies: seed pulls fresh store state at mount.
   useEffect(() => {
     const state = useWorkSkillsStore.getState();
     for (const catalog of userCatalog) {
       if (!catalog.defaultActive) continue;
-      if (state.skills.some((s) => s.catalogId === catalog.id)) continue;
-      state.addSkill({
-        id: newSkillId(),
-        name: catalog.title,
-        prompt: catalog.prompt,
-        catalogId: catalog.id,
-      });
+      if (state.seededCatalogIds.includes(catalog.id)) continue;
+      if (!state.skills.some((s) => s.catalogId === catalog.id)) {
+        state.addSkill({
+          id: newSkillId(),
+          name: catalog.title,
+          prompt: catalog.prompt,
+          catalogId: catalog.id,
+        });
+      }
+      state.markSeeded(catalog.id);
     }
   }, [userCatalog]);
 
