@@ -402,7 +402,7 @@ describe("GoalSpecDraftService", () => {
       content: "Sure — here you go!",
     });
     expect(retryCall[0][2].role).toBe("user");
-    expect(retryCall[0][2].content).toContain("not valid JSON");
+    expect(retryCall[0][2].content).toContain("failed validation");
     expect(retryCall[1]).toMatchObject({
       maxTokens: GOAL_DRAFT_MAX_TOKENS,
       model: GOAL_DRAFT_MODEL,
