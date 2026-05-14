@@ -3,7 +3,14 @@ import type {
   NestMessage,
   NestMessageKind,
 } from "@main/services/hedgemony/schemas";
-import { Archive, FloppyDisk, PaperPlaneRight, X } from "@phosphor-icons/react";
+import {
+  Archive,
+  ChatCircle,
+  FloppyDisk,
+  PaperPlaneRight,
+  Warning,
+  X,
+} from "@phosphor-icons/react";
 import {
   Button,
   Flex,
@@ -299,7 +306,32 @@ const KIND_ACCENT: Record<NestMessageKind, string> = {
   hoglet_summary: "text-(--gray-11)",
 };
 
+interface FeedbackRoutedPayload {
+  type: "feedback_routed";
+  source: "pr_review" | "ci" | "issue";
+  outcome: "injected" | "follow_up_spawned" | "failed";
+  payloadRef: string;
+  hogletTaskId: string;
+}
+
+function parseFeedbackRoutedPayload(
+  payloadJson: string | null,
+): FeedbackRoutedPayload | null {
+  if (!payloadJson) return null;
+  try {
+    const parsed = JSON.parse(payloadJson) as Record<string, unknown>;
+    if (parsed.type !== "feedback_routed") return null;
+    return parsed as unknown as FeedbackRoutedPayload;
+  } catch {
+    return null;
+  }
+}
+
 function NestChatMessage({ message }: { message: NestMessage }) {
+  const routed = parseFeedbackRoutedPayload(message.payloadJson);
+  if (routed) {
+    return <FeedbackRoutedMessage message={message} payload={routed} />;
+  }
   const label = KIND_LABEL[message.kind] ?? message.kind;
   const accent = KIND_ACCENT[message.kind] ?? "text-(--gray-11)";
   return (
@@ -308,6 +340,40 @@ function NestChatMessage({ message }: { message: NestMessage }) {
         <Text size="1" weight="medium" className={accent}>
           {label}
         </Text>
+        <Text size="1" color="gray">
+          {new Date(message.createdAt).toLocaleString()}
+        </Text>
+      </div>
+      <Text as="p" size="2" className="whitespace-pre-wrap text-(--gray-12)">
+        {message.body}
+      </Text>
+    </div>
+  );
+}
+
+function FeedbackRoutedMessage({
+  message,
+  payload,
+}: {
+  message: NestMessage;
+  payload: FeedbackRoutedPayload;
+}) {
+  const Icon = payload.source === "ci" ? Warning : ChatCircle;
+  const tone =
+    payload.outcome === "failed"
+      ? "border-(--orange-6) bg-(--orange-2) text-(--orange-11)"
+      : "border-(--cyan-6) bg-(--cyan-2) text-(--cyan-11)";
+  const label =
+    payload.source === "pr_review" ? "Feedback routed" : "CI failure routed";
+  return (
+    <div className={`rounded-(--radius-2) border ${tone} p-2`}>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <Flex align="center" gap="1">
+          <Icon size={12} weight="bold" />
+          <Text size="1" weight="medium">
+            {label}
+          </Text>
+        </Flex>
         <Text size="1" color="gray">
           {new Date(message.createdAt).toLocaleString()}
         </Text>

@@ -67,6 +67,7 @@ import type {
   GitSyncStatus,
   OpenPrOutput,
   PrActionType,
+  PrCheckRun,
   PrDetailsByUrlOutput,
   PrReviewComment,
   PrStatusOutput,
@@ -1147,6 +1148,74 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     } catch (error) {
       log.warn("Failed to fetch PR review comments", { prUrl, error });
       throw error;
+    }
+  }
+
+  public async getPrCheckRuns(prUrl: string): Promise<PrCheckRun[]> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return [];
+
+    const { owner, repo, number } = pr;
+
+    try {
+      const prResult = await execGh([
+        "api",
+        `repos/${owner}/${repo}/pulls/${number}`,
+        "--jq",
+        ".head.sha",
+      ]);
+
+      if (prResult.exitCode !== 0) {
+        log.warn("Failed to fetch PR head sha for check runs", {
+          prUrl,
+          error: prResult.stderr || prResult.error,
+        });
+        return [];
+      }
+
+      const headSha = prResult.stdout.trim();
+      if (!headSha) return [];
+
+      const checksResult = await execGh([
+        "api",
+        `repos/${owner}/${repo}/commits/${headSha}/check-runs`,
+        "--paginate",
+        "--slurp",
+        "--jq",
+        "[.[].check_runs[]]",
+      ]);
+
+      if (checksResult.exitCode !== 0) {
+        log.warn("Failed to fetch check runs", {
+          prUrl,
+          headSha,
+          error: checksResult.stderr || checksResult.error,
+        });
+        return [];
+      }
+
+      const rows = JSON.parse(checksResult.stdout) as Array<{
+        id: number;
+        name: string;
+        status: string;
+        conclusion: string | null;
+        head_sha: string;
+        html_url: string;
+        completed_at: string | null;
+      }>;
+
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        status: row.status as PrCheckRun["status"],
+        conclusion: row.conclusion as PrCheckRun["conclusion"],
+        headSha: row.head_sha,
+        htmlUrl: row.html_url,
+        completedAt: row.completed_at,
+      }));
+    } catch (error) {
+      log.warn("Failed to fetch PR check runs", { prUrl, error });
+      return [];
     }
   }
 

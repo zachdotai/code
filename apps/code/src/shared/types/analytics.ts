@@ -453,6 +453,7 @@ export const ANALYTICS_EVENTS = {
   HEDGEMONY_HOGLET_RELEASED: "hedgemony.hoglet_released",
   HEDGEMONY_HOGLET_INGESTED: "hedgemony.hoglet_ingested",
   HEDGEMONY_HOGLET_DISMISSED: "hedgemony.hoglet_dismissed",
+  HEDGEMONY_FEEDBACK_ROUTED: "hedgemony.feedback_routed",
 } as const;
 
 export interface HedgemonyHogletSpawnedProperties {
@@ -476,6 +477,11 @@ export interface HedgemonyHogletIngestedProperties {
 
 export interface HedgemonyHogletDismissedProperties {
   source: "signal";
+}
+
+export interface HedgemonyFeedbackRoutedProperties {
+  source: "pr_review" | "ci";
+  outcome: "injected" | "follow_up_spawned" | "failed";
 }
 
 // Event property mapping
@@ -570,4 +576,5 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED]: HedgemonyHogletReleasedProperties;
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_INGESTED]: HedgemonyHogletIngestedProperties;
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_DISMISSED]: HedgemonyHogletDismissedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED]: HedgemonyFeedbackRoutedProperties;
 };

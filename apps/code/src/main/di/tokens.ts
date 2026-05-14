@@ -38,6 +38,8 @@ export const MAIN_TOKENS = Object.freeze({
   NestMessageRepository: Symbol.for("Main.NestMessageRepository"),
   HogletRepository: Symbol.for("Main.HogletRepository"),
   HedgehogStateRepository: Symbol.for("Main.HedgehogStateRepository"),
+  FeedbackEventRepository: Symbol.for("Main.FeedbackEventRepository"),
+  PrDependencyRepository: Symbol.for("Main.PrDependencyRepository"),
 
   // Services
   AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),
@@ -87,5 +89,6 @@ export const MAIN_TOKENS = Object.freeze({
   HogletService: Symbol.for("Main.HogletService"),
   AffinityRouterService: Symbol.for("Main.AffinityRouterService"),
   HedgehogTickService: Symbol.for("Main.HedgehogTickService"),
+  FeedbackRoutingService: Symbol.for("Main.FeedbackRoutingService"),
   CloudTaskClient: Symbol.for("Main.CloudTaskClient"),
 });

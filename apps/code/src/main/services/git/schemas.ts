@@ -384,6 +384,44 @@ export const getPrReviewCommentsInput = z.object({
 });
 export const getPrReviewCommentsOutput = z.array(prReviewCommentSchema);
 
+// getPrCheckRuns schemas
+export const prCheckRunStatusSchema = z.enum([
+  "queued",
+  "in_progress",
+  "completed",
+  "waiting",
+  "requested",
+  "pending",
+]);
+
+export const prCheckRunConclusionSchema = z.enum([
+  "success",
+  "failure",
+  "neutral",
+  "cancelled",
+  "skipped",
+  "timed_out",
+  "action_required",
+  "stale",
+]);
+
+export const prCheckRunSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  status: prCheckRunStatusSchema,
+  conclusion: prCheckRunConclusionSchema.nullable(),
+  headSha: z.string(),
+  htmlUrl: z.string(),
+  completedAt: z.string().nullable(),
+});
+
+export type PrCheckRun = z.infer<typeof prCheckRunSchema>;
+
+export const getPrCheckRunsInput = z.object({
+  prUrl: z.string(),
+});
+export const getPrCheckRunsOutput = z.array(prCheckRunSchema);
+
 // replyToPrComment schemas
 export const replyToPrCommentInput = z.object({
   prUrl: z.string(),

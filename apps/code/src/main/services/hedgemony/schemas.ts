@@ -298,6 +298,74 @@ export const hogletWatchEvent = z.discriminatedUnion("kind", [
 ]);
 export type HogletWatchEvent = z.infer<typeof hogletWatchEvent>;
 
+export const feedbackEventSource = z.enum(["pr_review", "ci", "issue"]);
+export type FeedbackEventSource = z.infer<typeof feedbackEventSource>;
+
+export const feedbackEventOutcome = z.enum([
+  "injected",
+  "follow_up_spawned",
+  "failed",
+]);
+export type FeedbackEventOutcome = z.infer<typeof feedbackEventOutcome>;
+
+export const feedbackTrustTier = z.enum(["operator", "internal", "external"]);
+export type FeedbackTrustTier = z.infer<typeof feedbackTrustTier>;
+
+export const feedbackEvent = z.object({
+  id: z.string(),
+  nestId: z.string().nullable(),
+  hogletTaskId: z.string(),
+  source: feedbackEventSource,
+  payloadHash: z.string(),
+  payloadRef: z.string(),
+  trustTier: feedbackTrustTier,
+  routedOutcome: feedbackEventOutcome,
+  injectedAt: z.string(),
+});
+export type FeedbackEvent = z.infer<typeof feedbackEvent>;
+
+export const injectPromptEventPayload = z.object({
+  taskId: z.string(),
+  hogletId: z.string(),
+  nestId: z.string().nullable(),
+  source: feedbackEventSource,
+  payloadRef: z.string(),
+  payloadHash: z.string(),
+  prompt: z.string(),
+  prUrl: z.string(),
+  fallbackPrompt: z.string(),
+});
+export type InjectPromptEventPayload = z.infer<typeof injectPromptEventPayload>;
+
+export const recordRoutedFeedbackInput = z.object({
+  nestId: z.string().nullable(),
+  hogletTaskId: z.string(),
+  source: feedbackEventSource,
+  payloadHash: z.string(),
+  payloadRef: z.string(),
+  routedOutcome: feedbackEventOutcome,
+  trustTier: feedbackTrustTier.optional(),
+});
+export type RecordRoutedFeedbackInput = z.infer<
+  typeof recordRoutedFeedbackInput
+>;
+
+export const spawnFollowUpHogletInput = z.object({
+  nestId: z.string().min(1),
+  parentTaskId: z.string().min(1),
+  prompt: z.string().min(1).max(8000),
+  payloadRef: z.string().min(1),
+});
+export type SpawnFollowUpHogletInput = z.infer<typeof spawnFollowUpHogletInput>;
+
+export const listFeedbackForNestInput = z.object({
+  nestId: z.string(),
+  limit: z.number().int().min(1).max(100).default(50),
+});
+export type ListFeedbackForNestInput = z.infer<typeof listFeedbackForNestInput>;
+
+export const listFeedbackForNestOutput = z.array(feedbackEvent);
+
 export const HedgemonyEvent = {
   NestChanged: "nest-changed",
   HogletChanged: "hoglet-changed",

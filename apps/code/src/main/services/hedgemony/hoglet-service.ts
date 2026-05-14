@@ -1,9 +1,11 @@
 import { inject, injectable } from "inversify";
 import type { HogletRepository } from "../../db/repositories/hoglet-repository";
+import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { AffinityRouterService } from "./affinity-router";
+import type { CloudTaskClient } from "./cloud-task-client";
 import {
   type AdoptHogletInput,
   type DismissSignalHogletInput,
@@ -16,6 +18,7 @@ import {
   type RecordAdhocHogletInput,
   type RecordSignalBackedHogletInput,
   type ReleaseHogletInput,
+  type SpawnFollowUpHogletInput,
 } from "./schemas";
 
 const log = logger.scope("hoglet-service");
@@ -43,6 +46,10 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     private readonly hoglets: HogletRepository,
     @inject(MAIN_TOKENS.AffinityRouterService)
     private readonly affinityRouter: AffinityRouterService,
+    @inject(MAIN_TOKENS.PrDependencyRepository)
+    private readonly prDependencies: PrDependencyRepository,
+    @inject(MAIN_TOKENS.CloudTaskClient)
+    private readonly cloudTasks: CloudTaskClient,
   ) {
     super();
   }
@@ -260,6 +267,55 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
       id: deleted.id,
       signalReportId: existing.signalReportId,
     });
+  }
+
+  /**
+   * Spawns a follow-up hoglet in `nestId` to address late feedback on a
+   * merged/closed parent's PR. Inherits the parent Task's repository so the
+   * new agent operates in the same code context. Writes a
+   * `hedgemony_pr_dependency` edge with `state = "follow_up"` linking the
+   * new child Task to the parent, so the hedgehog and PR-graph UIs track
+   * them together.
+   */
+  async spawnFollowUp(input: SpawnFollowUpHogletInput): Promise<Hoglet> {
+    const parent = await this.cloudTasks.getTaskWithLatestRun(
+      input.parentTaskId,
+    );
+    const childTask = await this.cloudTasks.createTask({
+      title: `Follow-up: ${parent.task.title}`,
+      description: input.prompt,
+      repository: parent.task.repository ?? null,
+      originProduct: "user_created",
+      githubIntegration: parent.task.github_integration ?? null,
+      githubUserIntegration: parent.task.github_user_integration ?? null,
+    });
+
+    const created = this.hoglets.create({
+      taskId: childTask.id,
+      nestId: input.nestId,
+      signalReportId: null,
+    });
+
+    this.prDependencies.insert({
+      nestId: input.nestId,
+      parentTaskId: input.parentTaskId,
+      childTaskId: childTask.id,
+      state: "follow_up",
+    });
+
+    log.info("Follow-up hoglet spawned", {
+      id: created.id,
+      taskId: created.taskId,
+      nestId: input.nestId,
+      parentTaskId: input.parentTaskId,
+      payloadRef: input.payloadRef,
+    });
+
+    this.emitChange(
+      { kind: "nest", nestId: input.nestId },
+      { kind: "upsert", hoglet: created },
+    );
+    return created;
   }
 
   private emitChange(bucket: HogletBucket, event: HogletWatchEvent): void {

@@ -39,6 +39,47 @@ export class CloudTaskClient {
     private readonly auth: AuthService,
   ) {}
 
+  async createTask(input: {
+    title: string;
+    description: string;
+    repository?: string | null;
+    originProduct?: string;
+    githubIntegration?: number | null;
+    githubUserIntegration?: string | null;
+  }): Promise<Task> {
+    const { apiHost, teamId } = await this.resolveContext();
+    const body: Record<string, unknown> = {
+      title: input.title,
+      description: input.description,
+      origin_product: input.originProduct ?? "user_created",
+    };
+    if (input.repository !== undefined) body.repository = input.repository;
+    if (input.githubIntegration !== undefined) {
+      body.github_integration = input.githubIntegration;
+    }
+    if (input.githubUserIntegration !== undefined) {
+      body.github_user_integration = input.githubUserIntegration;
+    }
+    const response = await this.auth.authenticatedFetch(
+      fetch,
+      `${apiHost}/api/projects/${teamId}/tasks/`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      log.error("createTask failed", {
+        status: response.status,
+        errorText,
+      });
+      throw new Error(`create_task_failed: HTTP ${response.status}`);
+    }
+    return (await response.json()) as Task;
+  }
+
   async getTaskWithLatestRun(
     taskId: string,
   ): Promise<{ task: Task; latestRun: TaskRun | null }> {

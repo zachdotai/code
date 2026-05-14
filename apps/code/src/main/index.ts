@@ -14,6 +14,7 @@ import type { AppLifecycleService } from "./services/app-lifecycle/service";
 import type { AuthService } from "./services/auth/service";
 import type { ExternalAppsService } from "./services/external-apps/service";
 import type { GitHubIntegrationService } from "./services/github-integration/service";
+import type { FeedbackRoutingService } from "./services/hedgemony/feedback-routing-service";
 import type { HedgehogTickService } from "./services/hedgemony/hedgehog-tick-service";
 import type { InboxLinkService } from "./services/inbox-link/service";
 import type { NotificationService } from "./services/notification/service";
@@ -172,6 +173,15 @@ async function initializeServices(): Promise<void> {
     MAIN_TOKENS.HedgehogTickService,
   );
   hedgehogTickService.start();
+
+  // Boot the feedback router. Polls each hoglet's PR for new review comments
+  // and CI failures; emits `injectPrompt` events consumed by a renderer hook
+  // that injects them via the existing `sendPromptToAgent`. Inert until a
+  // hoglet exists and has an open PR.
+  const feedbackRoutingService = container.get<FeedbackRoutingService>(
+    MAIN_TOKENS.FeedbackRoutingService,
+  );
+  feedbackRoutingService.start();
 
   // Track app started event
   trackAppEvent(ANALYTICS_EVENTS.APP_STARTED);

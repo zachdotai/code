@@ -5,6 +5,7 @@ import {
   real,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 const id = () =>
@@ -182,6 +183,56 @@ export const hedgemonyHedgehogState = sqliteTable("hedgemony_hedgehog_state", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+export const hedgemonyFeedbackEvents = sqliteTable(
+  "hedgemony_feedback_event",
+  {
+    id: id(),
+    nestId: text().references(() => hedgemonyNests.id, {
+      onDelete: "set null",
+    }),
+    hogletTaskId: text().notNull(),
+    source: text({ enum: ["pr_review", "ci", "issue"] }).notNull(),
+    payloadHash: text().notNull(),
+    payloadRef: text().notNull(),
+    trustTier: text({ enum: ["operator", "internal", "external"] })
+      .notNull()
+      .default("external"),
+    routedOutcome: text({
+      enum: ["injected", "follow_up_spawned", "failed"],
+    }).notNull(),
+    injectedAt: text().notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => [
+    uniqueIndex("hedgemony_feedback_event_dedupe_idx").on(
+      t.hogletTaskId,
+      t.source,
+      t.payloadHash,
+    ),
+    index("hedgemony_feedback_event_nest_idx").on(t.nestId, t.injectedAt),
+  ],
+);
+
+export const hedgemonyPrDependencies = sqliteTable(
+  "hedgemony_pr_dependency",
+  {
+    id: id(),
+    nestId: text()
+      .notNull()
+      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+    parentTaskId: text().notNull(),
+    childTaskId: text().notNull(),
+    state: text({
+      enum: ["pending", "satisfied", "broken", "follow_up"],
+    }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("hedgemony_pr_dependency_nest_idx").on(t.nestId),
+    index("hedgemony_pr_dependency_child_idx").on(t.childTaskId),
+  ],
+);
 
 export const authPreferences = sqliteTable(
   "auth_preferences",

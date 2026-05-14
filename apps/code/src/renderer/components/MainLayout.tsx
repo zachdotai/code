@@ -9,6 +9,7 @@ import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
 import { BgmPlayer } from "@features/hedgemony/audio/BgmPlayer";
 import { SfxBridge } from "@features/hedgemony/audio/SfxBridge";
+import { useHedgemonyPromptRouter } from "@features/hedgemony/hooks/useHedgemonyPromptRouter";
 import { useHedgemonyViewStore } from "@features/hedgemony/stores/hedgemonyViewStore";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
@@ -75,6 +76,7 @@ export function MainLayout() {
   useIntegrations();
   useTaskDeepLink();
   useInboxDeepLink();
+  useHedgemonyPromptRouter();
 
   useEffect(() => {
     if (tasks) {
