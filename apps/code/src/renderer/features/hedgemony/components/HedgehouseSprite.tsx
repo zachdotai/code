@@ -23,7 +23,7 @@ export function HedgehouseSprite({
     <div
       className="absolute top-1/2 left-1/2"
       style={{
-        transform: `translate(calc(-50% + ${HEDGEHOUSE_MAP_X}px), calc(-50% + ${HEDGEHOUSE_MAP_Y}px))`,
+        transform: `translate(${HEDGEHOUSE_MAP_X}px, ${HEDGEHOUSE_MAP_Y}px)`,
       }}
     >
       <Tooltip
