@@ -4,6 +4,9 @@ import { parseGithubIssueUrl } from "@/lib/githubIssueUrl";
 import { getColorForClass, highlightCode } from "@/lib/syntax-highlight";
 import { useThemeColors } from "@/lib/theme";
 import { GithubRefChip } from "./GithubRefChip";
+import { MarkdownImage } from "./MarkdownImage";
+
+const IMAGE_LINE_PATTERN = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
 
 interface MarkdownTextProps {
   content: string;
@@ -54,6 +57,7 @@ interface Block {
     | "list"
     | "table"
     | "blockquote"
+    | "image"
     | "hr";
   content: string;
   language?: string;
@@ -61,6 +65,8 @@ interface Block {
   items?: string[];
   ordered?: boolean;
   rows?: string[][];
+  url?: string;
+  alt?: string;
 }
 
 function parseBlocks(text: string): Block[] {
@@ -82,6 +88,19 @@ function parseBlocks(text: string): Block[] {
       }
       i++; // skip closing ```
       blocks.push({ type: "code", content: codeLines.join("\n"), language });
+      continue;
+    }
+
+    // Image on its own line: ![alt](url)
+    const imageMatch = line.match(IMAGE_LINE_PATTERN);
+    if (imageMatch) {
+      blocks.push({
+        type: "image",
+        content: "",
+        alt: imageMatch[1],
+        url: imageMatch[2],
+      });
+      i++;
       continue;
     }
 
@@ -175,6 +194,7 @@ function parseBlocks(text: string): Block[] {
       lines[i].trim() !== "" &&
       !lines[i].startsWith("```") &&
       !lines[i].match(/^#{1,6}\s/) &&
+      !IMAGE_LINE_PATTERN.test(lines[i]) &&
       !/^\s*[-*]\s/.test(lines[i]) &&
       !/^\s*\d+[.)]\s/.test(lines[i]) &&
       !/^>\s?/.test(lines[i]) &&
@@ -467,6 +487,11 @@ export function MarkdownText({ content }: MarkdownTextProps) {
                 </Text>
               </View>
             );
+
+          case "image":
+            return block.url ? (
+              <MarkdownImage key={key} url={block.url} alt={block.alt} />
+            ) : null;
 
           case "hr":
             return <View key={key} className="my-1 h-px bg-gray-6" />;

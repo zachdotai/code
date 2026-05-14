@@ -69,10 +69,22 @@ export interface StoredLogEntry {
   direction?: "client" | "agent";
 }
 
+export interface SessionNotificationAttachment {
+  kind: "image" | "document";
+  uri: string;
+  fileName: string;
+  mimeType?: string;
+}
+
 export interface SessionNotification {
   update?: {
     sessionUpdate?: string;
     content?: { type: string; text: string };
+    // Sidecar carrying user-uploaded attachments on user_message_chunk events.
+    // The wire format embeds the bytes themselves in a separate serialized
+    // cloud-prompt payload sent to the agent; this field exists only so the
+    // local feed can render the attachments alongside the echoed text.
+    attachments?: SessionNotificationAttachment[];
     title?: string;
     toolCallId?: string;
     status?: "pending" | "in_progress" | "completed" | "failed" | null;

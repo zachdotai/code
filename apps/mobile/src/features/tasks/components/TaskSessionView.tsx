@@ -21,7 +21,12 @@ import {
   type ToolStatus,
 } from "@/features/chat";
 import { useThemeColors } from "@/lib/theme";
-import type { PlanEntry, SessionEvent, SessionNotification } from "../types";
+import type {
+  PlanEntry,
+  SessionEvent,
+  SessionNotification,
+  SessionNotificationAttachment,
+} from "../types";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { QuestionCard } from "./QuestionCard";
 
@@ -62,6 +67,7 @@ interface ParsedMessage {
   ts?: number;
   toolData?: ToolData;
   children?: ParsedMessage[];
+  attachments?: SessionNotificationAttachment[];
 }
 
 function mapToolStatus(
@@ -82,7 +88,12 @@ function mapToolStatus(
 }
 
 type ParsedNotification =
-  | { type: "user" | "agent" | "agent_complete" | "thought"; content: string }
+  | {
+      type: "user";
+      content: string;
+      attachments?: SessionNotificationAttachment[];
+    }
+  | { type: "agent" | "agent_complete" | "thought"; content: string }
   | { type: "tool" | "tool_update"; toolData: ToolData }
   | { type: "plan"; entries: PlanEntry[] };
 
@@ -97,11 +108,24 @@ function parseSessionNotification(
   switch (update.sessionUpdate) {
     case "user_message_chunk":
     case "agent_message_chunk": {
-      if (update.content?.type === "text") {
+      const hasText = update.content?.type === "text";
+      const isUser = update.sessionUpdate === "user_message_chunk";
+      if (isUser) {
+        const attachments = update.attachments;
+        // Drop only if there's neither text nor attachments to render.
+        if (!hasText && (!attachments || attachments.length === 0)) {
+          return null;
+        }
         return {
-          type:
-            update.sessionUpdate === "user_message_chunk" ? "user" : "agent",
-          content: update.content.text,
+          type: "user",
+          content: hasText ? (update.content?.text ?? "") : "",
+          attachments,
+        };
+      }
+      if (hasText) {
+        return {
+          type: "agent",
+          content: update.content?.text ?? "",
         };
       }
       return null;
@@ -283,6 +307,7 @@ function processNewEvents(
           type: "user",
           content: parsed.content ?? "",
           ts: event.ts,
+          attachments: parsed.attachments,
         });
         state.lastAgentMsgIdx = null;
         break;
@@ -774,7 +799,13 @@ export function TaskSessionView({
     ({ item }: { item: ParsedMessage }) => {
       switch (item.type) {
         case "user":
-          return <HumanMessage content={item.content} timestamp={item.ts} />;
+          return (
+            <HumanMessage
+              content={item.content}
+              timestamp={item.ts}
+              attachments={item.attachments}
+            />
+          );
         case "agent":
           return (
             <AgentMessage

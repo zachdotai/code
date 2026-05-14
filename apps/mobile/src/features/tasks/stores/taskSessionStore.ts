@@ -381,6 +381,15 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         update: {
           sessionUpdate: "user_message_chunk",
           content: { type: "text", text: prompt },
+          attachments:
+            attachments.length > 0
+              ? attachments.map((a) => ({
+                  kind: a.kind,
+                  uri: a.uri,
+                  fileName: a.fileName,
+                  mimeType: a.mimeType,
+                }))
+              : undefined,
         },
       },
     };
