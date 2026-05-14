@@ -111,11 +111,10 @@
   "generation_metadata": {
     "takes_per_line": 3,
     "voices": {
+      "$comment": "ElevenLabs voice IDs by gender. Every line is generated in both, so different characters of the same unit can sound male or female. API key lives in .env (ELEVENLABS_API_KEY).",
       "elevenlabs": {
-        "hoglet": "voice_id placeholder — pick a young, slightly nasal Brit. e.g. 'Charlotte' or a custom-trained one.",
-        "hedgehog": "voice_id placeholder — older, measured. e.g. 'George'.",
-        "builder": "voice_id placeholder — warm, constructive. e.g. 'Daniel'.",
-        "system": "voice_id placeholder — neutral announcer."
+        "male": "0EUM9mI4gyhcJomBjQk1",
+        "female": "ICOQzoM8OzRgzvsz4a7X"
       },
       "openai_tts": {
         "hoglet": "shimmer or nova",

@@ -8,10 +8,11 @@ export type VoiceIntent =
   | "hedgehog:goal_complete";
 
 // Vite resolves this glob at build time into a record of asset URLs, so the
-// runtime never deals with disk paths. Filenames follow the convention
-// `<unit>_<intent>_l<line>_t<take>.wav` (intent may contain underscores).
+// runtime never deals with disk paths. Files live under `voice/<gender>/` and
+// filenames follow the convention `<unit>_<intent>_l<line>_t<take>.wav`
+// (intent may contain underscores).
 const voiceFiles = import.meta.glob<string>(
-  "@renderer/assets/sounds/voice/*.wav",
+  "@renderer/assets/sounds/voice/**/*.wav",
   { eager: true, query: "?url", import: "default" },
 );
 
