@@ -55,6 +55,11 @@ export type Session = BaseSession & {
   effort?: EffortLevel;
   configOptions: SessionConfigOption[];
   accumulatedUsage: AccumulatedUsage;
+  /**
+   * Monotonic per-session counter of SDK result messages. Paired with
+   * `taskRunId` it forms the dedupe key for persisted usage events.
+   */
+  usageTurnIndex: number;
   /** Latest context window usage (total tokens from last assistant message) */
   contextUsed?: number;
   /** Context window size in tokens */

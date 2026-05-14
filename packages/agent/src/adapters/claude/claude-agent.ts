@@ -548,10 +548,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               });
             }
 
+            const turnIndex = this.session.usageTurnIndex;
+            this.session.usageTurnIndex = turnIndex + 1;
+            const modelKeys = Object.keys(message.modelUsage ?? {});
+            const usageModel =
+              modelKeys[0] ?? this.session.modelId ?? "unknown";
+
             await this.client.extNotification(
               POSTHOG_NOTIFICATIONS.USAGE_UPDATE,
               {
                 sessionId: params.sessionId,
+                taskRunId: this.session.taskRunId,
+                turnIndex,
+                model: usageModel,
                 used: {
                   inputTokens: message.usage.input_tokens,
                   outputTokens: message.usage.output_tokens,
@@ -1185,6 +1194,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         cachedReadTokens: 0,
         cachedWriteTokens: 0,
       },
+      usageTurnIndex: 0,
       effort,
       configOptions: [],
       promptRunning: false,

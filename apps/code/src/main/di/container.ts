@@ -14,6 +14,7 @@ import { PrDependencyRepository } from "../db/repositories/pr-dependency-reposit
 import { RepositoryRepository } from "../db/repositories/repository-repository";
 import { SuspensionRepositoryImpl } from "../db/repositories/suspension-repository";
 import { TickLogRepository } from "../db/repositories/tick-log-repository";
+import { UsageEventRepository } from "../db/repositories/usage-event-repository";
 import { WorkspaceRepository } from "../db/repositories/workspace-repository";
 import { WorktreeRepository } from "../db/repositories/worktree-repository";
 import { DatabaseService } from "../db/service";
@@ -63,6 +64,7 @@ import { NestChatService } from "../services/hedgemony/nest-chat-service";
 import { NestService } from "../services/hedgemony/nest-service";
 import { PrGraphService } from "../services/hedgemony/pr-graph-service";
 import { SignalIngestionService } from "../services/hedgemony/signal-ingestion-service";
+import { UsageAttributionService } from "../services/hedgemony/usage-attribution-service";
 import { InboxLinkService } from "../services/inbox-link/service";
 import { LinearIntegrationService } from "../services/linear-integration/service";
 import { LlmGatewayService } from "../services/llm-gateway/service";
@@ -125,6 +127,7 @@ container.bind(MAIN_TOKENS.TickLogRepository).to(TickLogRepository);
 container
   .bind(MAIN_TOKENS.OperatorDecisionRepository)
   .to(OperatorDecisionRepository);
+container.bind(MAIN_TOKENS.UsageEventRepository).to(UsageEventRepository);
 container.bind(MAIN_TOKENS.AgentAuthAdapter).to(AgentAuthAdapter);
 container.bind(MAIN_TOKENS.AgentService).to(AgentService);
 container.bind(MAIN_TOKENS.AuthService).to(AuthService);
@@ -180,5 +183,6 @@ container.bind(MAIN_TOKENS.PrGraphService).to(PrGraphService);
 container.bind(MAIN_TOKENS.HedgehogTickService).to(HedgehogTickService);
 container.bind(MAIN_TOKENS.FeedbackRoutingService).to(FeedbackRoutingService);
 container.bind(MAIN_TOKENS.SignalIngestionService).to(SignalIngestionService);
+container.bind(MAIN_TOKENS.UsageAttributionService).to(UsageAttributionService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

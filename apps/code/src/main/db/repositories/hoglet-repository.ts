@@ -13,12 +13,23 @@ export interface CreateHogletData {
   nestId?: string | null;
   signalReportId?: string | null;
   affinityScore?: number | null;
+  model?: string | null;
 }
 
 export interface UpdateHogletData {
   nestId?: string | null;
   signalReportId?: string | null;
   affinityScore?: number | null;
+  model?: string | null;
+}
+
+export interface IncrementUsageData {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+  occurredAt: string;
 }
 
 const byId = (id: string) => eq(hedgemonyHoglets.id, id);
@@ -107,6 +118,7 @@ export class HogletRepository {
       nestId: data.nestId ?? null,
       signalReportId: data.signalReportId ?? null,
       affinityScore: data.affinityScore ?? null,
+      model: data.model ?? null,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -116,6 +128,22 @@ export class HogletRepository {
       throw new Error(`Failed to create hoglet ${id}`);
     }
     return created;
+  }
+
+  incrementUsage(id: string, data: IncrementUsageData): void {
+    this.db
+      .update(hedgemonyHoglets)
+      .set({
+        totalInputTokens: sql`${hedgemonyHoglets.totalInputTokens} + ${data.inputTokens}`,
+        totalOutputTokens: sql`${hedgemonyHoglets.totalOutputTokens} + ${data.outputTokens}`,
+        totalCacheReadTokens: sql`${hedgemonyHoglets.totalCacheReadTokens} + ${data.cacheReadTokens}`,
+        totalCacheCreationTokens: sql`${hedgemonyHoglets.totalCacheCreationTokens} + ${data.cacheCreationTokens}`,
+        totalCostUsd: sql`${hedgemonyHoglets.totalCostUsd} + ${data.costUsd}`,
+        lastUsageAt: data.occurredAt,
+        updatedAt: now(),
+      })
+      .where(byId(id))
+      .run();
   }
 
   update(id: string, data: UpdateHogletData): Hoglet | null {

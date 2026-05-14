@@ -381,6 +381,15 @@ function setupMocks(input: {
 }
 
 function buildService(mocks: Mocks): HedgehogTickService {
+  const usageAttribution = {
+    recordHedgehogTick: vi.fn(() => ({
+      inserted: true,
+      costUsd: 0,
+      costSource: "pricing_table" as const,
+    })),
+    recordHogletTurn: vi.fn(() => null),
+    init: vi.fn(),
+  } as unknown as ConstructorParameters<typeof HedgehogTickService>[12];
   return new HedgehogTickService(
     mocks.llm,
     mocks.nestService,
@@ -395,6 +404,7 @@ function buildService(mocks: Mocks): HedgehogTickService {
     mocks.repositoryRepo,
     mocks.tickLog as unknown as TickLogRepository,
     mocks.operatorDecisions as unknown as OperatorDecisionRepository,
+    usageAttribution,
   );
 }
 

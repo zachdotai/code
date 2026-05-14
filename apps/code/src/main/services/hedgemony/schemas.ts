@@ -336,6 +336,8 @@ export const nestLoadout = z.object({
   executionMode: persistedExecutionModeSchema.optional(),
   environment: z.enum(["local", "cloud"]).optional(),
   heartbeatIntervalMs: z.number().int().min(60_000).max(600_000).optional(),
+  budgetUsd: z.number().nonnegative().optional(),
+  perHogletBudgetUsd: z.number().nonnegative().optional(),
 });
 export type NestLoadout = z.infer<typeof nestLoadout>;
 

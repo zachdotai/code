@@ -120,6 +120,13 @@
       "when": 1779500000000,
       "tag": "0016_hedgemony_operator_decision",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1779600000000,
+      "tag": "0017_hedgemony_finops",
+      "breakpoints": true
     }
   ]
 }

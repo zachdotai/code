@@ -1,6 +1,7 @@
 import type {
   CreateHogletData,
   Hoglet,
+  IncrementUsageData,
   UpdateHogletData,
 } from "./hoglet-repository";
 
@@ -13,6 +14,7 @@ export interface MockHogletRepository {
   findAllNames(): string[];
   countWild(): number;
   create(data: CreateHogletData): Hoglet;
+  incrementUsage(id: string, data: IncrementUsageData): void;
   update(id: string, data: UpdateHogletData): Hoglet | null;
   softDelete(id: string): Hoglet | null;
 }
@@ -43,8 +45,9 @@ export function createMockHogletRepository(): MockHogletRepository {
         .map((h) => ({ ...h })),
     findAllNames: () =>
       [...hoglets.values()]
-        .filter((h) => h.name && !h.deletedAt)
-        .map((h) => h.name!),
+        .filter((h) => !h.deletedAt)
+        .map((h) => h.name)
+        .filter((n): n is string => n !== null),
     countWild: () => [...hoglets.values()].filter(isWild).length,
     create: (data: CreateHogletData) => {
       const timestamp = now();
@@ -55,6 +58,13 @@ export function createMockHogletRepository(): MockHogletRepository {
         nestId: data.nestId ?? null,
         signalReportId: data.signalReportId ?? null,
         affinityScore: data.affinityScore ?? null,
+        model: data.model ?? null,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheCreationTokens: 0,
+        totalCostUsd: 0,
+        lastUsageAt: null,
         createdAt: timestamp,
         updatedAt: timestamp,
         deletedAt: null,
@@ -62,6 +72,22 @@ export function createMockHogletRepository(): MockHogletRepository {
       hoglets.set(hoglet.id, hoglet);
       taskIndex.set(hoglet.taskId, hoglet.id);
       return { ...hoglet };
+    },
+    incrementUsage: (id: string, data: IncrementUsageData) => {
+      const existing = hoglets.get(id);
+      if (!existing) return;
+      hoglets.set(id, {
+        ...existing,
+        totalInputTokens: existing.totalInputTokens + data.inputTokens,
+        totalOutputTokens: existing.totalOutputTokens + data.outputTokens,
+        totalCacheReadTokens:
+          existing.totalCacheReadTokens + data.cacheReadTokens,
+        totalCacheCreationTokens:
+          existing.totalCacheCreationTokens + data.cacheCreationTokens,
+        totalCostUsd: existing.totalCostUsd + data.costUsd,
+        lastUsageAt: data.occurredAt,
+        updatedAt: now(),
+      });
     },
     update: (id: string, data: UpdateHogletData) => {
       const existing = hoglets.get(id);

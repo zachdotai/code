@@ -1,4 +1,9 @@
-import type { CreateNestData, Nest, UpdateNestData } from "./nest-repository";
+import type {
+  CreateNestData,
+  IncrementUsageData,
+  Nest,
+  UpdateNestData,
+} from "./nest-repository";
 
 export interface MockNestRepository {
   _nests: Map<string, Nest>;
@@ -9,6 +14,7 @@ export interface MockNestRepository {
   update(id: string, data: UpdateNestData): Nest | null;
   archive(id: string): Nest | null;
   unarchive(id: string): Nest | null;
+  incrementUsage(id: string, data: IncrementUsageData): void;
 }
 
 export function createMockNestRepository(): MockNestRepository {
@@ -50,6 +56,12 @@ export function createMockNestRepository(): MockNestRepository {
         targetMetricId: null,
         loadoutJson: "{}",
         primaryRepository: data.primaryRepository ?? null,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheCreationTokens: 0,
+        totalCostUsd: 0,
+        lastUsageAt: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -59,5 +71,21 @@ export function createMockNestRepository(): MockNestRepository {
     update,
     archive: (id: string) => update(id, { status: "archived" }),
     unarchive: (id: string) => update(id, { status: "active" }),
+    incrementUsage: (id: string, data: IncrementUsageData) => {
+      const existing = nests.get(id);
+      if (!existing) return;
+      nests.set(id, {
+        ...existing,
+        totalInputTokens: existing.totalInputTokens + data.inputTokens,
+        totalOutputTokens: existing.totalOutputTokens + data.outputTokens,
+        totalCacheReadTokens:
+          existing.totalCacheReadTokens + data.cacheReadTokens,
+        totalCacheCreationTokens:
+          existing.totalCacheCreationTokens + data.cacheCreationTokens,
+        totalCostUsd: existing.totalCostUsd + data.costUsd,
+        lastUsageAt: data.occurredAt,
+        updatedAt: now(),
+      });
+    },
   };
 }

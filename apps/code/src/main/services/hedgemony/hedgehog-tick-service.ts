@@ -54,6 +54,7 @@ import {
   type NestMessage,
   parseNestChatCreationBootstrapPayload,
 } from "./schemas";
+import type { UsageAttributionService } from "./usage-attribution-service";
 
 const log = logger.scope("hedgehog-tick-service");
 
@@ -128,6 +129,8 @@ export class HedgehogTickService {
     private readonly tickLog: TickLogRepository,
     @inject(MAIN_TOKENS.OperatorDecisionRepository)
     private readonly operatorDecisions: OperatorDecisionRepository,
+    @inject(MAIN_TOKENS.UsageAttributionService)
+    private readonly usageAttribution: UsageAttributionService,
   ) {}
 
   /**
@@ -375,6 +378,20 @@ export class HedgehogTickService {
       }
 
       newScratchpadEntries.push(...this.summariseLlmResponse(reason, response));
+
+      try {
+        this.usageAttribution.recordHedgehogTick({
+          nestId: nest.id,
+          model: response.model,
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+        });
+      } catch (error) {
+        log.warn("Failed to record hedgehog tick usage", {
+          nestId: nest.id,
+          error: stringifyError(error),
+        });
+      }
 
       for (const block of response.toolUseBlocks) {
         if (abortSignal?.aborted) {

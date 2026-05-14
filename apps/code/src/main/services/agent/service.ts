@@ -1427,6 +1427,10 @@ For git operations while detached:
           }
         }
 
+        if (isNotification(method, POSTHOG_NOTIFICATIONS.USAGE_UPDATE)) {
+          this.handleUsageUpdateNotification(params);
+        }
+
         // Extension notifications already flow through the tapped stream
         // (same pattern as sessionUpdate). No need to re-emit here.
       },
@@ -1446,6 +1450,42 @@ For git operations while detached:
     if (!params.apiHost) {
       throw new Error("PostHog API host is required");
     }
+  }
+
+  private handleUsageUpdateNotification(params: Record<string, unknown>): void {
+    const taskRunId =
+      typeof params.taskRunId === "string" ? params.taskRunId : null;
+    if (!taskRunId) return;
+
+    const session = this.sessions.get(taskRunId);
+    if (!session) return;
+
+    const used = (params.used ?? {}) as Record<string, unknown>;
+    const inputTokens =
+      typeof used.inputTokens === "number" ? used.inputTokens : 0;
+    const outputTokens =
+      typeof used.outputTokens === "number" ? used.outputTokens : 0;
+    const cacheReadTokens =
+      typeof used.cachedReadTokens === "number" ? used.cachedReadTokens : 0;
+    const cacheCreationTokens =
+      typeof used.cachedWriteTokens === "number" ? used.cachedWriteTokens : 0;
+    const turnIndex =
+      typeof params.turnIndex === "number" ? params.turnIndex : 0;
+    const model = typeof params.model === "string" ? params.model : "unknown";
+    const costUsd =
+      typeof params.cost === "number" && params.cost >= 0 ? params.cost : null;
+
+    this.emit(AgentServiceEvent.UsageUpdate, {
+      taskRunId,
+      taskId: session.taskId,
+      turnIndex,
+      model,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheCreationTokens,
+      costUsd,
+    });
   }
 
   private toRepoRelativePath(repoPath: string, filePath: string): string {

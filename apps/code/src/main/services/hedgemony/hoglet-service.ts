@@ -566,6 +566,7 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
           name: this.assignName(),
           nestId: input.nestId,
           signalReportId: null,
+          model: runtime.model,
         });
         return { hoglet, taskRunId: run.id, task };
       },
@@ -666,6 +667,7 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
           name: this.assignName(),
           nestId: input.nestId,
           signalReportId: null,
+          model: runtime.model,
         });
         try {
           this.prDependencies.insert({

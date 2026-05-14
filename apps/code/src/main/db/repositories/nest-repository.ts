@@ -1,4 +1,4 @@
-import { eq, ne } from "drizzle-orm";
+import { eq, ne, sql } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { hedgemonyNests } from "../schema";
@@ -6,6 +6,15 @@ import type { DatabaseService } from "../service";
 
 export type Nest = typeof hedgemonyNests.$inferSelect;
 export type NewNest = typeof hedgemonyNests.$inferInsert;
+
+export interface IncrementUsageData {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+  occurredAt: string;
+}
 export type NestStatus =
   | "active"
   | "validated"
@@ -104,5 +113,21 @@ export class NestRepository {
 
   unarchive(id: string): Nest | null {
     return this.update(id, { status: "active" });
+  }
+
+  incrementUsage(id: string, data: IncrementUsageData): void {
+    this.db
+      .update(hedgemonyNests)
+      .set({
+        totalInputTokens: sql`${hedgemonyNests.totalInputTokens} + ${data.inputTokens}`,
+        totalOutputTokens: sql`${hedgemonyNests.totalOutputTokens} + ${data.outputTokens}`,
+        totalCacheReadTokens: sql`${hedgemonyNests.totalCacheReadTokens} + ${data.cacheReadTokens}`,
+        totalCacheCreationTokens: sql`${hedgemonyNests.totalCacheCreationTokens} + ${data.cacheCreationTokens}`,
+        totalCostUsd: sql`${hedgemonyNests.totalCostUsd} + ${data.costUsd}`,
+        lastUsageAt: data.occurredAt,
+        updatedAt: now(),
+      })
+      .where(byId(id))
+      .run();
   }
 }

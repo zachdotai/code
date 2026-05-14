@@ -42,6 +42,7 @@ export const MAIN_TOKENS = Object.freeze({
   PrDependencyRepository: Symbol.for("Main.PrDependencyRepository"),
   TickLogRepository: Symbol.for("Main.TickLogRepository"),
   OperatorDecisionRepository: Symbol.for("Main.OperatorDecisionRepository"),
+  UsageEventRepository: Symbol.for("Main.UsageEventRepository"),
 
   // Services
   AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),
@@ -95,4 +96,5 @@ export const MAIN_TOKENS = Object.freeze({
   PrGraphService: Symbol.for("Main.PrGraphService"),
   CloudTaskClient: Symbol.for("Main.CloudTaskClient"),
   SignalIngestionService: Symbol.for("Main.SignalIngestionService"),
+  UsageAttributionService: Symbol.for("Main.UsageAttributionService"),
 });

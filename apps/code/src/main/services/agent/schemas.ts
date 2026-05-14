@@ -203,6 +203,7 @@ export const AgentServiceEvent = {
   SessionsIdle: "sessions-idle",
   SessionIdleKilled: "session-idle-killed",
   AgentFileActivity: "agent-file-activity",
+  UsageUpdate: "usage-update",
 } as const;
 
 export interface AgentSessionEventPayload {
@@ -228,12 +229,25 @@ export interface AgentFileActivityPayload {
   branchName: string | null;
 }
 
+export interface UsageUpdatePayload {
+  taskRunId: string;
+  taskId: string;
+  turnIndex: number;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number | null;
+}
+
 export interface AgentServiceEvents {
   [AgentServiceEvent.SessionEvent]: AgentSessionEventPayload;
   [AgentServiceEvent.PermissionRequest]: PermissionRequestPayload;
   [AgentServiceEvent.SessionsIdle]: undefined;
   [AgentServiceEvent.SessionIdleKilled]: SessionIdleKilledPayload;
   [AgentServiceEvent.AgentFileActivity]: AgentFileActivityPayload;
+  [AgentServiceEvent.UsageUpdate]: UsageUpdatePayload;
 }
 
 // Permission response input for tRPC
