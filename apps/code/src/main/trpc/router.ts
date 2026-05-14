@@ -22,6 +22,7 @@ import { llmGatewayRouter } from "./routers/llm-gateway";
 import { logsRouter } from "./routers/logs";
 import { mcpAppsRouter } from "./routers/mcp-apps";
 import { mcpCallbackRouter } from "./routers/mcp-callback";
+import { memoryRouter } from "./routers/memory";
 import { notificationRouter } from "./routers/notification";
 import { oauthRouter } from "./routers/oauth";
 import { osRouter } from "./routers/os";
@@ -65,6 +66,7 @@ export const trpcRouter = router({
   notification: notificationRouter,
   oauth: oauthRouter,
   logs: logsRouter,
+  memory: memoryRouter,
   os: osRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,

@@ -22,6 +22,7 @@ interface UseSessionConnectionOptions {
   repoPath: string | null;
   isCloud: boolean;
   isSuspended?: boolean;
+  isChat?: boolean;
 }
 
 export function useSessionConnection({
@@ -31,6 +32,7 @@ export function useSessionConnection({
   repoPath,
   isCloud,
   isSuspended,
+  isChat,
 }: UseSessionConnectionOptions) {
   const queryClient = useQueryClient();
   const { isOnline } = useConnectivity();
@@ -156,6 +158,7 @@ export function useSessionConnection({
       .connectToTask({
         task,
         repoPath,
+        isChat,
       })
       .finally(() => {
         connectingTasks.delete(taskId);
@@ -164,7 +167,7 @@ export function useSessionConnection({
     return () => {
       connectingTasks.delete(taskId);
     };
-  }, [task, taskId, repoPath, session, isOnline, isCloud, isSuspended]);
+  }, [task, taskId, repoPath, session, isOnline, isCloud, isSuspended, isChat]);
 
   const cannotConnect = !repoPath && !isCloud;
   useEffect(() => {

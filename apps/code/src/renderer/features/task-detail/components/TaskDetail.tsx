@@ -2,6 +2,7 @@ import { CloudReviewPage } from "@features/code-review/components/CloudReviewPag
 import { ReviewPage } from "@features/code-review/components/ReviewPage";
 import { useReviewNavigationStore } from "@features/code-review/stores/reviewNavigationStore";
 import { FilePicker } from "@features/command/components/FilePicker";
+import { MemoryIndicator } from "@features/memory/components/MemoryIndicator";
 import { PanelLayout } from "@features/panels";
 import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
 import {
@@ -150,6 +151,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             </Text>
           </Tooltip>
         )}
+        <MemoryIndicator />
         {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
       </Flex>
     ),

@@ -1,13 +1,16 @@
 import { useNavigationStore } from "@stores/navigationStore";
-import { McpServersView } from "../../mcp-servers/components/McpServersView";
+import { MemoryView } from "../../memory/components/MemoryView";
 import { ScheduledTaskEditor } from "./ScheduledTaskEditor";
 import { ScheduledTasksList } from "./ScheduledTasksList";
+import { WorkDataSourcesView } from "./WorkDataSourcesView";
 import { WorkGenerateView } from "./WorkGenerateView";
 import { WorkHome } from "./WorkHome";
 import { WorkProjectDetailView } from "./WorkProjectDetailView";
 import { WorkProjectsView } from "./WorkProjectsView";
+import { WorkScheduledCreatePrompt } from "./WorkScheduledCreatePrompt";
 import { WorkSkillDetailView } from "./WorkSkillDetailView";
 import { WorkSkillsView } from "./WorkSkillsView";
+import { WorkTaskDetailView } from "./WorkTaskDetailView";
 
 export function WorkView() {
   const workView = useNavigationStore((s) => s.workView);
@@ -29,12 +32,20 @@ export function WorkView() {
     return <ScheduledTasksList />;
   }
 
+  if (workView === "scheduled-create-prompt") {
+    return <WorkScheduledCreatePrompt />;
+  }
+
   if (workView === "scheduled-edit") {
     return <ScheduledTaskEditor editingId={scheduledEditId ?? null} />;
   }
 
   if (workView === "data-sources") {
-    return <McpServersView />;
+    return <WorkDataSourcesView />;
+  }
+
+  if (workView === "memory") {
+    return <MemoryView />;
   }
 
   if (workView === "projects") {
@@ -43,6 +54,10 @@ export function WorkView() {
 
   if (workView === "project-detail") {
     return <WorkProjectDetailView />;
+  }
+
+  if (workView === "task-detail") {
+    return <WorkTaskDetailView />;
   }
 
   return <WorkHome />;

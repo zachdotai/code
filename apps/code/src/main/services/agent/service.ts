@@ -51,6 +51,7 @@ import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { FsService } from "../fs/service";
 import type { McpAppsService } from "../mcp-apps/service";
+import type { MemoryService } from "../memory/service";
 import type { PosthogPluginService } from "../posthog-plugin/service";
 import type { ProcessTrackingService } from "../process-tracking/service";
 import type { SleepService } from "../sleep/service";
@@ -305,6 +306,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly appMeta: IAppMeta,
     @inject(MAIN_TOKENS.StoragePaths)
     private readonly storagePaths: IStoragePaths,
+    @inject(MAIN_TOKENS.MemoryService)
+    private readonly memoryService: MemoryService,
   ) {
     super();
     this.processTracking = processTracking;
@@ -450,13 +453,13 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     }
   }
 
-  private buildSystemPrompt(
+  private async buildSystemPrompt(
     credentials: Credentials,
     taskId: string,
     customInstructions?: string,
-  ): {
+  ): Promise<{
     append: string;
-  } {
+  }> {
     let prompt = `PostHog context: use project ${credentials.projectId} on ${credentials.apiHost}. When using PostHog MCP tools, operate only on this project.`;
 
     prompt += `
@@ -491,7 +494,39 @@ When creating pull requests, add the following footer at the end of the PR descr
       prompt += `\n\nUser custom instructions:\n${customInstructions}`;
     }
 
+    const memorySection = await this.loadMemorySection();
+    if (memorySection) {
+      prompt += memorySection;
+    }
+
     return { append: prompt };
+  }
+
+  /**
+   * Loads the user's personal memory index (MEMORY.md) and renders it as a
+   * system-prompt section. Returns null if memory is empty or unavailable —
+   * never throws into the agent boot path.
+   */
+  private async loadMemorySection(): Promise<string | null> {
+    try {
+      const entries = await this.memoryService.list();
+      if (entries.length === 0) return null;
+      const indexEntry = entries.find((e) => e.relativePath === "MEMORY.md");
+      if (!indexEntry) return null;
+      const content = await this.memoryService.get("MEMORY.md");
+      if (!content || content.trim().length === 0) return null;
+
+      const peopleCount = entries.filter((e) => e.type === "person").length;
+      const root = this.memoryService.getRoot();
+      const inventory = peopleCount
+        ? `Memory index below. ${peopleCount} person profile${peopleCount === 1 ? "" : "s"} live in \`${root}/people/\` — read them on demand when the relevant person comes up.`
+        : `Memory index below. Files referenced by markdown links live in \`${root}/\` — read them on demand.`;
+
+      return `\n\n## Personal memory\n${inventory}\n\n---\n\n${content.trim()}\n\n---\n\n### Memory maintenance rules\n\nWhen you notice stale facts in memory files, act as follows:\n\n**Auto-clean without asking** — unambiguous and safe to fix silently:\n- Past OOO / return-from-leave dates whose end date has passed.\n- Relative time references that have resolved into the past ("next Friday" once that Friday has passed; "this quarter" once the quarter has ended).\n- Typos, broken markdown links with obvious fixes, trailing whitespace, duplicate list entries.\n- "Last synced: [date]" / "_Edited: [date]_" timestamps when you've just re-synced or edited the file.\n\n**Flag before changing** — requires user judgment:\n- A person's role, responsibilities, or reporting line.\n- Project status changes (active → completed, renamed, paused).\n- Any removal of a person, project, or relationship.\n- Facts that look stale but could be current.\n- Anything in the Preferences section.\n\nWhen auto-cleaning, mention what you changed in passing. When flagging, surface candidate changes in one message and wait for confirmation.`;
+    } catch (err) {
+      log.warn("Failed to load memory for system prompt", err);
+      return null;
+    }
   }
 
   async startSession(params: StartSessionInput): Promise<SessionResponse> {
@@ -587,7 +622,7 @@ When creating pull requests, add the following footer at the end of the PR descr
     });
 
     try {
-      const systemPrompt = this.buildSystemPrompt(
+      const systemPrompt = await this.buildSystemPrompt(
         credentials,
         taskId,
         customInstructions,

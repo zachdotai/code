@@ -9,6 +9,9 @@ import { EmptyState } from "./EmptyState";
 import { ScheduledTaskRow } from "./ScheduledTaskRow";
 
 export function ScheduledTasksList() {
+  const navigateToCreatePrompt = useNavigationStore(
+    (s) => s.navigateToWorkScheduledCreatePrompt,
+  );
   const navigateToCreate = useNavigationStore(
     (s) => s.navigateToWorkScheduledCreate,
   );
@@ -19,8 +22,15 @@ export function ScheduledTasksList() {
   const { data: automations, isLoading } = useScheduledTasks();
 
   const handleCreate = (initial?: PendingCreateDraft) => {
-    setPendingCreateDraft(initial ?? null);
-    navigateToCreate();
+    if (initial) {
+      // Sample / empty-state shortcut: skip the prompt entry and land directly
+      // on the editor with a fully-formed draft.
+      setPendingCreateDraft(initial);
+      navigateToCreate();
+      return;
+    }
+    setPendingCreateDraft(null);
+    navigateToCreatePrompt();
   };
 
   const items = automations ?? [];

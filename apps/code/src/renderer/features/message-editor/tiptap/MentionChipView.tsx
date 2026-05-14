@@ -9,6 +9,7 @@ import {
   GithubLogoIcon,
   GitPullRequestIcon,
   TerminalIcon,
+  UserIcon,
   WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -33,6 +34,7 @@ const typeIconMap: Record<ChipType, React.ComponentType<{ size: number }>> = {
   experiment: FlaskIcon,
   insight: ChartLineIcon,
   feature_flag: FlagIcon,
+  team_member: UserIcon,
 };
 
 function IconCloseButton({

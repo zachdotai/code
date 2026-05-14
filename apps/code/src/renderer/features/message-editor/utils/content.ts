@@ -10,7 +10,8 @@ export interface MentionChip {
     | "insight"
     | "feature_flag"
     | "github_issue"
-    | "github_pr";
+    | "github_pr"
+    | "team_member";
   id: string;
   label: string;
   pastedText?: boolean;
@@ -71,6 +72,8 @@ export function contentToXml(content: EditorContent): string {
         const title = labelMatch?.[2] ?? "";
         return `<${chip.type} number="${escapeXmlAttr(number)}" title="${escapeXmlAttr(title)}" url="${escapedId}" />`;
       }
+      case "team_member":
+        return `<team_member uuid="${escapedId}" name="${escapeXmlAttr(chip.label)}" />`;
       default:
         return `@${chip.label}`;
     }
@@ -89,7 +92,7 @@ export function contentToXml(content: EditorContent): string {
 }
 
 const CHIP_TAG_REGEX =
-  /<(file|folder|error|experiment|insight|feature_flag|github_issue|github_pr)\b([^>]*?)\s*\/>/g;
+  /<(file|folder|error|experiment|insight|feature_flag|github_issue|github_pr|team_member)\b([^>]*?)\s*\/>/g;
 const ATTR_REGEX = /(\w+)="([^"]*)"/g;
 
 export function deriveFileLabel(filePath: string): string {
@@ -137,6 +140,11 @@ function chipFromTag(tag: string, rawAttrs: string): MentionChip | null {
       const label = title ? `#${number} - ${title}` : `#${number}`;
       return { type: tag, id: url, label };
     }
+    case "team_member": {
+      const uuid = attrs.uuid;
+      if (!uuid) return null;
+      return { type: "team_member", id: uuid, label: attrs.name ?? uuid };
+    }
     default:
       return null;
   }
@@ -179,6 +187,26 @@ export function isContentEmpty(
   return content.segments.every(
     (seg) => seg.type === "text" && !seg.text.trim(),
   );
+}
+
+export function extractTeamMemberUuids(content: EditorContent): string[] {
+  const uuids: string[] = [];
+  const seen = new Set<string>();
+  for (const seg of content.segments) {
+    if (
+      seg.type === "chip" &&
+      seg.chip.type === "team_member" &&
+      !seen.has(seg.chip.id)
+    ) {
+      seen.add(seg.chip.id);
+      uuids.push(seg.chip.id);
+    }
+  }
+  return uuids;
+}
+
+export function extractTeamMemberUuidsFromXml(xml: string): string[] {
+  return extractTeamMemberUuids(xmlToContent(xml));
 }
 
 export function extractFilePaths(content: EditorContent): string[] {

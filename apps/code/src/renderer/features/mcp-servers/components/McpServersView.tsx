@@ -14,7 +14,6 @@ import type {
   McpRecommendedServer,
   McpServerInstallation,
 } from "@renderer/api/posthogClient";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddCustomServerForm } from "./parts/AddCustomServerForm";
 import { MarketplaceView } from "./parts/MarketplaceView";
@@ -28,7 +27,6 @@ type SceneView =
   | { kind: "add-custom" };
 
 export function McpServersView() {
-  const queryClient = useQueryClient();
   const [view, setView] = useState<SceneView>({ kind: "marketplace" });
   const [query, setQuery] = useState("");
   const [category, setCategory] =
@@ -75,21 +73,6 @@ export function McpServersView() {
     reauthorize,
     reauthorizePending,
   } = useMcpServers();
-
-  useEffect(() => {
-    const refreshMcpState = () => {
-      queryClient.invalidateQueries({ queryKey: ["mcp"] });
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") refreshMcpState();
-    };
-    window.addEventListener("focus", refreshMcpState);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      window.removeEventListener("focus", refreshMcpState);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [queryClient]);
 
   const serverList = servers ?? [];
   const installationList = installations ?? [];
