@@ -16,6 +16,7 @@ import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
 import { MapBackdrop } from "./MapBackdrop";
 import { NestConstructionSite } from "./NestConstructionSite";
 import { NestSprite } from "./NestSprite";
+import { SfxControl } from "./SfxControl";
 
 const BUILD_ANIMATION_MS = 1500;
 
@@ -316,6 +317,7 @@ export function HedgemonyMapSurface({
         onPointerDown={(e) => e.stopPropagation()}
       >
         <BgmControl />
+        <SfxControl />
         <button
           type="button"
           onClick={fitToContents}
