@@ -50,7 +50,7 @@ type Selection =
   | { type: "nest"; id: string }
   | { type: "builder" }
   | { type: "hedgehouse" }
-  | { type: "hoglets"; ids: string[] }
+  | { type: "hoglets"; ids: string[]; includeBuilder?: boolean }
   | null;
 
 /**
@@ -321,6 +321,9 @@ export function HedgemonyMapView() {
           );
         });
       }
+      if (selection.includeBuilder) {
+        builder.startWalk({ x: targetX, y: targetY }, "idle");
+      }
       playSfx("order");
       playVoice("hoglet:order_move");
       flashMoveMarker(targetX, targetY);
@@ -347,28 +350,52 @@ export function HedgemonyMapView() {
         .filter((p) => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
         .map((p) => p.hogletId);
 
+      // Hit-test the builder at its live on-screen position so the marquee
+      // catches him alongside any hoglets in the same drag.
+      const builderPos = builder.visualPosRef.current;
+      const builderInRect =
+        builderPos.x >= minX &&
+        builderPos.x <= maxX &&
+        builderPos.y >= minY &&
+        builderPos.y <= maxY;
+
       setSelection((prev) => {
-        // Additive (shift/cmd) keeps a prior hoglet selection and unions in
-        // the marquee hits. Non-additive replaces — clicking an empty area
-        // with a tiny marquee that catches nothing still clears selection.
-        if (additive && prev?.type === "hoglets") {
-          const merged = Array.from(new Set([...prev.ids, ...hit]));
-          if (merged.length === 0) return null;
-          return { type: "hoglets", ids: merged };
+        // Additive (shift/cmd) keeps a prior selection and unions in the
+        // marquee hits. Non-additive replaces — clicking an empty area with
+        // a tiny marquee that catches nothing still clears selection.
+        if (additive) {
+          const prevHoglets = prev?.type === "hoglets" ? prev.ids : [];
+          const prevBuilder =
+            prev?.type === "builder" ||
+            (prev?.type === "hoglets" && prev.includeBuilder === true);
+          const merged = Array.from(new Set([...prevHoglets, ...hit]));
+          const withBuilder = prevBuilder || builderInRect;
+          if (merged.length === 0) {
+            return withBuilder ? { type: "builder" } : null;
+          }
+          return withBuilder
+            ? { type: "hoglets", ids: merged, includeBuilder: true }
+            : { type: "hoglets", ids: merged };
         }
-        if (hit.length === 0) return null;
-        return { type: "hoglets", ids: hit };
+        if (hit.length === 0) {
+          return builderInRect ? { type: "builder" } : null;
+        }
+        return builderInRect
+          ? { type: "hoglets", ids: hit, includeBuilder: true }
+          : { type: "hoglets", ids: hit };
       });
-      if (hit.length > 0) playSfx("select");
+      if (hit.length > 0 || builderInRect) playSfx("select");
     },
-    [],
+    [builder.visualPosRef],
   );
 
   const activeNest =
     selection?.type === "nest"
       ? (nests.find((nest) => nest.id === selection.id) ?? null)
       : null;
-  const builderSelected = selection?.type === "builder";
+  const builderSelected =
+    selection?.type === "builder" ||
+    (selection?.type === "hoglets" && selection.includeBuilder === true);
   const hedgehouseSelected = selection?.type === "hedgehouse";
   const selectedHogletIds = useMemo(
     () => new Set<string>(selection?.type === "hoglets" ? selection.ids : []),
@@ -503,7 +530,7 @@ export function HedgemonyMapView() {
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {builderSelected && !buildMode && (
+        {selection?.type === "builder" && !buildMode && (
           <BuilderCommandPanel
             onBuildNest={beginBuildNest}
             onQuickNest={beginQuickNest}
