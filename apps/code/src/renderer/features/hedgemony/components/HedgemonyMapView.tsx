@@ -34,6 +34,7 @@ import { NestBroodCluster } from "./NestBroodCluster";
 import { NestDetailPanel } from "./NestDetailPanel";
 import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
 import { SpawnHogletPanel } from "./SpawnHogletPanel";
+import { WildHogletFlock } from "./WildHogletFlock";
 
 const log = logger.scope("hedgemony-map-view");
 
@@ -422,6 +423,7 @@ export function HedgemonyMapView() {
         {nests.map((nest) => (
           <NestBroodCluster key={nest.id} nest={nest} />
         ))}
+        <WildHogletFlock />
       </HedgemonyMapSurface>
       {activeNest && (
         <NestDetailPanel
@@ -464,26 +466,28 @@ export function HedgemonyMapView() {
         },
       ]}
     >
-      {fullscreen
-        ? createPortal(
-            <motion.div
-              key="hedgemony-fullscreen"
-              className="fixed inset-0 z-[1000] bg-(--gray-1)"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-            >
-              {mapContent}
-              <div className="-translate-x-1/2 pointer-events-none absolute bottom-3 left-1/2 rounded-(--radius-2) border border-(--gray-6) bg-(--gray-2)/85 px-3 py-1 text-(--gray-11) text-[11px] backdrop-blur-sm">
-                F · fullscreen &nbsp;·&nbsp; Shift+F · OS &nbsp;·&nbsp; 1/2/3
-                recall &nbsp;·&nbsp; Shift+1/2/3 save &nbsp;·&nbsp; Esc exit
-              </div>
-              <FullscreenVignette />
-            </motion.div>,
-            document.body,
-          )
-        : mapContent}
+      {fullscreen ? (
+        createPortal(
+          <motion.div
+            key="hedgemony-fullscreen"
+            className="fixed inset-0 z-[1000] bg-(--gray-1)"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+          >
+            {mapContent}
+            <div className="-translate-x-1/2 pointer-events-none absolute bottom-3 left-1/2 rounded-(--radius-2) border border-(--gray-6) bg-(--gray-2)/85 px-3 py-1 text-(--gray-11) text-[11px] backdrop-blur-sm">
+              F · fullscreen &nbsp;·&nbsp; Shift+F · OS &nbsp;·&nbsp; 1/2/3
+              recall &nbsp;·&nbsp; Shift+1/2/3 save &nbsp;·&nbsp; Esc exit
+            </div>
+            <FullscreenVignette />
+          </motion.div>,
+          document.body,
+        )
+      ) : (
+        <div className="relative h-full w-full">{mapContent}</div>
+      )}
       <PlaceNestDialog
         open={pendingPlacement !== null}
         mapX={pendingPlacement?.x ?? 0}
