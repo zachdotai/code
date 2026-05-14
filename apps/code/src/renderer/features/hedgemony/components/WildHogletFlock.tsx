@@ -4,16 +4,16 @@ import { selectWildHoglets, useHogletStore } from "../stores/hogletStore";
 import { WildHoglet } from "./WildHoglet";
 
 /**
- * Wild hoglets live in the WILD_BUCKET with no nest. To make them visible as
- * roaming entities on the map we assign each one a deterministic world
- * position derived from its id, placed in a ring outside the typical nest
- * spawn area so they read as "out in the wild" rather than stacked on nests.
+ * Wild hoglets live in the WILD_BUCKET with no nest. We give each one a
+ * deterministic world position derived from its id, placed in a small ring
+ * just outside the hedgehouse footprint so they read as having walked out of
+ * the town hall (the hedgehouse sits at the map origin).
  *
  * Subscription to the wild bucket is owned by HedgemonyHoldingPanel (which
  * always mounts) — we just read from the store here.
  */
-const RING_INNER = 380;
-const RING_THICKNESS = 320;
+const RING_INNER = 130;
+const RING_THICKNESS = 90;
 
 interface WildHogletFlockProps {
   selectedHogletId: string | null;

@@ -4,6 +4,7 @@ import { Tooltip } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useState } from "react";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
@@ -45,6 +46,12 @@ export function WildHoglet({
     transition: { duration: 200, easing: "ease" },
   });
 
+  // Fresh spawns walk out of the hedgehouse (map origin). Captured at mount
+  // so re-renders and re-mounts of already-known hoglets don't replay it.
+  const [animateFromHedgehouse] = useState(
+    () => Date.now() - new Date(hoglet.createdAt).getTime() < 5000,
+  );
+
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
       { taskId: hoglet.taskId, cloudPrUrl: null },
@@ -72,7 +79,7 @@ export function WildHoglet({
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
-      initial={false}
+      initial={animateFromHedgehouse ? { x: 0, y: 0 } : false}
       animate={{ x, y }}
       transition={{ type: "spring", damping: 22, stiffness: 220, mass: 0.5 }}
       style={{ opacity: isDragging ? 0.4 : dimmed ? 0.55 : 1 }}
