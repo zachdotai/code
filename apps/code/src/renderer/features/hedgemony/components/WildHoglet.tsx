@@ -4,7 +4,7 @@ import { Tooltip } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useWalkTo } from "../hooks/useWalkTo";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
@@ -46,11 +46,7 @@ export function WildHoglet({
     transition: { duration: 200, easing: "ease" },
   });
 
-  // Fresh spawns walk out of the hedgehouse (map origin). Captured at mount
-  // so re-renders and re-mounts of already-known hoglets don't replay it.
-  const [animateFromHedgehouse] = useState(
-    () => Date.now() - new Date(hoglet.createdAt).getTime() < 5000,
-  );
+  const { motionX, motionY, isWalking, facing } = useWalkTo(x, y);
 
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
@@ -67,8 +63,13 @@ export function WildHoglet({
     hoglet.signalReportId !== null
       ? ANIMATION_BY_TASK_STATUS_ROBO
       : ANIMATION_BY_TASK_STATUS;
-  const animationKey = animationMap[status ?? "not_started"];
-  const fps = FPS_BY_TASK_STATUS[status ?? "not_started"];
+  const statusAnimationKey = animationMap[status ?? "not_started"];
+  const animationKey = isWalking
+    ? hoglet.signalReportId !== null
+      ? "walkRobo"
+      : "walk"
+    : statusAnimationKey;
+  const fps = isWalking ? 14 : FPS_BY_TASK_STATUS[status ?? "not_started"];
   const dimmed = status === "cancelled";
 
   const handleClick = (event: React.MouseEvent) => {
@@ -79,10 +80,11 @@ export function WildHoglet({
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
-      initial={animateFromHedgehouse ? { x: 0, y: 0 } : false}
-      animate={{ x, y }}
-      transition={{ type: "spring", damping: 22, stiffness: 220, mass: 0.5 }}
-      style={{ opacity: isDragging ? 0.4 : dimmed ? 0.55 : 1 }}
+      style={{
+        x: motionX,
+        y: motionY,
+        opacity: isDragging ? 0.4 : dimmed ? 0.55 : 1,
+      }}
     >
       <Tooltip content={`${title} — drag onto a nest to adopt`} side="bottom">
         <button
@@ -105,6 +107,7 @@ export function WildHoglet({
             <AnimatedHedgehog
               animation={animationKey}
               fps={fps}
+              facing={facing}
               size={SPRITE_SIZE}
             />
             {status === "in_progress" && (

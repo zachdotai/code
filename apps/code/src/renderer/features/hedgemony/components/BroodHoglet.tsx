@@ -4,6 +4,7 @@ import { Tooltip } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useWalkTo } from "../hooks/useWalkTo";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
@@ -47,6 +48,8 @@ export function BroodHoglet({
     transition: { duration: 200, easing: "ease" },
   });
 
+  const { motionX, motionY, isWalking, facing } = useWalkTo(x, y);
+
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
       { taskId: hoglet.taskId, cloudPrUrl: null },
@@ -62,8 +65,13 @@ export function BroodHoglet({
     hoglet.signalReportId !== null
       ? ANIMATION_BY_TASK_STATUS_ROBO
       : ANIMATION_BY_TASK_STATUS;
-  const animationKey = animationMap[status ?? "not_started"];
-  const fps = FPS_BY_TASK_STATUS[status ?? "not_started"];
+  const statusAnimationKey = animationMap[status ?? "not_started"];
+  const animationKey = isWalking
+    ? hoglet.signalReportId !== null
+      ? "walkRobo"
+      : "walk"
+    : statusAnimationKey;
+  const fps = isWalking ? 14 : FPS_BY_TASK_STATUS[status ?? "not_started"];
   const dimmed = status === "cancelled";
 
   const handleClick = (event: React.MouseEvent) => {
@@ -74,10 +82,11 @@ export function BroodHoglet({
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
-      initial={false}
-      animate={{ x, y }}
-      transition={{ type: "spring", damping: 22, stiffness: 220, mass: 0.5 }}
-      style={{ opacity: isDragging ? 0.4 : dimmed ? 0.55 : 1 }}
+      style={{
+        x: motionX,
+        y: motionY,
+        opacity: isDragging ? 0.4 : dimmed ? 0.55 : 1,
+      }}
     >
       <Tooltip
         content={
@@ -114,6 +123,7 @@ export function BroodHoglet({
             <AnimatedHedgehog
               animation={animationKey}
               fps={fps}
+              facing={facing}
               size={SPRITE_SIZE}
             />
             {status === "in_progress" && (
