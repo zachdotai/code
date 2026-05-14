@@ -1,0 +1,128 @@
+{
+  "$comment": "Voice line script for Hedgemony hoglet/hedgehog/builder units. One source of truth for both the runtime registry and the batch generation script. Each line is a short phrase; intent and unit fields drive when/where it plays. Generate 2-4 takes per line for variety.",
+  "voice_direction": {
+    "tone": "Earnest, slightly anxious British radio operator. Think WW2 RAF dispatcher crossed with a small woodland creature. Never bombastic. Never sarcastic.",
+    "pace": "Quick. Most lines under 1.5 seconds.",
+    "compression": "Light radio-band EQ + subtle bandpass for unit chatter; full range for the hedgehog (orchestrator) and goal-complete fanfare.",
+    "loudness": "Normalize to -16 LUFS integrated; peak ceiling -2 dBTP. Trim leading/trailing silence to <50ms.",
+    "format": "ogg vorbis, 44.1kHz, mono. Filename: <unit>_<intent>_<index>.ogg (e.g. hoglet_select_01.ogg)."
+  },
+  "units": {
+    "hoglet": {
+      "voice_hint": "Higher pitch, eager, slightly breathless. The grunt unit. Pick ONE consistent voice across all hoglet lines so they read as the same archetype, not different actors.",
+      "lines": {
+        "select": [
+          "Hoglet ready.",
+          "Snouts up.",
+          "At your service.",
+          "Bristling.",
+          "Yes?",
+          "Reporting."
+        ],
+        "order_move": [
+          "On it.",
+          "Rolling out.",
+          "Trotting over.",
+          "Right away.",
+          "Acknowledged.",
+          "Heading there."
+        ],
+        "order_work": [
+          "Working it.",
+          "Digging in.",
+          "Pull request inbound.",
+          "I'll get on that.",
+          "Spinning up."
+        ],
+        "complete": [
+          "Done.",
+          "PR's up.",
+          "That's me.",
+          "Ready for review."
+        ],
+        "blocked": [
+          "Stuck on something.",
+          "Need a hand.",
+          "I'm waiting on review.",
+          "CI's not happy."
+        ]
+      }
+    },
+    "hedgehog": {
+      "voice_hint": "Calmer, slightly older, measured. The orchestrator. Same actor as hoglet but with deliberate slow delivery — or a different actor entirely if budget allows.",
+      "lines": {
+        "select": [
+          "Conducting.",
+          "Hedgehog here.",
+          "The brood is at work.",
+          "Listening."
+        ],
+        "nest_established": [
+          "Nest established.",
+          "We have ground.",
+          "Goal received."
+        ],
+        "goal_complete": [
+          "Goal achieved.",
+          "Definition of done — met.",
+          "Nest may go dormant."
+        ],
+        "intervention_request": [
+          "I need your call on this.",
+          "Operator, your judgment.",
+          "There's a fork — your call."
+        ]
+      }
+    },
+    "builder": {
+      "voice_hint": "Constructive, friendly. Slightly different timbre from hoglet so the operator can tell them apart by ear.",
+      "lines": {
+        "select": [
+          "Builder, awaiting.",
+          "Where to?",
+          "Blueprint ready."
+        ],
+        "build_mode": [
+          "Pick your spot.",
+          "Show me the ground.",
+          "Marking out a nest."
+        ],
+        "place_nest": [
+          "Placed.",
+          "Foundation laid.",
+          "Nest going up."
+        ]
+      }
+    }
+  },
+  "system": {
+    "voice_hint": "Non-character announcer. Used sparingly for major narrative beats. Could be a gentle synthesized pad if voice budget is tight.",
+    "lines": {
+      "signal_arrived": [
+        "New signal.",
+        "Incoming report."
+      ],
+      "error": [
+        "That's not possible.",
+        "Cannot do that there."
+      ]
+    }
+  },
+  "generation_metadata": {
+    "takes_per_line": 3,
+    "voices": {
+      "elevenlabs": {
+        "hoglet": "voice_id placeholder — pick a young, slightly nasal Brit. e.g. 'Charlotte' or a custom-trained one.",
+        "hedgehog": "voice_id placeholder — older, measured. e.g. 'George'.",
+        "builder": "voice_id placeholder — warm, constructive. e.g. 'Daniel'.",
+        "system": "voice_id placeholder — neutral announcer."
+      },
+      "openai_tts": {
+        "hoglet": "shimmer or nova",
+        "hedgehog": "onyx or sage",
+        "builder": "alloy",
+        "system": "echo"
+      }
+    }
+  }
+}

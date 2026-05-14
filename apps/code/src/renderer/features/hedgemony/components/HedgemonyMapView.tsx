@@ -9,6 +9,7 @@ import { logger } from "@utils/logger";
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { playSfx } from "../audio/sfx";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
 import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
@@ -116,6 +117,7 @@ export function HedgemonyMapView() {
       log.error("Failed to move nest", { id: nest.id, error });
       useNestStore.getState().upsert(previous);
       toast.error("Could not move nest");
+      playSfx("error");
     }
   }
 
@@ -128,6 +130,7 @@ export function HedgemonyMapView() {
         const targetX = Math.round(x);
         const targetY = Math.round(y);
         flashMoveMarker(targetX, targetY);
+        playSfx("order");
         void moveNest(nest, targetX, targetY, { undoable: true });
         return;
       }
@@ -152,6 +155,7 @@ export function HedgemonyMapView() {
 
     const targetX = Math.round(x);
     const targetY = Math.round(y);
+    playSfx("order");
     const resolved = builder.startWalk({ x: targetX, y: targetY }, "idle");
     flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
   };
@@ -249,8 +253,14 @@ export function HedgemonyMapView() {
         moveMarker={moveMarker}
         onMapClick={handleMapClick}
         onMapRightClick={handleMapRightClick}
-        onNestSelect={(nest) => setSelection({ type: "nest", id: nest.id })}
-        onBuilderSelect={() => setSelection({ type: "builder" })}
+        onNestSelect={(nest) => {
+          playSfx("select");
+          setSelection({ type: "nest", id: nest.id });
+        }}
+        onBuilderSelect={() => {
+          playSfx("select");
+          setSelection({ type: "builder" });
+        }}
         onBuilderArrive={builder.handleArrive}
         onBuilderSegmentComplete={builder.handleSegmentComplete}
       >
@@ -284,6 +294,7 @@ export function HedgemonyMapView() {
         initialMode={pendingPlacement?.creationMode ?? "guided"}
         onClose={() => setPendingPlacement(null)}
         onCreated={(created) => {
+          playSfx("place");
           builder.startWalk(
             { x: created.mapX, y: created.mapY },
             "build",

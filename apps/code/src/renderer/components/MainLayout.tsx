@@ -8,6 +8,7 @@ import { useUsageLimitDetection } from "@features/billing/hooks/useUsageLimitDet
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
 import { BgmPlayer } from "@features/hedgemony/audio/BgmPlayer";
+import { SfxBridge } from "@features/hedgemony/audio/SfxBridge";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
@@ -159,6 +160,7 @@ export function MainLayout() {
       {billingEnabled && <UsageLimitModal />}
       <HedgehogMode />
       <BgmPlayer />
+      <SfxBridge />
     </Flex>
   );
 }

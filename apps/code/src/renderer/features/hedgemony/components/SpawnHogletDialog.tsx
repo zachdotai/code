@@ -13,6 +13,7 @@ import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { playSfx } from "../audio/sfx";
 import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
 
 const log = logger.scope("spawn-hoglet-dialog");
@@ -103,6 +104,7 @@ export function SpawnHogletDialog({ open, onClose }: SpawnHogletDialogProps) {
         });
         setError(message);
         setSubmitting(false);
+        playSfx("error");
         return;
       }
 
@@ -113,11 +115,13 @@ export function SpawnHogletDialog({ open, onClose }: SpawnHogletDialogProps) {
 
       useHogletStore.getState().upsert(WILD_BUCKET, hoglet);
       track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED, { source: "adhoc" });
+      playSfx("spawn");
       onClose();
     } catch (e) {
       log.error("Failed to spawn wild hoglet", { error: e });
       setError(e instanceof Error ? e.message : "Failed to spawn hoglet");
       setSubmitting(false);
+      playSfx("error");
     }
   };
 
