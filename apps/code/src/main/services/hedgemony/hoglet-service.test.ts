@@ -12,6 +12,7 @@ vi.mock("../../utils/logger.js", () => ({
 }));
 
 import type { HogletRepository } from "../../db/repositories/hoglet-repository";
+import type { AffinityRouterService } from "./affinity-router";
 import {
   HogletService,
   MAX_SIGNAL_STAGING_HOGLETS,
@@ -20,6 +21,7 @@ import {
 import { HedgemonyEvent, type Hoglet } from "./schemas";
 
 type CreateHogletData = Parameters<HogletRepository["create"]>[0];
+type UpdateHogletData = Parameters<HogletRepository["update"]>[1];
 
 function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
   const now = "2026-05-13T00:00:00.000Z";
@@ -28,11 +30,27 @@ function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
     taskId: `task-${crypto.randomUUID().slice(0, 8)}`,
     nestId: null,
     signalReportId: null,
+    affinityScore: null,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
     ...overrides,
   };
+}
+
+function createMockAffinityRouter(
+  routeReturn:
+    | { nestId: string; score: number }
+    | null
+    | ((input: {
+        signalReportId: string;
+      }) => Promise<{ nestId: string; score: number } | null>) = null,
+): AffinityRouterService {
+  const route =
+    typeof routeReturn === "function"
+      ? vi.fn(routeReturn)
+      : vi.fn(async () => routeReturn);
+  return { route } as unknown as AffinityRouterService;
 }
 
 function createMockRepo() {
@@ -82,16 +100,23 @@ function createMockRepo() {
         taskId: data.taskId,
         nestId: data.nestId ?? null,
         signalReportId: data.signalReportId ?? null,
+        affinityScore: data.affinityScore ?? null,
       });
       hoglets.set(hoglet.id, hoglet);
       return hoglet;
     }),
-    update: vi.fn((id: string, patch: { nestId?: string | null }) => {
+    update: vi.fn((id: string, patch: UpdateHogletData) => {
       const existing = hoglets.get(id);
       if (!existing) return null;
       const updated = {
         ...existing,
         ...(patch.nestId !== undefined ? { nestId: patch.nestId } : {}),
+        ...(patch.signalReportId !== undefined
+          ? { signalReportId: patch.signalReportId }
+          : {}),
+        ...(patch.affinityScore !== undefined
+          ? { affinityScore: patch.affinityScore }
+          : {}),
         updatedAt: new Date().toISOString(),
       };
       hoglets.set(id, updated);
@@ -114,11 +139,13 @@ function createMockRepo() {
 
 describe("HogletService", () => {
   let repo: ReturnType<typeof createMockRepo>;
+  let router: AffinityRouterService;
   let service: HogletService;
 
   beforeEach(() => {
     repo = createMockRepo();
-    service = new HogletService(repo);
+    router = createMockAffinityRouter(null);
+    service = new HogletService(repo, router);
   });
 
   it("records an adhoc hoglet and emits a wild change event", () => {
@@ -161,10 +188,10 @@ describe("HogletService", () => {
     );
   });
 
-  it("filters list output by scope", () => {
+  it("filters list output by scope", async () => {
     service.recordAdhoc({ taskId: "task-1" });
     service.recordAdhoc({ taskId: "task-2" });
-    service.recordSignalBacked({
+    await service.recordSignalBacked({
       taskId: "task-signal-1",
       signalReportId: "sr-1",
     });
@@ -271,8 +298,8 @@ describe("HogletService", () => {
       });
     });
 
-    it("routes signal-backed hoglets back to signal-staging on release", () => {
-      const signal = service.recordSignalBacked({
+    it("routes signal-backed hoglets back to signal-staging on release", async () => {
+      const signal = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
       });
@@ -314,11 +341,11 @@ describe("HogletService", () => {
   });
 
   describe("recordSignalBacked", () => {
-    it("records a signal-backed hoglet and emits a signal_staging event", () => {
+    it("records a signal-backed hoglet and emits a signal_staging event", async () => {
       const listener = vi.fn();
       service.on(HedgemonyEvent.HogletChanged, listener);
 
-      const hoglet = service.recordSignalBacked({
+      const hoglet = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
       });
@@ -327,11 +354,13 @@ describe("HogletService", () => {
         taskId: "task-1",
         nestId: null,
         signalReportId: "sr-1",
+        affinityScore: null,
       });
       expect(hoglet).toMatchObject({
         taskId: "task-1",
         nestId: null,
         signalReportId: "sr-1",
+        affinityScore: null,
       });
       expect(listener).toHaveBeenCalledWith({
         bucket: { kind: "signal_staging" },
@@ -339,12 +368,57 @@ describe("HogletService", () => {
       });
     });
 
-    it("is idempotent for the same signalReportId", () => {
-      const first = service.recordSignalBacked({
+    it("auto-routes the hoglet into a nest when the router returns a match", async () => {
+      router = createMockAffinityRouter({
+        nestId: "nest-checkout",
+        score: 0.82,
+      });
+      service = new HogletService(repo, router);
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+
+      const hoglet = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
       });
-      const second = service.recordSignalBacked({
+
+      expect(repo.create).toHaveBeenCalledWith({
+        taskId: "task-1",
+        nestId: "nest-checkout",
+        signalReportId: "sr-1",
+        affinityScore: 0.82,
+      });
+      expect(hoglet.nestId).toBe("nest-checkout");
+      expect(hoglet.affinityScore).toBe(0.82);
+      expect(listener).toHaveBeenCalledWith({
+        bucket: { kind: "nest", nestId: "nest-checkout" },
+        event: { kind: "upsert", hoglet },
+      });
+    });
+
+    it("does not enforce the staging cap when the router places the hoglet in a nest", async () => {
+      // Fill staging to the cap, then route the next one — should succeed.
+      for (let i = 0; i < MAX_SIGNAL_STAGING_HOGLETS; i++) {
+        await service.recordSignalBacked({
+          taskId: `task-${i}`,
+          signalReportId: `sr-${i}`,
+        });
+      }
+      router = createMockAffinityRouter({ nestId: "nest-A", score: 0.9 });
+      service = new HogletService(repo, router);
+      const routed = await service.recordSignalBacked({
+        taskId: "task-routed",
+        signalReportId: "sr-routed",
+      });
+      expect(routed.nestId).toBe("nest-A");
+    });
+
+    it("is idempotent for the same signalReportId", async () => {
+      const first = await service.recordSignalBacked({
+        taskId: "task-1",
+        signalReportId: "sr-1",
+      });
+      const second = await service.recordSignalBacked({
         taskId: "task-2-different",
         signalReportId: "sr-1",
       });
@@ -353,9 +427,9 @@ describe("HogletService", () => {
       expect(repo.create).toHaveBeenCalledTimes(1);
     });
 
-    it("returns the existing hoglet when taskId is already recorded", () => {
+    it("returns the existing hoglet when taskId is already recorded", async () => {
       const adhoc = service.recordAdhoc({ taskId: "task-1" });
-      const signal = service.recordSignalBacked({
+      const signal = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
       });
@@ -364,24 +438,24 @@ describe("HogletService", () => {
       expect(repo.create).toHaveBeenCalledTimes(1);
     });
 
-    it("enforces the signal staging cap", () => {
+    it("enforces the signal staging cap", async () => {
       for (let i = 0; i < MAX_SIGNAL_STAGING_HOGLETS; i++) {
-        service.recordSignalBacked({
+        await service.recordSignalBacked({
           taskId: `task-${i}`,
           signalReportId: `sr-${i}`,
         });
       }
 
-      expect(() =>
+      await expect(
         service.recordSignalBacked({
           taskId: "task-overflow",
           signalReportId: "sr-overflow",
         }),
-      ).toThrowError("signal_staging_cap_reached");
+      ).rejects.toThrowError("signal_staging_cap_reached");
     });
 
-    it("emits removed from signal_staging when adopting a signal-backed hoglet", () => {
-      const signal = service.recordSignalBacked({
+    it("emits removed from signal_staging when adopting a signal-backed hoglet", async () => {
+      const signal = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
       });
@@ -402,9 +476,40 @@ describe("HogletService", () => {
     });
   });
 
+  describe("affinity score clearing", () => {
+    it("clears affinityScore on adopt", async () => {
+      router = createMockAffinityRouter({ nestId: "nest-A", score: 0.9 });
+      service = new HogletService(repo, router);
+      const routed = await service.recordSignalBacked({
+        taskId: "task-1",
+        signalReportId: "sr-1",
+      });
+      expect(routed.affinityScore).toBe(0.9);
+
+      // Release first (router placed it in nest-A; manually move it back).
+      const released = service.release({ hogletId: routed.id });
+      expect(released.affinityScore).toBeNull();
+
+      // Now adopt manually — score must remain null.
+      const adopted = service.adopt({ hogletId: routed.id, nestId: "nest-B" });
+      expect(adopted.affinityScore).toBeNull();
+    });
+
+    it("clears affinityScore on release", async () => {
+      router = createMockAffinityRouter({ nestId: "nest-A", score: 0.75 });
+      service = new HogletService(repo, router);
+      const routed = await service.recordSignalBacked({
+        taskId: "task-1",
+        signalReportId: "sr-1",
+      });
+      const released = service.release({ hogletId: routed.id });
+      expect(released.affinityScore).toBeNull();
+    });
+  });
+
   describe("dismissSignal", () => {
-    it("soft-deletes a signal-backed hoglet and emits removal", () => {
-      const signal = service.recordSignalBacked({
+    it("soft-deletes a signal-backed hoglet and emits removal", async () => {
+      const signal = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
       });

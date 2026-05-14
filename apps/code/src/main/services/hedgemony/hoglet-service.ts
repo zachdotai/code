@@ -3,6 +3,7 @@ import type { HogletRepository } from "../../db/repositories/hoglet-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
+import type { AffinityRouterService } from "./affinity-router";
 import {
   type AdoptHogletInput,
   type DismissSignalHogletInput,
@@ -40,6 +41,8 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
   constructor(
     @inject(MAIN_TOKENS.HogletRepository)
     private readonly hoglets: HogletRepository,
+    @inject(MAIN_TOKENS.AffinityRouterService)
+    private readonly affinityRouter: AffinityRouterService,
   ) {
     super();
   }
@@ -81,7 +84,9 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     return created;
   }
 
-  recordSignalBacked(input: RecordSignalBackedHogletInput): Hoglet {
+  async recordSignalBacked(
+    input: RecordSignalBackedHogletInput,
+  ): Promise<Hoglet> {
     // Idempotent on signal_report_id (UNIQUE index in sqlite). A duplicate
     // ingestion attempt for the same signal returns the existing row.
     const existingBySignal = this.hoglets.findBySignalReportId(
@@ -106,23 +111,51 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
       return existingByTask;
     }
 
-    const stagingCount = this.hoglets.countSignalStaging();
-    if (stagingCount >= MAX_SIGNAL_STAGING_HOGLETS) {
-      throw new Error("signal_staging_cap_reached");
+    // Affinity routing: ask before insert so the hoglet lands in its final
+    // home in one write. Failures inside the router return null without
+    // throwing, so ingestion never fails because routing was unavailable.
+    const match = await this.affinityRouter.route({
+      signalReportId: input.signalReportId,
+    });
+
+    if (match === null) {
+      const stagingCount = this.hoglets.countSignalStaging();
+      if (stagingCount >= MAX_SIGNAL_STAGING_HOGLETS) {
+        throw new Error("signal_staging_cap_reached");
+      }
+      const created = this.hoglets.create({
+        taskId: input.taskId,
+        nestId: null,
+        signalReportId: input.signalReportId,
+        affinityScore: null,
+      });
+      log.info("Signal-backed hoglet recorded in staging", {
+        id: created.id,
+        taskId: created.taskId,
+        signalReportId: created.signalReportId,
+      });
+      this.emitChange(
+        { kind: "signal_staging" },
+        { kind: "upsert", hoglet: created },
+      );
+      return created;
     }
 
     const created = this.hoglets.create({
       taskId: input.taskId,
-      nestId: null,
+      nestId: match.nestId,
       signalReportId: input.signalReportId,
+      affinityScore: match.score,
     });
-    log.info("Signal-backed hoglet recorded", {
+    log.info("Signal-backed hoglet auto-routed to nest", {
       id: created.id,
       taskId: created.taskId,
       signalReportId: created.signalReportId,
+      nestId: match.nestId,
+      affinityScore: match.score,
     });
     this.emitChange(
-      { kind: "signal_staging" },
+      { kind: "nest", nestId: match.nestId },
       { kind: "upsert", hoglet: created },
     );
     return created;
@@ -141,8 +174,11 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     }
 
     const previousBucket = bucketForHoglet(existing);
+    // Operator override clears the affinity score — the hoglet is now in its
+    // current nest by operator decision, not by the router.
     const updated = this.hoglets.update(input.hogletId, {
       nestId: input.nestId,
+      affinityScore: null,
     });
     if (!updated) throw new Error("hoglet_update_failed");
 
@@ -169,7 +205,10 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     if (existing.nestId === null) return existing;
 
     const previousNestId = existing.nestId;
-    const updated = this.hoglets.update(input.hogletId, { nestId: null });
+    const updated = this.hoglets.update(input.hogletId, {
+      nestId: null,
+      affinityScore: null,
+    });
     if (!updated) throw new Error("hoglet_update_failed");
 
     // Released signal-backed hoglets return to the signal-staging bucket;

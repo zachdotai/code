@@ -64,6 +64,13 @@
       "when": 1778715107485,
       "tag": "0008_yielding_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1778727272752,
+      "tag": "0009_cloudy_valeria_richards",
+      "breakpoints": true
     }
   ]
 }

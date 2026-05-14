@@ -1,0 +1,1 @@
+ALTER TABLE `hedgemony_hoglet` ADD `affinity_score` real;

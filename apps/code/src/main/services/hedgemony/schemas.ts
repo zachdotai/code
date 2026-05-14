@@ -209,6 +209,13 @@ export const hoglet = z.object({
   taskId: z.string(),
   nestId: z.string().nullable(),
   signalReportId: z.string().nullable(),
+  /**
+   * Cosine similarity (0..1) of the matching nest's goal text against the
+   * source signal report's embedding at routing time. Non-null iff the hoglet
+   * was placed by the AffinityRouter; cleared on operator adopt/release so
+   * the field always reflects current placement provenance, not history.
+   */
+  affinityScore: z.number().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   deletedAt: z.string().nullable(),

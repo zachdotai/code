@@ -40,6 +40,7 @@ function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
     taskId: `task-${crypto.randomUUID().slice(0, 8)}`,
     nestId: null,
     signalReportId: null,
+    affinityScore: null,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,

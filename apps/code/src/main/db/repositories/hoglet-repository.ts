@@ -11,11 +11,13 @@ export interface CreateHogletData {
   taskId: string;
   nestId?: string | null;
   signalReportId?: string | null;
+  affinityScore?: number | null;
 }
 
 export interface UpdateHogletData {
   nestId?: string | null;
   signalReportId?: string | null;
+  affinityScore?: number | null;
 }
 
 const byId = (id: string) => eq(hedgemonyHoglets.id, id);
@@ -111,6 +113,7 @@ export class HogletRepository {
       taskId: data.taskId,
       nestId: data.nestId ?? null,
       signalReportId: data.signalReportId ?? null,
+      affinityScore: data.affinityScore ?? null,
       createdAt: timestamp,
       updatedAt: timestamp,
     };

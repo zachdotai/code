@@ -48,6 +48,7 @@ import { FsService } from "../services/fs/service";
 import { GitService } from "../services/git/service";
 import { GitHubIntegrationService } from "../services/github-integration/service";
 import { HandoffService } from "../services/handoff/service";
+import { AffinityRouterService } from "../services/hedgemony/affinity-router";
 import { GoalSpecDraftService } from "../services/hedgemony/goal-spec-draft-service";
 import { HogletService } from "../services/hedgemony/hoglet-service";
 import { NestChatService } from "../services/hedgemony/nest-chat-service";
@@ -155,6 +156,7 @@ container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
 container.bind(MAIN_TOKENS.NestChatService).to(NestChatService);
 container.bind(MAIN_TOKENS.NestService).to(NestService);
+container.bind(MAIN_TOKENS.AffinityRouterService).to(AffinityRouterService);
 container.bind(MAIN_TOKENS.HogletService).to(HogletService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

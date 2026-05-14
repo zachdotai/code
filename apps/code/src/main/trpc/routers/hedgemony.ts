@@ -127,7 +127,9 @@ export const hedgemonyRouter = router({
     recordSignalBacked: publicProcedure
       .input(recordSignalBackedHogletInput)
       .output(hoglet)
-      .mutation(({ input }) => getHogletService().recordSignalBacked(input)),
+      .mutation(
+        async ({ input }) => await getHogletService().recordSignalBacked(input),
+      ),
 
     adopt: publicProcedure
       .input(adoptHogletInput)

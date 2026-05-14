@@ -84,4 +84,5 @@ export const MAIN_TOKENS = Object.freeze({
   NestService: Symbol.for("Main.NestService"),
   NestChatService: Symbol.for("Main.NestChatService"),
   HogletService: Symbol.for("Main.HogletService"),
+  AffinityRouterService: Symbol.for("Main.AffinityRouterService"),
 });

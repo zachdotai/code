@@ -83,7 +83,21 @@ export function BroodHoglet({ hoglet, nestId, index, x, y }: BroodHogletProps) {
       transition={{ type: "spring", damping: 22, stiffness: 220, mass: 0.5 }}
       style={{ opacity: isDragging ? 0.4 : dimmed ? 0.55 : 1 }}
     >
-      <Tooltip content={title} side="bottom">
+      <Tooltip
+        content={
+          hoglet.affinityScore !== null ? (
+            <span className="flex flex-col gap-0.5">
+              <span>{title}</span>
+              <span className="text-(--gray-9) text-[11px]">
+                Auto-routed (similarity {hoglet.affinityScore.toFixed(2)})
+              </span>
+            </span>
+          ) : (
+            title
+          )
+        }
+        side="bottom"
+      >
         <button
           ref={ref}
           type="button"
