@@ -1,20 +1,10 @@
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
-import { get } from "@renderer/di/container";
-import { RENDERER_TOKENS } from "@renderer/di/tokens";
-import type {
-  TaskCreationInput,
-  TaskService,
-} from "@renderer/features/task-detail/service/service";
-import { trpcClient } from "@renderer/trpc/client";
-import { toast } from "@renderer/utils/toast";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useWorkSkillsStore } from "@stores/workSkillsStore";
-import { logger } from "@utils/logger";
 import { useCallback, useEffect, useState } from "react";
 import { buildSkillGeneratorPrompt } from "../utils/buildSkillGeneratorPrompt";
-
-const log = logger.scope("work-generate");
+import { runWorkSkill } from "../utils/runWorkSkill";
 
 function deriveSkillName(prompt: string): string {
   const firstLine = prompt.trim().split(/\r?\n/)[0] ?? "";
@@ -24,11 +14,6 @@ function deriveSkillName(prompt: string): string {
 
 function newSkillId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `skill-${Date.now()}`;
-}
-
-async function resolveRepoPath(folders: string[]): Promise<string> {
-  if (folders.length > 0) return folders[0];
-  return trpcClient.os.getHomeDir.query();
 }
 
 export function WorkGenerateView() {
@@ -61,40 +46,17 @@ export function WorkGenerateView() {
 
     addSkill({ id: skillId, name: skillName, prompt: userPrompt });
 
-    try {
-      const folderPaths = folders.map((f) => f.path);
-      const repoPath = await resolveRepoPath(folderPaths);
-      const wrappedPrompt = buildSkillGeneratorPrompt(userPrompt);
-
-      const input: TaskCreationInput = {
-        content: wrappedPrompt,
-        repoPath,
-        workspaceMode: "local",
-      };
-
-      const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
-      const result = await taskService.createTask(input, (output) => {
-        updateSkill(skillId, { taskId: output.task.id });
+    await runWorkSkill({
+      prompt: buildSkillGeneratorPrompt(userPrompt),
+      folders: folders.map((f) => f.path),
+      onTaskCreated: (taskId) => {
+        updateSkill(skillId, { taskId });
         navigateToWorkSkill(skillId);
-      });
+      },
+      failureLabel: "Failed to start skill generation",
+    });
 
-      if (!result.success) {
-        toast.error("Failed to start skill generation", {
-          description: result.error,
-        });
-        log.error("Skill generation failed", {
-          failedStep: result.failedStep,
-          error: result.error,
-        });
-      }
-    } catch (error) {
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error("Failed to start skill generation", { description });
-      log.error("Unexpected error during skill generation", { error });
-    } finally {
-      setIsSubmitting(false);
-    }
+    setIsSubmitting(false);
   }, [canSubmit, prompt, addSkill, updateSkill, navigateToWorkSkill, folders]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

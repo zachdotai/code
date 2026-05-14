@@ -8,6 +8,7 @@ export interface WorkSkill {
   prompt: string;
   taskId?: string;
   isSeed?: true;
+  catalogId?: string;
 }
 
 interface WorkSkillsStoreState {
@@ -17,7 +18,9 @@ interface WorkSkillsStoreState {
 interface WorkSkillsStoreActions {
   addSkill: (skill: WorkSkill) => void;
   updateSkill: (id: string, updates: Partial<WorkSkill>) => void;
+  deleteSkill: (id: string) => void;
   getSkill: (id: string) => WorkSkill | undefined;
+  getByCatalogId: (catalogId: string) => WorkSkill | undefined;
 }
 
 type WorkSkillsStore = WorkSkillsStoreState & WorkSkillsStoreActions;
@@ -34,7 +37,11 @@ export const useWorkSkillsStore = create<WorkSkillsStore>()(
             s.id === id ? { ...s, ...updates } : s,
           ),
         })),
+      deleteSkill: (id) =>
+        set((state) => ({ skills: state.skills.filter((s) => s.id !== id) })),
       getSkill: (id) => get().skills.find((s) => s.id === id),
+      getByCatalogId: (catalogId) =>
+        get().skills.find((s) => s.catalogId === catalogId),
     }),
     {
       name: "work-skills-storage",

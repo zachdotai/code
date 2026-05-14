@@ -2,26 +2,34 @@ import {
   ArrowSquareOut,
   CalendarCheck,
   ChartLineUp,
-  ChatsTeardrop,
   Compass,
   CurrencyDollar,
+  Gear,
+  Hash,
   type IconProps,
   Lightbulb,
-  Lightning,
   Megaphone,
+  Palette,
   Plus,
-  Target,
+  Scales,
+  UsersThree,
   X,
 } from "@phosphor-icons/react";
 import { Box, Dialog, Flex, SegmentedControl, Text } from "@radix-ui/themes";
-import generalistImg from "@renderer/assets/images/personalities/blank.png";
-import builderImg from "@renderer/assets/images/personalities/data.png";
-import operatorImg from "@renderer/assets/images/personalities/operator.png";
-import closerImg from "@renderer/assets/images/personalities/sales.png";
-import listenerImg from "@renderer/assets/images/personalities/support.png";
 import { useNavigationStore } from "@stores/navigationStore";
+import { useWorkSkillsStore } from "@stores/workSkillsStore";
 import { openUrlInBrowser } from "@utils/browser";
-import { type ComponentType, useEffect, useState } from "react";
+import { type ComponentType, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { type CatalogSkill, getUserCatalog } from "../data/skillsCatalog";
+import {
+  AXIS_LABEL,
+  AXIS_ORDER,
+  computeStarMap,
+  type StarAxis,
+  type StarMapScores,
+} from "../utils/computeStarMap";
+import { SkillsStarMap, SkillsStarMapMini } from "./SkillsStarMap";
 
 const TEAM_SKILLS_LIBRARY_URL =
   "https://app.posthog.com/project/2/llm-analytics/skills";
@@ -50,88 +58,46 @@ const TAG_ORDER: SkillTag[] = [
   "reporting",
 ];
 
-interface Skill {
+interface TeamSkill {
   icon: ComponentType<IconProps>;
   title: string;
   description: string;
   tags: SkillTag[];
 }
 
-const SKILLS: Record<SkillScope, { active: Skill[]; library: Skill[] }> = {
-  user: {
-    active: [
-      {
-        icon: CalendarCheck,
-        title: "Weekly status writeup",
-        description: "Drafts your Friday recap from this week's activity",
-        tags: ["reporting"],
-      },
-      {
-        icon: Megaphone,
-        title: "Marketing campaign digest",
-        description: "Summarizes channel performance every Monday",
-        tags: ["growth"],
-      },
-    ],
-    library: [
-      {
-        icon: Target,
-        title: "Product-market fit tracker",
-        description:
-          "PMF survey, retention dashboard, and the right users to interview",
-        tags: ["product", "customer"],
-      },
-      {
-        icon: ChatsTeardrop,
-        title: "Customer interview synthesis",
-        description: "Clusters interview notes into recurring themes",
-        tags: ["customer"],
-      },
-      {
-        icon: Lightning,
-        title: "Slack standup recap",
-        description: "Turns yesterday's threads into a clean morning brief",
-        tags: ["reporting"],
-      },
-      {
-        icon: ChatsTeardrop,
-        title: "Overnight Slack triage",
-        description:
-          "Surfaces high-signal Slack messages from overnight — mentions, thread replies, urgent priority-channel pings",
-        tags: ["reporting"],
-      },
-    ],
-  },
-  team: {
-    active: [
-      {
-        icon: CurrencyDollar,
-        title: "Pipeline brief",
-        description: "Shared with sales every Monday at 9am",
-        tags: ["sales"],
-      },
-      {
-        icon: ChartLineUp,
-        title: "Feature adoption report",
-        description: "Tracks adoption of recently shipped product work",
-        tags: ["product"],
-      },
-    ],
-    library: [
-      {
-        icon: Compass,
-        title: "Roadmap proposal",
-        description: "Drafts a next-quarter pitch from signals + interviews",
-        tags: ["product", "customer"],
-      },
-      {
-        icon: CalendarCheck,
-        title: "Quarterly review",
-        description: "Pulls KPIs, wins, and misses into a board-ready doc",
-        tags: ["reporting"],
-      },
-    ],
-  },
+/**
+ * Team-scope skills live in PostHog Cloud — the in-app cards are decorative
+ * pointers; the "Manage in PostHog" link is the canonical surface.
+ */
+const TEAM_SKILLS: { active: TeamSkill[]; library: TeamSkill[] } = {
+  active: [
+    {
+      icon: CurrencyDollar,
+      title: "Pipeline brief",
+      description: "Shared with sales every Monday at 9am",
+      tags: ["sales"],
+    },
+    {
+      icon: ChartLineUp,
+      title: "Feature adoption report",
+      description: "Tracks adoption of recently shipped product work",
+      tags: ["product"],
+    },
+  ],
+  library: [
+    {
+      icon: Compass,
+      title: "Roadmap proposal",
+      description: "Drafts a next-quarter pitch from signals + interviews",
+      tags: ["product", "customer"],
+    },
+    {
+      icon: CalendarCheck,
+      title: "Quarterly review",
+      description: "Pulls KPIs, wins, and misses into a board-ready doc",
+      tags: ["reporting"],
+    },
+  ],
 };
 
 function TagFilterChip({
@@ -158,37 +124,58 @@ function TagFilterChip({
   );
 }
 
+interface SkillCardProps {
+  icon: ComponentType<IconProps>;
+  title: string;
+  description: string;
+  isActive: boolean;
+  onToggle?: () => void;
+  onOpen?: () => void;
+}
+
 function SkillCard({
-  skill,
-  variant,
-}: {
-  skill: Skill;
-  variant: "active" | "library";
-}) {
-  const Icon = skill.icon;
-  const isActive = variant === "active";
+  icon: Icon,
+  title,
+  description,
+  isActive,
+  onToggle,
+  onOpen,
+}: SkillCardProps) {
+  const interactive = !!onOpen;
   return (
     <Flex
       align="center"
       gap="3"
-      className="rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-3"
+      className={`rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-3 transition-colors ${
+        interactive
+          ? "cursor-pointer hover:border-(--gray-7) hover:bg-(--gray-2)"
+          : ""
+      }`}
+      onClick={onOpen}
     >
       <Box className="text-(--gray-11)">
         <Icon size={20} weight="duotone" />
       </Box>
       <Box className="min-w-0 flex-1">
         <Text as="div" weight="medium" className="text-(--gray-12) text-[13px]">
-          {skill.title}
+          {title}
         </Text>
         <Text as="div" className="text-(--gray-11) text-[12px]">
-          {skill.description}
+          {description}
         </Text>
       </Box>
       <button
         type="button"
-        className={`flex shrink-0 items-center gap-1 rounded-(--radius-2) border border-(--gray-5) px-2 py-1 font-medium text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) ${
-          isActive ? "text-(--gray-11)" : "text-(--gray-12)"
-        }`}
+        disabled={!onToggle}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle?.();
+        }}
+        className={`flex shrink-0 items-center gap-1 rounded-(--radius-2) border border-(--gray-5) px-2 py-1 font-medium text-[12px] transition-colors ${
+          onToggle
+            ? "hover:border-(--gray-7) hover:bg-(--gray-2)"
+            : "opacity-60"
+        } ${isActive ? "text-(--gray-11)" : "text-(--gray-12)"}`}
       >
         {isActive ? (
           <>
@@ -209,15 +196,17 @@ function SkillCard({
 function SkillSection({
   label,
   hint,
-  skills,
-  variant,
+  count,
+  emptyMessage,
   action,
+  children,
 }: {
   label: string;
   hint: string;
-  skills: Skill[];
-  variant: "active" | "library";
+  count: number;
+  emptyMessage: string;
   action?: React.ReactNode;
+  children: React.ReactNode;
 }) {
   return (
     <Box className="w-full">
@@ -231,7 +220,7 @@ function SkillSection({
             {label}
           </Text>
           <Text as="span" className="text-(--gray-10) text-[12px]">
-            {skills.length}
+            {count}
           </Text>
         </Flex>
         {action}
@@ -239,319 +228,205 @@ function SkillSection({
       <Text as="div" className="mb-3 text-(--gray-11) text-[12px]">
         {hint}
       </Text>
-      {skills.length === 0 ? (
+      {count === 0 ? (
         <Box className="rounded-(--radius-3) border border-(--gray-5) border-dashed bg-(--gray-1) p-4 text-center text-(--gray-10) text-[12px]">
-          No skills match this tag.
+          {emptyMessage}
         </Box>
       ) : (
         <Flex direction="column" gap="2">
-          {skills.map((s) => (
-            <SkillCard key={s.title} skill={s} variant={variant} />
-          ))}
+          {children}
         </Flex>
       )}
     </Box>
   );
 }
 
-type PersonalityId = "product" | "growth" | "sales" | "customer" | "mixed";
+const HOUR_MS = 60 * 60 * 1000;
 
-interface SkillPersonality {
-  id: PersonalityId;
-  name: string;
-  tagline: string;
-  body: string;
-  teamBody: string;
-  hog: string;
+function newSkillId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `skill-${Date.now()}`;
 }
 
-const PERSONALITIES: Record<PersonalityId, SkillPersonality> = {
-  product: {
-    id: "product",
-    name: "The Builder",
-    tagline: "Ship first, name it later.",
-    body: "You'd rather merge a branch than open a Notion doc. Adoption curves get you out of bed. The roadmap is wherever the last good idea landed.",
-    teamBody:
-      "Your team merges before it writes specs. The roadmap is whatever was on the whiteboard yesterday. Velocity > planning, until it isn't.",
-    hog: builderImg,
-  },
-  growth: {
-    id: "growth",
-    name: "The Operator",
-    tagline: "Funnels in your head, conversion on your tongue.",
-    body: "You measure what others romanticize. If a channel can't be attributed, it doesn't exist. Your friends are a little tired of hearing about LTV.",
-    teamBody:
-      "Your team treats dashboards as decision tools, not decoration. Anything not measured doesn't ship. Channel attribution is the love language.",
-    hog: operatorImg,
-  },
-  sales: {
-    id: "sales",
-    name: "The Closer",
-    tagline: "Pipeline is a verb.",
-    body: "You read a deal cycle like a stack trace. CRM open in one tab, Slack in another, energy drink in hand. You ship the deal and the postmortem.",
-    teamBody:
-      "Your team can pull pipeline at 2am. Every customer call has a follow-up by EOD. The deal is also the product.",
-    hog: closerImg,
-  },
-  customer: {
-    id: "customer",
-    name: "The Listener",
-    tagline: "Support is product research in disguise.",
-    body: "You treat threads like primary sources. The truth lives in transcripts and #feedback, not in roadmap docs. People keep shipping what you told them to.",
-    teamBody:
-      "Your team reads the support inbox like a roadmap. Truth pipes from #feedback to PRs. Customers are everyone's job, not a department.",
-    hog: listenerImg,
-  },
-  mixed: {
-    id: "mixed",
-    name: "The Generalist",
-    tagline: "Everything is your job and nothing is your specialty.",
-    body: "You context-switch faster than your laptop does. Beware: you will be asked to do all of it forever.",
-    teamBody:
-      "Your team is small enough that everyone touches everything. Job descriptions are a suggestion. Bus factor of one, hat count of many.",
-    hog: generalistImg,
-  },
+const ROLE_CRESTS: Record<StarAxis, ComponentType<IconProps>> = {
+  marketing: Megaphone,
+  operations: Gear,
+  product: Compass,
+  design: Palette,
+  hr: UsersThree,
+  finance: CurrencyDollar,
+  legal: Scales,
 };
 
-const PERSONALITY_ORDER: PersonalityId[] = [
-  "product",
-  "growth",
-  "sales",
-  "customer",
-  "mixed",
-];
-
-function computePersonality(skills: Skill[]): SkillPersonality {
-  const counts: Record<SkillTag, number> = {
-    product: 0,
-    growth: 0,
-    sales: 0,
-    customer: 0,
-    reporting: 0,
-  };
-  for (const skill of skills) {
-    for (const tag of skill.tags) {
-      counts[tag]++;
-    }
+function topAxis(scores: StarMapScores): StarAxis | null {
+  if (scores.max === 0) return null;
+  let best: StarAxis = AXIS_ORDER[0];
+  for (const axis of AXIS_ORDER) {
+    if (scores.axes[axis] > scores.axes[best]) best = axis;
   }
-  let top: SkillTag | null = null;
-  let topCount = 0;
-  let tied = false;
-  for (const tag of TAG_ORDER) {
-    if (counts[tag] > topCount) {
-      top = tag;
-      topCount = counts[tag];
-      tied = false;
-    } else if (counts[tag] === topCount && top !== null) {
-      tied = true;
-    }
-  }
-  if (top === null || topCount === 0 || tied || top === "reporting") {
-    return PERSONALITIES.mixed;
-  }
-  return PERSONALITIES[top];
+  return scores.axes[best] > 0 ? best : null;
 }
 
-type PersonalitySubject = "you" | "team";
-
-function SkillsPersonalityDialog({
-  open,
-  onOpenChange,
-  personality,
-  subject,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  personality: SkillPersonality;
-  subject: PersonalitySubject;
-}) {
-  const [view, setView] = useState<"result" | "gallery">("result");
-  const [viewingId, setViewingId] = useState<PersonalityId>(personality.id);
-
-  useEffect(() => {
-    if (open) {
-      setView("result");
-      setViewingId(personality.id);
-    }
-  }, [open, personality.id]);
-
-  const viewing = PERSONALITIES[viewingId];
-  const isOwn = viewing.id === personality.id;
-  const eyebrow = isOwn
-    ? subject === "team"
-      ? "Your team's skills personality"
-      : "Your skills personality"
-    : "Skills personality";
-  const body = subject === "team" ? viewing.teamBody : viewing.body;
-
+function RoleCrests({ scores }: { scores: StarMapScores }) {
+  const leader = topAxis(scores);
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content maxWidth="520px" size="2" className="relative">
-        <button
-          type="button"
-          onClick={() => onOpenChange(false)}
-          aria-label="Close"
-          className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-(--radius-2) text-(--gray-10) transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
-        >
-          <X size={14} weight="bold" />
-        </button>
-        {view === "result" ? (
-          <Flex direction="column" align="center" gap="4" className="py-2">
-            <img
-              src={viewing.hog}
-              alt=""
-              className="h-28 w-auto select-none"
-              draggable={false}
-            />
-            <Flex direction="column" align="center" gap="1">
-              <Text
-                as="div"
-                className="text-(--gray-10) text-[11px] uppercase tracking-wide"
-              >
-                {eyebrow}
-              </Text>
-              <Text
-                as="div"
-                weight="medium"
-                className="text-(--gray-12) text-[22px]"
-              >
-                {viewing.name}
-              </Text>
-              <Text
-                as="div"
-                className="text-center text-(--gray-11) text-[13px] italic"
-              >
-                {viewing.tagline}
-              </Text>
-            </Flex>
-            <Text
-              as="div"
-              className="text-center text-(--gray-11) text-[13px] leading-snug"
-            >
-              {body}
-            </Text>
-            <Flex direction="column" align="center" gap="2" className="mt-1">
-              <button
-                type="button"
-                onClick={() => onOpenChange(false)}
-                className="rounded-(--radius-2) bg-(--gray-12) px-3 py-1 font-medium text-(--gray-1) text-[12px]"
-              >
-                Live with it
-              </button>
-              <button
-                type="button"
-                onClick={() => setView("gallery")}
-                className="text-(--gray-10) text-[12px] italic underline-offset-2 transition-colors hover:text-(--gray-11) hover:underline"
-              >
-                See the others
-              </button>
-            </Flex>
-          </Flex>
-        ) : (
-          <Flex direction="column" gap="3" className="py-1">
-            <button
-              type="button"
-              onClick={() => setView("result")}
-              className="self-start text-(--gray-11) text-[12px] underline-offset-2 hover:text-(--gray-12) hover:underline"
-            >
-              ← Back
-            </button>
-            <Flex direction="column" gap="2">
-              {PERSONALITY_ORDER.map((id) => {
-                const p = PERSONALITIES[id];
-                const isYou = p.id === personality.id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => {
-                      setViewingId(p.id);
-                      setView("result");
-                    }}
-                    className={`flex items-center gap-3 rounded-(--radius-3) border p-2.5 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) ${
-                      isYou
-                        ? "border-(--gray-7) bg-(--gray-2)"
-                        : "border-(--gray-5) bg-(--gray-1)"
-                    }`}
-                  >
-                    <img
-                      src={p.hog}
-                      alt=""
-                      className="h-12 w-12 shrink-0 select-none object-contain"
-                      draggable={false}
-                    />
-                    <Box className="min-w-0 flex-1">
-                      <Flex align="center" gap="2">
-                        <Text
-                          as="span"
-                          weight="medium"
-                          className="text-(--gray-12) text-[13px]"
-                        >
-                          {p.name}
-                        </Text>
-                        {isYou && (
-                          <Text
-                            as="span"
-                            className="rounded-(--radius-1) bg-(--gray-12) px-1.5 py-0.5 text-(--gray-1) text-[10px] uppercase tracking-wide"
-                          >
-                            {subject === "team" ? "Team" : "You"}
-                          </Text>
-                        )}
-                      </Flex>
-                      <Text
-                        as="div"
-                        className="text-(--gray-11) text-[12px] italic"
-                      >
-                        {p.tagline}
-                      </Text>
-                    </Box>
-                  </button>
-                );
-              })}
-            </Flex>
-          </Flex>
-        )}
-      </Dialog.Content>
-    </Dialog.Root>
+    <Flex align="center" justify="center" gap="2" className="w-full">
+      {AXIS_ORDER.map((axis) => {
+        const Icon = ROLE_CRESTS[axis];
+        const isLeader = axis === leader;
+        return (
+          <Box
+            key={axis}
+            title={AXIS_LABEL[axis]}
+            className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
+              isLeader
+                ? "border-(--orange-9) bg-(--orange-3) text-(--orange-11)"
+                : "border-(--gray-5) bg-(--gray-2) text-(--gray-10)"
+            }`}
+          >
+            <Icon size={16} weight={isLeader ? "fill" : "duotone"} />
+          </Box>
+        );
+      })}
+    </Flex>
   );
+}
+
+function formatStarMapForSlack(scores: StarMapScores): string {
+  const tagline = starMapTagline(scores);
+  const lines = AXIS_ORDER.map(
+    (a) => `• ${AXIS_LABEL[a]}: ${scores.axes[a]}`,
+  ).join("\n");
+  const founder = Math.round(scores.founder * 10) / 10;
+  return `*Your star map* — ${tagline}\n${lines}\n_Founder score: ${founder}_`;
+}
+
+async function copyStarMapToSlack(scores: StarMapScores): Promise<void> {
+  const text = formatStarMapForSlack(scores);
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success("Copied for Slack — paste it into any channel");
+  } catch {
+    toast.error("Couldn't copy to clipboard");
+  }
+}
+
+function starMapTagline(scores: StarMapScores): string {
+  if (scores.max === 0) return "Add some skills to chart your map";
+  const sorted = AXIS_ORDER.map((a) => ({
+    axis: a,
+    value: scores.axes[a],
+  })).sort((a, b) => b.value - a.value);
+  const top = sorted[0];
+  const second = sorted[1];
+  if (second && top.value === second.value) {
+    const balanced = sorted
+      .filter((s) => s.value === top.value)
+      .slice(0, 2)
+      .map((s) => AXIS_LABEL[s.axis as StarAxis])
+      .join(" & ");
+    return `Balanced across ${balanced}`;
+  }
+  return `Leaning ${AXIS_LABEL[top.axis as StarAxis]}`;
 }
 
 export function WorkSkillsView() {
   const [scope, setScope] = useState<SkillScope>("user");
   const [tagFilter, setTagFilter] = useState<TagFilter>("all");
-  const [personalityOpen, setPersonalityOpen] = useState(false);
-  const [personalitySubject, setPersonalitySubject] =
-    useState<PersonalitySubject>("you");
+  const [lastComputedAt, setLastComputedAt] = useState(() => Date.now());
+  const [starMapOpen, setStarMapOpen] = useState(false);
   const setMode = useNavigationStore((s) => s.setMode);
   const navigateToSkills = useNavigationStore((s) => s.navigateToSkills);
+  const navigateToWorkSkill = useNavigationStore((s) => s.navigateToWorkSkill);
 
-  const skills = SKILLS[scope];
-  const matchesTag = (s: Skill) =>
+  const workSkills = useWorkSkillsStore((s) => s.skills);
+  const addSkill = useWorkSkillsStore((s) => s.addSkill);
+  const deleteSkill = useWorkSkillsStore((s) => s.deleteSkill);
+
+  const userCatalog = useMemo(() => getUserCatalog(), []);
+
+  // Seed defaults on first hydration — for any catalog entry flagged
+  // defaultActive that has no matching WorkSkill, add it. Safe to re-run
+  // because we no-op when a matching entry already exists.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: seed pulls fresh store state at mount.
+  useEffect(() => {
+    const state = useWorkSkillsStore.getState();
+    for (const catalog of userCatalog) {
+      if (!catalog.defaultActive) continue;
+      if (state.skills.some((s) => s.catalogId === catalog.id)) continue;
+      state.addSkill({
+        id: newSkillId(),
+        name: catalog.title,
+        prompt: catalog.prompt,
+        catalogId: catalog.id,
+      });
+    }
+  }, [userCatalog]);
+
+  const activeWorkSkillByCatalogId = useMemo(() => {
+    const map = new Map<string, (typeof workSkills)[number]>();
+    for (const s of workSkills) {
+      if (s.catalogId) map.set(s.catalogId, s);
+    }
+    return map;
+  }, [workSkills]);
+
+  const matchesTag = (s: { tags: SkillTag[] }) =>
     tagFilter === "all" || s.tags.includes(tagFilter);
-  const filteredActive = skills.active.filter(matchesTag);
-  const filteredLibrary = skills.library.filter(matchesTag);
+
+  const userActive = userCatalog.filter(
+    (c) => activeWorkSkillByCatalogId.has(c.id) && matchesTag(c),
+  );
+  const userLibrary = userCatalog.filter(
+    (c) => !activeWorkSkillByCatalogId.has(c.id) && matchesTag(c),
+  );
+
+  const teamActive = TEAM_SKILLS.active.filter(matchesTag);
+  const teamLibrary = TEAM_SKILLS.library.filter(matchesTag);
+
+  const handleAddCatalog = (catalog: CatalogSkill) => {
+    const id = newSkillId();
+    addSkill({
+      id,
+      name: catalog.title,
+      prompt: catalog.prompt,
+      catalogId: catalog.id,
+    });
+    navigateToWorkSkill(id);
+  };
+
+  const handleDisableCatalog = (catalogId: string) => {
+    const existing = activeWorkSkillByCatalogId.get(catalogId);
+    if (existing) deleteSkill(existing.id);
+  };
+
+  const handleOpenCatalog = (catalogId: string) => {
+    const existing = activeWorkSkillByCatalogId.get(catalogId);
+    if (existing) navigateToWorkSkill(existing.id);
+  };
 
   const handleOpenCodeSkills = () => {
     setMode("code");
     navigateToSkills();
   };
 
-  const personalYou = computePersonality([
-    ...SKILLS.user.active,
-    ...SKILLS.user.library,
-  ]);
-  const personalTeam = computePersonality([
-    ...SKILLS.team.active,
-    ...SKILLS.team.library,
-  ]);
+  useEffect(() => {
+    const id = setInterval(() => setLastComputedAt(Date.now()), HOUR_MS);
+    return () => clearInterval(id);
+  }, []);
 
-  const activePersonality =
-    personalitySubject === "team" ? personalTeam : personalYou;
-
-  const openPersonality = (subject: PersonalitySubject) => {
-    setPersonalitySubject(subject);
-    setPersonalityOpen(true);
-  };
+  // Star map reflects the user's currently-active catalog skills so it shifts
+  // as they toggle. When nothing is active, show the whole catalog so the
+  // visualization stays populated.
+  const starScores = useMemo(() => {
+    const source = userActive.length > 0 ? userActive : userCatalog;
+    return computeStarMap(
+      source.map((s) => ({
+        title: s.title,
+        description: s.description,
+        tags: s.tags,
+      })),
+    );
+  }, [userActive, userCatalog]);
 
   return (
     <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
@@ -611,21 +486,18 @@ export function WorkSkillsView() {
         {scope === "user" && (
           <button
             type="button"
-            onClick={() => openPersonality("you")}
+            onClick={() => setStarMapOpen(true)}
             className="flex items-center gap-3 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-2.5 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
           >
-            <img
-              src={personalYou.hog}
-              alt=""
-              className="h-10 w-10 shrink-0 select-none object-contain"
-              draggable={false}
-            />
+            <Box className="shrink-0 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) p-1.5">
+              <SkillsStarMapMini scores={starScores} size={40} />
+            </Box>
             <Box className="min-w-0 flex-1">
               <Text
                 as="div"
                 className="text-(--gray-10) text-[11px] uppercase tracking-wide"
               >
-                You are
+                Your star map
               </Text>
               <Flex align="baseline" gap="2" wrap="wrap">
                 <Text
@@ -633,10 +505,10 @@ export function WorkSkillsView() {
                   weight="medium"
                   className="text-(--gray-12) text-[14px]"
                 >
-                  {personalYou.name}
+                  {starMapTagline(starScores)}
                 </Text>
                 <Text as="span" className="text-(--gray-11) text-[12px] italic">
-                  {personalYou.tagline}
+                  Founder {Math.round(starScores.founder * 10) / 10}
                 </Text>
               </Flex>
             </Box>
@@ -644,48 +516,7 @@ export function WorkSkillsView() {
               as="span"
               className="shrink-0 text-(--gray-10) text-[12px] underline-offset-2"
             >
-              See why
-            </Text>
-          </button>
-        )}
-
-        {scope === "team" && (
-          <button
-            type="button"
-            onClick={() => openPersonality("team")}
-            className="flex items-center gap-3 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-2.5 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
-          >
-            <img
-              src={personalTeam.hog}
-              alt=""
-              className="h-10 w-10 shrink-0 select-none object-contain"
-              draggable={false}
-            />
-            <Box className="min-w-0 flex-1">
-              <Text
-                as="div"
-                className="text-(--gray-10) text-[11px] uppercase tracking-wide"
-              >
-                Your team is
-              </Text>
-              <Flex align="baseline" gap="2" wrap="wrap">
-                <Text
-                  as="span"
-                  weight="medium"
-                  className="text-(--gray-12) text-[14px]"
-                >
-                  {personalTeam.name}
-                </Text>
-                <Text as="span" className="text-(--gray-11) text-[12px] italic">
-                  {personalTeam.tagline}
-                </Text>
-              </Flex>
-            </Box>
-            <Text
-              as="span"
-              className="shrink-0 text-(--gray-10) text-[12px] underline-offset-2"
-            >
-              See why
+              See chart
             </Text>
           </button>
         )}
@@ -706,30 +537,93 @@ export function WorkSkillsView() {
           ))}
         </Flex>
 
-        <SkillSection
-          label="Active"
-          hint="Currently running on the schedules you've set."
-          skills={filteredActive}
-          variant="active"
-        />
-
-        <SkillSection
-          label="Library"
-          hint="Available skills you haven't activated yet."
-          skills={filteredLibrary}
-          variant="library"
-          action={
-            <button
-              type="button"
-              onClick={() => openUrlInBrowser(EXTERNAL_SKILLS_SEARCH_URL)}
-              title="Browse community skill libraries like skills.sh"
-              className="flex items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-2 py-1 text-(--gray-11) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
+        {scope === "user" ? (
+          <>
+            <SkillSection
+              label="Active"
+              hint="Click to open and run on demand."
+              count={userActive.length}
+              emptyMessage="No active skills yet — add one from the library below."
             >
-              Search skills.sh
-              <ArrowSquareOut size={12} weight="bold" />
-            </button>
-          }
-        />
+              {userActive.map((c) => (
+                <SkillCard
+                  key={c.id}
+                  icon={c.icon}
+                  title={c.title}
+                  description={c.description}
+                  isActive
+                  onToggle={() => handleDisableCatalog(c.id)}
+                  onOpen={() => handleOpenCatalog(c.id)}
+                />
+              ))}
+            </SkillSection>
+
+            <SkillSection
+              label="Library"
+              hint="Available skills you haven't activated yet."
+              count={userLibrary.length}
+              emptyMessage="No skills match this tag."
+              action={
+                <button
+                  type="button"
+                  onClick={() => openUrlInBrowser(EXTERNAL_SKILLS_SEARCH_URL)}
+                  title="Browse community skill libraries like skills.sh"
+                  className="flex items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-2 py-1 text-(--gray-11) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
+                >
+                  Search skills.sh
+                  <ArrowSquareOut size={12} weight="bold" />
+                </button>
+              }
+            >
+              {userLibrary.map((c) => (
+                <SkillCard
+                  key={c.id}
+                  icon={c.icon}
+                  title={c.title}
+                  description={c.description}
+                  isActive={false}
+                  onToggle={() => handleAddCatalog(c)}
+                />
+              ))}
+            </SkillSection>
+          </>
+        ) : (
+          <>
+            <SkillSection
+              label="Active"
+              hint="Currently running on the schedules you've set."
+              count={teamActive.length}
+              emptyMessage="No active team skills."
+            >
+              {teamActive.map((s) => (
+                <SkillCard
+                  key={s.title}
+                  icon={s.icon}
+                  title={s.title}
+                  description={s.description}
+                  isActive
+                />
+              ))}
+            </SkillSection>
+
+            <SkillSection
+              label="Library"
+              hint="Available skills you haven't activated yet."
+              count={teamLibrary.length}
+              emptyMessage="No skills match this tag."
+            >
+              {teamLibrary.map((s) => (
+                <SkillCard
+                  key={s.title}
+                  icon={s.icon}
+                  title={s.title}
+                  description={s.description}
+                  isActive={false}
+                />
+              ))}
+            </SkillSection>
+          </>
+        )}
 
         <Box className="mt-2 border-(--gray-5) border-t pt-4">
           <button
@@ -739,23 +633,73 @@ export function WorkSkillsView() {
           >
             Looking for coding skills? Manage them in PostHog Code → Skills.
           </button>
-          <Box className="mt-2">
-            <button
-              type="button"
-              onClick={() => openPersonality("you")}
-              className="text-(--gray-10) text-[12px] italic underline-offset-2 transition-colors hover:text-(--gray-11) hover:underline"
-            >
-              What does your skill mix say about you?
-            </button>
-          </Box>
         </Box>
       </Flex>
-      <SkillsPersonalityDialog
-        open={personalityOpen}
-        onOpenChange={setPersonalityOpen}
-        personality={activePersonality}
-        subject={personalitySubject}
-      />
+
+      <Dialog.Root open={starMapOpen} onOpenChange={setStarMapOpen}>
+        <Dialog.Content maxWidth="560px" size="3" className="relative">
+          <button
+            type="button"
+            onClick={() => setStarMapOpen(false)}
+            aria-label="Close"
+            title="Close"
+            className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-(--radius-2) text-(--gray-10) transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+          >
+            <X size={14} weight="bold" />
+          </button>
+          <Flex direction="column" align="center" gap="3" className="py-2">
+            <RoleCrests scores={starScores} />
+            <Flex direction="column" align="center" gap="1">
+              <Text
+                as="div"
+                className="text-(--gray-10) text-[11px] uppercase tracking-wide"
+              >
+                Your star map
+              </Text>
+              <Text
+                as="div"
+                weight="medium"
+                className="text-(--gray-12) text-[20px]"
+              >
+                {starMapTagline(starScores)}
+              </Text>
+            </Flex>
+            <Text
+              as="div"
+              className="mx-auto max-w-[440px] text-center text-(--gray-11) text-[13px] leading-snug"
+            >
+              A live read of how your skill set leans across seven everyday
+              roles — Marketing, Operations, Product, Design, HR, Finance, and
+              Legal — with a Founder score at the centre for the financial and
+              decision-shaping work. It refreshes every hour as you add or
+              activate new skills.
+            </Text>
+            <Box className="mt-1 w-full">
+              <SkillsStarMap
+                scores={starScores}
+                lastComputedAt={lastComputedAt}
+              />
+            </Box>
+            <Flex align="center" justify="center" gap="2" className="mt-1">
+              <button
+                type="button"
+                onClick={() => copyStarMapToSlack(starScores)}
+                className="flex items-center gap-1.5 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-3 py-1 font-medium text-(--gray-12) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
+              >
+                <Hash size={12} weight="bold" />
+                Copy for Slack
+              </button>
+              <button
+                type="button"
+                onClick={() => setStarMapOpen(false)}
+                className="rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-3 py-1 font-medium text-(--gray-12) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
+              >
+                Minimize
+              </button>
+            </Flex>
+          </Flex>
+        </Dialog.Content>
+      </Dialog.Root>
     </Box>
   );
 }
