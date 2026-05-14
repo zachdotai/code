@@ -36,6 +36,7 @@ import { HedgemonyMinimap } from "./HedgemonyMinimap";
 import { MapBackdrop } from "./MapBackdrop";
 import { NestConstructionSite } from "./NestConstructionSite";
 import { NestSprite } from "./NestSprite";
+import { OverlapArcs } from "./OverlapArcs";
 import { SfxControl } from "./SfxControl";
 
 const BUILD_ANIMATION_MS = HEDGEMONY_CONFIG.animation.buildMs;
@@ -603,6 +604,7 @@ function HedgemonyMapSurfaceImpl(
         className="absolute inset-0 origin-center"
       >
         <MapBackdrop nests={nests} />
+        <OverlapArcs />
         <HedgehouseSprite
           selected={hedgehouseSelected}
           onSelect={onHedgehouseSelect}

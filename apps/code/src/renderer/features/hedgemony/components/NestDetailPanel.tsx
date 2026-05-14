@@ -53,6 +53,7 @@ import { selectEdgesForNest, usePrGraphStore } from "../stores/prGraphStore";
 import { deriveNestLifecycle } from "../utils/nestLifecycle";
 import { CommandConsole } from "./CommandConsole";
 import { CompactNestDialog } from "./CompactNestDialog";
+import { FederationSubsection } from "./federation/FederationSubsection";
 import { STATUS_BADGE_COLOR, type TaskStatus } from "./hogletStatus";
 import { MarkValidatedDialog } from "./MarkValidatedDialog";
 import {
@@ -374,6 +375,8 @@ export function NestDetailPanel({
           />
 
           <PrGraphSection nestId={nest.id} />
+
+          <FederationSubsection nestId={nest.id} />
 
           <div className="border-(--accent-a5) border-t pt-3">
             <Flex direction="column" gap="2">
