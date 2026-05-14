@@ -2,10 +2,12 @@ import { useDroppable } from "@dnd-kit/react";
 import { CaretDown, CaretRight, X } from "@phosphor-icons/react";
 import { Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
 import {
   initializeSignalStagingHogletStore,
   initializeWildHogletStore,
+} from "../service/hogletSubscriptionService";
+import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
+import {
   selectSignalStagingHoglets,
   selectSignalStagingLoaded,
   selectWildHoglets,

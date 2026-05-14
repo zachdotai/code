@@ -1,10 +1,7 @@
 import type { Hoglet, Nest } from "@main/services/hedgemony/schemas";
 import { useEffect, useMemo } from "react";
-import {
-  initializeNestHogletStore,
-  selectNestHoglets,
-  useHogletStore,
-} from "../stores/hogletStore";
+import { initializeNestHogletStore } from "../service/hogletSubscriptionService";
+import { selectNestHoglets, useHogletStore } from "../stores/hogletStore";
 import { BroodHoglet } from "./BroodHoglet";
 
 const RADIUS = 92;

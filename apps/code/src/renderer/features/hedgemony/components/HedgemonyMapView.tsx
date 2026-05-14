@@ -13,17 +13,14 @@ import { playSfx } from "../audio/sfx";
 import { playVoice } from "../audio/voice";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
+import { initializeNestStore } from "../service/nestSubscriptionService";
 import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
 import {
   SIGNAL_STAGING_BUCKET,
   useHogletStore,
   WILD_BUCKET,
 } from "../stores/hogletStore";
-import {
-  initializeNestStore,
-  selectNests,
-  useNestStore,
-} from "../stores/nestStore";
+import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
