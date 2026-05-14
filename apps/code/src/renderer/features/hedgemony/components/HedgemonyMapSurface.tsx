@@ -241,6 +241,21 @@ function HedgemonyMapSurfaceImpl(
     setZoom(nextZoom);
   };
 
+  // Rapid camera-target changes (bookmark mashing, repeated fit/center, etc.)
+  // used to stack window.setTimeout handles, each committing its own stale
+  // target to the pan store after the animation duration. Tracking the latest
+  // handle here lets every new animateToView cancel the previous commit.
+  const cameraCommitTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cameraCommitTimeoutRef.current !== null) {
+        window.clearTimeout(cameraCommitTimeoutRef.current);
+        cameraCommitTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   /**
    * Smooth-tween the camera to a target view. Used for explicit "go-to"
    * actions — bookmark recall, double-click focus, fit, center, minimap jump —
@@ -265,13 +280,16 @@ function HedgemonyMapSurfaceImpl(
           onUpdate: (latest: number) => setZoom(latest),
         });
       }
+      if (cameraCommitTimeoutRef.current !== null) {
+        window.clearTimeout(cameraCommitTimeoutRef.current);
+      }
       // Commit the final pan to the store once the animation settles. The
       // wheel and middle-drag paths commit immediately; this matches their
       // behavior so the persisted state reflects the visible camera.
-      window.setTimeout(
-        () => setPan(nextPanX, nextPanY),
-        CAMERA_ANIM_DURATION_S * 1000,
-      );
+      cameraCommitTimeoutRef.current = window.setTimeout(() => {
+        cameraCommitTimeoutRef.current = null;
+        setPan(nextPanX, nextPanY);
+      }, CAMERA_ANIM_DURATION_S * 1000);
     },
     [x, y, zoom, setZoom, setPan],
   );

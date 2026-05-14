@@ -186,7 +186,7 @@ pattern in all subscription initializers.
 - Merge the initial load with accumulated watch events instead of overwriting
 - Start the watch subscription only after the initial load resolves
 
-### 14. Camera animation timeouts not cleaned up
+### 14. Camera animation timeouts not cleaned up — DONE
 
 **File:** `HedgemonyMapSurface.tsx` (~line 265-268)
 
