@@ -81,6 +81,11 @@ function App() {
         registerInboxDemoConsoleCommand();
       },
     );
+    void import("@features/hedgemony/devtools/signalTriggerConsole").then(
+      ({ registerHedgemonySignalTriggerConsoleCommand }) => {
+        registerHedgemonySignalTriggerConsoleCommand();
+      },
+    );
   }, []);
 
   // Global workspace error listener for toasts
