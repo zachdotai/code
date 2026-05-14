@@ -1,11 +1,27 @@
-import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
-import { useNestChatStore } from "../stores/nestChatStore";
-import { useNestStore } from "../stores/nestStore";
+import { trpcNestRemoteService } from "../adapters/trpcNestRemoteService";
+import { zustandNestChatRepository } from "../adapters/zustandNestChatRepository";
+import { zustandNestRepository } from "../adapters/zustandNestRepository";
+import type { NestChatRepository } from "../domain/NestChatRepository";
+import type {
+  NestRemoteService,
+  WatchHandle,
+} from "../domain/NestRemoteService";
+import type { NestRepository } from "../domain/NestRepository";
 
 const log = logger.scope("nest-subscription-service");
 
-type WatchHandle = { unsubscribe: () => void };
+export interface NestSubscriptionDeps {
+  nests: NestRepository;
+  chat: NestChatRepository;
+  remote: NestRemoteService;
+}
+
+export const defaultNestSubscriptionDeps: NestSubscriptionDeps = {
+  nests: zustandNestRepository,
+  chat: zustandNestChatRepository,
+  remote: trpcNestRemoteService,
+};
 
 /**
  * Subscribes to a single nest's watch stream. The watch channel multiplexes
@@ -14,32 +30,28 @@ type WatchHandle = { unsubscribe: () => void };
  * and `validated` upsert the nest row so the renderer sees the new status
  * (validated/dormant/etc.) without re-fetching.
  */
-function watchNest(id: string): WatchHandle {
-  return trpcClient.hedgemony.nests.watch.subscribe(
-    { id },
-    {
-      onData: (event) => {
-        const nestStore = useNestStore.getState();
-        switch (event.kind) {
-          case "archived":
-            nestStore.remove(event.nest.id);
-            return;
-          case "status":
-          case "validated":
-            nestStore.upsert(event.nest);
-            return;
-          case "hedgehog_tick":
-            nestStore.setHedgehogState(id, event.state);
-            return;
-          case "message_appended":
-            useNestChatStore.getState().append(id, event.message);
-            return;
-        }
-      },
-      onError: (error) =>
-        log.error("nest watch subscription error", { id, error }),
+function watchNest(id: string, deps: NestSubscriptionDeps): WatchHandle {
+  return deps.remote.watch(id, {
+    onData: (event) => {
+      switch (event.kind) {
+        case "archived":
+          deps.nests.remove(event.nest.id);
+          return;
+        case "status":
+        case "validated":
+          deps.nests.upsert(event.nest);
+          return;
+        case "hedgehog_tick":
+          deps.nests.setHedgehogState(id, event.state);
+          return;
+        case "message_appended":
+          deps.chat.append(id, event.message);
+          return;
+      }
     },
-  );
+    onError: (error) =>
+      log.error("nest watch subscription error", { id, error }),
+  });
 }
 
 /**
@@ -50,13 +62,15 @@ function watchNest(id: string): WatchHandle {
  * (this client). The per-nest watch shape is locked in now so signal-driven
  * roster changes (Slice 4+) plug in without a router rewrite.
  */
-export function initializeNestStore(): () => void {
+export function initializeNestStore(
+  deps: NestSubscriptionDeps = defaultNestSubscriptionDeps,
+): () => void {
   const watches = new Map<string, WatchHandle>();
   let disposed = false;
 
   const openWatch = (id: string) => {
     if (disposed || watches.has(id)) return;
-    watches.set(id, watchNest(id));
+    watches.set(id, watchNest(id, deps));
   };
 
   const closeWatch = (id: string) => {
@@ -66,25 +80,22 @@ export function initializeNestStore(): () => void {
     watches.delete(id);
   };
 
-  // Mirror store state to open subscriptions.
-  const unsub = useNestStore.subscribe((state, prev) => {
-    const current = new Set(Object.keys(state.nests));
-    const previous = new Set(Object.keys(prev.nests));
-    for (const id of current) if (!previous.has(id)) openWatch(id);
-    for (const id of previous) if (!current.has(id)) closeWatch(id);
+  const unsub = deps.nests.subscribeToKeys((added, removed) => {
+    for (const id of added) openWatch(id);
+    for (const id of removed) closeWatch(id);
   });
 
-  // No watch is open yet (watches are per-nest, opened from the store
-  // subscriber once setAll seeds the store). Race window is therefore between
-  // `nests.list` resolving and the store subscriber reacting. The store
-  // subscriber runs synchronously on setAll, so openWatch fires immediately
-  // for each new id and watch events for those nests can only arrive after
-  // the bucket exists.
-  trpcClient.hedgemony.nests.list
-    .query()
+  // No watch is open yet (watches are per-nest, opened from the keys
+  // subscriber once setAll seeds the repository). Race window is therefore
+  // between `nests.list` resolving and the keys subscriber reacting. The
+  // keys subscriber runs synchronously on setAll, so openWatch fires
+  // immediately for each new id and watch events for those nests can only
+  // arrive after the bucket exists.
+  deps.remote
+    .list()
     .then((nests) => {
       if (disposed) return;
-      useNestStore.getState().setAll(nests);
+      deps.nests.setAll(nests);
       for (const n of nests) openWatch(n.id);
     })
     .catch((error) => log.error("Failed to load nests", { error }));

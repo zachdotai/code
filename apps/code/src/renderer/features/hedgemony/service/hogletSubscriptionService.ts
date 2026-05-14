@@ -3,12 +3,16 @@ import type {
   Hoglet,
   HogletWatchEvent,
 } from "@main/services/hedgemony/schemas";
-import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
+import { trpcHogletRemoteService } from "../adapters/trpcHogletRemoteService";
+import { zustandHogletPositionRepository } from "../adapters/zustandHogletPositionRepository";
+import { zustandHogletRepository } from "../adapters/zustandHogletRepository";
 import { HEDGEMONY_CONFIG } from "../config";
 import { WILD_BUCKET } from "../constants/buckets";
-import { useHogletPositionStore } from "../stores/hogletPositionStore";
-import { useHogletStore } from "../stores/hogletStore";
+import type { HogletPositionRepository } from "../domain/HogletPositionRepository";
+import type { HogletRemoteService } from "../domain/HogletRemoteService";
+import type { HogletRepository } from "../domain/HogletRepository";
+import type { WatchHandle } from "../domain/NestRemoteService";
 import { wildHogletPosition } from "../utils/hogletPositions";
 import { getHogletVisualPosition } from "../utils/hogletVisualPositions";
 
@@ -16,44 +20,63 @@ const log = logger.scope("hoglet-subscription-service");
 
 const TASK_SUMMARY_REFRESH_MS = HEDGEMONY_CONFIG.polling.taskSummaryMs;
 
-type WatchHandle = { unsubscribe: () => void };
+export interface HogletSubscriptionDeps {
+  hoglets: HogletRepository;
+  positions: HogletPositionRepository;
+  remote: HogletRemoteService;
+}
 
-function resolveHogletPosition(hogletId: string): { x: number; y: number } {
+export const defaultHogletSubscriptionDeps: HogletSubscriptionDeps = {
+  hoglets: zustandHogletRepository,
+  positions: zustandHogletPositionRepository,
+  remote: trpcHogletRemoteService,
+};
+
+function resolveHogletPosition(
+  hogletId: string,
+  positions: HogletPositionRepository,
+): { x: number; y: number } {
   // Prefer the live sprite position so death animations land where the hoglet
   // is actually rendered — the position store holds the walk *destination*,
   // which diverges from the visible sprite while a walk is in flight.
   const visual = getHogletVisualPosition(hogletId);
   if (visual) return visual;
-  const override = useHogletPositionStore.getState().positions[hogletId];
+  const override = positions.getPosition(hogletId);
   if (override) return override;
   return wildHogletPosition(hogletId);
 }
 
-function applyWatchEvent(bucket: string, event: HogletWatchEvent): void {
-  const store = useHogletStore.getState();
+function applyWatchEvent(
+  bucket: string,
+  event: HogletWatchEvent,
+  deps: HogletSubscriptionDeps,
+): void {
   if (event.kind === "upsert") {
-    store.upsert(bucket, event.hoglet);
+    deps.hoglets.upsert(bucket, event.hoglet);
   } else {
-    const pos = resolveHogletPosition(event.hogletId);
-    store.startDying(event.hogletId, pos.x, pos.y);
-    store.remove(bucket, event.hogletId);
+    const pos = resolveHogletPosition(event.hogletId, deps.positions);
+    deps.hoglets.startDying(event.hogletId, pos.x, pos.y);
+    deps.hoglets.remove(bucket, event.hogletId);
   }
 }
 
-async function refreshTaskSummaries(taskIds: string[]): Promise<void> {
+async function refreshTaskSummaries(
+  taskIds: string[],
+  hoglets: HogletRepository,
+): Promise<void> {
   if (taskIds.length === 0) return;
   const client = await getAuthenticatedClient();
   if (!client) return;
   try {
     const summaries = await client.getTaskSummaries(taskIds);
-    useHogletStore.getState().setTaskSummaries(summaries);
+    hoglets.setTaskSummaries(summaries);
   } catch (error) {
     log.error("Failed to fetch task summaries", { error });
   }
 }
 
 /**
- * Refcounted shared poll loop that walks every bucket in the store and
+ * Refcounted shared poll loop that walks every bucket in the repo and
  * refreshes task summaries in one batched call. Each bucket initializer
  * acquires on start and releases on dispose; the interval clears when the
  * refcount returns to zero.
@@ -61,20 +84,19 @@ async function refreshTaskSummaries(taskIds: string[]): Promise<void> {
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let pollRefCount = 0;
 
-function pollAllSummaries(): void {
-  const { byBucket } = useHogletStore.getState();
-  const taskIds = new Set<string>();
-  for (const bucket of Object.values(byBucket)) {
-    for (const h of bucket) taskIds.add(h.taskId);
-  }
-  if (taskIds.size === 0) return;
-  void refreshTaskSummaries([...taskIds]);
+function pollAllSummaries(hoglets: HogletRepository): void {
+  const taskIds = hoglets.collectTaskIds();
+  if (taskIds.length === 0) return;
+  void refreshTaskSummaries(taskIds, hoglets);
 }
 
-function acquireTaskSummaryPolling(): void {
+function acquireTaskSummaryPolling(hoglets: HogletRepository): void {
   pollRefCount += 1;
   if (pollRefCount === 1 && !pollHandle) {
-    pollHandle = setInterval(pollAllSummaries, TASK_SUMMARY_REFRESH_MS);
+    pollHandle = setInterval(
+      () => pollAllSummaries(hoglets),
+      TASK_SUMMARY_REFRESH_MS,
+    );
   }
 }
 
@@ -91,14 +113,18 @@ function releaseTaskSummaryPolling(): void {
  * subscription, and registers with the shared task-summary poll. Returns a
  * disposer that tears everything down.
  */
-export function initializeWildHogletStore(): () => void {
-  return initializeHogletBucket({
-    bucket: WILD_BUCKET,
-    subscribe: (handlers) =>
-      trpcClient.hedgemony.hoglets.watch.subscribe({ kind: "wild" }, handlers),
-    list: () => trpcClient.hedgemony.hoglets.list.query({ wildOnly: true }),
-    logContext: { kind: "wild" },
-  });
+export function initializeWildHogletStore(
+  deps: HogletSubscriptionDeps = defaultHogletSubscriptionDeps,
+): () => void {
+  return initializeHogletBucket(
+    {
+      bucket: WILD_BUCKET,
+      subscribe: (handlers) => deps.remote.watch({ kind: "wild" }, handlers),
+      list: () => deps.remote.list({ wildOnly: true }),
+      logContext: { kind: "wild" },
+    },
+    deps,
+  );
 }
 
 /**
@@ -106,17 +132,20 @@ export function initializeWildHogletStore(): () => void {
  * scoped to a single nest; subscribes to nest-scoped watch events and seeds
  * the bucket from `hoglets.list({ nestId })`.
  */
-export function initializeNestHogletStore(nestId: string): () => void {
-  return initializeHogletBucket({
-    bucket: nestId,
-    subscribe: (handlers) =>
-      trpcClient.hedgemony.hoglets.watch.subscribe(
-        { kind: "nest", nestId },
-        handlers,
-      ),
-    list: () => trpcClient.hedgemony.hoglets.list.query({ nestId }),
-    logContext: { kind: "nest", nestId },
-  });
+export function initializeNestHogletStore(
+  nestId: string,
+  deps: HogletSubscriptionDeps = defaultHogletSubscriptionDeps,
+): () => void {
+  return initializeHogletBucket(
+    {
+      bucket: nestId,
+      subscribe: (handlers) =>
+        deps.remote.watch({ kind: "nest", nestId }, handlers),
+      list: () => deps.remote.list({ nestId }),
+      logContext: { kind: "nest", nestId },
+    },
+    deps,
+  );
 }
 
 interface InitializeHogletBucketOptions {
@@ -136,11 +165,12 @@ interface InitializeHogletBucketOptions {
  */
 function initializeHogletBucket(
   opts: InitializeHogletBucketOptions,
+  deps: HogletSubscriptionDeps,
 ): () => void {
   let disposed = false;
   let initialLoaded = false;
   const buffered: HogletWatchEvent[] = [];
-  acquireTaskSummaryPolling();
+  acquireTaskSummaryPolling(deps.hoglets);
 
   const watch = opts.subscribe({
     onData: (event) => {
@@ -149,7 +179,7 @@ function initializeHogletBucket(
         buffered.push(event);
         return;
       }
-      applyWatchEvent(opts.bucket, event);
+      applyWatchEvent(opts.bucket, event, deps);
     },
     onError: (error) =>
       log.error("hoglet watch subscription error", {
@@ -162,13 +192,13 @@ function initializeHogletBucket(
     .list()
     .then((hoglets) => {
       if (disposed) return;
-      useHogletStore.getState().setBucket(opts.bucket, hoglets);
+      deps.hoglets.setBucket(opts.bucket, hoglets);
       // Replay any events that arrived between subscribe and list-resolve so
       // upserts/deletions don't get clobbered by the initial seed.
-      for (const event of buffered) applyWatchEvent(opts.bucket, event);
+      for (const event of buffered) applyWatchEvent(opts.bucket, event, deps);
       buffered.length = 0;
       initialLoaded = true;
-      pollAllSummaries();
+      pollAllSummaries(deps.hoglets);
     })
     .catch((error) =>
       log.error("Failed to load hoglets", { ...opts.logContext, error }),
