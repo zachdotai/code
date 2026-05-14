@@ -6,6 +6,7 @@ import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { AffinityRouterService } from "./affinity-router";
 import type { CloudTaskClient } from "./cloud-task-client";
+import { HOGLET_NAMES } from "./hoglet-names";
 import {
   type AdoptHogletInput,
   type DismissSignalHogletInput,
@@ -54,6 +55,15 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     super();
   }
 
+  private assignName(): string | null {
+    const usedNames = new Set(this.hoglets.findAllNames());
+    const available = HOGLET_NAMES.filter(
+      (n) => n !== "James" && !usedNames.has(n),
+    );
+    if (available.length === 0) return null;
+    return available[Math.floor(Math.random() * available.length)];
+  }
+
   list(input: ListHogletsInput): Hoglet[] {
     if (input.wildOnly) return this.hoglets.findAllWild();
     if (input.signalStagingOnly) return this.hoglets.findAllSignalStaging();
@@ -80,11 +90,13 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
 
     const created = this.hoglets.create({
       taskId: input.taskId,
+      name: this.assignName(),
       nestId: null,
       signalReportId: null,
     });
     log.info("Adhoc hoglet recorded", {
       id: created.id,
+      name: created.name,
       taskId: created.taskId,
     });
     this.emitChange({ kind: "wild" }, { kind: "upsert", hoglet: created });
@@ -132,12 +144,14 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
       }
       const created = this.hoglets.create({
         taskId: input.taskId,
+        name: this.assignName(),
         nestId: null,
         signalReportId: input.signalReportId,
         affinityScore: null,
       });
       log.info("Signal-backed hoglet recorded in staging", {
         id: created.id,
+        name: created.name,
         taskId: created.taskId,
         signalReportId: created.signalReportId,
       });
@@ -150,12 +164,14 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
 
     const created = this.hoglets.create({
       taskId: input.taskId,
+      name: this.assignName(),
       nestId: match.nestId,
       signalReportId: input.signalReportId,
       affinityScore: match.score,
     });
     log.info("Signal-backed hoglet auto-routed to nest", {
       id: created.id,
+      name: created.name,
       taskId: created.taskId,
       signalReportId: created.signalReportId,
       nestId: match.nestId,
@@ -292,6 +308,7 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
 
     const created = this.hoglets.create({
       taskId: childTask.id,
+      name: this.assignName(),
       nestId: input.nestId,
       signalReportId: null,
     });

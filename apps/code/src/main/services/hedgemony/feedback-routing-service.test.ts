@@ -27,6 +27,7 @@ import type { Hoglet, InjectPromptEventPayload } from "./schemas";
 function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
   return {
     id: overrides.id ?? crypto.randomUUID(),
+    name: overrides.name ?? null,
     taskId: overrides.taskId ?? "task-1",
     nestId: overrides.nestId ?? null,
     signalReportId: overrides.signalReportId ?? null,

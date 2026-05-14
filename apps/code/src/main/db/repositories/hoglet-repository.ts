@@ -9,6 +9,7 @@ export type NewHoglet = typeof hedgemonyHoglets.$inferInsert;
 
 export interface CreateHogletData {
   taskId: string;
+  name?: string | null;
   nestId?: string | null;
   signalReportId?: string | null;
   affinityScore?: number | null;
@@ -105,11 +106,22 @@ export class HogletRepository {
     return row?.count ?? 0;
   }
 
+  findAllNames(): string[] {
+    return this.db
+      .select({ name: hedgemonyHoglets.name })
+      .from(hedgemonyHoglets)
+      .where(and(isNotNull(hedgemonyHoglets.name), notDeleted))
+      .all()
+      .map((row) => row.name)
+      .filter((n): n is string => n !== null);
+  }
+
   create(data: CreateHogletData): Hoglet {
     const timestamp = now();
     const id = crypto.randomUUID();
     const row: NewHoglet = {
       id,
+      name: data.name ?? null,
       taskId: data.taskId,
       nestId: data.nestId ?? null,
       signalReportId: data.signalReportId ?? null,

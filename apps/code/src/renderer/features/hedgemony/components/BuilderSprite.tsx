@@ -7,6 +7,7 @@ import {
 } from "framer-motion";
 import { type MutableRefObject, useEffect, useState } from "react";
 import type { BuilderAnimation } from "../hooks/useBuilderCoordinator";
+import { BUILDER_NAME } from "../stores/hedgemonyViewStore";
 import type { Vec2 } from "../utils/pathfinding";
 import { AnimatedHedgehog, type HedgehogAnimation } from "./AnimatedHedgehog";
 
@@ -50,6 +51,7 @@ export function BuilderSprite({
   onArrive,
   onSegmentComplete,
 }: BuilderSpriteProps) {
+  const builderName = BUILDER_NAME;
   const initial = path[0] ?? { x: 0, y: 0 };
   const motionX = useMotionValue(initial.x);
   const motionY = useMotionValue(initial.y);
@@ -180,8 +182,8 @@ export function BuilderSprite({
               size={SPRITE_SIZE}
             />
           </div>
-          <div className="mt-1 max-w-[120px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
-            Builder
+          <div className="mt-1 max-w-[140px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
+            {builderName}
           </div>
         </motion.button>
       </Tooltip>

@@ -30,6 +30,7 @@ function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
   const now = "2026-05-13T00:00:00.000Z";
   return {
     id: crypto.randomUUID(),
+    name: null,
     taskId: `task-${crypto.randomUUID().slice(0, 8)}`,
     nestId: null,
     signalReportId: null,
@@ -125,6 +126,11 @@ function createMockRepo() {
       hoglets.set(id, updated);
       return updated;
     }),
+    findAllNames: vi.fn(() =>
+      [...hoglets.values()]
+        .filter((h) => h.name && !h.deletedAt)
+        .map((h) => h.name!),
+    ),
     softDelete: vi.fn((id: string) => {
       const existing = hoglets.get(id);
       if (!existing) return null;

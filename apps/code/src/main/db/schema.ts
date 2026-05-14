@@ -126,6 +126,7 @@ export const hedgemonyHoglets = sqliteTable(
   "hedgemony_hoglet",
   {
     id: id(),
+    name: text(),
     taskId: text().notNull().unique(),
     nestId: text().references(() => hedgemonyNests.id, {
       onDelete: "set null",

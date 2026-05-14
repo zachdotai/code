@@ -227,6 +227,7 @@ export type SendNestMessageInput = z.infer<typeof sendNestMessageInput>;
 
 export const hoglet = z.object({
   id: z.string(),
+  name: z.string().nullable(),
   taskId: z.string(),
   nestId: z.string().nullable(),
   signalReportId: z.string().nullable(),

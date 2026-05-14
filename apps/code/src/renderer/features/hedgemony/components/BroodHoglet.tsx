@@ -129,6 +129,11 @@ export function BroodHoglet({
               />
             )}
           </div>
+          {hoglet.name && (
+            <div className="mt-1 max-w-[100px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
+              {hoglet.name}
+            </div>
+          )}
         </button>
       </Tooltip>
     </motion.div>

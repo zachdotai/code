@@ -37,6 +37,7 @@ function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
   const now = "2026-05-13T00:00:00.000Z";
   return {
     id: crypto.randomUUID(),
+    name: null,
     taskId: `task-${crypto.randomUUID().slice(0, 8)}`,
     nestId: null,
     signalReportId: null,

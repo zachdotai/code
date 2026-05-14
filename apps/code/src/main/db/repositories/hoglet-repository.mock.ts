@@ -10,6 +10,7 @@ export interface MockHogletRepository {
   findByTaskId(taskId: string): Hoglet | null;
   findAllWild(): Hoglet[];
   findAllForNest(nestId: string): Hoglet[];
+  findAllNames(): string[];
   countWild(): number;
   create(data: CreateHogletData): Hoglet;
   update(id: string, data: UpdateHogletData): Hoglet | null;
@@ -40,11 +41,16 @@ export function createMockHogletRepository(): MockHogletRepository {
       [...hoglets.values()]
         .filter((h) => h.nestId === nestId && !h.deletedAt)
         .map((h) => ({ ...h })),
+    findAllNames: () =>
+      [...hoglets.values()]
+        .filter((h) => h.name && !h.deletedAt)
+        .map((h) => h.name!),
     countWild: () => [...hoglets.values()].filter(isWild).length,
     create: (data: CreateHogletData) => {
       const timestamp = now();
       const hoglet: Hoglet = {
         id: crypto.randomUUID(),
+        name: data.name ?? null,
         taskId: data.taskId,
         nestId: data.nestId ?? null,
         signalReportId: data.signalReportId ?? null,

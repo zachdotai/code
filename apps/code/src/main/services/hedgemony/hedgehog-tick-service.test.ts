@@ -54,6 +54,7 @@ function makeNest(overrides: Partial<Nest> = {}): Nest {
 function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
   return {
     id: `hoglet-${crypto.randomUUID().slice(0, 8)}`,
+    name: null,
     taskId: `task-${crypto.randomUUID().slice(0, 8)}`,
     nestId: "nest-1",
     signalReportId: null,
