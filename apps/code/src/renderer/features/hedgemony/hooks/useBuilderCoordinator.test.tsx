@@ -150,6 +150,36 @@ describe("useBuilderCoordinator", () => {
     expect(result.current.path.length).toBeGreaterThanOrEqual(3);
   });
 
+  it("never plans a path that crosses the Hedgehouse from the default spawn", () => {
+    // Regression: the prior (0, 130) default sat inside the inflated
+    // Hedgehouse (raw radius 100 + builder radius 36 = 136), so findPath's
+    // escape-from-inside logic walked the builder straight through the
+    // building on any walk to the north side. The default must stay clear
+    // of the inflated obstacle so that no segment of any plan crosses the
+    // painted Hedgehouse footprint (raw radius 100).
+    const { result } = renderHook(() => useBuilderCoordinator({ nests: [] }));
+    act(() => {
+      result.current.startWalk({ x: 0, y: -300 }, "idle");
+    });
+    const path = result.current.path;
+    expect(path.length).toBeGreaterThanOrEqual(2);
+    // Every waypoint stays outside the painted Hedgehouse.
+    for (const p of path) {
+      expect(Math.hypot(p.x, p.y)).toBeGreaterThanOrEqual(99);
+    }
+    // Every segment midpoint stays outside too — catches the case where
+    // adjacent waypoints straddle the obstacle.
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1];
+      const b = path[i];
+      for (let t = 0; t <= 1; t += 0.05) {
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        expect(Math.hypot(x, y)).toBeGreaterThanOrEqual(99);
+      }
+    }
+  });
+
   it("handleArrive is a no-op when not walking", () => {
     const { result } = renderHook(() => useBuilderCoordinator({ nests: [] }));
     act(() => {

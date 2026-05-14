@@ -10,13 +10,17 @@ import { findPath, snapGoal, type Vec2 } from "../utils/pathfinding";
 import { worldObstacles } from "../utils/worldObstacles";
 
 const DEFAULT_BUILD_ANIMATION_MS = 1500;
-// Park the builder just south of the Hedgehouse (which sits at world origin
-// with a ~100px obstacle radius). Spawning the builder inside the Hedgehouse
-// obstacle meant every walk had to "escape" through the building first,
-// which read visually as the builder clipping straight through it. (0, 130)
-// puts the sprite at the doorway, outside the obstacle, so pathfinding can
-// route cleanly from the start.
-const DEFAULT_INITIAL_POS: Vec2 = { x: 0, y: 130 };
+// Park the builder just south of the Hedgehouse. The previous attempt at
+// (0, 130) was still broken: pathfinding inflates the Hedgehouse obstacle
+// (raw radius 100) by the agent's pathfinding radius (36 for the builder)
+// before testing intersections, giving an effective avoid-radius of 136.
+// Any spawn at distance < 136 from origin is treated as "inside the
+// obstacle" and triggers findPath's escape logic — which walks straight
+// toward the goal until it clears the inflation. From (0, 130) heading
+// north of the Hedgehouse, that escape cuts straight through the building.
+// y=160 keeps the spawn comfortably outside the 136 inflation with a 24px
+// buffer so any future radius tweak still leaves headroom.
+const DEFAULT_INITIAL_POS: Vec2 = { x: 0, y: 160 };
 
 export type BuilderAnimation = "idle" | "walking" | "building";
 
