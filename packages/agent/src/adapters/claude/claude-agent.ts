@@ -1516,30 +1516,61 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ? withTimeout(q.initializationResult(), SESSION_VALIDATION_TIMEOUT_MS)
       : undefined;
 
-    const [rawModelOptions] = await Promise.all([
-      this.getModelConfigOptions(
-        settingsManager.getSettings().model || meta?.model || undefined,
-      ),
-      ...(meta?.taskRunId
-        ? [
-            this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {
-              taskRunId: meta.taskRunId,
-              sessionId,
-              adapter: "claude",
-            }),
-          ]
-        : []),
-    ]);
+    // When the caller already pinned a model (cloud always does), the awaited
+    // gateway /v1/models call is only used to populate the UI's available-models
+    // dropdown — kicking it off in the background lets us return the session
+    // sooner. With no pinned model we still wait, since we need the gateway
+    // list to choose a default.
+    const knownModelId =
+      settingsManager.getSettings().model || meta?.model || undefined;
+
+    const sdkSessionNotification = meta?.taskRunId
+      ? this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {
+          taskRunId: meta.taskRunId,
+          sessionId,
+          adapter: "claude",
+        })
+      : Promise.resolve();
+
+    let modelOptions: {
+      currentModelId: string;
+      options: SessionConfigSelectOption[];
+    };
+    if (knownModelId) {
+      // Synthesize a minimal options list; the real list arrives via
+      // deferBackgroundFetches below.
+      modelOptions = {
+        currentModelId: knownModelId,
+        options: [
+          {
+            value: knownModelId,
+            name: knownModelId,
+            description: "",
+          },
+        ],
+      };
+      void sdkSessionNotification;
+    } else {
+      [modelOptions] = await Promise.all([
+        this.getModelConfigOptions(undefined),
+        sdkSessionNotification,
+      ]);
+    }
 
     // Restrict the model list to the user's `availableModels` allowlist
     // from settings.json so config UI and downstream resolution stay
     // consistent with what the user configured. The Default option is
-    // always preserved per the Claude Code docs.
+    // always preserved per the Claude Code docs. In the pinned-model case
+    // the synthesized single-entry list is left untouched (the allowlist
+    // falls back to it when nothing matches).
     const settingsAvailableModels =
       settingsManager.getSettings().availableModels;
-    const modelOptions = Array.isArray(settingsAvailableModels)
-      ? applyAvailableModelsAllowlist(rawModelOptions, settingsAvailableModels)
-      : rawModelOptions;
+    if (Array.isArray(settingsAvailableModels)) {
+      modelOptions = applyAvailableModelsAllowlist(
+        modelOptions,
+        settingsAvailableModels,
+      );
+    }
 
     if (initPromise) {
       try {
@@ -1943,8 +1974,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   // ================================
 
   /**
-   * Fire-and-forget: fetch slash commands and MCP tool metadata in parallel.
-   * Both populate caches used later — neither is needed to return configOptions.
+   * Fire-and-forget: fetch slash commands, MCP tool metadata, and prime the
+   * gateway models cache in parallel. None of these are needed to return
+   * configOptions — priming the gateway cache here keeps `getContextWindowForModel`
+   * accurate by the time the first prompt fires.
    */
   private deferBackgroundFetches(q: Query): void {
     Promise.all([
@@ -1960,6 +1993,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         if (serverNames.length > 0) {
           this.options?.onMcpServersReady?.(serverNames);
         }
+      }),
+      // Warm the gateway models cache so subsequent context-window lookups
+      // don't fall back to the 200k default. Result is stored on the
+      // agent instance via fetchGatewayModels' internal cache.
+      this.getModelConfigOptions(this.session?.modelId).catch(() => {
+        // Best-effort: failures here just leave the default in place.
       }),
     ]).catch((err) =>
       this.logger.error("Background fetch failed", { error: err }),
