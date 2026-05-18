@@ -19,6 +19,7 @@ import {
   HEDGEHOUSE_MAP_Y,
 } from "../constants/map";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
+import { useCameraBookmarks } from "../hooks/useCameraBookmarks";
 import { useHedgemonyHotkeys } from "../hooks/useHedgemonyHotkeys";
 import { useHedgemonySubscriptions } from "../hooks/useHedgemonySubscriptions";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
@@ -38,10 +39,7 @@ import {
   useControlGroupStore,
 } from "../stores/controlGroupStore";
 import { useHedgemonySelectionStore } from "../stores/hedgemonySelectionStore";
-import {
-  type BookmarkSlot,
-  useHedgemonyViewStore,
-} from "../stores/hedgemonyViewStore";
+import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
@@ -104,8 +102,6 @@ export function HedgemonyMapView() {
   const fullscreen = useHedgemonyViewStore((s) => s.fullscreen);
   const setFullscreen = useHedgemonyViewStore((s) => s.setFullscreen);
   const setOsFullscreen = useHedgemonyViewStore((s) => s.setOsFullscreen);
-  const setView = useHedgemonyViewStore((s) => s.setView);
-  const saveBookmark = useHedgemonyViewStore((s) => s.saveBookmark);
   const toggleBgmMute = useBgmStore((s) => s.toggleMute);
   const toggleSfxMute = useSfxStore((s) => s.toggleMute);
   const [helperOpen, setHelperOpen] = useState(false);
@@ -263,40 +259,18 @@ export function HedgemonyMapView() {
 
   const surfaceRef = useRef<MapSurfaceHandle | null>(null);
 
-  const recallBookmark = useCallback(
-    (slot: BookmarkSlot) => {
-      const bookmark = useHedgemonyViewStore.getState().bookmarks[slot];
-      if (!bookmark) {
-        toast(`No view saved in slot ${slot}`, {
-          description: `Press Shift+${slot} on the map to save this view.`,
-        });
-        return;
-      }
-      // Prefer the smooth-tween path via the surface; fall back to an
-      // instant store update if the surface isn't mounted yet (e.g., during
-      // unmount races).
-      if (surfaceRef.current) {
-        surfaceRef.current.animateToView(
-          bookmark.panX,
-          bookmark.panY,
-          bookmark.zoom,
-        );
-      } else {
-        setView(bookmark.panX, bookmark.panY, bookmark.zoom);
-      }
+  const animateSurfaceToView = useCallback(
+    (panX: number, panY: number, zoom: number) => {
+      const surface = surfaceRef.current;
+      if (!surface) return false;
+      surface.animateToView(panX, panY, zoom);
+      return true;
     },
-    [setView],
+    [],
   );
 
-  const handleSaveBookmark = useCallback(
-    (slot: BookmarkSlot) => {
-      saveBookmark(slot);
-      toast(`Saved view ${slot}`, {
-        description: `Press F${4 + slot} to jump back.`,
-      });
-    },
-    [saveBookmark],
-  );
+  const { saveBookmark: handleSaveBookmark, recallBookmark } =
+    useCameraBookmarks({ animateToView: animateSurfaceToView });
 
   const voiceGenderForHoglet = useCallback((hogletId: string) => {
     const hoglet = selectHogletById(hogletId)(useHogletStore.getState());
