@@ -164,10 +164,11 @@ export function TaskInput({
   }, [activeReportAssociation, navigateToInbox, setSelectedReportIds]);
 
   useEffect(() => {
+    if (view.folderId) return;
     if (!selectedDirectory && mostRecentRepo?.path) {
       setSelectedDirectory(mostRecentRepo.path);
     }
-  }, [mostRecentRepo?.path, selectedDirectory]);
+  }, [view.folderId, mostRecentRepo?.path, selectedDirectory]);
 
   const setAdapter = (newAdapter: AgentAdapter) =>
     setLastUsedAdapter(newAdapter);
