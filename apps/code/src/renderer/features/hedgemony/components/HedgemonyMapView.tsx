@@ -34,7 +34,17 @@ import {
   type ViewMode,
 } from "../state/computeMapClickAction";
 import {
-  type ControlGroupSelection,
+  applyBoxSelect as applyBoxSelectController,
+  applyEscape,
+  nextCycleNest,
+  recallControlGroupSelection,
+  type Selection,
+  selectActiveHotkeyContext,
+  selectAffiliation,
+  snapshotSelectionForControlGroup,
+  toggleHogletSelection,
+} from "../state/HedgemonyController";
+import {
   type ControlGroupSlot,
   useControlGroupStore,
 } from "../stores/controlGroupStore";
@@ -75,14 +85,6 @@ import { SpawnHogletPanel } from "./SpawnHogletPanel";
 import { WildHogletFlock } from "./WildHogletFlock";
 
 const log = logger.scope("hedgemony-map-view");
-
-type Selection =
-  | { type: "nest"; id: string }
-  | { type: "builder" }
-  | { type: "hedgehouse" }
-  | { type: "money-hog" }
-  | { type: "hoglets"; ids: string[]; includeBuilder?: boolean }
-  | null;
 
 export function HedgemonyMapView() {
   const nests = useNestStore(selectNests);
@@ -232,21 +234,14 @@ export function HedgemonyMapView() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      // The hotkey helper handles its own Esc; let it close on its own without
-      // also unwinding the player's placement / selection state behind it.
-      if (helperOpen) return;
-      // Esc unwinds the most-specific UI mode first: placement → fullscreen →
-      // selection. Without this ordering, hitting Esc in fullscreen during a
-      // placement would dump the user all the way back to nothing-selected.
-      if (mode.kind !== "browsing") {
-        setMode({ kind: "browsing" });
-        return;
-      }
-      if (fullscreen) {
+      const result = applyEscape({ mode, selection, fullscreen, helperOpen });
+      if (!result.handled) return;
+      if (result.exitFullscreen) {
         exitFullscreen();
         return;
       }
-      if (selection) setSelection(null);
+      if (result.mode !== mode) setMode(result.mode);
+      if (result.selection !== selection) setSelection(result.selection);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -297,24 +292,12 @@ export function HedgemonyMapView() {
 
   const cycleNest = useCallback(
     (direction: 1 | -1) => {
-      if (nests.length === 0) return;
-      const currentId = selection?.type === "nest" ? selection.id : null;
-      const currentIdx = currentId
-        ? nests.findIndex((n) => n.id === currentId)
-        : -1;
-      // Wrap forward and backward; with nothing selected we start at the
-      // first nest going forward, the last going backward.
-      const nextIdx =
-        currentIdx === -1
-          ? direction === 1
-            ? 0
-            : nests.length - 1
-          : (currentIdx + direction + nests.length) % nests.length;
-      const nest = nests[nextIdx];
+      const result = nextCycleNest(selection, nests, direction);
+      if (!result) return;
       playSfx("select");
       playVoice("hedgehog:select");
-      setSelection({ type: "nest", id: nest.id });
-      surfaceRef.current?.centerOnPoint(nest.mapX, nest.mapY);
+      setSelection(result.selection);
+      surfaceRef.current?.centerOnPoint(result.centerOn.x, result.centerOn.y);
     },
     [nests, selection],
   );
@@ -325,21 +308,14 @@ export function HedgemonyMapView() {
   const assignControlGroup = useControlGroupStore((s) => s.assign);
   const handleAssignControlGroup = useCallback(
     (slot: ControlGroupSlot) => {
-      if (!selection || selection.type === "money-hog") {
+      const result = snapshotSelectionForControlGroup(selection);
+      if (result.kind === "nothing-selected") {
         toast(`Nothing selected for group ${slot}`, {
           description: "Select a unit or nest first, then assign.",
         });
         return;
       }
-      const snapshot: ControlGroupSelection =
-        selection.type === "hoglets"
-          ? {
-              type: "hoglets",
-              ids: [...selection.ids],
-              includeBuilder: selection.includeBuilder,
-            }
-          : selection;
-      assignControlGroup(slot, snapshot);
+      assignControlGroup(slot, result.snapshot);
       playSfx("select");
       toast(`Saved control group ${slot}`, {
         description: `Press ${slot} to recall.`,
@@ -351,43 +327,44 @@ export function HedgemonyMapView() {
   const recallControlGroup = useCallback(
     (slot: ControlGroupSlot) => {
       const saved = useControlGroupStore.getState().groups[slot];
-      if (!saved) {
+      const byBucket = useHogletStore.getState().byBucket;
+      const liveHogletIds = new Set<string>();
+      for (const bucket of Object.values(byBucket)) {
+        for (const h of bucket) liveHogletIds.add(h.id);
+      }
+      const result = recallControlGroupSelection(
+        saved,
+        slot,
+        liveHogletIds,
+        nests,
+      );
+      if (result.kind === "not-saved") {
         toast(`No group ${slot} saved`, {
           description: `Select something and press Mod+Shift+${slot} to save.`,
         });
         return;
       }
+      if (result.kind === "empty") {
+        toast(`Group ${slot} is empty`, {
+          description:
+            result.reason === "decayed"
+              ? "All members were retired."
+              : "The saved nest was archived.",
+        });
+        return;
+      }
 
-      // Filter stale hoglet refs against the live store so retiring a hoglet
-      // doesn't break the group. Empty after filtering = the group decayed.
-      let recalled: Selection = saved;
+      const recalled = result.selection;
       let centerPoint: { x: number; y: number } | null = null;
-      if (saved.type === "hoglets") {
-        const byBucket = useHogletStore.getState().byBucket;
-        const liveIds = new Set<string>();
-        for (const bucket of Object.values(byBucket)) {
-          for (const h of bucket) liveIds.add(h.id);
-        }
-        const aliveIds = saved.ids.filter((id) => liveIds.has(id));
-        if (aliveIds.length === 0 && !saved.includeBuilder) {
-          toast(`Group ${slot} is empty`, {
-            description: "All members were retired.",
-          });
-          return;
-        }
-        recalled = {
-          type: "hoglets",
-          ids: aliveIds,
-          includeBuilder: saved.includeBuilder,
-        };
-        if (aliveIds.length > 0) {
+      if (recalled.type === "hoglets") {
+        if (recalled.ids.length > 0) {
           const positions = collectHogletWorldPositions(
             nests,
             byBucket,
             useHogletPositionStore.getState().positions,
           );
           const alivePositions = positions.filter((p) =>
-            aliveIds.includes(p.hogletId),
+            recalled.ids.includes(p.hogletId),
           );
           if (alivePositions.length > 0) {
             const sumX = alivePositions.reduce((s, p) => s + p.x, 0);
@@ -398,30 +375,24 @@ export function HedgemonyMapView() {
             };
           }
         }
-        if (!centerPoint && saved.includeBuilder) {
+        if (!centerPoint && recalled.includeBuilder) {
           centerPoint = builderPosOrFallback();
         }
-      } else if (saved.type === "nest") {
-        const nest = nests.find((n) => n.id === saved.id);
-        if (!nest) {
-          toast(`Group ${slot} is empty`, {
-            description: "The saved nest was archived.",
-          });
-          return;
-        }
-        centerPoint = { x: nest.mapX, y: nest.mapY };
-      } else if (saved.type === "builder") {
+      } else if (recalled.type === "nest") {
+        const nest = nests.find((n) => n.id === recalled.id);
+        if (nest) centerPoint = { x: nest.mapX, y: nest.mapY };
+      } else if (recalled.type === "builder") {
         centerPoint = builderPosOrFallback();
-      } else if (saved.type === "hedgehouse") {
+      } else if (recalled.type === "hedgehouse") {
         centerPoint = { x: HEDGEHOUSE_MAP_X, y: HEDGEHOUSE_MAP_Y };
       }
 
       playSfx("select");
-      if (recalled?.type === "hoglets" && recalled.ids.length > 0) {
-        playVoice("hoglet:select", voiceGenderForHoglet(recalled.ids[0]));
-      } else if (recalled?.type === "builder") {
+      if (result.voiceHogletId) {
+        playVoice("hoglet:select", voiceGenderForHoglet(result.voiceHogletId));
+      } else if (recalled.type === "builder") {
         playVoice("builder:select", genderForName(BUILDER_NAME));
-      } else if (recalled?.type === "nest") {
+      } else if (recalled.type === "nest") {
         playVoice("hedgehog:select");
       }
       setSelection(recalled);
@@ -647,31 +618,9 @@ export function HedgemonyMapView() {
         builderPos.y >= minY &&
         builderPos.y <= maxY;
 
-      setSelection((prev) => {
-        // Additive (shift/cmd) keeps a prior selection and unions in the
-        // marquee hits. Non-additive replaces — clicking an empty area with
-        // a tiny marquee that catches nothing still clears selection.
-        if (additive) {
-          const prevHoglets = prev?.type === "hoglets" ? prev.ids : [];
-          const prevBuilder =
-            prev?.type === "builder" ||
-            (prev?.type === "hoglets" && prev.includeBuilder === true);
-          const merged = Array.from(new Set([...prevHoglets, ...hit]));
-          const withBuilder = prevBuilder || builderInRect;
-          if (merged.length === 0) {
-            return withBuilder ? { type: "builder" } : null;
-          }
-          return withBuilder
-            ? { type: "hoglets", ids: merged, includeBuilder: true }
-            : { type: "hoglets", ids: merged };
-        }
-        if (hit.length === 0) {
-          return builderInRect ? { type: "builder" } : null;
-        }
-        return builderInRect
-          ? { type: "hoglets", ids: hit, includeBuilder: true }
-          : { type: "hoglets", ids: hit };
-      });
+      setSelection((prev) =>
+        applyBoxSelectController(prev, hit, builderInRect, additive),
+      );
       if (hit.length > 0 || builderInRect) playSfx("select");
     },
     [builderPosOrFallback],
@@ -700,70 +649,29 @@ export function HedgemonyMapView() {
   // bright and everything else dims; when they pick a hoglet, its parent nest
   // is highlighted alongside the hoglet so the relationship is obvious. A
   // `null` affiliation set means "no focus, render everything at full opacity".
-  const { affiliatedNestIds, dimWildFlock } = useMemo(() => {
-    if (selection?.type === "nest") {
-      return {
-        affiliatedNestIds: new Set<string>([
-          selection.id,
-        ]) as ReadonlySet<string>,
-        dimWildFlock: true,
-      };
-    }
-    if (selection?.type === "hoglets") {
-      const parents = new Set<string>();
-      let hasWildSelected = false;
-      for (const id of selection.ids) {
-        let nestIdForHoglet: string | null | undefined;
-        for (const bucket of Object.values(hogletBuckets)) {
-          const found = bucket.find((h) => h.id === id);
-          if (found) {
-            nestIdForHoglet = found.nestId;
-            break;
-          }
-        }
-        if (nestIdForHoglet === undefined) continue;
-        if (nestIdForHoglet === null) hasWildSelected = true;
-        else parents.add(nestIdForHoglet);
-      }
-      return {
-        affiliatedNestIds: parents as ReadonlySet<string>,
-        dimWildFlock: !hasWildSelected,
-      };
-    }
-    return {
-      affiliatedNestIds: null as ReadonlySet<string> | null,
-      dimWildFlock: false,
-    };
-  }, [selection, hogletBuckets]);
+  const { affiliatedNestIds, dimWildFlock } = useMemo(
+    () => selectAffiliation(selection, hogletBuckets),
+    [selection, hogletBuckets],
+  );
   const buildMode = mode.kind === "placingNest";
   const relocatingNestId = mode.kind === "relocatingNest" ? mode.nestId : null;
 
   // Drives the highlighted section of the hotkey helper so the player can see
   // which contextual commands are currently bound based on what's selected.
-  const activeHotkeyContext: HedgemonyHotkeyContext | null = (() => {
-    if (spawnHogletOpen || pendingPlacement) return "dialog";
-    if (activeNest) return "nest";
-    if (builderSelected) return "builder";
-    if (hedgehouseSelected) return "hedgehouse";
-    if (singleSelectedHogletId) return "hoglet";
-    return null;
-  })();
+  const activeHotkeyContext: HedgemonyHotkeyContext | null =
+    selectActiveHotkeyContext({
+      dialogOpen: spawnHogletOpen || pendingPlacement !== null,
+      activeNestId: activeNest?.id ?? null,
+      builderSelected,
+      hedgehouseSelected,
+      singleSelectedHogletId,
+    });
 
   const handleHogletSelect = useCallback(
     (hogletId: string, additive: boolean) => {
       playSfx("select");
       playVoice("hoglet:select", voiceGenderForHoglet(hogletId));
-      setSelection((prev) => {
-        if (additive && prev?.type === "hoglets") {
-          // Toggle: shift-clicking an already-selected hoglet removes it.
-          if (prev.ids.includes(hogletId)) {
-            const next = prev.ids.filter((id) => id !== hogletId);
-            return next.length === 0 ? null : { type: "hoglets", ids: next };
-          }
-          return { type: "hoglets", ids: [...prev.ids, hogletId] };
-        }
-        return { type: "hoglets", ids: [hogletId] };
-      });
+      setSelection((prev) => toggleHogletSelection(prev, hogletId, additive));
     },
     [voiceGenderForHoglet],
   );
