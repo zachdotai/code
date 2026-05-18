@@ -6,7 +6,6 @@ import { logger } from "@utils/logger";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
 import { useBgmStore } from "../audio/bgmStore";
 import { playSfx } from "../audio/sfx";
@@ -20,6 +19,7 @@ import {
   HEDGEHOUSE_MAP_Y,
 } from "../constants/map";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
+import { useHedgemonyHotkeys } from "../hooks/useHedgemonyHotkeys";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
 import {
   type HogletDragSource,
@@ -302,14 +302,6 @@ export function HedgemonyMapView() {
   // dialog (or just having it focused) doesn't ricochet into fullscreen /
   // bookmark recall.
   const dialogOpen = pendingPlacement !== null || spawnHogletOpen;
-  const mapHotkeyOptions = {
-    enableOnFormTags: false,
-    preventDefault: true,
-    enabled: !dialogOpen,
-  } as const;
-
-  useHotkeys("f, f11", toggleFullscreen, mapHotkeyOptions);
-  useHotkeys("shift+f", toggleInAppFullscreen, mapHotkeyOptions);
 
   const surfaceRef = useRef<MapSurfaceHandle | null>(null);
 
@@ -348,47 +340,6 @@ export function HedgemonyMapView() {
     [saveBookmark],
   );
 
-  // Camera bookmarks live on F5..F7 so the bare digit keys are free for
-  // SC-style control groups. F-keys read as "view" anyway (next to F11 for
-  // fullscreen).
-  useHotkeys("f5", () => recallBookmark(1), mapHotkeyOptions, [recallBookmark]);
-  useHotkeys("f6", () => recallBookmark(2), mapHotkeyOptions, [recallBookmark]);
-  useHotkeys("f7", () => recallBookmark(3), mapHotkeyOptions, [recallBookmark]);
-  useHotkeys("shift+f5", () => handleSaveBookmark(1), mapHotkeyOptions, [
-    handleSaveBookmark,
-  ]);
-  useHotkeys("shift+f6", () => handleSaveBookmark(2), mapHotkeyOptions, [
-    handleSaveBookmark,
-  ]);
-  useHotkeys("shift+f7", () => handleSaveBookmark(3), mapHotkeyOptions, [
-    handleSaveBookmark,
-  ]);
-
-  // AoE-style camera commands. Surface owns the imperative animations; we
-  // route through its handle so the keys behave identically to the on-screen
-  // Fit / Center / Reset buttons.
-  useHotkeys("z", () => surfaceRef.current?.fitToContents(), mapHotkeyOptions);
-  useHotkeys(
-    "shift+z",
-    () => surfaceRef.current?.resetView(),
-    mapHotkeyOptions,
-  );
-  useHotkeys(
-    "space",
-    () => surfaceRef.current?.centerSelected(),
-    mapHotkeyOptions,
-  );
-
-  // Audio. Plain `m` is far enough from any other binding to be safe; Shift+M
-  // toggles the louder voice/SFX bucket. Stays enabled in dialogs so players
-  // can silence the hedgehog from anywhere.
-  useHotkeys("m", () => toggleBgmMute(), { preventDefault: true }, [
-    toggleBgmMute,
-  ]);
-  useHotkeys("shift+m", () => toggleSfxMute(), { preventDefault: true }, [
-    toggleSfxMute,
-  ]);
-
   const voiceGenderForHoglet = useCallback((hogletId: string) => {
     const hoglet = selectHogletById(hogletId)(useHogletStore.getState());
     return genderForName(hoglet?.name ?? null);
@@ -405,14 +356,12 @@ export function HedgemonyMapView() {
     const pos = builderPosOrFallback();
     surfaceRef.current?.centerOnPoint(pos.x, pos.y);
   }, [builderPosOrFallback]);
-  useHotkeys("f1", selectBuilder, mapHotkeyOptions, [selectBuilder]);
 
   const selectHedgehouse = useCallback(() => {
     playSfx("select");
     setSelection({ type: "hedgehouse" });
     surfaceRef.current?.centerOnPoint(HEDGEHOUSE_MAP_X, HEDGEHOUSE_MAP_Y);
   }, []);
-  useHotkeys("f2", selectHedgehouse, mapHotkeyOptions, [selectHedgehouse]);
 
   const cycleNest = useCallback(
     (direction: 1 | -1) => {
@@ -437,8 +386,6 @@ export function HedgemonyMapView() {
     },
     [nests, selection],
   );
-  useHotkeys("f3", () => cycleNest(1), mapHotkeyOptions, [cycleNest]);
-  useHotkeys("shift+f3", () => cycleNest(-1), mapHotkeyOptions, [cycleNest]);
 
   // SC-style control groups: Mod+Shift+N saves the current selection into
   // slot N; bare N recalls it. Hoglet IDs are filtered against the live
@@ -553,90 +500,36 @@ export function HedgemonyMapView() {
     [nests, builderPosOrFallback, voiceGenderForHoglet],
   );
 
-  // useHotkeys can't be invoked in a loop, so unroll the nine slots. Each
-  // pair shares the same options object as the other map hotkeys (disabled
-  // in dialogs, not in form fields).
-  useHotkeys("1", () => recallControlGroup(1), mapHotkeyOptions, [
-    recallControlGroup,
-  ]);
-  useHotkeys("2", () => recallControlGroup(2), mapHotkeyOptions, [
-    recallControlGroup,
-  ]);
-  useHotkeys("3", () => recallControlGroup(3), mapHotkeyOptions, [
-    recallControlGroup,
-  ]);
-  useHotkeys("4", () => recallControlGroup(4), mapHotkeyOptions, [
-    recallControlGroup,
-  ]);
-  useHotkeys("5", () => recallControlGroup(5), mapHotkeyOptions, [
-    recallControlGroup,
-  ]);
-  useHotkeys("6", () => recallControlGroup(6), mapHotkeyOptions, [
-    recallControlGroup,
-  ]);
-  useHotkeys("7", () => recallControlGroup(7), mapHotkeyOptions, [
-    recallControlGroup,
-  ]);
-  useHotkeys("8", () => recallControlGroup(8), mapHotkeyOptions, [
-    recallControlGroup,
-  ]);
-  useHotkeys("9", () => recallControlGroup(9), mapHotkeyOptions, [
-    recallControlGroup,
-  ]);
-  useHotkeys(
-    "mod+shift+1",
-    () => handleAssignControlGroup(1),
-    mapHotkeyOptions,
-    [handleAssignControlGroup],
+  const fitToContents = useCallback(
+    () => surfaceRef.current?.fitToContents(),
+    [],
   );
-  useHotkeys(
-    "mod+shift+2",
-    () => handleAssignControlGroup(2),
-    mapHotkeyOptions,
-    [handleAssignControlGroup],
+  const resetView = useCallback(() => surfaceRef.current?.resetView(), []);
+  const centerSelected = useCallback(
+    () => surfaceRef.current?.centerSelected(),
+    [],
   );
-  useHotkeys(
-    "mod+shift+3",
-    () => handleAssignControlGroup(3),
-    mapHotkeyOptions,
-    [handleAssignControlGroup],
+
+  useHedgemonyHotkeys(
+    {
+      onToggleFullscreen: toggleFullscreen,
+      onToggleInAppFullscreen: toggleInAppFullscreen,
+      onRecallBookmark: recallBookmark,
+      onSaveBookmark: handleSaveBookmark,
+      onFitToContents: fitToContents,
+      onResetView: resetView,
+      onCenterSelected: centerSelected,
+      onToggleBgmMute: toggleBgmMute,
+      onToggleSfxMute: toggleSfxMute,
+      onSelectBuilder: selectBuilder,
+      onSelectHedgehouse: selectHedgehouse,
+      onCycleNest: cycleNest,
+      onRecallControlGroup: recallControlGroup,
+      onAssignControlGroup: handleAssignControlGroup,
+    },
+    { dialogOpen },
   );
-  useHotkeys(
-    "mod+shift+4",
-    () => handleAssignControlGroup(4),
-    mapHotkeyOptions,
-    [handleAssignControlGroup],
-  );
-  useHotkeys(
-    "mod+shift+5",
-    () => handleAssignControlGroup(5),
-    mapHotkeyOptions,
-    [handleAssignControlGroup],
-  );
-  useHotkeys(
-    "mod+shift+6",
-    () => handleAssignControlGroup(6),
-    mapHotkeyOptions,
-    [handleAssignControlGroup],
-  );
-  useHotkeys(
-    "mod+shift+7",
-    () => handleAssignControlGroup(7),
-    mapHotkeyOptions,
-    [handleAssignControlGroup],
-  );
-  useHotkeys(
-    "mod+shift+8",
-    () => handleAssignControlGroup(8),
-    mapHotkeyOptions,
-    [handleAssignControlGroup],
-  );
-  useHotkeys(
-    "mod+shift+9",
-    () => handleAssignControlGroup(9),
-    mapHotkeyOptions,
-    [handleAssignControlGroup],
-  );
+
   const flashMoveMarker = useCallback((x: number, y: number) => {
     const id = Date.now();
     setMoveMarker({ id, x, y });
