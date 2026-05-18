@@ -5,7 +5,6 @@ import { motion } from "framer-motion";
 import { useHogletVisuals } from "../hooks/useHogletVisuals";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { broodHogletPosition } from "../utils/hogletPositions";
-import { nestAccentColor } from "../utils/nestColors";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { PR_DOT_COLOR, TASK_STATUS_DOT_COLOR } from "./hogletStatus";
 
@@ -55,7 +54,6 @@ export function BroodHoglet({
     title,
     cancelled,
   } = useHogletVisuals(hoglet, x, y);
-  const accentColor = nestAccentColor(nestId);
 
   const handleClick = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -131,12 +129,7 @@ export function BroodHoglet({
             )}
           </div>
           {hoglet.name && (
-            <div className="mt-1 flex max-w-[100px] items-center gap-1 rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
-              <span
-                aria-hidden
-                className="size-1.5 shrink-0 rounded-full"
-                style={{ background: accentColor }}
-              />
+            <div className="mt-1 max-w-[100px] rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
               <span className="truncate">{hoglet.name}</span>
             </div>
           )}
