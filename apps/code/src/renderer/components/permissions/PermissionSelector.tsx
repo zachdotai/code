@@ -31,9 +31,7 @@ export function PermissionSelector({
   onCancel,
 }: PermissionSelectorProps) {
   const props = { toolCall, options, onSelect, onCancel };
-  const meta = toolCall._meta as
-    | { codeToolKind?: string; claudeCode?: { toolName?: string } }
-    | undefined;
+  const meta = toolCall._meta as { codeToolKind?: string } | undefined;
   const agentToolName = getMcpPermissionToolName(toolCall);
   if (agentToolName?.startsWith("mcp__")) {
     return <McpPermission {...props} />;
