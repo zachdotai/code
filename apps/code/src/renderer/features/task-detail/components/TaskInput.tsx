@@ -23,6 +23,8 @@ import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModel
 import { getCurrentModeFromConfigOptions } from "@features/sessions/stores/sessionStore";
 import type { AgentAdapter } from "@features/settings/stores/settingsStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { useSetupStore } from "@features/setup/stores/setupStore";
+import type { DiscoveredTask } from "@features/setup/types";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { useConnectivity } from "@hooks/useConnectivity";
 import {
@@ -47,6 +49,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
+import { SuggestedTaskChips } from "./SuggestedTaskChips";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
 
 interface TaskInputProps {
@@ -539,6 +542,15 @@ export function TaskInput({
     editorRef.current?.setContent(text);
     editorRef.current?.focus();
   }, []);
+  const handleSelectSuggestion = useCallback(
+    async (task: DiscoveredTask) => {
+      const ok = await handleSubmit({
+        segments: [{ type: "text", text: task.prompt ?? task.title }],
+      });
+      if (ok) useSetupStore.getState().removeDiscoveredTask(task.id);
+    },
+    [handleSubmit],
+  );
   const hasPendingDraft = useCallback(
     () => !(editorRef.current?.isEmpty() ?? true),
     [],
@@ -825,6 +837,7 @@ export function TaskInput({
                   <CloudGithubMissingNotice />
                 </div>
               )}
+            <SuggestedTaskChips onSelect={handleSelectSuggestion} />
           </Flex>
         </Flex>
       </Flex>
