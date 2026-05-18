@@ -276,8 +276,12 @@ export function NestDetailPanel({
         }
       />
 
-      <ScrollArea type="auto" scrollbars="vertical" className="min-h-0 flex-1">
-        <Flex direction="column" gap="4" px="4" py="3">
+      <ScrollArea
+        type="auto"
+        scrollbars="vertical"
+        className="scroll-area-constrain-width min-h-0 flex-1"
+      >
+        <Flex direction="column" gap="4" px="4" py="3" className="min-w-0">
           {lifecycle === "validating" && (
             <div className="rounded-(--radius-2) border border-(--purple-7) bg-(--purple-2) p-3">
               <Flex direction="column" gap="2">
@@ -511,6 +515,9 @@ const KIND_ACCENT: Record<NestMessageKind, string> = {
   hoglet_summary: "text-(--gray-11)",
 };
 
+const MESSAGE_BODY_CLASS =
+  "min-w-0 whitespace-pre-wrap break-words text-(--gray-12) [overflow-wrap:anywhere]";
+
 function NestChatMessage({ message }: { message: NestMessage }) {
   const routed = parseFeedbackRoutedPayload(message.payloadJson);
   if (routed) {
@@ -523,7 +530,7 @@ function NestChatMessage({ message }: { message: NestMessage }) {
   const label = KIND_LABEL[message.kind] ?? message.kind;
   const accent = KIND_ACCENT[message.kind] ?? "text-(--gray-11)";
   return (
-    <div className="rounded-(--radius-2) border border-(--gray-4) bg-(--gray-a2) p-2">
+    <div className="min-w-0 rounded-(--radius-2) border border-(--gray-4) bg-(--gray-a2) p-2">
       <div className="mb-1 flex items-center justify-between gap-2">
         <Text size="1" weight="medium" className={accent}>
           {label}
@@ -532,7 +539,7 @@ function NestChatMessage({ message }: { message: NestMessage }) {
           {new Date(message.createdAt).toLocaleString()}
         </Text>
       </div>
-      <Text as="p" size="2" className="whitespace-pre-wrap text-(--gray-12)">
+      <Text as="p" size="2" className={MESSAGE_BODY_CLASS}>
         {message.body}
       </Text>
     </div>
@@ -553,7 +560,7 @@ function PrGraphRebasedMessage({
         ? "border-(--green-6) bg-(--green-2) text-(--green-11)"
         : "border-(--purple-6) bg-(--purple-2) text-(--purple-11)";
   return (
-    <div className={`rounded-(--radius-2) border ${tone} p-2`}>
+    <div className={`min-w-0 rounded-(--radius-2) border ${tone} p-2`}>
       <div className="mb-1 flex items-center justify-between gap-2">
         <Flex align="center" gap="1">
           <GitMerge size={12} weight="bold" />
@@ -565,7 +572,7 @@ function PrGraphRebasedMessage({
           {new Date(message.createdAt).toLocaleString()}
         </Text>
       </div>
-      <Text as="p" size="2" className="whitespace-pre-wrap text-(--gray-12)">
+      <Text as="p" size="2" className={MESSAGE_BODY_CLASS}>
         {message.body}
       </Text>
     </div>
@@ -917,7 +924,7 @@ function FeedbackRoutedMessage({
   };
   const label = sourceLabels[payload.source];
   return (
-    <div className={`rounded-(--radius-2) border ${tone} p-2`}>
+    <div className={`min-w-0 rounded-(--radius-2) border ${tone} p-2`}>
       <div className="mb-1 flex items-center justify-between gap-2">
         <Flex align="center" gap="1">
           <Icon size={12} weight="bold" />
@@ -929,7 +936,7 @@ function FeedbackRoutedMessage({
           {new Date(message.createdAt).toLocaleString()}
         </Text>
       </div>
-      <Text as="p" size="2" className="whitespace-pre-wrap text-(--gray-12)">
+      <Text as="p" size="2" className={MESSAGE_BODY_CLASS}>
         {message.body}
       </Text>
     </div>
