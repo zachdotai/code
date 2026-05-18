@@ -61,7 +61,8 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
   }
 
   async create(input: CreateNestInput): Promise<Nest> {
-    const bootstrap = input.creationBootstrap;
+    const normalizedInput = normalizeCreateNestInput(input);
+    const bootstrap = normalizedInput.creationBootstrap;
     let primaryRepository =
       bootstrap?.primaryRepository ??
       bootstrap?.repositories[0] ??
@@ -70,27 +71,28 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     primaryRepository =
       await this.validateAndCorrectRepository(primaryRepository);
     const effectiveInput =
-      input.creationBootstrap &&
+      normalizedInput.creationBootstrap &&
       originalPrimaryRepository &&
       primaryRepository &&
       originalPrimaryRepository !== primaryRepository
         ? {
-            ...input,
+            ...normalizedInput,
             creationBootstrap: {
-              ...input.creationBootstrap,
+              ...normalizedInput.creationBootstrap,
               primaryRepository,
-              repositories: input.creationBootstrap.repositories.map((repo) =>
-                repo === originalPrimaryRepository ? primaryRepository : repo,
+              repositories: normalizedInput.creationBootstrap.repositories.map(
+                (repo) =>
+                  repo === originalPrimaryRepository ? primaryRepository : repo,
               ),
             },
           }
-        : input;
+        : normalizedInput;
     const created = this.nests.create({
-      name: input.name,
-      goalPrompt: input.goalPrompt,
-      definitionOfDone: input.definitionOfDone ?? null,
-      mapX: input.mapX,
-      mapY: input.mapY,
+      name: normalizedInput.name,
+      goalPrompt: normalizedInput.goalPrompt,
+      definitionOfDone: normalizedInput.definitionOfDone ?? null,
+      mapX: normalizedInput.mapX,
+      mapY: normalizedInput.mapY,
       primaryRepository,
     });
     const creationMessages = this.nestChat.recordCreationContext(
@@ -333,4 +335,35 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
       );
     }
   }
+}
+
+function normalizeCreateNestInput(input: CreateNestInput): CreateNestInput {
+  if (goalPromptHasUserStories(input.goalPrompt)) {
+    return input;
+  }
+  return {
+    ...input,
+    goalPrompt: buildGoalPromptWithUserStories(input.goalPrompt),
+  };
+}
+
+function goalPromptHasUserStories(goalPrompt: string): boolean {
+  return /^#{1,6}\s+user stories\s*$/im.test(goalPrompt);
+}
+
+function buildGoalPromptWithUserStories(goalPrompt: string): string {
+  const trimmed = goalPrompt.trim();
+  const storyGoal = summarizeForUserStory(trimmed);
+  return [
+    "## Summary",
+    trimmed,
+    "## User Stories",
+    `- P1: As an operator, I want the nest to deliver this goal: ${storyGoal}, so that the requested outcome is completed and validated.`,
+  ].join("\n\n");
+}
+
+function summarizeForUserStory(goalPrompt: string): string {
+  const singleLine = goalPrompt.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= 240) return singleLine;
+  return `${singleLine.slice(0, 237).trimEnd()}...`;
 }

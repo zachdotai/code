@@ -691,6 +691,109 @@ describe("FeedbackRoutingService", () => {
     expect(nests.emitMessageAppended).toHaveBeenCalledTimes(1);
   });
 
+  it("explains failed hedgehog messages as detached task-tab delivery", () => {
+    const service = new FeedbackRoutingService(
+      createMockHogletService([]),
+      nests,
+      createMockGitService({}),
+      createMockCloudTaskClient(null),
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    service.recordRoutedOutcome({
+      nestId: "nest-1",
+      hogletTaskId: "task-1",
+      source: "hedgehog",
+      payloadHash: "hash-hedgehog",
+      payloadRef: "hedgehog-message:nest-1:tool-1",
+      routedOutcome: "failed",
+      trustTier: "internal",
+    });
+
+    expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining(
+          "the hoglet's task tab is not currently open",
+        ),
+      }),
+    );
+    expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining(
+          "Open the hoglet to deliver the message, or wait for the run to complete.",
+        ),
+      }),
+    );
+  });
+
+  it("keeps failed external feedback copy as no-route logged-only", () => {
+    const service = new FeedbackRoutingService(
+      createMockHogletService([]),
+      nests,
+      createMockGitService({}),
+      createMockCloudTaskClient(null),
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    service.recordRoutedOutcome({
+      nestId: "nest-1",
+      hogletTaskId: "task-1",
+      source: "pr_review",
+      payloadHash: "hash-review",
+      payloadRef: "pr-comment:1",
+      routedOutcome: "failed",
+    });
+
+    expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining(
+          "no active session, no nest; logged only",
+        ),
+      }),
+    );
+  });
+
+  it("keeps injected and follow-up routing audit copy unchanged", () => {
+    const service = new FeedbackRoutingService(
+      createMockHogletService([]),
+      nests,
+      createMockGitService({}),
+      createMockCloudTaskClient(null),
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    service.recordRoutedOutcome({
+      nestId: "nest-1",
+      hogletTaskId: "task-1",
+      source: "pr_review",
+      payloadHash: "hash-injected",
+      payloadRef: "pr-comment:1",
+      routedOutcome: "injected",
+    });
+    service.recordRoutedOutcome({
+      nestId: "nest-1",
+      hogletTaskId: "task-1",
+      source: "ci",
+      payloadHash: "hash-follow-up",
+      payloadRef: "ci:1",
+      routedOutcome: "follow_up_spawned",
+    });
+
+    expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining("→ injected into live session"),
+      }),
+    );
+    expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining("→ spawned a follow-up hoglet"),
+      }),
+    );
+  });
+
   it("writes a hoglet_summary message from completed terminal output", async () => {
     const hoglet = makeHoglet({
       id: "hoglet-1",

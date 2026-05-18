@@ -199,7 +199,12 @@ describe("NestService", () => {
 
     const input = {
       name: "Checkout lift",
-      goalPrompt: "Improve checkout conversion",
+      goalPrompt: [
+        "## Summary",
+        "Improve checkout conversion",
+        "## User Stories",
+        "- P1: As a buyer, I want checkout to be smoother, so that I can finish faster.",
+      ].join("\n\n"),
       definitionOfDone: "Conversion improves and docs are updated",
       mapX: 42,
       mapY: -7,
@@ -219,7 +224,7 @@ describe("NestService", () => {
     expect(nestChat.recordCreationContext).toHaveBeenCalledWith(nest, input);
     expect(nest).toMatchObject({
       name: "Checkout lift",
-      goalPrompt: "Improve checkout conversion",
+      goalPrompt: input.goalPrompt,
       definitionOfDone: "Conversion improves and docs are updated",
       mapX: 42,
       mapY: -7,
@@ -231,6 +236,51 @@ describe("NestService", () => {
       nestId: nest.id,
       event: { kind: "status", nest },
     });
+  });
+
+  it("adds user stories to unstructured goal prompts before persistence", async () => {
+    const nest = await service.create({
+      name: "Quick nest",
+      goalPrompt: "Add export support to the dashboard table",
+      definitionOfDone: null,
+      mapX: 1,
+      mapY: 2,
+      creationMode: "simple",
+    });
+
+    expect(nest.goalPrompt).toContain("## Summary");
+    expect(nest.goalPrompt).toContain(
+      "Add export support to the dashboard table",
+    );
+    expect(nest.goalPrompt).toContain("## User Stories");
+    expect(nest.goalPrompt).toContain("- P1:");
+    expect(nestChat.recordCreationContext).toHaveBeenCalledWith(
+      nest,
+      expect.objectContaining({
+        creationMode: "simple",
+        goalPrompt: nest.goalPrompt,
+      }),
+    );
+  });
+
+  it("does not rewrite goal prompts that already include user stories", async () => {
+    const goalPrompt = [
+      "## Summary",
+      "Add export support.",
+      "## User Stories",
+      "- P1: As an operator, I want exports, so that I can share data.",
+    ].join("\n\n");
+
+    const nest = await service.create({
+      name: "Quick nest",
+      goalPrompt,
+      definitionOfDone: null,
+      mapX: 1,
+      mapY: 2,
+      creationMode: "simple",
+    });
+
+    expect(nest.goalPrompt).toBe(goalPrompt);
   });
 
   it("falls back to the most-recently-accessed repository when no bootstrap is provided", async () => {

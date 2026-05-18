@@ -680,6 +680,21 @@ function truncateSummary(value: string): string {
   return `${singleLine.slice(0, MAX_HOGLET_SUMMARY_CHARS)}… (truncated)`;
 }
 
+function outcomeLabel(input: RecordRoutedFeedbackInput): string {
+  if (input.routedOutcome === "injected") {
+    return "→ injected into live session";
+  }
+  if (input.routedOutcome === "follow_up_spawned") {
+    return "→ spawned a follow-up hoglet";
+  }
+  if (input.routedOutcome === "failed") {
+    return input.source === "hedgehog"
+      ? "→ could not deliver: the hoglet's task tab is not currently open. Open the hoglet to deliver the message, or wait for the run to complete."
+      : "→ no active session, no nest; logged only";
+  }
+  return "";
+}
+
 function describeRoutedFeedback(input: RecordRoutedFeedbackInput): string {
   const sourceLabel: Record<FeedbackEventSource, string> = {
     pr_review: "PR review comment",
@@ -687,10 +702,5 @@ function describeRoutedFeedback(input: RecordRoutedFeedbackInput): string {
     issue: "issue update",
     hedgehog: "hedgehog message",
   };
-  const outcomeLabel: Record<string, string> = {
-    injected: "→ injected into live session",
-    follow_up_spawned: "→ spawned a follow-up hoglet",
-    failed: "→ could not route automatically; logged only",
-  };
-  return `Routed ${sourceLabel[input.source]} ${outcomeLabel[input.routedOutcome] ?? ""} (ref: ${input.payloadRef}).`;
+  return `Routed ${sourceLabel[input.source]} ${outcomeLabel(input)} (ref: ${input.payloadRef}).`;
 }
