@@ -659,8 +659,9 @@ describe("CloudTaskService", () => {
 
     expect(mockStreamFetch.mock.calls.length).toBe(6);
     // 2 bootstrap calls + 1 post-bootstrap status verification + 6
-    // handleStreamCompletion calls (one per stream error)
-    expect(mockNetFetch).toHaveBeenCalledTimes(9);
+    // handleStreamCompletion calls (one per stream error) + 1 final
+    // status refresh from failWatcher
+    expect(mockNetFetch).toHaveBeenCalledTimes(10);
     expect(updates).toContainEqual({
       taskId: "task-1",
       runId: "run-1",
@@ -670,6 +671,144 @@ describe("CloudTaskService", () => {
         "Lost connection to the cloud run stream. Retry to reconnect.",
       retryable: true,
     });
+  });
+
+  it("emits a terminal status update before the error when the run finished while reconnecting", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    const inProgressRun = () =>
+      createJsonResponse({
+        id: "run-1",
+        status: "in_progress",
+        stage: null,
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+
+    const completedRun = () =>
+      createJsonResponse({
+        id: "run-1",
+        status: "completed",
+        stage: null,
+        output: { pr_url: "https://example.com/pr/1" },
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:01:00Z",
+        completed_at: "2026-01-01T00:01:00Z",
+      });
+
+    // Bootstrap + verifyPostBootstrapStatus + each handleStreamCompletion call
+    // still reports in_progress; only the final failWatcher refresh sees the
+    // completed terminal state.
+    let netCallCount = 0;
+    mockNetFetch.mockImplementation(() => {
+      netCallCount++;
+      if (netCallCount === 2) {
+        // bootstrap: fetchSessionLogs
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      if (netCallCount === 10) {
+        // refreshStatusThenEmitError: run is now terminal
+        return Promise.resolve(completedRun());
+      }
+      return Promise.resolve(inProgressRun());
+    });
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(
+        createSseResponse(
+          'event: keepalive\ndata: {"type":"keepalive"}\n\nevent: error\ndata: {"error":"boom"}\n\n',
+        ),
+      ),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    await vi.advanceTimersByTimeAsync(70_000);
+    await waitFor(
+      () =>
+        updates.some(
+          (u) =>
+            typeof u === "object" &&
+            u !== null &&
+            (u as { kind?: string }).kind === "error",
+        ),
+      10_000,
+    );
+
+    const statusIdx = updates.findIndex(
+      (u) =>
+        typeof u === "object" &&
+        u !== null &&
+        (u as { kind?: string }).kind === "status" &&
+        (u as { status?: string }).status === "completed",
+    );
+    const errorIdx = updates.findIndex(
+      (u) =>
+        typeof u === "object" &&
+        u !== null &&
+        (u as { kind?: string }).kind === "error",
+    );
+
+    expect(statusIdx).toBeGreaterThanOrEqual(0);
+    expect(errorIdx).toBeGreaterThanOrEqual(0);
+    expect(statusIdx).toBeLessThan(errorIdx);
+    expect(updates[statusIdx]).toMatchObject({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "status",
+      status: "completed",
+      output: { pr_url: "https://example.com/pr/1" },
+    });
+  });
+
+  it("skips the status refresh when the failure is an auth/access error", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch.mockResolvedValueOnce(
+      createJsonResponse({ detail: "Forbidden" }, 403),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() =>
+      updates.some(
+        (u) =>
+          typeof u === "object" &&
+          u !== null &&
+          (u as { kind?: string }).kind === "error",
+      ),
+    );
+
+    // Only the initial bootstrap fetchTaskRun — no extra silent refresh.
+    expect(mockNetFetch).toHaveBeenCalledTimes(1);
+    expect(
+      updates.some(
+        (u) =>
+          typeof u === "object" &&
+          u !== null &&
+          (u as { kind?: string }).kind === "status",
+      ),
+    ).toBe(false);
   });
 
   const guardedFetchStatusExpectations = [

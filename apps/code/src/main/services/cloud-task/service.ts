@@ -946,6 +946,41 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.sseAbortController?.abort();
     watcher.sseAbortController = null;
 
+    void this.refreshStatusThenEmitError(watcher, error);
+  }
+
+  /**
+   * Refresh the run state one final time before emitting the watcher's error
+   * event. The stream typically fails *after* the run has already reached a
+   * terminal status (e.g. reconnect attempts exhausted, auth flicker), so a
+   * single REST poll often surfaces the real outcome. Clients can then move
+   * the task out of the "in_progress" UI even though the watcher is dead.
+   *
+   * Auth/access failures (401/403/404) are skipped because the same call
+   * would just fail again — and `fetchTaskRunSilent` would loop into another
+   * `failWatcher` via `shouldFailWatcherForFetchStatus` if we reused
+   * `fetchTaskRun` here.
+   */
+  private async refreshStatusThenEmitError(
+    watcher: WatcherState,
+    error: CloudTaskConnectionError,
+  ): Promise<void> {
+    if (!isAuthFailureError(error)) {
+      const { run } = await this.fetchTaskRunSilent(watcher);
+      if (run && this.applyTaskRunState(watcher, run)) {
+        this.emit(CloudTaskEvent.Update, {
+          taskId: watcher.taskId,
+          runId: watcher.runId,
+          kind: "status",
+          status: watcher.lastStatus ?? undefined,
+          stage: watcher.lastStage,
+          output: watcher.lastOutput,
+          errorMessage: watcher.lastErrorMessage,
+          branch: watcher.lastBranch,
+        });
+      }
+    }
+
     this.emit(CloudTaskEvent.Update, {
       taskId: watcher.taskId,
       runId: watcher.runId,
@@ -1219,6 +1254,26 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private async fetchTaskRun(
     watcher: WatcherState,
   ): Promise<TaskRunResponse | null> {
+    const { run, httpStatus } = await this.fetchTaskRunSilent(watcher);
+    if (run === null && httpStatus !== null) {
+      if (shouldFailWatcherForFetchStatus(httpStatus)) {
+        this.failWatcher(
+          watcherKey(watcher.taskId, watcher.runId),
+          createStreamStatusError(httpStatus).details,
+        );
+      }
+    }
+    return run;
+  }
+
+  /**
+   * Same wire call as `fetchTaskRun` but never escalates a non-OK response
+   * into a watcher failure. Used from `failWatcher` so the final status poll
+   * can't re-enter watcher teardown.
+   */
+  private async fetchTaskRunSilent(
+    watcher: WatcherState,
+  ): Promise<{ run: TaskRunResponse | null; httpStatus: number | null }> {
     const url = `${watcher.apiHost}/api/projects/${watcher.teamId}/tasks/${watcher.taskId}/runs/${watcher.runId}/`;
 
     try {
@@ -1236,23 +1291,28 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           taskId: watcher.taskId,
           runId: watcher.runId,
         });
-        if (shouldFailWatcherForFetchStatus(authedResponse.status)) {
-          this.failWatcher(
-            watcherKey(watcher.taskId, watcher.runId),
-            createStreamStatusError(authedResponse.status).details,
-          );
-        }
-        return null;
+        return { run: null, httpStatus: authedResponse.status };
       }
 
-      return (await authedResponse.json()) as TaskRunResponse;
+      return {
+        run: (await authedResponse.json()) as TaskRunResponse,
+        httpStatus: authedResponse.status,
+      };
     } catch (error) {
       log.warn("Cloud task status fetch error", {
         taskId: watcher.taskId,
         runId: watcher.runId,
         error,
       });
-      return null;
+      return { run: null, httpStatus: null };
     }
   }
+}
+
+function isAuthFailureError(error: CloudTaskConnectionError): boolean {
+  return (
+    error.title === "Cloud authentication expired" ||
+    error.title === "Cloud access denied" ||
+    error.title === "Cloud run not found"
+  );
 }
