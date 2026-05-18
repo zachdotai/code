@@ -20,16 +20,14 @@ import {
 } from "../constants/map";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useHedgemonyHotkeys } from "../hooks/useHedgemonyHotkeys";
+import { useHedgemonySubscriptions } from "../hooks/useHedgemonySubscriptions";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
 import {
   type HogletDragSource,
   type HogletDragTarget,
   handleHogletDrop,
 } from "../service/hogletMutations";
-import { initializeWildHogletStore } from "../service/hogletSubscriptionService";
 import { moveNest } from "../service/nestMutations";
-import { initializeNestStore } from "../service/nestSubscriptionService";
-import { initializePrGraphForNest } from "../service/prGraphSubscriptionService";
 import {
   computeMapClickAction,
   type ViewMode,
@@ -134,16 +132,8 @@ export function HedgemonyMapView() {
   // while the map view is mounted. Tears down with the view.
   useSignalIngestion();
 
-  // Subscribe to the wild bucket while the map is mounted. Both ad-hoc
-  // operator spawns and unrouted signal-backed hoglets live here, and the
-  // wild flock renders directly on the map.
-  useEffect(() => {
-    return initializeWildHogletStore();
-  }, []);
-
-  useEffect(() => {
-    return initializeNestStore();
-  }, []);
+  const nestIds = useMemo(() => nests.map((n) => n.id), [nests]);
+  useHedgemonySubscriptions({ nestIds });
 
   useEffect(() => {
     return () => {
@@ -165,38 +155,6 @@ export function HedgemonyMapView() {
   useEffect(() => {
     return () => {
       useHedgemonySelectionStore.getState().clear();
-    };
-  }, []);
-
-  // Slice 8 — bootstrap a PR-graph edge subscription per nest. Each nest
-  // disposer is keyed by id in a ref so we open/close incrementally when nests
-  // are added/removed, rather than tearing down every subscription whenever
-  // the `nests` array reshuffles (e.g. on status updates that mutate the
-  // record but keep the same membership).
-  const prGraphDisposersRef = useRef<Map<string, () => void>>(new Map());
-  const nestIdsKey = useMemo(() => nests.map((n) => n.id).join(","), [nests]);
-  useEffect(() => {
-    const disposers = prGraphDisposersRef.current;
-    const liveIds = new Set(nestIdsKey ? nestIdsKey.split(",") : []);
-    for (const id of liveIds) {
-      if (!disposers.has(id)) {
-        disposers.set(id, initializePrGraphForNest(id));
-      }
-    }
-    for (const [id, dispose] of disposers) {
-      if (!liveIds.has(id)) {
-        dispose();
-        disposers.delete(id);
-      }
-    }
-  }, [nestIdsKey]);
-
-  // Tear down all PR-graph subscriptions when the map view unmounts.
-  useEffect(() => {
-    const disposers = prGraphDisposersRef.current;
-    return () => {
-      for (const dispose of disposers.values()) dispose();
-      disposers.clear();
     };
   }, []);
 
