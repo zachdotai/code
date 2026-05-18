@@ -37,6 +37,7 @@ import { useAuthStore } from "@renderer/features/auth/stores/authStore";
 import { useDraftStore } from "@renderer/features/message-editor/stores/draftStore";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
+import { normalizeRepoKey } from "@shared/utils/repo";
 import {
   type TaskInputReportAssociation,
   useNavigationStore,
@@ -405,13 +406,16 @@ export function TaskInput({
   ]);
 
   useEffect(() => {
-    if (view.folderId) {
-      const folder = folders.find((f) => f.id === view.folderId);
-      if (folder) {
-        setSelectedDirectory(folder.path);
-      }
+    if (!view.folderId) return;
+    const folder = folders.find((f) => f.id === view.folderId);
+    if (!folder) return;
+    setSelectedDirectory(folder.path);
+    if (folder.remoteUrl) {
+      const repoKey = normalizeRepoKey(folder.remoteUrl).toLowerCase();
+      setSelectedRepository(repoKey);
+      setLastUsedCloudRepository(repoKey);
     }
-  }, [view.folderId, folders]);
+  }, [view.folderId, folders, setLastUsedCloudRepository]);
 
   useEffect(() => {
     setCloudBranchSearchQuery("");
