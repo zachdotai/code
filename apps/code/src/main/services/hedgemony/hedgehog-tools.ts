@@ -290,32 +290,14 @@ export type HedgehogToolName =
 
 export const MAX_SPAWN_HOGLET_PROMPT_CHARS = HOGLET_PROMPT_MAX_CHARS;
 export const MAX_SPAWN_HOGLET_TOOL_INPUT_CHARS = HOGLET_PROMPT_MAX_CHARS * 4;
-
-export const spawnHogletArgs = z.object({
-  prompt: z.string().trim().min(1).max(MAX_SPAWN_HOGLET_TOOL_INPUT_CHARS),
-  repository: z.string().trim().min(1).optional(),
-  /**
-   * Optional reference to a signal report this spawn is following up on.
-   * When set, the dispatcher cross-checks the operator's override memory and
-   * refuses the spawn if the operator previously suppressed this report.
-   */
-  signal_report_id: z.string().trim().min(1).max(128).optional(),
-});
-
-export const raiseHogletArgs = z.object({
-  hoglet_id: z.string().min(1),
-  prompt: z.string().trim().min(1).max(2000).optional(),
-});
-
-export const killHogletArgs = z.object({
-  hoglet_id: z.string().min(1),
-  reason: z.string().trim().min(1).max(2000),
-});
-
-export const messageHogletArgs = z.object({
-  hoglet_id: z.string().min(1),
-  prompt: z.string().trim().min(1).max(2000),
-});
+export const MAX_MESSAGE_HOGLET_PROMPT_CHARS = 8000;
+export const MAX_AUDIT_SUMMARY_CHARS = 2000;
+export const MAX_AUDIT_DETAIL_CHARS = 8000;
+export const MAX_VALIDATION_SUMMARY_CHARS = 8000;
+export const MAX_HEDGEHOG_REASON_CHARS = 2000;
+export const MAX_HOLD_REASON_CHARS = 200;
+export const MAX_RAISE_PROMPT_CHARS = 2000;
+export const MAX_REBASE_PROMPT_CHARS = 2000;
 
 function textArg(max: number) {
   return z.preprocess((value) => {
@@ -337,14 +319,40 @@ function textArg(max: number) {
   }, z.string().trim().min(1).max(max));
 }
 
+export const spawnHogletArgs = z.object({
+  prompt: textArg(MAX_SPAWN_HOGLET_TOOL_INPUT_CHARS),
+  repository: z.string().trim().min(1).optional(),
+  /**
+   * Optional reference to a signal report this spawn is following up on.
+   * When set, the dispatcher cross-checks the operator's override memory and
+   * refuses the spawn if the operator previously suppressed this report.
+   */
+  signal_report_id: z.string().trim().min(1).max(128).optional(),
+});
+
+export const raiseHogletArgs = z.object({
+  hoglet_id: z.string().min(1),
+  prompt: textArg(MAX_RAISE_PROMPT_CHARS).optional(),
+});
+
+export const killHogletArgs = z.object({
+  hoglet_id: z.string().min(1),
+  reason: textArg(MAX_HEDGEHOG_REASON_CHARS),
+});
+
+export const messageHogletArgs = z.object({
+  hoglet_id: z.string().min(1),
+  prompt: textArg(MAX_MESSAGE_HOGLET_PROMPT_CHARS),
+});
+
 export const writeAuditEntryArgs = z.object({
-  summary: textArg(2000),
-  detail: textArg(8000).optional(),
+  summary: textArg(MAX_AUDIT_SUMMARY_CHARS),
+  detail: textArg(MAX_AUDIT_DETAIL_CHARS).optional(),
 });
 
 export const holdArgs = z
   .object({
-    reason: z.string().trim().min(1).max(200),
+    reason: textArg(MAX_HOLD_REASON_CHARS),
     nextTrigger: holdNextTrigger,
     timeoutSeconds: z.number().int().positive().max(86_400).optional(),
   })
@@ -359,7 +367,7 @@ export const holdArgs = z
   });
 
 export const markValidatedArgs = z.object({
-  summary: z.string().trim().min(1).max(8000),
+  summary: textArg(MAX_VALIDATION_SUMMARY_CHARS),
   pr_urls: z.array(z.string().trim().min(1)).max(25).optional(),
   task_ids: z.array(z.string().trim().min(1)).max(50).optional(),
   caveats: z.array(z.string().trim().min(1)).max(10).optional(),
@@ -368,22 +376,22 @@ export const markValidatedArgs = z.object({
 export const linkPrDependencyArgs = z.object({
   parent_task_id: z.string().min(1),
   child_task_id: z.string().min(1),
-  reason: z.string().trim().min(1).max(2000),
+  reason: textArg(MAX_HEDGEHOG_REASON_CHARS),
 });
 
 export const unlinkPrDependencyArgs = z.object({
   edge_id: z.string().min(1),
-  reason: z.string().trim().min(1).max(2000),
+  reason: textArg(MAX_HEDGEHOG_REASON_CHARS),
 });
 
 export const rebaseChildArgs = z.object({
   edge_id: z.string().min(1),
-  prompt: z.string().trim().min(1).max(2000).optional(),
+  prompt: textArg(MAX_REBASE_PROMPT_CHARS).optional(),
 });
 
 export const requestRepositoryAccessArgs = z.object({
   repository: z.string().trim().min(1),
-  reason: z.string().trim().min(1).max(2000),
+  reason: textArg(MAX_HEDGEHOG_REASON_CHARS),
 });
 
 export type SpawnHogletArgs = z.infer<typeof spawnHogletArgs>;
