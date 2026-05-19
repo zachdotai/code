@@ -1,0 +1,12 @@
+diff --git a/dist/index-BBpNRJEB.js b/dist/index-BBpNRJEB.js
+--- a/dist/index-BBpNRJEB.js
++++ b/dist/index-BBpNRJEB.js
+@@ -29183,7 +29183,7 @@
+     );
+   }
+   loadSpriteFrames(e) {
+-    this.sprite = new gh(e), this.loadRigidBody(), this.sprite.eventMode = "static", this.sprite.texture.source.scaleMode = "nearest", this.sprite.play(), this.sprite.anchor.set(0.5), this.sprite.x = this.rigidBody.position.x, this.sprite.y = this.rigidBody.position.y, this.game.app.stage.addChild(this.sprite), this.setupPointerEvents();
++    this.sprite = new gh(e), this.loadRigidBody(), this.sprite.eventMode = "static", this.sprite.texture.source.scaleMode = "linear", this.sprite.play(), this.sprite.anchor.set(0.5), this.sprite.x = this.rigidBody.position.x, this.sprite.y = this.rigidBody.position.y, this.game.app.stage.addChild(this.sprite), this.setupPointerEvents();
+   }
+   loadRigidBody(e = !1) {
+     let t = window.innerWidth / 2, r = window.innerHeight / 2;

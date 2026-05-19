@@ -29,3 +29,4 @@ onlyBuiltDependencies:
 
 patchedDependencies:
   node-pty: patches/node-pty.patch
+  '@posthog/hedgehog-mode': patches/@posthog__hedgehog-mode.patch
