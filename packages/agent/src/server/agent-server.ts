@@ -1589,24 +1589,80 @@ export class AgentServer {
   private buildCloudSystemPrompt(prUrl?: string | null): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
-    const attributionInstructions = `
-## Attribution
-Do NOT use Claude Code's default attribution (no "Co-Authored-By" trailers, no "Generated with [Claude Code]" lines).
 
-If you create a commit, add the following trailers to the commit message (after a blank line at the end):
-  Generated-By: PostHog Code
-  Task-Id: ${taskId}
+    // Commits must be signed. We do NOT use `git commit` locally — instead we
+    // create commits via GitHub's GraphQL `createCommitOnBranch`, which signs
+    // commits with the API token identity automatically.
+    const signedCommitInstructions = `
+## Creating signed commits (REQUIRED)
 
-Example:
-\`\`\`
-git commit -m "$(cat <<'EOF'
-fix: resolve login redirect loop
+Do NOT use \`git commit\` or \`git push\` directly. All commits on the PR branch
+MUST be created through GitHub's GraphQL API so they are signed.
 
-Generated-By: PostHog Code
-Task-Id: ${taskId}
-EOF
-)"
-\`\`\``;
+For each commit you want to make:
+
+1. Stage the files for this commit with \`git add <files>\` (do NOT run \`git commit\`).
+2. Build a JSON payload describing the file additions and deletions in this commit:
+   \`\`\`bash
+   BRANCH_NAME="posthog-code/<your-branch>"
+   # Resolve the branch's current tip SHA from the remote. For the first commit
+   # on a new branch this returns the base SHA you pushed in the empty-ref step.
+   BRANCH_TIP_SHA=$(git ls-remote origin "$BRANCH_NAME" | cut -f1)
+
+   # Diff staged tree against the current branch tip.
+   # Outputs lines like:  M\\tpath/to/file   or   D\\tpath/to/file
+   git diff --cached --name-status "$BRANCH_TIP_SHA" |
+     node -e '
+   const fs = require("fs");
+   const adds = [], dels = [];
+   const lines = fs.readFileSync(0, "utf8").split("\\n").filter(Boolean);
+   for (const line of lines) {
+     const [status, ...rest] = line.split("\\t");
+     if (["A", "M", "T"].includes(status)) {
+       adds.push({ path: rest[0], contents: fs.readFileSync(rest[0]).toString("base64") });
+     } else if (status === "D") {
+       dels.push({ path: rest[0] });
+     } else if (status.startsWith("R")) {
+       dels.push({ path: rest[0] });
+       adds.push({ path: rest[1], contents: fs.readFileSync(rest[1]).toString("base64") });
+     }
+   }
+   process.stdout.write(JSON.stringify({ additions: adds, deletions: dels }));
+   ' > /tmp/file_changes.json
+   \`\`\`
+3. Issue the signed-commit mutation:
+   \`\`\`bash
+   COMMIT_MESSAGE_HEADLINE="fix: resolve login redirect loop"
+   COMMIT_MESSAGE_BODY="Generated-By: PostHog Code
+   Task-Id: ${taskId}"
+   gh api graphql -F repo="$GITHUB_REPOSITORY" -F branch="$BRANCH_NAME" \\
+     -F oid="$BRANCH_TIP_SHA" -F headline="$COMMIT_MESSAGE_HEADLINE" \\
+     -F body="$COMMIT_MESSAGE_BODY" -F changes=@/tmp/file_changes.json \\
+     -f query='
+       mutation($repo:String!,$branch:String!,$oid:GitObjectID!,$headline:String!,$body:String!,$changes:FileChanges!){
+         createCommitOnBranch(input:{
+           branch:{repositoryNameWithOwner:$repo, branchName:$branch}
+           expectedHeadOid:$oid
+           message:{headline:$headline, body:$body}
+           fileChanges:$changes
+         }){ commit { oid url } }
+       }' --jq '.data.createCommitOnBranch.commit.oid'
+   \`\`\`
+   The mutation prints the new commit's OID. Use it as \`$BRANCH_TIP_SHA\` for
+   your next commit. Do NOT run \`git reset --hard\` or otherwise overwrite the
+   local working tree — your in-progress unstaged changes (intended for a later
+   commit) must be preserved.
+
+Notes:
+- The branch must already exist on the remote. To create a new branch, push an
+  empty ref first: \`git push origin "$BASE_SHA:refs/heads/$BRANCH_NAME"\`
+  where \`$BASE_SHA\` is the base-branch tip.
+- Every commit you create through this flow will be marked "Verified" on GitHub
+  and authored by the GitHub App associated with the token. Do not attempt to
+  override the author identity.
+- Do NOT add \`Co-Authored-By\` trailers or \`Generated with [Claude Code]\` lines.
+  Use only the \`Generated-By: PostHog Code\` and \`Task-Id: ${taskId}\` trailers
+  shown above.`;
 
     if (prUrl) {
       if (!shouldAutoCreatePr) {
@@ -1620,7 +1676,7 @@ Do the requested work, but stop with local changes ready for review.
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
 - Do NOT create a new branch or a new pull request.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
       }
 
@@ -1631,12 +1687,16 @@ This task already has an open pull request: ${prUrl}
 
 After completing the requested changes:
 1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
-2. Stage and commit all changes with a clear commit message
-3. Push to the existing PR branch
+2. Stage your changes with \`git add\` (do NOT run \`git commit\`)
+3. Create signed commits on the existing PR branch using the GitHub GraphQL
+   flow described below. The branch already exists, so skip the "create branch"
+   step — use the current PR branch tip as the first \`oid\`.
 
 Important:
 - Do NOT create a new branch or a new pull request.
-${attributionInstructions}
+- Do NOT use \`git commit\` or \`git push\`; commits must be created via
+  \`createCommitOnBranch\` so they are signed.
+${signedCommitInstructions}
 `;
     }
 
@@ -1651,8 +1711,12 @@ When the user asks for code changes:
 When the user explicitly asks to clone or work in a GitHub repository:
 - Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
 - Work from inside that cloned repository for follow-up code changes
-- If the user explicitly asks you to open or update a pull request, create a branch, commit the requested changes, push it, and open a draft pull request from inside the clone
-- Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
+- If the user explicitly asks you to open or update a pull request, create a
+  branch (by pushing an empty ref), then create signed commits on it via
+  \`createCommitOnBranch\` (see below), and open a draft pull request
+- Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that
+- Do NOT use \`git commit\` or \`git push\` for commit creation; commits must be
+  created via the GitHub GraphQL API so they are signed`;
 
       return `
 # Cloud Task Execution — No Repository Mode
@@ -1671,7 +1735,7 @@ ${publishInstructions}
 
 Important:
 - Prefer using MCP tools to answer questions with real data over giving generic advice.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
     }
 
@@ -1683,7 +1747,7 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
     }
 
@@ -1691,10 +1755,16 @@ ${attributionInstructions}
 # Cloud Task Execution
 
 After completing the requested changes:
-1. Create a new branch prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`) based on the work done
-2. Stage and commit all changes with a clear commit message
-3. Push the branch to origin
-4. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and body. Add the following footer at the end of the PR description:
+1. Pick a branch name prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`)
+2. Create the branch on the remote by pushing an empty ref:
+   \`\`\`bash
+   BASE_SHA=$(git rev-parse HEAD)
+   git push origin "$BASE_SHA:refs/heads/posthog-code/<your-branch>"
+   \`\`\`
+3. Stage your changes with \`git add\` (do NOT run \`git commit\`)
+4. Create signed commits on the new branch using the GitHub GraphQL flow
+   described below. Use \`$BASE_SHA\` as the first commit's \`oid\`.
+5. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and body. Add the following footer at the end of the PR description:
 \`\`\`
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
@@ -1702,7 +1772,10 @@ After completing the requested changes:
 
 Important:
 - Always create the PR as a draft. Do not ask for confirmation.
-${attributionInstructions}
+- Do NOT use \`git commit\` or \`git push <branch>\` for commit creation; commits
+  must be created via \`createCommitOnBranch\` so they are signed. The only
+  \`git push\` allowed is the empty-ref push in step 2 to create the branch.
+${signedCommitInstructions}
 `;
   }
 

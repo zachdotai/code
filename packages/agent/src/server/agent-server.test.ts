@@ -890,10 +890,10 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain(
         "gh pr checkout https://github.com/org/repo/pull/1",
       );
+      expect(prompt).toContain("Stage your changes with `git add`");
       expect(prompt).toContain(
-        "Stage and commit all changes with a clear commit message",
+        "Create signed commits on the existing PR branch",
       );
-      expect(prompt).toContain("Push to the existing PR branch");
       expect(prompt).not.toContain("Create a draft pull request");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
