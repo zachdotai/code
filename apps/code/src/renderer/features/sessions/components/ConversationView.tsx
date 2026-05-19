@@ -1,6 +1,13 @@
+import { useMcpUiToolsStore } from "@features/mcp-apps/stores/mcpUiToolsStore";
+import { parseMcpToolKey } from "@features/mcp-apps/utils/mcp-app-host-utils";
+import {
+  type McpAppEntry,
+  McpAppsSidebar,
+} from "@features/sessions/components/McpAppsSidebar";
 import { CHAT_CONTENT_MAX_WIDTH } from "@features/sessions/constants";
 import { useContextUsage } from "@features/sessions/hooks/useContextUsage";
 import { useConversationSearch } from "@features/sessions/hooks/useConversationSearch";
+import { useMcpAppsSidebarStore } from "@features/sessions/stores/mcpAppsSidebarStore";
 import {
   sessionStoreSetters,
   useOptimisticItemsForTask,
@@ -136,24 +143,45 @@ export function ConversationView({
     [conversationItems, optimisticItems, queuedItems, isCloud],
   );
 
-  // Keep MCP App tool call items mounted so their iframes and bridges
-  // survive scrolling out of the virtualized viewport.
-  const mcpAppIndices = useMemo(() => {
+  const mcpUiToolKeys = useMcpUiToolsStore((s) => s.toolKeys);
+
+  // Single pass over items: collect indices for keepMounted (so iframes
+  // survive scrolling out of the virtualized viewport) and structured
+  // entries for the MCP apps sidebar.
+  const { mcpAppIndices, mcpEntries } = useMemo(() => {
     const indices: number[] = [];
+    const entries: McpAppEntry[] = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (item.type !== "session_update") continue;
       const update = item.update;
+      if (update.sessionUpdate !== "tool_call") continue;
       if (!("_meta" in update)) continue;
       const meta = update._meta as
         | { claudeCode?: { toolName?: string } }
         | undefined;
-      if (meta?.claudeCode?.toolName?.startsWith("mcp__")) {
-        indices.push(i);
-      }
+      const fullToolName = meta?.claudeCode?.toolName;
+      if (!fullToolName?.startsWith("mcp__")) continue;
+
+      indices.push(i);
+
+      // Only list tools that have a registered UI (true MCP apps).
+      if (!mcpUiToolKeys.has(fullToolName)) continue;
+
+      const { serverName, toolName } = parseMcpToolKey(fullToolName);
+      entries.push({
+        itemIndex: i,
+        toolCallId: update.toolCallId,
+        fullToolName,
+        serverName,
+        toolName,
+        title: update.title,
+        inputPreview: buildInputPreview(update.rawInput),
+        status: update.status ?? null,
+      });
     }
-    return indices;
-  }, [items]);
+    return { mcpAppIndices: indices, mcpEntries: entries };
+  }, [items, mcpUiToolKeys]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const search = useConversationSearch({ items, containerRef, listRef });
@@ -244,71 +272,97 @@ export function ConversationView({
 
   const getItemKey = useCallback((item: ConversationItem) => item.id, []);
 
+  const isMcpSidebarOpen = useMcpAppsSidebarStore((s) => s.open);
+  const scrollToMcpItem = useCallback((itemIndex: number) => {
+    listRef.current?.scrollToIndex(itemIndex);
+  }, []);
+
   return (
     <WorkerPoolContextProvider
       poolOptions={DIFFS_POOL_OPTIONS}
       highlighterOptions={DIFFS_HIGHLIGHTER_OPTIONS}
     >
-      <div ref={containerRef} className="relative flex-1">
-        <div
-          id="fullscreen-portal"
-          className="pointer-events-none absolute inset-0 z-20"
-        />
-        {search.open && (
-          <ConversationSearchBar
-            ref={search.searchBarRef}
-            query={search.query}
-            currentMatch={search.currentIndex}
-            totalMatches={search.totalMatches}
-            onQueryChange={search.setQuery}
-            onNext={search.next}
-            onPrev={search.prev}
-            onClose={search.close}
+      <Flex className="h-full min-h-0 flex-1">
+        <div ref={containerRef} className="relative min-w-0 flex-1">
+          <div
+            id="fullscreen-portal"
+            className="pointer-events-none absolute inset-0 z-20"
           />
-        )}
+          {search.open && (
+            <ConversationSearchBar
+              ref={search.searchBarRef}
+              query={search.query}
+              currentMatch={search.currentIndex}
+              totalMatches={search.totalMatches}
+              onQueryChange={search.setQuery}
+              onNext={search.next}
+              onPrev={search.prev}
+              onClose={search.close}
+            />
+          )}
 
-        <VirtualizedList
-          ref={listRef}
-          items={items}
-          getItemKey={getItemKey}
-          renderItem={renderItem}
-          onScrollStateChange={handleScrollStateChange}
-          keepMounted={mcpAppIndices}
-          className="absolute inset-0 bg-background"
-          itemClassName="mx-auto px-2 py-1.5"
-          itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
-          footer={
-            <div className={compact ? "pb-1" : "pb-16"}>
-              <SessionFooter
-                task={task}
-                isPromptPending={isPromptPending}
-                promptStartedAt={promptStartedAt}
-                lastGenerationDuration={
-                  lastTurnInfo?.isComplete
-                    ? Math.max(0, lastTurnInfo.durationMs - pausedDurationMs)
-                    : null
-                }
-                lastStopReason={lastTurnInfo?.stopReason}
-                queuedCount={queuedMessages.length}
-                hasPendingPermission={pendingPermissionsCount > 0}
-                pausedDurationMs={pausedDurationMs}
-                isCompacting={isCompacting}
-                usage={contextUsage}
-              />
-            </div>
-          }
-        />
-        {showScrollButton && (
-          <Box className="absolute right-4 bottom-4 z-10">
-            <Button size="1" variant="solid" onClick={scrollToBottom}>
-              <ArrowDown size={14} weight="bold" />
-              Scroll to bottom
-            </Button>
-          </Box>
+          <VirtualizedList
+            ref={listRef}
+            items={items}
+            getItemKey={getItemKey}
+            renderItem={renderItem}
+            onScrollStateChange={handleScrollStateChange}
+            keepMounted={mcpAppIndices}
+            className="absolute inset-0 bg-background"
+            itemClassName="mx-auto px-2 py-1.5"
+            itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+            footer={
+              <div className={compact ? "pb-1" : "pb-16"}>
+                <SessionFooter
+                  task={task}
+                  isPromptPending={isPromptPending}
+                  promptStartedAt={promptStartedAt}
+                  lastGenerationDuration={
+                    lastTurnInfo?.isComplete
+                      ? Math.max(0, lastTurnInfo.durationMs - pausedDurationMs)
+                      : null
+                  }
+                  lastStopReason={lastTurnInfo?.stopReason}
+                  queuedCount={queuedMessages.length}
+                  hasPendingPermission={pendingPermissionsCount > 0}
+                  pausedDurationMs={pausedDurationMs}
+                  isCompacting={isCompacting}
+                  usage={contextUsage}
+                />
+              </div>
+            }
+          />
+          {showScrollButton && (
+            <Box className="absolute right-4 bottom-4 z-10">
+              <Button size="1" variant="solid" onClick={scrollToBottom}>
+                <ArrowDown size={14} weight="bold" />
+                Scroll to bottom
+              </Button>
+            </Box>
+          )}
+        </div>
+        {isMcpSidebarOpen && (
+          <McpAppsSidebar entries={mcpEntries} onSelect={scrollToMcpItem} />
         )}
-      </div>
+      </Flex>
     </WorkerPoolContextProvider>
   );
+}
+
+function buildInputPreview(rawInput: unknown): string | undefined {
+  if (rawInput == null || typeof rawInput !== "object") return undefined;
+  const entries = Object.entries(rawInput as Record<string, unknown>);
+  if (entries.length === 0) return undefined;
+  const [key, value] = entries[0];
+  const formatted =
+    typeof value === "string"
+      ? value
+      : typeof value === "number" || typeof value === "boolean"
+        ? String(value)
+        : JSON.stringify(value);
+  const compact = formatted.replace(/\s+/g, " ").trim();
+  const truncated = compact.length > 60 ? `${compact.slice(0, 60)}…` : compact;
+  return `${key}: ${truncated}`;
 }
 
 const SessionUpdateRow = memo(function SessionUpdateRow({

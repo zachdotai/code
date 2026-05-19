@@ -12,6 +12,7 @@ import {
 } from "@features/auth/hooks/authQueries";
 import { useAuthSession } from "@features/auth/hooks/useAuthSession";
 import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
+import { useMcpUiToolsSubscription } from "@features/mcp-apps/hooks/useMcpUiToolsSubscription";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
@@ -147,6 +148,9 @@ function App() {
       },
     }),
   );
+
+  // Keep the MCP UI tool registry up to date across all sessions.
+  useMcpUiToolsSubscription();
 
   // Auto-unfocus when user manually checks out to a different branch
   useSubscription(

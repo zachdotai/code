@@ -27,8 +27,8 @@ import { logger } from "@utils/logger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys, useHotkeysContext } from "react-hotkeys-hook";
 import { ExternalAppsOpener } from "./ExternalAppsOpener";
-
 import { HeaderTitleEditor } from "./HeaderTitleEditor";
+import { McpAppsToggleButton } from "./McpAppsToggleButton";
 
 const MIN_REVIEW_WIDTH = 300;
 const log = logger.scope("task-detail");
@@ -151,7 +151,10 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             </Text>
           </Tooltip>
         )}
-        {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
+        <Flex align="center" gap="1" className="no-drag">
+          <McpAppsToggleButton />
+          {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
+        </Flex>
       </Flex>
     ),
     [
