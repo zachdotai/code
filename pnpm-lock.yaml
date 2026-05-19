@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@posthog/hedgehog-mode':
+    hash: 6218f5ec7306fd59ad8d5c0f66ca030d406197739da485953f6737e7911da148
+    path: patches/@posthog__hedgehog-mode.patch
   node-pty:
     hash: 4dfdf785f5ac51a03f5d6032371cebe89036381acd403621f250a896245647c5
     path: patches/node-pty.patch
@@ -171,7 +174,7 @@ importers:
         version: link:../../packages/git
       '@posthog/hedgehog-mode':
         specifier: ^0.0.48
-        version: 0.0.48(prop-types@15.8.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+        version: 0.0.48(patch_hash=6218f5ec7306fd59ad8d5c0f66ca030d406197739da485953f6737e7911da148)(prop-types@15.8.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@posthog/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -15269,7 +15272,7 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
 
-  '@posthog/hedgehog-mode@0.0.48(prop-types@15.8.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
+  '@posthog/hedgehog-mode@0.0.48(patch_hash=6218f5ec7306fd59ad8d5c0f66ca030d406197739da485953f6737e7911da148)(prop-types@15.8.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
     dependencies:
       gsap: 3.14.2
       lodash: 4.17.23
