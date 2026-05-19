@@ -1,6 +1,7 @@
 import type { FunMode } from "@features/settings/stores/settingsStore";
 import type { HogletGender } from "@main/services/hedgemony/hoglet-names";
 import { logger } from "@utils/logger";
+import voiceManifest from "./voice-manifest.json";
 
 const log = logger.scope("hedgemony-voice");
 
@@ -22,9 +23,15 @@ export type VoiceIntent =
 
 export type VoiceMode = FunMode;
 
-const voiceFiles = import.meta.glob<string>(
-  "@renderer/assets/sounds/voice/**/*.wav",
-  { eager: true, query: "?url", import: "default" },
+const VOICE_BASE_URL =
+  import.meta.env.VITE_HOGCRAFT_VOICE_BASE_URL ??
+  "https://posthog.com/hogcraft/voice";
+
+const voiceFiles: Record<string, string> = Object.fromEntries(
+  (voiceManifest as string[]).map((entry) => [
+    entry,
+    `${VOICE_BASE_URL}/${entry}`,
+  ]),
 );
 
 const ALL_INTENTS: VoiceIntent[] = [
@@ -139,16 +146,14 @@ function buildRegistry(): ModedRegistry {
   for (const mode of ALL_MODES) out[mode] = emptyGenders();
 
   for (const [path, url] of Object.entries(voiceFiles)) {
-    // Paths look like `.../voice/<mode>/<gender>/<unit>_<intent>_l<N>_t<N>.wav`.
-    const match = path.match(
-      /\/voice\/([^/]+)\/([^/]+)\/([^/]+_l\d+_t\d+\.wav)$/,
-    );
+    // Manifest entries look like `<mode>/<gender>/<unit>_<intent>_l<N>_t<N>.mp3`.
+    const match = path.match(/^([^/]+)\/([^/]+)\/([^/]+_l\d+_t\d+\.mp3)$/);
     if (!match) continue;
     const [, modeSegment, genderSegment, filename] = match;
     const mode = modeSegment as VoiceMode;
     const gender = genderSegment as HogletGender;
     if (!ALL_MODES.includes(mode) || !ALL_GENDERS.includes(gender)) continue;
-    const intentMatch = filename.match(/^(.+)_l\d+_t\d+\.wav$/);
+    const intentMatch = filename.match(/^(.+)_l\d+_t\d+\.mp3$/);
     if (!intentMatch) continue;
     const intent = intentMatch[1].replace(/^([^_]+)_/, "$1:") as VoiceIntent;
     if (intent in out[mode][gender]) out[mode][gender][intent].push(url);

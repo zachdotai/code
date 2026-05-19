@@ -56,6 +56,10 @@ apps/code/resources/codex-acp/
 # Licensed fonts (downloaded from S3 during CI)
 apps/code/assets/fonts/BerkeleyMono/
 
+# Hogcraft voice mp3s are hosted on posthog.com, generated locally for testing only.
+# Regenerate with: node --env-file=.env scripts/generate-voice.mjs
+apps/code/src/renderer/assets/sounds/voice/
+
 # Local dev skills (override shipped + remote skills in dev mode)
 plugins/posthog/local-skills/
 

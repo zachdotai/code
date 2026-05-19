@@ -290,16 +290,16 @@
       "$comment": "ElevenLabs voice IDs by fun-mode then gender. The generator iterates every (mode, gender) pair and writes into voice/<mode>/<gender>/. API key lives in .env (ELEVENLABS_API_KEY).",
       "elevenlabs": {
         "none": {
-          "male": "0EUM9mI4gyhcJomBjQk1",
-          "female": "ICOQzoM8OzRgzvsz4a7X"
+          "male": "TX3LPaxmHKxFdv7VOQHJ",
+          "female": "FGY2WhTYpPnrIDTdsKH5"
         },
         "pirate": {
-          "male": "6VgigPFWF0sNZy1BthVg",
-          "female": "NK9612C4HjnRIjNNLoj1"
+          "male": "N2lVS1w4EtoT3dr4eOWO",
+          "female": "pFZP5JQG7iQjIQuC4Bku"
         },
         "lolcat": {
-          "male": "0EUM9mI4gyhcJomBjQk1",
-          "female": "ICOQzoM8OzRgzvsz4a7X"
+          "male": "TX3LPaxmHKxFdv7VOQHJ",
+          "female": "FGY2WhTYpPnrIDTdsKH5"
         }
       },
       "openai_tts": {

@@ -2,9 +2,9 @@
 // Hedgemony voice line generator.
 //
 // Reads notes/hedgemony/voice-lines.json, calls ElevenLabs for every
-// (mode, gender, unit, intent, line, take) tuple, writes wav files into
+// (mode, gender, unit, intent, line, take) tuple, writes mp3 files into
 // apps/code/src/renderer/assets/sounds/voice/<mode>/<gender>/.
-// ElevenLabs returns raw PCM; we prepend a standard 44-byte WAV header.
+// Output is mp3_22050_32 (32 kbps mono mp3 at 22 kHz) — small + ready to ship.
 //
 // Voice IDs come from voice-lines.json's generation_metadata.voices.elevenlabs
 // keyed by mode → gender. Only the API key lives in .env.
@@ -17,7 +17,13 @@
 //
 // Re-running is safe: existing files are skipped unless --force is passed.
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,8 +48,7 @@ const VOICE_SETTINGS = {
 };
 
 const MODEL_ID = "eleven_multilingual_v2";
-const SAMPLE_RATE = 22050;
-const OUTPUT_FORMAT = `pcm_${SAMPLE_RATE}`;
+const OUTPUT_FORMAT = "mp3_22050_32";
 
 // Maps fun mode → the key under each unit holding that mode's lines.
 const LINES_KEY = {
@@ -112,16 +117,15 @@ async function main() {
           for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
             const text = lines[lineIdx];
             for (let take = 1; take <= takesPerLine; take++) {
-              const filename = `${unitName}_${intent}_l${String(lineIdx + 1).padStart(2, "0")}_t${take}.wav`;
+              const filename = `${unitName}_${intent}_l${String(lineIdx + 1).padStart(2, "0")}_t${take}.mp3`;
               const outPath = join(outSubdir, filename);
               if (existsSync(outPath) && !FORCE) {
                 skipped++;
                 continue;
               }
               try {
-                const pcm = await tts(apiKey, voiceId, text);
-                const wav = pcmToWav(pcm, SAMPLE_RATE);
-                writeFileSync(outPath, wav);
+                const mp3 = await tts(apiKey, voiceId, text);
+                writeFileSync(outPath, mp3);
                 totalChars += text.length;
                 generated++;
                 process.stdout.write(
@@ -140,12 +144,39 @@ async function main() {
     }
   }
 
+  writeManifest();
+
   console.log("");
   console.log(`Generated: ${generated}`);
   console.log(`Skipped (already exist): ${skipped}`);
   console.log(`Failed: ${failed}`);
   console.log(`Characters billed: ${totalChars}`);
   console.log(`Output: ${OUT_DIR}`);
+}
+
+// Walk OUT_DIR and write a manifest listing every <mode>/<gender>/<filename>.mp3
+// so the renderer can build a CDN URL for each clip without bundling.
+function writeManifest() {
+  const entries = [];
+  for (const mode of readdirSync(OUT_DIR)) {
+    const modePath = join(OUT_DIR, mode);
+    if (!statSync(modePath).isDirectory()) continue;
+    for (const gender of readdirSync(modePath)) {
+      const genderPath = join(modePath, gender);
+      if (!statSync(genderPath).isDirectory()) continue;
+      for (const filename of readdirSync(genderPath)) {
+        if (filename.endsWith(".mp3"))
+          entries.push(`${mode}/${gender}/${filename}`);
+      }
+    }
+  }
+  entries.sort();
+  const manifestPath = join(
+    REPO_ROOT,
+    "apps/code/src/renderer/features/hedgemony/audio/voice-manifest.json",
+  );
+  writeFileSync(manifestPath, `${JSON.stringify(entries, null, 2)}\n`);
+  console.log(`Manifest: ${manifestPath} (${entries.length} entries)`);
 }
 
 async function tts(apiKey, voiceId, text) {
@@ -155,7 +186,7 @@ async function tts(apiKey, voiceId, text) {
     headers: {
       "xi-api-key": apiKey,
       "Content-Type": "application/json",
-      Accept: "audio/wav",
+      Accept: "audio/mpeg",
     },
     body: JSON.stringify({
       text,
@@ -168,34 +199,6 @@ async function tts(apiKey, voiceId, text) {
     throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
   }
   return Buffer.from(await res.arrayBuffer());
-}
-
-// Wraps mono 16-bit signed little-endian PCM in a standard WAV header.
-// ElevenLabs returns raw PCM at the requested sample rate when output_format
-// is `pcm_*`; we add the 44-byte RIFF/WAVE header so the file is a valid .wav.
-function pcmToWav(pcm, sampleRate) {
-  const channels = 1;
-  const bitsPerSample = 16;
-  const byteRate = (sampleRate * channels * bitsPerSample) / 8;
-  const blockAlign = (channels * bitsPerSample) / 8;
-  const dataSize = pcm.length;
-
-  const header = Buffer.alloc(44);
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + dataSize, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20); // PCM format
-  header.writeUInt16LE(channels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(bitsPerSample, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(dataSize, 40);
-
-  return Buffer.concat([header, pcm]);
 }
 
 main().catch((err) => {

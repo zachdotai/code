@@ -1,10 +1,13 @@
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
-import bgmUrl from "@renderer/assets/sounds/hedgemony-bgm.mp3";
 import { HEDGEMONY_FLAG } from "@shared/constants";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useEffect, useRef } from "react";
 import { useBgmStore } from "./bgmStore";
+
+const bgmUrl =
+  import.meta.env.VITE_HOGCRAFT_BGM_URL ??
+  "https://posthog.com/hogcraft/bgm.mp3";
 
 export function BgmPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
