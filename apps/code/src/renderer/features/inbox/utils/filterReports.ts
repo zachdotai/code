@@ -47,8 +47,8 @@ export function buildStatusFilterParam(statuses: SignalReportStatus[]): string {
 
 /**
  * Comma-separated `ordering` for the signal report list API:
- * 1. Status rank (ready first — semantic server-side rank, always applied)
- * 2. Suggested reviewer (current user's reports first)
+ * 1. Suggested reviewer (current user's reports first)
+ * 2. Status rank (ready first — semantic server-side rank, always applied)
  * 3. Toolbar-selected field (priority, total_weight, created_at, etc.)
  */
 export function buildSignalReportListOrdering(
