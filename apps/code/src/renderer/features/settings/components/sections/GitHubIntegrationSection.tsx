@@ -1,8 +1,14 @@
+import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import {
   describeGithubConnectError,
   useGithubConnect,
 } from "@features/integrations/hooks/useGithubUserConnect";
+import { useIntegrationSelectors } from "@features/integrations/stores/integrationStore";
+import {
+  githubInstallationSettingsUrl,
+  resolveGithubInstallationId,
+} from "@features/integrations/utils/githubInstallationSettingsUrl";
 import { useRepositoryIntegration } from "@hooks/useIntegrations";
 import {
   ArrowSquareOutIcon,
@@ -12,6 +18,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Box, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
+import { openUrlInBrowser } from "@utils/browser";
 import { useMemo } from "react";
 
 /**
@@ -48,6 +55,8 @@ export function GitHubIntegrationSection({
         : null,
     [repositories],
   );
+  const { githubIntegrations } = useIntegrationSelectors();
+  const client = useOptionalAuthenticatedClient();
   const projectId = useAuthStateValue((state) => state.projectId);
   const {
     error: connectError,
@@ -59,6 +68,25 @@ export function GitHubIntegrationSection({
     projectId,
     projectHasTeamIntegration: hasGithubIntegration,
   });
+
+  const handleUpdateInGitHub = async () => {
+    const integration = githubIntegrations[0];
+    if (!integration || projectId === null || !client) return;
+    const installationId = resolveGithubInstallationId(integration);
+    if (!installationId) return;
+    const nextPath = `/account-connected/github-integration?provider=github&project_id=${projectId}&connect_from=posthog_code`;
+    try {
+      await client.prepareGithubTeamIntegrationCallback(projectId, nextPath);
+    } catch {
+      return;
+    }
+    void openUrlInBrowser(
+      githubInstallationSettingsUrl(
+        installationId,
+        integration.config?.account,
+      ),
+    );
+  };
 
   if (isLoading) {
     return (
@@ -168,7 +196,11 @@ export function GitHubIntegrationSection({
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => void handleConnect()}
+            onClick={() =>
+              hasGithubIntegration
+                ? void handleUpdateInGitHub()
+                : void handleConnect()
+            }
           >
             {hasGithubIntegration
               ? "Update in GitHub"
