@@ -9,6 +9,7 @@ interface OnboardingStoreState {
   currentStep: OnboardingStep;
   hasCompletedOnboarding: boolean;
   hasCompletedSetup: boolean;
+  hasSolvedSecretSudoku: boolean;
   selectedProjectId: number | null;
   selectedDirectory: string;
 }
@@ -17,6 +18,7 @@ interface OnboardingStoreActions {
   setCurrentStep: (step: OnboardingStep) => void;
   completeOnboarding: () => void;
   completeSetup: () => void;
+  markSecretSudokuSolved: () => void;
   resetOnboarding: () => void;
   resetSelections: () => void;
   selectProjectId: (projectId: number | null) => void;
@@ -29,6 +31,7 @@ const initialState: OnboardingStoreState = {
   currentStep: "welcome",
   hasCompletedOnboarding: false,
   hasCompletedSetup: false,
+  hasSolvedSecretSudoku: false,
   selectedProjectId: null,
   selectedDirectory: "",
 };
@@ -44,6 +47,7 @@ export const useOnboardingStore = create<OnboardingStore>()(
         set({ hasCompletedOnboarding: true });
       },
       completeSetup: () => set({ hasCompletedSetup: true }),
+      markSecretSudokuSolved: () => set({ hasSolvedSecretSudoku: true }),
       resetOnboarding: () => set({ ...initialState }),
       resetSelections: () =>
         set({
@@ -59,6 +63,7 @@ export const useOnboardingStore = create<OnboardingStore>()(
         currentStep: state.currentStep,
         hasCompletedOnboarding: state.hasCompletedOnboarding,
         hasCompletedSetup: state.hasCompletedSetup,
+        hasSolvedSecretSudoku: state.hasSolvedSecretSudoku,
         selectedProjectId: state.selectedProjectId,
         selectedDirectory: state.selectedDirectory,
       }),

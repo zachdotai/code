@@ -1,6 +1,8 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { trpcClient } from "@renderer/trpc/client";
+import { SECRET_SUDOKU_ONBOARDING_FLAG } from "@shared/constants";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ONBOARDING_STEPS, type OnboardingStep } from "../types";
 
@@ -78,19 +80,32 @@ export function useOnboardingFlow() {
   );
 
   const hasCodeAccess = useAuthStateValue((state) => state.hasCodeAccess);
+  const showSecretSudoku = useFeatureFlag(SECRET_SUDOKU_ONBOARDING_FLAG);
+  const hasSolvedSecretSudoku = useOnboardingStore(
+    (state) => state.hasSolvedSecretSudoku,
+  );
+  const requiresSudokuGate = showSecretSudoku && !hasSolvedSecretSudoku;
 
   const activeSteps = useMemo(() => {
-    if (hasCodeAccess === true) {
-      return ONBOARDING_STEPS.filter((s) => s !== "invite-code");
+    let steps = ONBOARDING_STEPS;
+    if (!requiresSudokuGate) {
+      steps = steps.filter((s) => s !== "secret-sudoku");
     }
-    return ONBOARDING_STEPS;
-  }, [hasCodeAccess]);
+    if (hasCodeAccess === true) {
+      steps = steps.filter((s) => s !== "invite-code");
+    }
+    return steps;
+  }, [hasCodeAccess, requiresSudokuGate]);
 
   useEffect(() => {
+    if (requiresSudokuGate && currentStep !== "secret-sudoku") {
+      setCurrentStep("secret-sudoku");
+      return;
+    }
     if (!activeSteps.includes(currentStep)) {
       setCurrentStep(activeSteps[0]);
     }
-  }, [activeSteps, currentStep, setCurrentStep]);
+  }, [activeSteps, currentStep, requiresSudokuGate, setCurrentStep]);
 
   const currentIndex = activeSteps.indexOf(currentStep);
   const isFirstStep = currentIndex === 0;

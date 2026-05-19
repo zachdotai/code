@@ -17,6 +17,7 @@ import { InviteCodeStep } from "./InviteCodeStep";
 import { ProjectSelectStep } from "./ProjectSelectStep";
 import { SignalsStep } from "./SignalsStep";
 import { StepIndicator } from "./StepIndicator";
+import { SudokuStep } from "./SudokuStep";
 import { WelcomeScreen } from "./WelcomeScreen";
 
 const stepVariants = {
@@ -44,6 +45,9 @@ export function OnboardingFlow() {
   const hasCompletedSetup = useOnboardingStore(
     (state) => state.hasCompletedSetup,
   );
+  const markSecretSudokuSolved = useOnboardingStore(
+    (state) => state.markSecretSudokuSolved,
+  );
   const resetOnboarding = useOnboardingStore((state) => state.resetOnboarding);
   const navigateToSetup = useNavigationStore((state) => state.navigateToSetup);
   const navigateToTaskInput = useNavigationStore(
@@ -55,8 +59,20 @@ export function OnboardingFlow() {
   );
   usePrefetchSignalData();
 
-  useHotkeys("right", next, { enableOnFormTags: false }, [next]);
-  useHotkeys("left", back, { enableOnFormTags: false }, [back]);
+  const isSudokuGate = currentStep === "secret-sudoku";
+
+  useHotkeys(
+    "right",
+    next,
+    { enableOnFormTags: false, enabled: !isSudokuGate },
+    [next, isSudokuGate],
+  );
+  useHotkeys(
+    "left",
+    back,
+    { enableOnFormTags: false, enabled: !isSudokuGate },
+    [back, isSudokuGate],
+  );
 
   const handleComplete = () => {
     completeOnboarding();
@@ -88,7 +104,7 @@ export function OnboardingFlow() {
           Log out
         </Button>
       )}
-      {IS_DEV && (
+      {IS_DEV && !isSudokuGate && (
         <Button
           size="1"
           variant="ghost"
@@ -107,6 +123,26 @@ export function OnboardingFlow() {
     <FullScreenLayout footerRight={footerRight}>
       <LayoutGroup>
         <AnimatePresence mode="wait" custom={direction}>
+          {currentStep === "secret-sudoku" && (
+            <motion.div
+              key="secret-sudoku"
+              custom={direction}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              variants={stepVariants}
+              transition={{ duration: 0.3 }}
+              className="min-h-0 w-full flex-1"
+            >
+              <SudokuStep
+                onSolved={() => {
+                  markSecretSudokuSolved();
+                  next();
+                }}
+              />
+            </motion.div>
+          )}
+
           {currentStep === "welcome" && (
             <motion.div
               key="welcome"

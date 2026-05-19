@@ -1,4 +1,5 @@
 export type OnboardingStep =
+  | "secret-sudoku"
   | "welcome"
   | "project-select"
   | "invite-code"
@@ -7,6 +8,7 @@ export type OnboardingStep =
   | "signals";
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
+  "secret-sudoku",
   "welcome",
   "project-select",
   "invite-code",
