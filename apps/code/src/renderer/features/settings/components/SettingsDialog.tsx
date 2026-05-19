@@ -14,16 +14,16 @@ import {
   ArrowLeft,
   ArrowsClockwise,
   CaretRight,
-  Cloud,
   Code,
   CreditCard,
+  Cube,
   Folder,
   GearSix,
   GithubLogo,
-  HardDrives,
   Keyboard,
   Palette,
   SignOut,
+  SlackLogo,
   TrafficSignal,
   TreeStructure,
   Wrench,
@@ -34,7 +34,6 @@ import { type ReactNode, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AdvancedSettings } from "./sections/AdvancedSettings";
 import { ClaudeCodeSettings } from "./sections/ClaudeCodeSettings";
-import { CloudEnvironmentsSettings } from "./sections/CloudEnvironmentsSettings";
 import { EnvironmentsSettings } from "./sections/environments/EnvironmentsSettings";
 import { GeneralSettings } from "./sections/GeneralSettings";
 import { GitHubSettings } from "./sections/GitHubSettings";
@@ -42,6 +41,7 @@ import { PersonalizationSettings } from "./sections/PersonalizationSettings";
 import { PlanUsageSettings } from "./sections/PlanUsageSettings";
 import { ShortcutsSettings } from "./sections/ShortcutsSettings";
 import { SignalSourcesSettings } from "./sections/SignalSourcesSettings";
+import { SlackSettings } from "./sections/SlackSettings";
 import { UpdatesSettings } from "./sections/UpdatesSettings";
 import { WorkspacesSettings } from "./sections/WorkspacesSettings";
 import { WorktreesSettings } from "./sections/worktrees/WorktreesSettings";
@@ -61,12 +61,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   {
     id: "environments",
     label: "Environments",
-    icon: <HardDrives size={16} />,
-  },
-  {
-    id: "cloud-environments",
-    label: "Cloud environments",
-    icon: <Cloud size={16} />,
+    icon: <Cube size={16} />,
   },
   {
     id: "personalization",
@@ -76,6 +71,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
   { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
+  { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
 
   {
     id: "signals",
@@ -92,11 +88,12 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   workspaces: "Workspaces",
   worktrees: "Worktrees",
   environments: "Environments",
-  "cloud-environments": "Cloud environments",
+  "cloud-environments": "Environments",
   personalization: "Personalization",
   "claude-code": "Claude Code",
   shortcuts: "Shortcuts",
   github: "GitHub",
+  slack: "Slack integration",
 
   signals: "Signals",
   updates: "Updates",
@@ -109,11 +106,12 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   workspaces: WorkspacesSettings,
   worktrees: WorktreesSettings,
   environments: EnvironmentsSettings,
-  "cloud-environments": CloudEnvironmentsSettings,
+  "cloud-environments": EnvironmentsSettings,
   personalization: PersonalizationSettings,
   "claude-code": ClaudeCodeSettings,
   shortcuts: ShortcutsSettings,
   github: GitHubSettings,
+  slack: SlackSettings,
 
   signals: SignalSourcesSettings,
   updates: UpdatesSettings,
@@ -121,7 +119,7 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
 };
 
 export function SettingsDialog() {
-  const { isOpen, activeCategory, close, setCategory } =
+  const { isOpen, activeCategory, close, setCategory, formMode } =
     useSettingsDialogStore();
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
@@ -211,14 +209,20 @@ export function SettingsDialog() {
 
         <ScrollArea className="flex-1">
           <div className="flex flex-col pt-2">
-            {sidebarItems.map((item) => (
-              <SidebarNavItem
-                key={item.id}
-                item={item}
-                isActive={activeCategory === item.id}
-                onClick={() => setCategory(item.id)}
-              />
-            ))}
+            {sidebarItems.map((item) => {
+              const isActive =
+                activeCategory === item.id ||
+                (item.id === "environments" &&
+                  activeCategory === "cloud-environments");
+              return (
+                <SidebarNavItem
+                  key={item.id}
+                  item={item}
+                  isActive={isActive}
+                  onClick={() => setCategory(item.id)}
+                />
+              );
+            })}
           </div>
         </ScrollArea>
 
@@ -273,9 +277,11 @@ export function SettingsDialog() {
           <ScrollArea className="h-full w-full">
             <Box p="6" mx="auto" className="relative z-[1] max-w-[800px]">
               <Flex direction="column" gap="4">
-                <Text className="font-medium text-lg leading-6.5">
-                  {CATEGORY_TITLES[activeCategory]}
-                </Text>
+                {!formMode && (
+                  <Text className="font-medium text-lg leading-6.5">
+                    {CATEGORY_TITLES[activeCategory]}
+                  </Text>
+                )}
                 <ActiveComponent />
               </Flex>
             </Box>

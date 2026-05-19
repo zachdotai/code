@@ -12,6 +12,7 @@ import {
   getBranchNameInputState,
 } from "@features/git-interaction/utils/branchCreation";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
+import { PromptHistoryDialog } from "@features/message-editor/components/PromptHistoryDialog";
 import { PromptInput } from "@features/message-editor/components/PromptInput";
 import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
 import type { EditorHandle } from "@features/message-editor/types";
@@ -89,6 +90,7 @@ export function TaskInput({
     getLastUsedEnvironment,
     defaultInitialTaskMode,
     lastUsedInitialTaskMode,
+    setLastUsedReasoningEffort,
   } = useSettingsStore();
 
   const editorRef = useRef<EditorHandle>(null);
@@ -182,17 +184,27 @@ export function TaskInput({
 
   // Stay optimistic while the integration list resolves to avoid flicker.
   const cloudAvailable = isLoadingRepos || hasGithubIntegration;
-  const workspaceMode: WorkspaceMode =
-    !cloudAvailable && lastUsedWorkspaceMode === "cloud"
-      ? lastUsedLocalWorkspaceMode
-      : lastUsedWorkspaceMode || "local";
+  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
+    if (initialCloudRepository) return "cloud";
+    if (!cloudAvailable && lastUsedWorkspaceMode === "cloud") {
+      return lastUsedLocalWorkspaceMode;
+    }
+    return lastUsedWorkspaceMode || "local";
+  });
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
+    setWorkspaceModeState(mode);
     setLastUsedWorkspaceMode(mode);
     if (mode !== "cloud") {
       setLastUsedLocalWorkspaceMode(mode);
     }
   };
+
+  useEffect(() => {
+    if (workspaceMode === "cloud" && !cloudAvailable) {
+      setWorkspaceModeState(lastUsedLocalWorkspaceMode);
+    }
+  }, [workspaceMode, cloudAvailable, lastUsedLocalWorkspaceMode]);
   const {
     repositories: visibleCloudRepositories,
     isPending: cloudRepositoriesLoading,
@@ -290,9 +302,9 @@ export function TaskInput({
 
   useEffect(() => {
     if (!initialCloudRepository) return;
-    setLastUsedWorkspaceMode("cloud");
+    setWorkspaceModeState("cloud");
     setSelectedRepository(initialCloudRepository.toLowerCase());
-  }, [initialCloudRepository, setLastUsedWorkspaceMode]);
+  }, [initialCloudRepository]);
 
   const handleRefreshRepositories = useCallback(() => {
     void refreshRepositories().catch((error) => {
@@ -493,9 +505,10 @@ export function TaskInput({
     (value: string) => {
       if (thoughtOption) {
         setConfigOption(thoughtOption.id, value);
+        setLastUsedReasoningEffort(value);
       }
     },
-    [thoughtOption, setConfigOption],
+    [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
   );
 
   const { isOnline } = useConnectivity();
@@ -517,9 +530,17 @@ export function TaskInput({
     };
   }, [promptSessionId]);
 
-  const hasHistory = useTaskInputHistoryStore((s) => s.prompts.length > 0);
+  const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
   const getPromptHistory = useCallback(
-    () => useTaskInputHistoryStore.getState().prompts,
+    () => useTaskInputHistoryStore.getState().entries.map((e) => e.text),
+    [],
+  );
+  const handleHistorySelect = useCallback((text: string) => {
+    editorRef.current?.setContent(text);
+    editorRef.current?.focus();
+  }, []);
+  const hasPendingDraft = useCallback(
+    () => !(editorRef.current?.isEmpty() ?? true),
     [],
   );
   const hints = [
@@ -745,6 +766,13 @@ export function TaskInput({
                   disabled={isCreatingTask}
                   isConnecting={isPreviewLoading}
                   onModelChange={handleModelChange}
+                />
+              }
+              historyButton={
+                <PromptHistoryDialog
+                  onSelect={handleHistorySelect}
+                  hasPendingDraft={hasPendingDraft}
+                  disabled={isCreatingTask}
                 />
               }
               reasoningSelector={

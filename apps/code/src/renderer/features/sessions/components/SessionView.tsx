@@ -1,5 +1,6 @@
 import { isOtherOption } from "@components/action-selector/constants";
 import { PermissionSelector } from "@components/permissions/PermissionSelector";
+import { showOfflineToast } from "@features/connectivity/connectivityToast";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
@@ -18,10 +19,11 @@ import type { Plan } from "@features/sessions/types";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
+import { useConnectivity } from "@hooks/useConnectivity";
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
 import { Box, Button, ContextMenu, Flex, Text } from "@radix-ui/themes";
 import { toast } from "@renderer/utils/toast";
-import type { TaskRunStatus } from "@shared/types";
+import type { Task, TaskRunStatus } from "@shared/types";
 import {
   type AcpMessage,
   isJsonRpcNotification,
@@ -45,6 +47,7 @@ import { RawLogsView } from "./raw-logs/RawLogsView";
 interface SessionViewProps {
   events: AcpMessage[];
   taskId?: string;
+  task?: Task;
   isRunning: boolean;
   isPromptPending?: boolean | null;
   promptStartedAt?: number | null;
@@ -97,6 +100,7 @@ function resolveAllowAlwaysUpgradeMode(
 export function SessionView({
   events,
   taskId,
+  task,
   isRunning,
   isPromptPending = false,
   promptStartedAt,
@@ -129,6 +133,7 @@ export function SessionView({
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
   const { allowBypassPermissions } = useSettingsStore();
+  const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
   const handoffInProgress =
     useSessionForTask(taskId)?.handoffInProgress ?? false;
@@ -243,6 +248,17 @@ export function SessionView({
       }
     },
     [onSendPrompt],
+  );
+
+  const handleBeforeSubmit = useCallback(
+    (text: string, clearEditor: () => void): boolean => {
+      if (!isOnline) {
+        showOfflineToast();
+        return false;
+      }
+      return onBeforeSubmit ? onBeforeSubmit(text, clearEditor) : true;
+    },
+    [isOnline, onBeforeSubmit],
   );
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -443,6 +459,7 @@ export function SessionView({
                   promptStartedAt={promptStartedAt}
                   repoPath={repoPath}
                   taskId={taskId}
+                  task={task}
                   slackThreadUrl={slackThreadUrl}
                 />
                 <Box className="border-gray-4 border-t">
@@ -513,6 +530,7 @@ export function SessionView({
                   promptStartedAt={promptStartedAt}
                   repoPath={repoPath}
                   taskId={taskId}
+                  task={task}
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
                 />
@@ -614,7 +632,12 @@ export function SessionView({
                           sessionId={sessionId}
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
-                          submitDisabledExternal={handoffInProgress}
+                          submitDisabledExternal={
+                            handoffInProgress || !isOnline
+                          }
+                          submitTooltipOverride={
+                            !isOnline ? "No internet connection" : undefined
+                          }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}
                           taskId={taskId}
@@ -641,7 +664,7 @@ export function SessionView({
                               />
                             ) : null
                           }
-                          onBeforeSubmit={onBeforeSubmit}
+                          onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}
                           onCancel={onCancelPrompt}

@@ -11,6 +11,7 @@ import {
   useCurrentUser,
 } from "@features/auth/hooks/authQueries";
 import { useAuthSession } from "@features/auth/hooks/useAuthSession";
+import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
@@ -20,6 +21,7 @@ import { useFocusStore } from "@renderer/stores/focusStore";
 import { useThemeStore } from "@renderer/stores/themeStore";
 import { initializeUpdateStore } from "@renderer/stores/updateStore";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import { isNotAuthenticatedError } from "@shared/errors";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
@@ -32,17 +34,12 @@ import { Toaster } from "sonner";
 
 const log = logger.scope("app");
 
-const ORGANIZATION_ADMIN_LEVEL = 8;
-
 function App() {
   const trpcReact = useTRPC();
   const { isBootstrapped } = useAuthSession();
   const authState = useAuthStateValue((state) => state);
   const hasCompletedOnboarding = useOnboardingStore(
     (state) => state.hasCompletedOnboarding,
-  );
-  const selectedDirectory = useOnboardingStore(
-    (state) => state.selectedDirectory,
   );
   const isAuthenticated = authState.status === "authenticated";
   const hasCodeAccess = authState.hasCodeAccess;
@@ -158,7 +155,12 @@ function App() {
         log.warn(
           `Foreign branch checkout detected: ${focusedBranch} -> ${foreignBranch}. Auto-unfocusing.`,
         );
-        await useFocusStore.getState().disableFocus();
+        const result = await useFocusStore.getState().disableFocus();
+        if (!result.success && result.error) {
+          toast.error("Could not unfocus workspace", {
+            description: result.error,
+          });
+        }
       },
     }),
   );
@@ -182,8 +184,8 @@ function App() {
     hasCodeAccess === true &&
     currentOrg != null &&
     currentOrg.is_ai_data_processing_approved !== true;
-  const isAdmin =
-    (currentOrg?.membership_level ?? 0) >= ORGANIZATION_ADMIN_LEVEL;
+  const { isAdmin: isOrgAdmin } = useIsOrgAdmin();
+  const isAdmin = isOrgAdmin === true;
 
   // Handle transition into main app — only show the dark overlay if dark mode is active
   useEffect(() => {
@@ -213,11 +215,8 @@ function App() {
   }
 
   // Rendering: onboarding (includes auth + invite code gate) → main app
-  // We also route to onboarding when no directory is selected — without one, the
-  // main app has nothing meaningful to show (the dev "Skip setup" button can
-  // produce this state by flipping hasCompletedOnboarding without picking a directory).
   const renderContent = () => {
-    if (!hasCompletedOnboarding || !selectedDirectory) {
+    if (!hasCompletedOnboarding) {
       return (
         <motion.div key="onboarding" initial={{ opacity: 1 }}>
           <OnboardingFlow />
@@ -280,7 +279,11 @@ function App() {
   const content = renderContent();
 
   return (
-    <ErrorBoundary name="App">
+    <ErrorBoundary
+      name="App"
+      resetKey={authState.status}
+      shouldSuppress={isNotAuthenticatedError}
+    >
       {isAuthenticated ? (
         <AnimatePresence mode="wait">{content}</AnimatePresence>
       ) : (

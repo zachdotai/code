@@ -142,6 +142,14 @@ function extractLatestConfigOptionsFromEntries(
   return latest;
 }
 
+function hasSessionPromptEvent(events: AcpMessage[]): boolean {
+  return events.some(
+    (event) =>
+      isJsonRpcRequest(event.message) &&
+      event.message.method === "session/prompt",
+  );
+}
+
 function buildCloudDefaultConfigOptions(
   initialMode: string | undefined,
   adapter: Adapter = "claude",
@@ -172,7 +180,7 @@ function buildCloudDefaultConfigOptions(
   ];
 }
 
-function isCloudTurnCompleteEvent(event: AcpMessage): boolean {
+function isTurnCompleteEvent(event: AcpMessage): boolean {
   const msg = event.message;
   return (
     "method" in msg &&
@@ -1103,12 +1111,18 @@ export class SessionService {
           currentPromptId: null,
         });
       }
-      if (isCloudTurnCompleteEvent(acpMsg)) {
-        sessionStoreSetters.updateSession(taskRunId, {
-          isPromptPending: false,
-          promptStartedAt: null,
-          currentPromptId: null,
-        });
+      if (isTurnCompleteEvent(acpMsg)) {
+        // Local sessions use the JSON-RPC response as the canonical turn-done
+        // signal; clearing currentPromptId here would race the id-match guard
+        // above. Cloud sessions never see that response.
+        const session = this.getSessionByRunId(taskRunId);
+        if (session?.isCloud) {
+          sessionStoreSetters.updateSession(taskRunId, {
+            isPromptPending: false,
+            promptStartedAt: null,
+            currentPromptId: null,
+          });
+        }
       }
       // Lifecycle handshake from the agent — flip status to "connected"
       // so the UI can release the queue-while-not-ready guard. This is
@@ -1674,9 +1688,6 @@ export class SessionService {
 
     if (session.cloudStatus !== "in_progress") {
       sessionStoreSetters.enqueueMessage(session.taskId, transport.promptText);
-      sessionStoreSetters.updateSession(session.taskRunId, {
-        isPromptPending: true,
-      });
       log.info("Cloud message queued (sandbox not ready)", {
         taskId: session.taskId,
         cloudStatus: session.cloudStatus,
@@ -1706,6 +1717,19 @@ export class SessionService {
         sessionStatus: session.status,
         queueLength: session.messageQueue.length + 1,
       });
+      // The watcher may have exhausted its reconnect budget and been left in a
+      // failed state — without an SSE stream, no `turn_complete` will arrive
+      // to drain the queue. Kick a retry so the stream comes back online; the
+      // queued message dispatches naturally once `run_started`/`turn_complete`
+      // is observed.
+      if (session.status === "disconnected" || session.status === "error") {
+        this.retryCloudTaskWatch(session.taskId).catch((err) => {
+          log.warn("Auto-retry of cloud task watch from queue gate failed", {
+            taskId: session.taskId,
+            error: String(err),
+          });
+        });
+      }
       return { stopReason: "queued" };
     }
 
@@ -1729,6 +1753,18 @@ export class SessionService {
     if (!auth || !cloudCommandAuth) {
       throw new Error("Authentication required for cloud commands");
     }
+
+    this.watchCloudTask(
+      session.taskId,
+      session.taskRunId,
+      cloudCommandAuth.apiHost,
+      cloudCommandAuth.teamId,
+      undefined,
+      session.logUrl,
+      undefined,
+      session.adapter ?? "claude",
+    );
+
     const artifactIds = await uploadRunAttachments(
       auth.client,
       session.taskId,
@@ -1745,6 +1781,14 @@ export class SessionService {
 
     sessionStoreSetters.updateSession(session.taskRunId, {
       isPromptPending: true,
+      promptStartedAt: Date.now(),
+      pausedDurationMs: 0,
+    });
+    sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
+      type: "user_message",
+      content: transport.promptText,
+      timestamp: Date.now(),
+      pinToTop: false,
     });
 
     track(ANALYTICS_EVENTS.PROMPT_SENT, {
@@ -1764,36 +1808,24 @@ export class SessionService {
         params,
       });
 
-      sessionStoreSetters.updateSession(session.taskRunId, {
-        isPromptPending: false,
-      });
-
       if (!result.success) {
         throw new Error(result.error ?? "Failed to send cloud command");
       }
 
-      const stopReason =
-        (result.result as { stopReason?: string })?.stopReason ?? "end_turn";
-
-      const freshSession = sessionStoreSetters.getSessionByTaskId(
-        session.taskId,
-      );
-      if (freshSession && freshSession.messageQueue.length > 0) {
-        setTimeout(() => {
-          this.sendQueuedCloudMessages(session.taskId).catch((err) => {
-            log.error("Failed to send queued cloud messages", {
-              taskId: session.taskId,
-              error: err,
-            });
-          });
-        }, 0);
-      }
+      const commandResult = result.result as
+        | { queued?: boolean; stopReason?: string }
+        | undefined;
+      const stopReason = commandResult?.queued
+        ? "queued"
+        : (commandResult?.stopReason ?? "end_turn");
 
       return { stopReason };
     } catch (error) {
       sessionStoreSetters.updateSession(session.taskRunId, {
         isPromptPending: false,
+        promptStartedAt: null,
       });
+      sessionStoreSetters.clearTailOptimisticItems(session.taskRunId);
       throw error;
     }
   }
@@ -2570,7 +2602,9 @@ export class SessionService {
       existingWatcher.apiHost === apiHost &&
       existingWatcher.teamId === teamId
     ) {
-      existingWatcher.onStatusChange = onStatusChange;
+      if (onStatusChange) {
+        existingWatcher.onStatusChange = onStatusChange;
+      }
       // Ensure configOptions is populated on revisit
       const existing = sessionStoreSetters.getSessionByTaskId(taskId);
       if (existing) {
@@ -3132,6 +3166,30 @@ export class SessionService {
     }
   }
 
+  /**
+   * Retries every cloud session whose stream is in the `error` state, i.e. the
+   * main process exhausted its SSE reconnect budget and surfaced the manual
+   * Retry button. Invoked on window focus so users coming back to the app
+   * after a Django deploy, laptop sleep, or network blip don't have to click
+   * Retry themselves.
+   */
+  public retryUnhealthyCloudSessions(): void {
+    const sessions = sessionStoreSetters.getSessions();
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud) continue;
+      if (session.status !== "error") continue;
+      log.info("Auto-retrying errored cloud session on focus", {
+        taskId: session.taskId,
+      });
+      this.retryCloudTaskWatch(session.taskId).catch((error) => {
+        log.warn("Auto-retry of errored cloud session failed", {
+          taskId: session.taskId,
+          error,
+        });
+      });
+    }
+  }
+
   public updateSessionTaskTitle(taskId: string, taskTitle: string): void {
     const session = sessionStoreSetters.getSessionByTaskId(taskId);
     if (!session) return;
@@ -3197,6 +3255,9 @@ export class SessionService {
           session,
           newEvents,
         );
+        if (hasSessionPromptEvent(newEvents)) {
+          sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+        }
         sessionStoreSetters.appendEvents(taskRunId, newEvents, expectedCount);
         this.updatePromptStateFromEvents(taskRunId, newEvents);
       } else {
@@ -3229,10 +3290,31 @@ export class SessionService {
         branch: update.branch,
       });
 
-      // No cloudStatus="in_progress" auto-flush here. `run_started` from
-      // the agent-server is the canonical "agent is ready" trigger and
-      // handles both initial boot and post-restart recovery; firing
-      // earlier would race with `sendInitialTaskMessage`.
+      // Recovery path for missed `turn_complete` notifications. `run_started`
+      // is normally the canonical "agent is ready" trigger and would race with
+      // `sendInitialTaskMessage` — but only while `session.status` is not yet
+      // "connected". Once status is "connected", the agent's handshake is
+      // done; if the run becomes `in_progress` and we still hold queued
+      // messages, attempt to drain. `sendQueuedCloudMessages` itself bails
+      // when `isPromptPending` is true, preserving the race protection.
+      if (update.status === "in_progress") {
+        const sessionAfter = sessionStoreSetters.getSessions()[taskRunId];
+        if (
+          sessionAfter?.isCloud &&
+          sessionAfter.status === "connected" &&
+          sessionAfter.messageQueue.length > 0
+        ) {
+          const taskId = sessionAfter.taskId;
+          setTimeout(() => {
+            this.sendQueuedCloudMessages(taskId).catch((err) =>
+              log.error("status-driven cloud queue flush failed", {
+                taskId,
+                error: err,
+              }),
+            );
+          }, 0);
+        }
+      }
 
       if (isTerminalStatus(update.status)) {
         // Clean up any pending resume messages that couldn't be sent
@@ -3526,6 +3608,9 @@ export class SessionService {
 
     if (rawEntries.length >= expectedCount) {
       const events = convertStoredEntriesToEvents(rawEntries);
+      if (hasSessionPromptEvent(events)) {
+        sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+      }
       sessionStoreSetters.updateSession(taskRunId, {
         events,
         isCloud: true,
@@ -3536,20 +3621,18 @@ export class SessionService {
       return;
     }
 
+    // The fetched logs lag behind expectedCount and `newEntries` is the latest
+    // tail slice of the snapshot — appending it here would create duplicates
+    // and gaps in `session.events` (and bump processedLineCount past entries
+    // we don't actually have). Skip; the next snapshot/log update will retry
+    // once the source has caught up.
     log.warn("Cloud task log count inconsistency", {
       taskRunId,
       currentCount,
       expectedCount,
+      fetchedCount: rawEntries.length,
       entriesReceived: newEntries.length,
     });
-    let newEvents = convertStoredEntriesToEvents(newEntries);
-    newEvents = this.filterSkippedPromptEvents(taskRunId, session, newEvents);
-    sessionStoreSetters.appendEvents(
-      taskRunId,
-      newEvents,
-      latestCount + newEntries.length,
-    );
-    this.updatePromptStateFromEvents(taskRunId, newEvents);
   }
 
   private createBaseSession(

@@ -2,11 +2,12 @@ import { execFile } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import gitUrlParse from "git-url-parse";
 
-export interface GitHubRepo {
-  organization: string;
-  repository: string;
-}
+export type GitHubUrl =
+  | { kind: "repo"; owner: string; repo: string }
+  | { kind: "issue"; owner: string; repo: string; number: number }
+  | { kind: "pr"; owner: string; repo: string; number: number };
 
 export async function safeSymlink(
   source: string,
@@ -152,27 +153,41 @@ export async function forceRemove(target: string): Promise<void> {
   await fs.rm(target, { recursive: true, force: true, maxRetries: 3 });
 }
 
-export interface GitHubPr {
-  owner: string;
-  repo: string;
-  number: number;
-}
+export function parseGithubUrl(
+  url: string | null | undefined,
+): GitHubUrl | null {
+  if (!url) return null;
+  let parsed: gitUrlParse.GitUrl;
+  try {
+    parsed = gitUrlParse(url.trim());
+  } catch {
+    return null;
+  }
+  // git-url-parse normalizes source to github.com for any *.github.com host,
+  // so check resource to reject api.github.com etc. SSH uses ssh.github.com.
+  const resource = parsed.resource.toLowerCase();
+  if (resource !== "github.com" && resource !== "ssh.github.com") return null;
 
-export function parsePrUrl(prUrl: string): GitHubPr | null {
-  const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
-  if (!match) return null;
-  return { owner: match[1], repo: match[2], number: Number(match[3]) };
-}
+  // Read pathname directly: git-url-parse keeps /pull/N in full_name but
+  // strips /issues/N, and stuffs unknown path segments into owner. Pathname
+  // is consistent across HTTPS, SSH, and shorthand inputs.
+  const raw = parsed.pathname.split("/");
+  if (raw[0] !== "") return null;
+  const parts = raw[raw.length - 1] === "" ? raw.slice(1, -1) : raw.slice(1);
+  if (parts.length < 2 || parts.some((p) => p === "")) return null;
+  const [owner, repoRaw, segment, num] = parts;
+  const repo = repoRaw.replace(/\.git$/, "");
 
-export function parseGitHubUrl(url: string): GitHubRepo | null {
-  // Trim whitespace/newlines that git commands may include
-  const trimmedUrl = url.trim();
+  if (segment === "issues" || segment === "pull") {
+    const number = Number(num);
+    if (!Number.isInteger(number) || number <= 0) return null;
+    return {
+      kind: segment === "pull" ? "pr" : "issue",
+      owner,
+      repo,
+      number,
+    };
+  }
 
-  const match =
-    trimmedUrl.match(/github\.com[:/](.+?)\/(.+?)(\.git)?$/) ||
-    trimmedUrl.match(/git@github\.com:(.+?)\/(.+?)(\.git)?$/);
-
-  if (!match) return null;
-
-  return { organization: match[1], repository: match[2].replace(/\.git$/, "") };
+  return { kind: "repo", owner, repo };
 }

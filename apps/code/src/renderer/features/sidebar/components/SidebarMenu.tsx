@@ -18,6 +18,7 @@ import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
+import type { Schemas } from "@renderer/api/generated";
 import type { Task } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
@@ -28,6 +29,7 @@ import { memo, useCallback, useEffect, useRef } from "react";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
+import { useSidebarStore } from "../stores/sidebarStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
@@ -48,7 +50,11 @@ function SidebarMenuComponent() {
     navigateToSetup,
   } = useNavigationStore();
 
-  const { data: allTasks = [] } = useTasks();
+  // Must mirror useSidebarData's filters so taskMap covers every rendered
+  // task — otherwise handleTaskClick silently bails for tasks not in the map.
+  const showAllUsers = useSidebarStore((s) => s.showAllUsers);
+  const showInternal = useSidebarStore((s) => s.showInternal);
+  const { data: allTasks = [] } = useTasks({ showAllUsers, showInternal });
 
   const { data: workspaces = {} } = useWorkspaces();
   const { markAsViewed } = useTaskViewed();
@@ -268,6 +274,13 @@ function SidebarMenuComponent() {
               : task,
           ),
       );
+      queryClient.setQueriesData<Schemas.TaskSummary[]>(
+        { queryKey: ["tasks", "summaries"] },
+        (old) =>
+          old?.map((task) =>
+            task.id === taskId ? { ...task, title: newTitle } : task,
+          ),
+      );
 
       // Sync to session store so notifications use the updated title
       getSessionService().updateSessionTaskTitle(taskId, newTitle);
@@ -281,6 +294,7 @@ function SidebarMenuComponent() {
         log.error("Failed to rename task", error);
         // Refetch to revert optimistic update on failure
         queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
+        queryClient.invalidateQueries({ queryKey: ["tasks", "summaries"] });
       }
     },
     [setEditingTaskId, updateTask, queryClient, log],
