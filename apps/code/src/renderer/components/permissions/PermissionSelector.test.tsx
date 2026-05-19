@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PermissionSelector } from "./PermissionSelector";
 
 describe("PermissionSelector", () => {
-  it("renders MCP permissions from rawInput toolName when metadata is missing", () => {
+  it("renders MCP permissions using claudeCode.toolName metadata", () => {
     render(
       <Theme>
         <PermissionSelector
@@ -12,10 +12,8 @@ describe("PermissionSelector", () => {
             toolCallId: "tool-1",
             title: "exec",
             kind: "other",
-            rawInput: {
-              command: "info execute-sql",
-              toolName: "mcp__posthog__exec",
-            },
+            rawInput: { command: "info execute-sql" },
+            _meta: { claudeCode: { toolName: "mcp__posthog__exec" } },
           }}
           options={[
             { kind: "allow_once", optionId: "allow", name: "Yes" },

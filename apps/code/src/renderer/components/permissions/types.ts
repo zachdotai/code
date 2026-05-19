@@ -22,6 +22,15 @@ export interface BasePermissionProps {
   onCancel: () => void;
 }
 
+export function getMcpPermissionToolName(
+  toolCall: PermissionToolCall,
+): string | undefined {
+  const toolName = (
+    toolCall._meta as { claudeCode?: { toolName?: unknown } } | undefined
+  )?.claudeCode?.toolName;
+  return typeof toolName === "string" ? toolName : undefined;
+}
+
 export function toSelectorOptions(
   options: PermissionOption[],
 ): SelectorOption[] {

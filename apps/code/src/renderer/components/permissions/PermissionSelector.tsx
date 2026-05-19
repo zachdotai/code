@@ -4,14 +4,14 @@ import { DeletePermission } from "./DeletePermission";
 import { EditPermission } from "./EditPermission";
 import { ExecutePermission } from "./ExecutePermission";
 import { FetchPermission } from "./FetchPermission";
-import { getMcpPermissionToolName, McpPermission } from "./McpPermission";
+import { McpPermission } from "./McpPermission";
 import { MovePermission } from "./MovePermission";
 import { QuestionPermission } from "./QuestionPermission";
 import { ReadPermission } from "./ReadPermission";
 import { SearchPermission } from "./SearchPermission";
 import { SwitchModePermission } from "./SwitchModePermission";
 import { ThinkPermission } from "./ThinkPermission";
-import type { PermissionToolCall } from "./types";
+import { getMcpPermissionToolName, type PermissionToolCall } from "./types";
 
 interface PermissionSelectorProps {
   toolCall: PermissionToolCall;

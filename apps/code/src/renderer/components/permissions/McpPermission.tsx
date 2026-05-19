@@ -10,22 +10,9 @@ import { Box, Code } from "@radix-ui/themes";
 import { DefaultPermission } from "./DefaultPermission";
 import {
   type BasePermissionProps,
-  type PermissionToolCall,
+  getMcpPermissionToolName,
   toSelectorOptions,
 } from "./types";
-
-export function getMcpPermissionToolName(
-  toolCall: PermissionToolCall,
-): string | undefined {
-  const metaToolName = (
-    toolCall._meta as { claudeCode?: { toolName?: unknown } } | undefined
-  )?.claudeCode?.toolName;
-  if (typeof metaToolName === "string") return metaToolName;
-
-  const rawToolName = (toolCall.rawInput as { toolName?: unknown } | undefined)
-    ?.toolName;
-  return typeof rawToolName === "string" ? rawToolName : undefined;
-}
 
 export function McpPermission({
   toolCall,
