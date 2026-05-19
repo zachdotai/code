@@ -6,8 +6,8 @@ import { useEffect, useRef } from "react";
 import { useBgmStore } from "./bgmStore";
 
 const bgmUrl =
-  import.meta.env.VITE_HOGCRAFT_BGM_URL ??
-  "https://posthog.com/hogcraft/bgm.mp3";
+  import.meta.env.VITE_CODE_RTS_BGM_URL ??
+  "https://posthog.com/code-rts/bgm.mp3";
 
 export function BgmPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null);

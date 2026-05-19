@@ -24,8 +24,8 @@ export type VoiceIntent =
 export type VoiceMode = FunMode;
 
 const VOICE_BASE_URL =
-  import.meta.env.VITE_HOGCRAFT_VOICE_BASE_URL ??
-  "https://posthog.com/hogcraft/voice";
+  import.meta.env.VITE_CODE_RTS_VOICE_BASE_URL ??
+  "https://posthog.com/code-rts/voice";
 
 const voiceFiles: Record<string, string> = Object.fromEntries(
   (voiceManifest as string[]).map((entry) => [
