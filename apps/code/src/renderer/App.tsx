@@ -41,9 +41,6 @@ function App() {
   const hasCompletedOnboarding = useOnboardingStore(
     (state) => state.hasCompletedOnboarding,
   );
-  const selectedDirectory = useOnboardingStore(
-    (state) => state.selectedDirectory,
-  );
   const isAuthenticated = authState.status === "authenticated";
   const hasCodeAccess = authState.hasCodeAccess;
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
@@ -202,6 +199,14 @@ function App() {
     wasInMainApp.current = isInMainApp;
   }, [isAuthenticated, hasCompletedOnboarding, isDarkMode]);
 
+  const wasShowingAiGateRef = useRef(false);
+  useEffect(() => {
+    if (wasShowingAiGateRef.current && !needsAiApproval && currentOrg != null) {
+      track(ANALYTICS_EVENTS.AI_CONSENT_APPROVED);
+    }
+    wasShowingAiGateRef.current = needsAiApproval;
+  }, [needsAiApproval, currentOrg]);
+
   const handleTransitionComplete = () => {
     setShowTransition(false);
   };
@@ -218,11 +223,8 @@ function App() {
   }
 
   // Rendering: onboarding (includes auth + invite code gate) → main app
-  // We also route to onboarding when no directory is selected — without one, the
-  // main app has nothing meaningful to show (the dev "Skip setup" button can
-  // produce this state by flipping hasCompletedOnboarding without picking a directory).
   const renderContent = () => {
-    if (!hasCompletedOnboarding || !selectedDirectory) {
+    if (!hasCompletedOnboarding) {
       return (
         <motion.div key="onboarding" initial={{ opacity: 1 }}>
           <OnboardingFlow />

@@ -180,7 +180,7 @@ function buildCloudDefaultConfigOptions(
   ];
 }
 
-function isCloudTurnCompleteEvent(event: AcpMessage): boolean {
+function isTurnCompleteEvent(event: AcpMessage): boolean {
   const msg = event.message;
   return (
     "method" in msg &&
@@ -201,6 +201,13 @@ interface CloudLogGapReconcileRequest {
   currentCount: number;
   newEntries: StoredLogEntry[];
   logUrl?: string;
+}
+
+interface ParsedSessionLogs {
+  rawEntries: StoredLogEntry[];
+  totalLineCount: number;
+  sessionId?: string;
+  adapter?: Adapter;
 }
 
 interface CloudLogGapReconcileState {
@@ -1090,6 +1097,12 @@ export class SessionService {
           pausedDurationMs: 0,
           currentPromptId: msg.id,
         });
+        const promptSession = sessionStoreSetters.getSessions()[taskRunId];
+        if (promptSession?.isCloud && promptSession.agentIdleForRunId) {
+          sessionStoreSetters.updateSession(taskRunId, {
+            agentIdleForRunId: undefined,
+          });
+        }
       }
       if (
         "id" in msg &&
@@ -1111,12 +1124,18 @@ export class SessionService {
           currentPromptId: null,
         });
       }
-      if (isCloudTurnCompleteEvent(acpMsg)) {
-        sessionStoreSetters.updateSession(taskRunId, {
-          isPromptPending: false,
-          promptStartedAt: null,
-          currentPromptId: null,
-        });
+      if (isTurnCompleteEvent(acpMsg)) {
+        // Local sessions use the JSON-RPC response as the canonical turn-done
+        // signal; clearing currentPromptId here would race the id-match guard
+        // above. Cloud sessions never see that response.
+        const session = this.getSessionByRunId(taskRunId);
+        if (session?.isCloud) {
+          sessionStoreSetters.updateSession(taskRunId, {
+            isPromptPending: false,
+            promptStartedAt: null,
+            currentPromptId: null,
+          });
+        }
       }
       // Lifecycle handshake from the agent — flip status to "connected"
       // so the UI can release the queue-while-not-ready guard. This is
@@ -1158,22 +1177,21 @@ export class SessionService {
         const session = sessionStoreSetters.getSessions()[taskRunId];
         if (session?.isCloud) {
           // Backward compat: treat turn_complete as an implicit run_started
-          // for agents that predate the run_started notification.
+          // for agents that predate the run_started notification. The turn
+          // finished, so the agent is idle for this run, lets a later
+          // transport drop recover readiness.
+          const updates: Partial<AgentSession> = {};
           if (session.status !== "connected") {
-            sessionStoreSetters.updateSession(taskRunId, {
-              status: "connected",
-            });
+            updates.status = "connected";
+          }
+          if (session.agentIdleForRunId !== taskRunId) {
+            updates.agentIdleForRunId = taskRunId;
+          }
+          if (Object.keys(updates).length > 0) {
+            sessionStoreSetters.updateSession(taskRunId, updates);
           }
           if (session.messageQueue.length > 0) {
-            const taskId = session.taskId;
-            setTimeout(() => {
-              this.sendQueuedCloudMessages(taskId).catch((err) =>
-                log.error("turn_complete-driven cloud queue flush failed", {
-                  taskId,
-                  error: err,
-                }),
-              );
-            }, 0);
+            this.scheduleCloudQueueFlush(session.taskId, "turn_complete");
           }
         }
       }
@@ -1682,9 +1700,6 @@ export class SessionService {
 
     if (session.cloudStatus !== "in_progress") {
       sessionStoreSetters.enqueueMessage(session.taskId, transport.promptText);
-      sessionStoreSetters.updateSession(session.taskRunId, {
-        isPromptPending: true,
-      });
       log.info("Cloud message queued (sandbox not ready)", {
         taskId: session.taskId,
         cloudStatus: session.cloudStatus,
@@ -1714,6 +1729,19 @@ export class SessionService {
         sessionStatus: session.status,
         queueLength: session.messageQueue.length + 1,
       });
+      // The watcher may have exhausted its reconnect budget and been left in a
+      // failed state — without an SSE stream, no `turn_complete` will arrive
+      // to drain the queue. Kick a retry so the stream comes back online; the
+      // queued message dispatches naturally once `run_started`/`turn_complete`
+      // is observed.
+      if (session.status === "disconnected" || session.status === "error") {
+        this.retryCloudTaskWatch(session.taskId).catch((err) => {
+          log.warn("Auto-retry of cloud task watch from queue gate failed", {
+            taskId: session.taskId,
+            error: String(err),
+          });
+        });
+      }
       return { stopReason: "queued" };
     }
 
@@ -1767,6 +1795,7 @@ export class SessionService {
       isPromptPending: true,
       promptStartedAt: Date.now(),
       pausedDurationMs: 0,
+      agentIdleForRunId: undefined,
     });
     sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
       type: "user_message",
@@ -2763,7 +2792,10 @@ export class SessionService {
     taskDescription?: string,
   ): void {
     void (async () => {
-      const { rawEntries } = await this.fetchSessionLogs(logUrl, taskRunId);
+      const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
+        logUrl,
+        taskRunId,
+      );
 
       const session = sessionStoreSetters.getSessionByTaskId(taskId);
       if (!session || session.taskRunId !== taskRunId) {
@@ -2805,7 +2837,7 @@ export class SessionService {
         events,
         isCloud: true,
         logUrl: logUrl ?? session.logUrl,
-        processedLineCount: rawEntries.length,
+        processedLineCount: totalLineCount,
       });
       // Without this the "Galumphing…" indicator stays hidden when the hydrated
       // baseline already contains an in-flight session/prompt — the live delta
@@ -3148,6 +3180,39 @@ export class SessionService {
       });
       throw error;
     }
+
+    // The main-process retry of an already-bootstrapped
+    // watcher only reconnects SSE (`start=latest`) and emits no fresh
+    // status/snapshot for an idle run, so the update-driven trigger in
+    // `handleCloudTaskUpdate` would never fire, the queued message would
+    // stay stuck. Attempt the same guarded recovery here once the reconnect
+    // request has been accepted. No-ops unless a queue is stranded on an
+    // idle, provably-alive run.
+    this.tryRecoverIdleCloudQueue(session.taskRunId);
+  }
+
+  /**
+   * Retries every cloud session whose stream is in the `error` state, i.e. the
+   * main process exhausted its SSE reconnect budget and surfaced the manual
+   * Retry button. Invoked on window focus so users coming back to the app
+   * after a Django deploy, laptop sleep, or network blip don't have to click
+   * Retry themselves.
+   */
+  public retryUnhealthyCloudSessions(): void {
+    const sessions = sessionStoreSetters.getSessions();
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud) continue;
+      if (session.status !== "error") continue;
+      log.info("Auto-retrying errored cloud session on focus", {
+        taskId: session.taskId,
+      });
+      this.retryCloudTaskWatch(session.taskId).catch((error) => {
+        log.warn("Auto-retry of errored cloud session failed", {
+          taskId: session.taskId,
+          error,
+        });
+      });
+    }
   }
 
   public updateSessionTaskTitle(taskId: string, taskTitle: string): void {
@@ -3157,6 +3222,125 @@ export class SessionService {
     if (session.taskTitle === taskTitle) return;
 
     sessionStoreSetters.updateSession(session.taskRunId, { taskTitle });
+  }
+
+  /**
+   * Drain the cloud queue, the deferral breaks out of
+   * the synchronous store-update frame so the dispatcher reads committed
+   * state; `sendQueuedCloudMessages` is reentrancy-guarded so stacked
+   * schedules from multiple triggers collapse to one.
+   */
+  private scheduleCloudQueueFlush(taskId: string, reason: string): void {
+    setTimeout(() => {
+      this.sendQueuedCloudMessages(taskId).catch((err) =>
+        log.error("cloud queue flush failed", { taskId, reason, error: err }),
+      );
+    }, 0);
+  }
+
+  /**
+   * True when the agent for this exact run is idle: it has completed at
+   * least one turn for this run and is not mid-turn. Tracked live via
+   * `agentIdleForRunId` (set only on `_posthog/turn_complete`), with a
+   * fallback that replays events for the case where a session was recreated
+   * from logs and the live flag was never set (no-delta dedup guard skipped
+   * reprocessing).
+   *
+   * Deliberately independent of `isPromptPending`: `retryCloudTaskWatch()`
+   * forcibly clears it on reconnect, so trusting it would let recovery
+   * dispatch a queued follow-up while a remote turn is still running.
+   */
+  private isAgentIdleForRun(session: AgentSession): boolean {
+    if (session.agentIdleForRunId === session.taskRunId) {
+      return true;
+    }
+    let seenCurrentRunStart = false;
+    let idle = false;
+    for (const acpMsg of session.events) {
+      const msg = acpMsg.message;
+      if (
+        "method" in msg &&
+        isNotification(msg.method, POSTHOG_NOTIFICATIONS.RUN_STARTED)
+      ) {
+        const params = (msg as { params?: { runId?: unknown } }).params;
+        if (params?.runId === session.taskRunId) {
+          seenCurrentRunStart = true;
+          idle = false;
+        }
+        continue;
+      }
+      if (!seenCurrentRunStart) {
+        continue;
+      }
+      if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
+        idle = false;
+        continue;
+      }
+      if (isTurnCompleteEvent(acpMsg)) {
+        idle = true;
+      }
+    }
+    return idle;
+  }
+
+  /**
+   * Guarded recovery for a queued cloud message stranded by a transport
+   * drop on an idle, already-bootstrapped run.
+   *
+   * `run_started` is normally the canonical "agent is ready" trigger and
+   * would race with `sendInitialTaskMessage` while still booting, so the
+   * safe default remains "drain only once status is connected". But an
+   * idle run stays `in_progress` on the server while emitting NO fresh
+   * `run_started`/`turn_complete` (those only fire on boot or a new turn).
+   * If an SSE transport drop or the `retryCloudTaskWatch` it triggers
+   * flipped the session to disconnected/error AFTER the agent already
+   * booted for this exact run, nothing flips it back to "connected" and
+   * the queued message is stranded forever. When the run is provably
+   * alive (`cloudStatus === "in_progress"`) and the agent provably idle
+   * for THIS run (`isAgentIdleForRun`), recover readiness and drain.
+   */
+  private tryRecoverIdleCloudQueue(taskRunId: string): void {
+    const session = sessionStoreSetters.getSessions()[taskRunId];
+    if (!session?.isCloud || session.messageQueue.length === 0) {
+      return;
+    }
+    if (session.cloudStatus !== "in_progress") {
+      return;
+    }
+
+    // The agent must be provably idle for this run, the
+    // connected path included. `status: "connected"` alone is NOT proof of
+    // idleness: the `_posthog/run_started` handler flips status to
+    // "connected" before the initial/resume turn even starts, so a
+    // connected-but-not-idle session is mid-boot. Draining now would race
+    // with `sendInitialTaskMessage`/`sendResumeMessage` and one prompt
+    // would be cancelled. Only `_posthog/turn_complete` makes the agent
+    // idle for the run (`isAgentIdleForRun`).
+    if (!this.isAgentIdleForRun(session)) {
+      return;
+    }
+
+    const recoverableAfterTransportDrop =
+      (session.status === "disconnected" || session.status === "error") &&
+      !session.isPromptPending;
+
+    if (session.status !== "connected" && !recoverableAfterTransportDrop) {
+      return;
+    }
+
+    if (recoverableAfterTransportDrop) {
+      sessionStoreSetters.updateSession(taskRunId, {
+        status: "connected",
+        errorTitle: undefined,
+        errorMessage: undefined,
+      });
+      log.info("Recovered cloud session readiness after transport drop", {
+        taskId: session.taskId,
+        previousStatus: session.status,
+      });
+    }
+
+    this.scheduleCloudQueueFlush(session.taskId, "idle-run-recovery");
   }
 
   private handleCloudTaskUpdate(
@@ -3250,10 +3434,9 @@ export class SessionService {
         branch: update.branch,
       });
 
-      // No cloudStatus="in_progress" auto-flush here. `run_started` from
-      // the agent-server is the canonical "agent is ready" trigger and
-      // handles both initial boot and post-restart recovery; firing
-      // earlier would race with `sendInitialTaskMessage`.
+      if (update.status === "in_progress") {
+        this.tryRecoverIdleCloudQueue(taskRunId);
+      }
 
       if (isTerminalStatus(update.status)) {
         // Clean up any pending resume messages that couldn't be sent
@@ -3363,16 +3546,13 @@ export class SessionService {
     };
   }
 
-  private parseLogContent(content: string): {
-    rawEntries: StoredLogEntry[];
-    sessionId?: string;
-    adapter?: Adapter;
-  } {
+  private parseLogContent(content: string): ParsedSessionLogs {
     const rawEntries: StoredLogEntry[] = [];
     let sessionId: string | undefined;
     let adapter: Adapter | undefined;
+    const lines = content.trim().split("\n");
 
-    for (const line of content.trim().split("\n")) {
+    for (const line of lines) {
       try {
         const stored = JSON.parse(line) as StoredLogEntry;
         rawEntries.push(stored);
@@ -3395,26 +3575,17 @@ export class SessionService {
       }
     }
 
-    return { rawEntries, sessionId, adapter };
+    return { rawEntries, totalLineCount: lines.length, sessionId, adapter };
   }
 
   private async fetchSessionLogs(
     logUrl: string | undefined,
     taskRunId?: string,
     options: { minEntryCount?: number } = {},
-  ): Promise<{
-    rawEntries: StoredLogEntry[];
-    sessionId?: string;
-    adapter?: Adapter;
-  }> {
-    if (!logUrl && !taskRunId) return { rawEntries: [] };
-    let localResult:
-      | {
-          rawEntries: StoredLogEntry[];
-          sessionId?: string;
-          adapter?: Adapter;
-        }
-      | undefined;
+  ): Promise<ParsedSessionLogs> {
+    const empty: ParsedSessionLogs = { rawEntries: [], totalLineCount: 0 };
+    if (!logUrl && !taskRunId) return empty;
+    let localResult: ParsedSessionLogs | undefined;
 
     if (taskRunId) {
       try {
@@ -3425,7 +3596,7 @@ export class SessionService {
           localResult = this.parseLogContent(localContent);
           if (
             !options.minEntryCount ||
-            localResult.rawEntries.length >= options.minEntryCount
+            localResult.totalLineCount >= options.minEntryCount
           ) {
             return localResult;
           }
@@ -3437,11 +3608,11 @@ export class SessionService {
       }
     }
 
-    if (!logUrl) return localResult ?? { rawEntries: [] };
+    if (!logUrl) return localResult ?? empty;
 
     try {
       const content = await trpcClient.logs.fetchS3Logs.query({ logUrl });
-      if (!content?.trim()) return localResult ?? { rawEntries: [] };
+      if (!content?.trim()) return localResult ?? empty;
 
       const result = this.parseLogContent(content);
 
@@ -3462,7 +3633,7 @@ export class SessionService {
 
       return result;
     } catch {
-      return localResult ?? { rawEntries: [] };
+      return localResult ?? empty;
     }
   }
 
@@ -3532,9 +3703,11 @@ export class SessionService {
     newEntries,
     logUrl,
   }: CloudLogGapReconcileRequest): Promise<void> {
-    const { rawEntries } = await this.fetchSessionLogs(logUrl, taskRunId, {
-      minEntryCount: expectedCount,
-    });
+    const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
+      logUrl,
+      taskRunId,
+      { minEntryCount: expectedCount },
+    );
     const session = sessionStoreSetters.getSessions()[taskRunId];
     if (!session || session.taskId !== taskId) {
       return;
@@ -3545,7 +3718,7 @@ export class SessionService {
       return;
     }
 
-    if (rawEntries.length >= expectedCount) {
+    if (totalLineCount >= expectedCount) {
       const events = convertStoredEntriesToEvents(rawEntries);
       if (hasSessionPromptEvent(events)) {
         sessionStoreSetters.clearTailOptimisticItems(taskRunId);
@@ -3554,7 +3727,7 @@ export class SessionService {
         events,
         isCloud: true,
         logUrl: logUrl ?? session.logUrl,
-        processedLineCount: rawEntries.length,
+        processedLineCount: totalLineCount,
       });
       this.updatePromptStateFromEvents(taskRunId, events);
       return;
