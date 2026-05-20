@@ -73,7 +73,7 @@ export async function adoptHoglet(
   try {
     const updated = await deps.remote.adopt({ hogletId, nestId });
     deps.hoglets.upsert(nestId, updated);
-    track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED, { source: trackSource });
+    track(ANALYTICS_EVENTS.RTS_HOGLET_ADOPTED, { source: trackSource });
   } catch (error) {
     log.error("Failed to adopt hoglet", { hogletId, nestId, error });
     deps.hoglets.remove(nestId, hogletId);
@@ -113,7 +113,7 @@ export async function releaseHoglet(
   try {
     const updated = await deps.remote.release({ hogletId });
     deps.hoglets.upsert(WILD_BUCKET, updated);
-    track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED, { source: "nest" });
+    track(ANALYTICS_EVENTS.RTS_HOGLET_RELEASED, { source: "nest" });
   } catch (error) {
     log.error("Failed to release hoglet", {
       hogletId,

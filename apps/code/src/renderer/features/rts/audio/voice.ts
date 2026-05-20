@@ -3,7 +3,7 @@ import type { HogletGender } from "@main/services/rts/hoglet-names";
 import { logger } from "@utils/logger";
 import voiceManifest from "./voice-manifest.json";
 
-const log = logger.scope("hedgemony-voice");
+const log = logger.scope("rts-voice");
 
 export type VoiceIntent =
   | "builder:build_mode"

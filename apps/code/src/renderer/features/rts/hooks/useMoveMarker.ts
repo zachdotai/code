@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MoveMarker } from "../components/RtsMapSurface";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 
 export interface UseMoveMarkerResult {
   moveMarker: MoveMarker | null;
@@ -28,7 +28,7 @@ export function useMoveMarker(): UseMoveMarkerResult {
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       setMoveMarker((current) => (current?.id === id ? null : current));
-    }, HEDGEMONY_CONFIG.animation.moveMarkerMs);
+    }, RTS_CONFIG.animation.moveMarkerMs);
   }, []);
 
   return { moveMarker, flashMoveMarker };

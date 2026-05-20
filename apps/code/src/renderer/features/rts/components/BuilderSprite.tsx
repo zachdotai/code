@@ -13,7 +13,7 @@ import {
   useImperativeHandle,
   useState,
 } from "react";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 import { BUILDER_NAME } from "../constants/map";
 import type { BuilderAnimation } from "../hooks/useBuilderCoordinator";
 import { selectNests, useNestStore } from "../stores/nestStore";
@@ -37,9 +37,9 @@ const ANIMATION_KEYS: Record<BuilderAnimation, HedgehogAnimation> = {
 };
 
 const ANIMATION_FPS: Record<BuilderAnimation, number> = {
-  idle: HEDGEMONY_CONFIG.animation.fps.idle,
-  walking: HEDGEMONY_CONFIG.animation.fps.walk,
-  building: HEDGEMONY_CONFIG.animation.fps.action,
+  idle: RTS_CONFIG.animation.fps.idle,
+  walking: RTS_CONFIG.animation.fps.walk,
+  building: RTS_CONFIG.animation.fps.action,
 };
 
 /**
@@ -134,7 +134,7 @@ function BuilderSpriteImpl(
         advance();
         return;
       }
-      const duration = dist / HEDGEMONY_CONFIG.speeds.builder;
+      const duration = dist / RTS_CONFIG.speeds.builder;
       xControls = animate(motionX, to.x, { duration, ease: "linear" });
       yControls = animate(motionY, to.y, {
         duration,

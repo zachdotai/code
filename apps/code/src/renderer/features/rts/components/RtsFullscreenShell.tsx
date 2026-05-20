@@ -28,7 +28,7 @@ export function RtsFullscreenShell({
   }
   return createPortal(
     <motion.div
-      key="hedgemony-fullscreen"
+      key="rts-fullscreen"
       // `no-drag` is mandatory here: without it, even though the portal
       // visually covers the HeaderRow's `drag` region, the OS still
       // captures pointer events at the top of the screen for window

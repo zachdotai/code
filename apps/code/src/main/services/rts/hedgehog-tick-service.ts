@@ -79,7 +79,7 @@ const PENDING_INJECTION_LOOKBACK = 100;
 const EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS = 10 * 60;
 
 function getHeartbeatIntervalMs(): number {
-  const envOverride = process.env.HEDGEMONY_HEARTBEAT_INTERVAL_MS;
+  const envOverride = process.env.RTS_HEARTBEAT_INTERVAL_MS;
   if (envOverride) {
     const parsed = Number.parseInt(envOverride, 10);
     if (!Number.isNaN(parsed) && parsed >= 60_000 && parsed <= 600_000) {

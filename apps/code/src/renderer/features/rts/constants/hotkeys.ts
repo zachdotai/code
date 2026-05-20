@@ -24,7 +24,7 @@ export interface RtsHotkey {
   context: RtsHotkeyContext;
 }
 
-export const HEDGEMONY_HOTKEYS: RtsHotkey[] = [
+export const RTS_HOTKEYS: RtsHotkey[] = [
   // Camera
   {
     id: "camera-pan",
@@ -205,7 +205,7 @@ export const HEDGEMONY_HOTKEYS: RtsHotkey[] = [
   {
     id: "panels-helper",
     keys: "shift+/",
-    description: "Show hedgemony shortcuts",
+    description: "Show RTS mode shortcuts",
     context: "panels",
   },
 
@@ -224,7 +224,7 @@ export const HEDGEMONY_HOTKEYS: RtsHotkey[] = [
   },
 ];
 
-export const HEDGEMONY_CONTEXT_LABELS: Record<RtsHotkeyContext, string> =
+export const RTS_CONTEXT_LABELS: Record<RtsHotkeyContext, string> =
   {
     camera: "Camera",
     selection: "Selection",
@@ -237,7 +237,7 @@ export const HEDGEMONY_CONTEXT_LABELS: Record<RtsHotkeyContext, string> =
     dialog: "Dialogs",
   };
 
-export const HEDGEMONY_CONTEXT_ORDER: RtsHotkeyContext[] = [
+export const RTS_CONTEXT_ORDER: RtsHotkeyContext[] = [
   "camera",
   "selection",
   "builder",

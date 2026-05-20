@@ -1,5 +1,5 @@
 /**
- * Centralized tuning constants for hedgemony. Every magic number that
+ * Centralized tuning constants for RTS mode. Every magic number that
  * affects gameplay feel — speeds, radii, polling cadence, animation timing,
  * camera bounds — lives here so the simulation can be tuned in one place
  * instead of chasing literals across a dozen files.
@@ -15,7 +15,7 @@ const HOGLET_RADIUS = 44;
 const BUILDER_RADIUS = 36;
 const OBSTACLE_CLEARANCE = 28;
 
-export const HEDGEMONY_CONFIG = {
+export const RTS_CONFIG = {
   speeds: {
     builder: 150,
     nest: 100,

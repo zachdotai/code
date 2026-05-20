@@ -24,7 +24,7 @@ export const useSfxStore = create<SfxStore>()(
         set({ volume: Math.max(0, Math.min(100, volume)) }),
     }),
     {
-      name: "hedgemony-sfx-storage",
+      name: "rts-sfx-storage",
       storage: electronStorage,
       partialize: (state) => ({ muted: state.muted, volume: state.volume }),
     },

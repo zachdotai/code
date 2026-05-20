@@ -1,17 +1,17 @@
 import type { Hoglet, Nest } from "@main/services/rts/schemas";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 import { WILD_BUCKET } from "../constants/buckets";
 import { snapPointOutsideObstacles, type Vec2 } from "./pathfinding";
 import { HOGLET_RADIUS, worldObstacles } from "./worldObstacles";
 
 const COLLISION_ITERATIONS = 18;
 const POSITION_EPSILON = 0.01;
-const WILD_RING_INNER = HEDGEMONY_CONFIG.layout.wildRingInner;
-const WILD_RING_THICKNESS = HEDGEMONY_CONFIG.layout.wildRingThickness;
+const WILD_RING_INNER = RTS_CONFIG.layout.wildRingInner;
+const WILD_RING_THICKNESS = RTS_CONFIG.layout.wildRingThickness;
 // Brood hoglets sit in a ring around their nest. This is deliberately derived
 // from the shared obstacle radii so the static layout and right-click movement
 // agree on where "outside the nest" begins.
-const BROOD_RADIUS = HEDGEMONY_CONFIG.layout.broodRadius;
+const BROOD_RADIUS = RTS_CONFIG.layout.broodRadius;
 
 function hashToUnit(id: string, seed: number): number {
   let h = 2166136261 ^ seed;

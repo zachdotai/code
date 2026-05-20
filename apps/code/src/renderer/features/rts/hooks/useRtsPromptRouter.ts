@@ -10,7 +10,7 @@ import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef } from "react";
 import { resolveRtsPromptRoute } from "./promptRouting";
 
-const log = logger.scope("hedgemony-prompt-router");
+const log = logger.scope("rts-prompt-router");
 
 /**
  * Slice 7 — receives non-hedgehog `injectPrompt` events from
@@ -67,7 +67,7 @@ export function useRtsPromptRouter() {
             trustTier,
           });
           if (payload.source === "pr_review" || payload.source === "ci") {
-            track(ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED, {
+            track(ANALYTICS_EVENTS.RTS_FEEDBACK_ROUTED, {
               source: payload.source,
               outcome: "injected",
             });
@@ -92,7 +92,7 @@ export function useRtsPromptRouter() {
             trustTier,
           });
           if (payload.source === "pr_review" || payload.source === "ci") {
-            track(ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED, {
+            track(ANALYTICS_EVENTS.RTS_FEEDBACK_ROUTED, {
               source: payload.source,
               outcome: "follow_up_spawned",
             });
@@ -110,7 +110,7 @@ export function useRtsPromptRouter() {
           trustTier,
         });
         if (payload.source === "pr_review" || payload.source === "ci") {
-          track(ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED, {
+          track(ANALYTICS_EVENTS.RTS_FEEDBACK_ROUTED, {
             source: payload.source,
             outcome: "failed",
           });
@@ -142,7 +142,7 @@ export function useRtsPromptRouter() {
           await handleInject(event);
         }
       } catch (error) {
-        log.error("Failed to drain pending hedgemony inject queue", { error });
+        log.error("Failed to drain pending RTS mode inject queue", { error });
       }
     })();
   }, [isAuthenticated, handleInject]);

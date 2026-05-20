@@ -1,10 +1,10 @@
 import type { MotionValue } from "framer-motion";
 import { type RefObject, useEffect, useRef } from "react";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 import { sceneTicker } from "../runtime/SceneTicker";
 
 const EDGE_ZONE_PX = 36;
-const BASE_SPEED_PX_PER_SEC = HEDGEMONY_CONFIG.speeds.panCamera;
+const BASE_SPEED_PX_PER_SEC = RTS_CONFIG.speeds.panCamera;
 const BOOST_MULTIPLIER = 2.2;
 const COMMIT_DEBOUNCE_MS = 200;
 

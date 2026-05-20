@@ -132,7 +132,7 @@ describe("adoptHoglet", () => {
     });
     expect(positions.cleared).toEqual(["hog-1"]);
     expect(mockTrack).toHaveBeenCalledWith(
-      "hedgemony.hoglet_adopted",
+      "rts.hoglet_adopted",
       expect.objectContaining({ source: "wild" }),
     );
     expect(toast.errorCalls).toEqual([]);
@@ -219,7 +219,7 @@ describe("releaseHoglet", () => {
     expect(remote.release).toHaveBeenCalledWith({ hogletId: "hog-1" });
     expect(positions.cleared).toEqual(["hog-1"]);
     expect(mockTrack).toHaveBeenCalledWith(
-      "hedgemony.hoglet_released",
+      "rts.hoglet_released",
       expect.objectContaining({ source: "nest" }),
     );
     expect(toast.errorCalls).toEqual([]);
@@ -351,7 +351,7 @@ describe("handleHogletDrop", () => {
     await Promise.resolve();
 
     expect(mockTrack).toHaveBeenCalledWith(
-      "hedgemony.hoglet_adopted",
+      "rts.hoglet_adopted",
       expect.objectContaining({ source: "signal" }),
     );
   });

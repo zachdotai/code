@@ -370,7 +370,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
         });
         useHogletStore.getState().upsert(WILD_BUCKET, hoglet);
         playVoice("hoglet:order_work", genderForName(hoglet.name));
-        track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED, { source: "adhoc" });
+        track(ANALYTICS_EVENTS.RTS_HOGLET_SPAWNED, { source: "adhoc" });
       } catch (error) {
         log.error("Failed to register wild hoglet", { error, taskId: task.id });
         toast.error("Hoglet created but couldn't join the wild flock", {

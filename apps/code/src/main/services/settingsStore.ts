@@ -14,7 +14,7 @@ interface SettingsSchema {
   rtsMaxTicksPerHour: number;
 }
 
-export const HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT = 60;
+export const RTS_MAX_TICKS_PER_HOUR_DEFAULT = 60;
 
 function getDefaultWorktreeLocation(): string {
   const isDev = isDevBuild();
@@ -89,7 +89,7 @@ const schema = {
   },
   rtsMaxTicksPerHour: {
     type: "number" as const,
-    default: HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
+    default: RTS_MAX_TICKS_PER_HOUR_DEFAULT,
     minimum: 1,
     maximum: 600,
   },
@@ -105,7 +105,7 @@ export const settingsStore = new Store<SettingsSchema>({
     autoSuspendEnabled: true,
     maxActiveWorktrees: 5,
     autoSuspendAfterDays: 7,
-    rtsMaxTicksPerHour: HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
+    rtsMaxTicksPerHour: RTS_MAX_TICKS_PER_HOUR_DEFAULT,
   },
 });
 
@@ -180,7 +180,7 @@ export function setAutoSuspendAfterDays(value: number): void {
 export function getRtsMaxTicksPerHour(): number {
   return settingsStore.get(
     "rtsMaxTicksPerHour",
-    HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
+    RTS_MAX_TICKS_PER_HOUR_DEFAULT,
   );
 }
 

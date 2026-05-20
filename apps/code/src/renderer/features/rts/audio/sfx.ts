@@ -1,7 +1,7 @@
 import disappearUrl from "@renderer/assets/sounds/disappear.wav";
 import { logger } from "@utils/logger";
 
-const log = logger.scope("hedgemony-sfx");
+const log = logger.scope("rts-sfx");
 
 export type SfxName =
   | "select"

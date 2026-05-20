@@ -1170,7 +1170,7 @@ button,
 }
 
 /*
- * CommandConsole — Starcraft-style beveled chrome for hedgemony bottom panels.
+ * CommandConsole — Starcraft-style beveled chrome for RTS mode bottom panels.
  * Two stacked clip-paths fake a chamfered border: the outer layer paints the
  * accent color, the inner layer paints the body gradient, and 1.5px of padding
  * on the outer leaves a visible accent rim that follows the chamfer.

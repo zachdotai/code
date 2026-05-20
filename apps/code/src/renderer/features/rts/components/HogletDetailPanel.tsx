@@ -189,7 +189,7 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
       await trpcClient.rts.hoglets.retire.mutate({
         hogletId: hoglet.id,
       });
-      track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RETIRED, {
+      track(ANALYTICS_EVENTS.RTS_HOGLET_RETIRED, {
         source: retireSourceForHoglet(hoglet),
       });
       await archiveTaskImperative(hoglet.taskId, queryClient, {

@@ -1,6 +1,6 @@
 import {
-  HEDGEMONY_CONTEXT_LABELS,
-  HEDGEMONY_HOTKEYS,
+  RTS_CONTEXT_LABELS,
+  RTS_HOTKEYS,
 } from "@features/rts/constants/hotkeys";
 import { isMac } from "@utils/platform";
 
@@ -218,13 +218,13 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     category: "editor",
     context: "Rich text editor",
   },
-  ...HEDGEMONY_HOTKEYS.map(
+  ...RTS_HOTKEYS.map(
     (h): KeyboardShortcut => ({
       id: `rts-${h.id}`,
       keys: h.keys,
       description: h.description,
       category: "rts",
-      context: HEDGEMONY_CONTEXT_LABELS[h.context],
+      context: RTS_CONTEXT_LABELS[h.context],
     }),
   ),
 ];

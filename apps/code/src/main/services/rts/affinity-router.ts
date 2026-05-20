@@ -51,7 +51,7 @@ export class AffinityRouterService {
     @inject(MAIN_TOKENS.NestService)
     private readonly nests: NestService,
   ) {
-    const envValue = process.env.HEDGEMONY_AFFINITY_THRESHOLD;
+    const envValue = process.env.RTS_AFFINITY_THRESHOLD;
     const parsed = envValue != null ? Number(envValue) : Number.NaN;
     this.threshold =
       Number.isFinite(parsed) && parsed > 0 && parsed <= 1

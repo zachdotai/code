@@ -1,5 +1,5 @@
 /**
- * Narrow interface over the toast UI used by hedgemony mutations for
+ * Narrow interface over the toast UI used by RTS mode mutations for
  * rollback notifications and undo confirmations. Sonner is one
  * implementation; tests use spies.
  */

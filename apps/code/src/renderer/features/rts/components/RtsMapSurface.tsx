@@ -20,10 +20,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 import {
-  HEDGEMONY_ZOOM_MAX,
-  HEDGEMONY_ZOOM_MIN,
+  RTS_ZOOM_MAX,
+  RTS_ZOOM_MIN,
   useRtsViewStore,
 } from "../stores/rtsViewStore";
 import { clientToWorld, fitZoom, panToCenter } from "../utils/coordinates";
@@ -43,7 +43,7 @@ import { NestConstructionSite } from "./NestConstructionSite";
 import { NestSprite } from "./NestSprite";
 import { SfxControl } from "./SfxControl";
 
-const BUILD_ANIMATION_MS = HEDGEMONY_CONFIG.animation.buildMs;
+const BUILD_ANIMATION_MS = RTS_CONFIG.animation.buildMs;
 
 const ZOOM_WHEEL_STEP = 0.0015;
 const CLICK_MOVE_THRESHOLD_PX = 4;
@@ -52,9 +52,9 @@ const FIT_PADDING_PX = 360;
 const FOCUS_ZOOM = 1.4;
 const MINIMAP_SIZE_DEFAULT = 168;
 const MINIMAP_SIZE_FULLSCREEN = 232;
-const CAMERA_ANIM_DURATION_S = HEDGEMONY_CONFIG.camera.animDurationS;
+const CAMERA_ANIM_DURATION_S = RTS_CONFIG.camera.animDurationS;
 const CAMERA_ANIM_EASE: [number, number, number, number] =
-  HEDGEMONY_CONFIG.camera.ease;
+  RTS_CONFIG.camera.ease;
 
 export interface MoveMarker {
   id: number;
@@ -336,8 +336,8 @@ function RtsMapSurfaceImpl(
       maxY - minY + FIT_PADDING_PX,
       rect.width,
       rect.height,
-      HEDGEMONY_ZOOM_MIN,
-      HEDGEMONY_ZOOM_MAX,
+      RTS_ZOOM_MIN,
+      RTS_ZOOM_MAX,
     );
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
@@ -416,8 +416,8 @@ function RtsMapSurfaceImpl(
     const rect = outerRef.current?.getBoundingClientRect();
     const rawZoom = zoom * (1 - event.deltaY * ZOOM_WHEEL_STEP);
     const nextZoom = Math.min(
-      HEDGEMONY_ZOOM_MAX,
-      Math.max(HEDGEMONY_ZOOM_MIN, rawZoom),
+      RTS_ZOOM_MAX,
+      Math.max(RTS_ZOOM_MIN, rawZoom),
     );
     if (!rect || nextZoom === zoom) {
       setZoom(nextZoom);

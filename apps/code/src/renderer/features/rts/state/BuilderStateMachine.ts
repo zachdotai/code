@@ -1,5 +1,5 @@
 import type { Nest } from "@main/services/rts/schemas";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 import {
   findPath,
   type Obstacle,
@@ -80,7 +80,7 @@ export class BuilderStateMachine {
   constructor(options: BuilderStateMachineOptions) {
     this.path = [options.initialPos];
     this.buildAnimationMs =
-      options.buildAnimationMs ?? HEDGEMONY_CONFIG.animation.buildMs;
+      options.buildAnimationMs ?? RTS_CONFIG.animation.buildMs;
     this.onChange = options.onChange;
     this.onCommitPendingBuild = options.onCommitPendingBuild;
   }

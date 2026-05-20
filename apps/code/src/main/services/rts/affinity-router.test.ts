@@ -92,7 +92,7 @@ function createMockNests(nests: Nest[] = []) {
 
 describe("AffinityRouterService", () => {
   beforeEach(() => {
-    delete process.env.HEDGEMONY_AFFINITY_THRESHOLD;
+    delete process.env.RTS_AFFINITY_THRESHOLD;
   });
 
   it("returns null when there are no active nests", async () => {
@@ -147,8 +147,8 @@ describe("AffinityRouterService", () => {
     expect(result).toBeNull();
   });
 
-  it("respects the HEDGEMONY_AFFINITY_THRESHOLD env override", async () => {
-    process.env.HEDGEMONY_AFFINITY_THRESHOLD = "0.95";
+  it("respects the RTS_AFFINITY_THRESHOLD env override", async () => {
+    process.env.RTS_AFFINITY_THRESHOLD = "0.95";
     const nest = makeNest({ id: "nest-1" });
     const { auth } = createMockAuth({
       mockQuery: new Response(JSON.stringify({ results: [["nest-1", 0.2]] }), {

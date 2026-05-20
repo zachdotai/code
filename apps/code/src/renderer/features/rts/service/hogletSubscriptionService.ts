@@ -4,7 +4,7 @@ import { logger } from "@utils/logger";
 import { trpcHogletRemoteService } from "../adapters/trpcHogletRemoteService";
 import { zustandHogletPositionRepository } from "../adapters/zustandHogletPositionRepository";
 import { zustandHogletRepository } from "../adapters/zustandHogletRepository";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 import { WILD_BUCKET } from "../constants/buckets";
 import type { HogletPositionRepository } from "../domain/HogletPositionRepository";
 import type { HogletRemoteService } from "../domain/HogletRemoteService";
@@ -15,7 +15,7 @@ import { getHogletVisualPosition } from "../utils/hogletVisualPositions";
 
 const log = logger.scope("hoglet-subscription-service");
 
-const TASK_SUMMARY_REFRESH_MS = HEDGEMONY_CONFIG.polling.taskSummaryMs;
+const TASK_SUMMARY_REFRESH_MS = RTS_CONFIG.polling.taskSummaryMs;
 
 export interface HogletSubscriptionDeps {
   hoglets: HogletRepository;

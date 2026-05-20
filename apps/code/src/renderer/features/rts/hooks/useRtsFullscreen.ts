@@ -2,7 +2,7 @@ import { logger } from "@utils/logger";
 import { useCallback, useEffect } from "react";
 import { useRtsViewStore } from "../stores/rtsViewStore";
 
-const log = logger.scope("hedgemony-fullscreen");
+const log = logger.scope("rts-fullscreen");
 
 export interface RtsFullscreen {
   fullscreen: boolean;

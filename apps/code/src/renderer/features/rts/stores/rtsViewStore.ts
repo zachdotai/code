@@ -1,10 +1,10 @@
 import { electronStorage } from "@utils/electronStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 
-const ZOOM_MIN = HEDGEMONY_CONFIG.camera.zoomMin;
-const ZOOM_MAX = HEDGEMONY_CONFIG.camera.zoomMax;
+const ZOOM_MIN = RTS_CONFIG.camera.zoomMin;
+const ZOOM_MAX = RTS_CONFIG.camera.zoomMax;
 
 function clampZoom(value: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
@@ -93,5 +93,5 @@ export const useRtsViewStore = create<RtsViewStore>()(
   ),
 );
 
-export const HEDGEMONY_ZOOM_MIN = ZOOM_MIN;
-export const HEDGEMONY_ZOOM_MAX = ZOOM_MAX;
+export const RTS_ZOOM_MIN = ZOOM_MIN;
+export const RTS_ZOOM_MAX = ZOOM_MAX;

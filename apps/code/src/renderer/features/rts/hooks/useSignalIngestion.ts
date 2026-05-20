@@ -44,7 +44,7 @@ export function useSignalIngestion(): void {
       {
         onData: (payload) => {
           playVoice("system:signal_arrived");
-          track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_INGESTED, {
+          track(ANALYTICS_EVENTS.RTS_HOGLET_INGESTED, {
             source: "signal",
           });
           log.info("Signal-backed hoglet ingested", payload);

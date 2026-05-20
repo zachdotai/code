@@ -2,9 +2,9 @@ import { Keyboard, X } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
-  HEDGEMONY_CONTEXT_LABELS,
-  HEDGEMONY_CONTEXT_ORDER,
-  HEDGEMONY_HOTKEYS,
+  RTS_CONTEXT_LABELS,
+  RTS_CONTEXT_ORDER,
+  RTS_HOTKEYS,
   type RtsHotkey,
   type RtsHotkeyContext,
 } from "../constants/hotkeys";
@@ -93,9 +93,9 @@ export function RtsHotkeyHelper({
     [open, onOpenChange],
   );
 
-  const grouped = HEDGEMONY_CONTEXT_ORDER.map((ctx) => ({
+  const grouped = RTS_CONTEXT_ORDER.map((ctx) => ({
     ctx,
-    items: HEDGEMONY_HOTKEYS.filter((h) => h.context === ctx),
+    items: RTS_HOTKEYS.filter((h) => h.context === ctx),
   })).filter((g) => g.items.length > 0);
 
   // Hide the floating launcher whenever something is selected — its position
@@ -109,8 +109,8 @@ export function RtsHotkeyHelper({
         <button
           type="button"
           onClick={() => onOpenChange(!open)}
-          title="Show hedgemony shortcuts (?)"
-          aria-label="Show hedgemony shortcuts"
+          title="Show RTS mode shortcuts (?)"
+          aria-label="Show RTS mode shortcuts"
           className="absolute top-3 right-3 z-10 flex h-8 items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2)/85 px-2 text-(--gray-11) text-[12px] backdrop-blur-sm transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
         >
           <Keyboard size={14} />
@@ -120,7 +120,7 @@ export function RtsHotkeyHelper({
       <AnimatePresence>
         {open && (
           <motion.div
-            key="hedgemony-hotkey-helper"
+            key="rts-hotkey-helper"
             initial={{ opacity: 0, y: -8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
@@ -159,7 +159,7 @@ export function RtsHotkeyHelper({
                     }`}
                   >
                     <h3 className="mb-1 font-mono text-(--accent-11) text-[9px] uppercase tracking-[0.18em]">
-                      {HEDGEMONY_CONTEXT_LABELS[group.ctx]}
+                      {RTS_CONTEXT_LABELS[group.ctx]}
                       {isActive && (
                         <span className="ml-1 text-(--accent-11) text-[9px] normal-case tracking-normal">
                           · active

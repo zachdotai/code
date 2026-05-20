@@ -5,7 +5,7 @@ import type { MotionValue } from "framer-motion";
 import { useCallback } from "react";
 import type { PrState, TaskStatus } from "../components/hogletStatus";
 import { FPS_BY_TASK_STATUS } from "../components/hogletStatus";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 import {
   selectHogletWalkPath,
   useHogletPositionStore,
@@ -73,7 +73,7 @@ export function useHogletVisuals(
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
       { taskId: hoglet.taskId, cloudPrUrl: null },
-      { staleTime: HEDGEMONY_CONFIG.polling.prStatusStaleMs },
+      { staleTime: RTS_CONFIG.polling.prStatusStaleMs },
     ),
   );
 
@@ -87,7 +87,7 @@ export function useHogletVisuals(
     hoglet.signalReportId !== null,
   );
   const fps = isWalking
-    ? HEDGEMONY_CONFIG.animation.fps.walk
+    ? RTS_CONFIG.animation.fps.walk
     : FPS_BY_TASK_STATUS[status ?? "not_started"];
   const cancelled = status === "cancelled";
 

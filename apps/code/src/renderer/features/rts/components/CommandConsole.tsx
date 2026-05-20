@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import type { CSSProperties, ReactNode } from "react";
 
 /**
- * Floating "command console" used by every hedgemony floating panel
+ * Floating "command console" used by every RTS mode floating panel
  * (Builder, Hedgehouse, Nest, Hoglet, Spawn). One wrapper handles the slide-in
  * animation, the chamfered Starcraft-style chrome, and the consistent
  * header/body/footer layout — so every panel reads as part of the same HUD.

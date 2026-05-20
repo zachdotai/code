@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 
 vi.mock("../runtime/SceneTicker", async () => {
   const mod = await vi.importActual<
@@ -15,7 +15,7 @@ import { useWalkTo } from "./useWalkTo";
 
 const fakeTicker = sceneTicker as unknown as FakeSceneTicker;
 
-const SPEED = HEDGEMONY_CONFIG.speeds.hoglet;
+const SPEED = RTS_CONFIG.speeds.hoglet;
 
 describe("useWalkTo", () => {
   it("starts at the initial target without walking", () => {

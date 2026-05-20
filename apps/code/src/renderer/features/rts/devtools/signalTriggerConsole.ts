@@ -17,12 +17,12 @@ type SignalStubCommand = (
 }>;
 type ListTasksCommand = () => Promise<Array<{ id: string; title: string }>>;
 
-const log = logger.scope("hedgemony-signal-trigger");
+const log = logger.scope("rts-signal-trigger");
 
 /**
  * Fires a uniquely fingerprinted exception via PostHog so a brand-new error
  * tracking issue is created, which the signal pipeline then surfaces as a
- * fresh inbox report. Useful for exercising the hedgemony signal ingestion
+ * fresh inbox report. Useful for exercising the RTS mode signal ingestion
  * path end-to-end in dev — the dev-only loosened filter in
  * `useSignalIngestion` picks the resulting report up within ~30s of the
  * report landing in `ready`/`in_progress`/`candidate` state.
@@ -41,7 +41,7 @@ export function registerRtsSignalTriggerConsoleCommand(): void {
 
   const command: SignalTriggerCommand = (label?: string) => {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const tag = label?.trim() || "hedgemony-signal-trigger";
+    const tag = label?.trim() || "rts-signal-trigger";
     const message = `${tag} ${stamp}`;
     const error = new Error(message);
     error.name = "RtsSignalTriggerError";

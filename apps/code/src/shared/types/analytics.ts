@@ -448,14 +448,14 @@ export const ANALYTICS_EVENTS = {
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 
   // Rts events
-  HEDGEMONY_HOGLET_SPAWNED: "hedgemony.hoglet_spawned",
-  HEDGEMONY_HOGLET_ADOPTED: "hedgemony.hoglet_adopted",
-  HEDGEMONY_HOGLET_RELEASED: "hedgemony.hoglet_released",
-  HEDGEMONY_HOGLET_INGESTED: "hedgemony.hoglet_ingested",
-  HEDGEMONY_HOGLET_DISMISSED: "hedgemony.hoglet_dismissed",
-  HEDGEMONY_HOGLET_RETIRED: "hedgemony.hoglet_retired",
-  HEDGEMONY_FEEDBACK_ROUTED: "hedgemony.feedback_routed",
-  HEDGEMONY_PR_GRAPH_REBASE: "hedgemony.pr_graph_rebase",
+  RTS_HOGLET_SPAWNED: "rts.hoglet_spawned",
+  RTS_HOGLET_ADOPTED: "rts.hoglet_adopted",
+  RTS_HOGLET_RELEASED: "rts.hoglet_released",
+  RTS_HOGLET_INGESTED: "rts.hoglet_ingested",
+  RTS_HOGLET_DISMISSED: "rts.hoglet_dismissed",
+  RTS_HOGLET_RETIRED: "rts.hoglet_retired",
+  RTS_FEEDBACK_ROUTED: "rts.feedback_routed",
+  RTS_PR_GRAPH_REBASE: "rts.pr_graph_rebase",
 } as const;
 
 export interface RtsHogletSpawnedProperties {
@@ -581,12 +581,12 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 
   // Rts events
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED]: RtsHogletSpawnedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED]: RtsHogletAdoptedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED]: RtsHogletReleasedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_INGESTED]: RtsHogletIngestedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_DISMISSED]: RtsHogletDismissedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RETIRED]: RtsHogletRetiredProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED]: RtsFeedbackRoutedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_PR_GRAPH_REBASE]: RtsPrGraphRebaseProperties;
+  [ANALYTICS_EVENTS.RTS_HOGLET_SPAWNED]: RtsHogletSpawnedProperties;
+  [ANALYTICS_EVENTS.RTS_HOGLET_ADOPTED]: RtsHogletAdoptedProperties;
+  [ANALYTICS_EVENTS.RTS_HOGLET_RELEASED]: RtsHogletReleasedProperties;
+  [ANALYTICS_EVENTS.RTS_HOGLET_INGESTED]: RtsHogletIngestedProperties;
+  [ANALYTICS_EVENTS.RTS_HOGLET_DISMISSED]: RtsHogletDismissedProperties;
+  [ANALYTICS_EVENTS.RTS_HOGLET_RETIRED]: RtsHogletRetiredProperties;
+  [ANALYTICS_EVENTS.RTS_FEEDBACK_ROUTED]: RtsFeedbackRoutedProperties;
+  [ANALYTICS_EVENTS.RTS_PR_GRAPH_REBASE]: RtsPrGraphRebaseProperties;
 };

@@ -1,6 +1,6 @@
 import { type MotionValue, useMotionValue } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 import { sceneTicker } from "../runtime/SceneTicker";
 import type { Vec2 } from "../utils/pathfinding";
 
@@ -17,7 +17,7 @@ interface WalkToResult {
  * walk through *before* settling at the target — used so hoglets visibly route
  * around nests instead of clipping through them.
  *
- * Each segment is interpolated linearly at `HEDGEMONY_CONFIG.speeds.hoglet`
+ * Each segment is interpolated linearly at `RTS_CONFIG.speeds.hoglet`
  * px/sec, driven by the shared SceneTicker so the simulation can be paused,
  * stepped, or replaced with a deterministic clock in tests.
  */
@@ -73,7 +73,7 @@ export function useWalkTo(
           segIndex++;
           continue;
         }
-        segDurationS = dist / HEDGEMONY_CONFIG.speeds.hoglet;
+        segDurationS = dist / RTS_CONFIG.speeds.hoglet;
         segElapsedS = 0;
         segActive = true;
         if (!started) {

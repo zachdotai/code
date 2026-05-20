@@ -28,7 +28,7 @@ interface MarkValidatedDialogProps {
  * Operator confirmation flow for the Active → Validated transition. Pre-fills
  * a summary from the existing definition-of-done + observed merged work; the
  * operator can edit before confirming. On confirm, calls
- * `hedgemony.nests.markValidated` and emits the resulting nest upstream.
+ * `rts.nests.markValidated` and emits the resulting nest upstream.
  */
 export function MarkValidatedDialog({
   open,

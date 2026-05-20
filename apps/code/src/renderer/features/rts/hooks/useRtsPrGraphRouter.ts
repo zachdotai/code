@@ -9,7 +9,7 @@ import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef } from "react";
 
-const log = logger.scope("hedgemony-pr-graph-router");
+const log = logger.scope("rts-pr-graph-router");
 
 /**
  * Slice 8 — receives `rebaseChild` events from `PrGraphService` and routes
@@ -52,7 +52,7 @@ export function useRtsPrGraphRouter() {
           edgeId: payload.edgeId,
           outcome: "injected",
         });
-        track(ANALYTICS_EVENTS.HEDGEMONY_PR_GRAPH_REBASE, {
+        track(ANALYTICS_EVENTS.RTS_PR_GRAPH_REBASE, {
           outcome: "injected",
         });
         return;
@@ -69,7 +69,7 @@ export function useRtsPrGraphRouter() {
           edgeId: payload.edgeId,
           outcome: "follow_up_spawned",
         });
-        track(ANALYTICS_EVENTS.HEDGEMONY_PR_GRAPH_REBASE, {
+        track(ANALYTICS_EVENTS.RTS_PR_GRAPH_REBASE, {
           outcome: "follow_up_spawned",
         });
         return;
@@ -79,7 +79,7 @@ export function useRtsPrGraphRouter() {
         edgeId: payload.edgeId,
         outcome: "failed",
       });
-      track(ANALYTICS_EVENTS.HEDGEMONY_PR_GRAPH_REBASE, {
+      track(ANALYTICS_EVENTS.RTS_PR_GRAPH_REBASE, {
         outcome: "failed",
       });
     } catch (error) {
@@ -94,7 +94,7 @@ export function useRtsPrGraphRouter() {
           outcome: "broken",
           note: error instanceof Error ? error.message : String(error),
         });
-        track(ANALYTICS_EVENTS.HEDGEMONY_PR_GRAPH_REBASE, {
+        track(ANALYTICS_EVENTS.RTS_PR_GRAPH_REBASE, {
           outcome: "broken",
         });
       } catch (recordError) {

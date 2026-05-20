@@ -5,7 +5,7 @@ import { Tooltip } from "@radix-ui/themes";
 import nestImage from "@renderer/assets/images/rts/nest.png";
 import { animate, motion, useMotionValue } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
-import { HEDGEMONY_CONFIG } from "../config";
+import { RTS_CONFIG } from "../config";
 import {
   selectNestHoglets,
   selectTaskSummary,
@@ -159,14 +159,14 @@ export function NestSprite({
     if (dx > 0) setFacing("right");
     else if (dx < 0) setFacing("left");
     setIsMoving(true);
-    const duration = dist / HEDGEMONY_CONFIG.speeds.nest;
+    const duration = dist / RTS_CONFIG.speeds.nest;
     const xControls = animate(motionX, nest.mapX, {
       duration,
-      ease: HEDGEMONY_CONFIG.camera.ease,
+      ease: RTS_CONFIG.camera.ease,
     });
     const yControls = animate(motionY, nest.mapY, {
       duration,
-      ease: HEDGEMONY_CONFIG.camera.ease,
+      ease: RTS_CONFIG.camera.ease,
       onComplete: () => setIsMoving(false),
     });
     return () => {
