@@ -16,10 +16,10 @@ let isInitialized = false;
 
 type PendingFlagListener = {
   callback: () => void;
-  unsubscribe?: () => void;
+  unsubscribe: (() => void) | null;
 };
 
-// Buffers subscribers that arrive before init (child useEffects run before parent's initializePostHog).
+// Subscribers added before initializePostHog runs.
 const pendingFlagListeners = new Set<PendingFlagListener>();
 
 export function initializePostHog() {
@@ -56,6 +56,7 @@ export function initializePostHog() {
   for (const listener of pendingFlagListeners) {
     listener.unsubscribe = posthog.onFeatureFlags(listener.callback);
   }
+  pendingFlagListeners.clear();
 }
 
 /**
@@ -228,11 +229,14 @@ export function onFeatureFlagsLoaded(callback: () => void): () => void {
     return posthog.onFeatureFlags(callback);
   }
 
-  const listener: PendingFlagListener = { callback };
+  const listener: PendingFlagListener = { callback, unsubscribe: null };
   pendingFlagListeners.add(listener);
   return () => {
-    pendingFlagListeners.delete(listener);
-    listener.unsubscribe?.();
+    if (listener.unsubscribe) {
+      listener.unsubscribe();
+    } else {
+      pendingFlagListeners.delete(listener);
+    }
   };
 }
 
