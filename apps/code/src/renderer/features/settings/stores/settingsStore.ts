@@ -112,8 +112,11 @@ interface SettingsStore {
 
   // Experimental / misc
   hedgehogMode: boolean;
+  /** Enables the threaded Plan view (Plan tab + `Open in Plan view` button). Off by default. */
+  planThreadsEnabled: boolean;
   mcpAppsDisabledServers: string[];
   setHedgehogMode: (enabled: boolean) => void;
+  setPlanThreadsEnabled: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
 
   // Onboarding hints
@@ -215,8 +218,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       // Experimental / misc
       hedgehogMode: false,
+      planThreadsEnabled: false,
       mcpAppsDisabledServers: [],
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
+      setPlanThreadsEnabled: (enabled) => set({ planThreadsEnabled: enabled }),
       setMcpAppsDisabledServers: (servers) =>
         set({ mcpAppsDisabledServers: servers }),
 
@@ -291,6 +296,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,
+        planThreadsEnabled: state.planThreadsEnabled,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
 
         // Onboarding hints

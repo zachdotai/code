@@ -80,6 +80,7 @@ export function GeneralSettings() {
     diffOpenMode,
     sendMessagesWith,
     hedgehogMode,
+    planThreadsEnabled,
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
@@ -90,6 +91,7 @@ export function GeneralSettings() {
     setDiffOpenMode,
     setSendMessagesWith,
     setHedgehogMode,
+    setPlanThreadsEnabled,
   } = useSettingsStore();
 
   // Sync toggle off if the user denied notification permission at the OS level
@@ -200,6 +202,18 @@ export function GeneralSettings() {
       setSendMessagesWith(value);
     },
     [sendMessagesWith, setSendMessagesWith],
+  );
+
+  const handlePlanThreadsEnabledChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "plan_threads_enabled",
+        new_value: checked,
+        old_value: planThreadsEnabled,
+      });
+      setPlanThreadsEnabled(checked);
+    },
+    [planThreadsEnabled, setPlanThreadsEnabled],
   );
 
   const handleHedgehogModeChange = useCallback(
@@ -467,6 +481,22 @@ export function GeneralSettings() {
         <Switch
           checked={preventSleepWhileRunning}
           onCheckedChange={handlePreventSleepChange}
+          size="1"
+        />
+      </SettingRow>
+
+      {/* Experimental */}
+      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Experimental
+      </Text>
+
+      <SettingRow
+        label="Plan threads"
+        description="Show a Plan tab on plan-mode runs where you can leave inline threaded comments on the agent's plan. Off by default while we iterate."
+      >
+        <Switch
+          checked={planThreadsEnabled}
+          onCheckedChange={handlePlanThreadsEnabledChange}
           size="1"
         />
       </SettingRow>
