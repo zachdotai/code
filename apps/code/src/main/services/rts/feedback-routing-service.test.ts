@@ -1338,7 +1338,7 @@ describe("FeedbackRoutingService", () => {
     const hoglets = createMockHogletService([hoglet]);
     const git = createMockGitService({});
     const cloudTasks = createMockCloudTaskClientWithCompletedRun({
-      head_branch: "hedgemony/task-1",
+      head_branch: "rts/task-1",
     });
     const service = new FeedbackRoutingService(
       hoglets,
@@ -1357,7 +1357,7 @@ describe("FeedbackRoutingService", () => {
       taskId: "task-1",
       runId: "run-1",
       terminalReason: "completed",
-      body: "Run completed on branch: hedgemony/task-1",
+      body: "Run completed on branch: rts/task-1",
     });
     expect(nestChat._messages).toHaveLength(1);
     expect(nests.emitMessageAppended).toHaveBeenCalledTimes(1);

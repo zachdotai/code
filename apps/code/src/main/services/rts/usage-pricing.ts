@@ -1,6 +1,6 @@
 import { logger } from "../../utils/logger";
 
-const log = logger.scope("hedgemony-usage-pricing");
+const log = logger.scope("rts-usage-pricing");
 
 export interface TokenCounts {
   inputTokens: number;

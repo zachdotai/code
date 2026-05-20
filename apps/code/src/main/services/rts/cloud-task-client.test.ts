@@ -194,7 +194,7 @@ describe("CloudTaskClient", () => {
   it("injects hedgehog prompts through the cloud run command endpoint", async () => {
     const auth = createAuthMock(42);
     (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      jsonResponse({ jsonrpc: "2.0", id: "hedgemony-1", result: {} }),
+      jsonResponse({ jsonrpc: "2.0", id: "rts-1", result: {} }),
     );
     const client = new CloudTaskClient(auth);
 
@@ -221,7 +221,7 @@ describe("CloudTaskClient", () => {
         content:
           "Message from the Rts hedgehog orchestrating this nest:\n\nStatus?",
       },
-      id: expect.stringMatching(/^hedgemony-hedgehog-/),
+      id: expect.stringMatching(/^rts-hedgehog-/),
     });
   });
 
@@ -250,7 +250,7 @@ describe("CloudTaskClient", () => {
     (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       jsonResponse({
         jsonrpc: "2.0",
-        id: "hedgemony-1",
+        id: "rts-1",
         error: { message: "Agent is busy" },
       }),
     );
@@ -279,7 +279,7 @@ describe("CloudTaskClient", () => {
     async (responseBody, expectedProcessed) => {
       const auth = createAuthMock(42);
       (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-        jsonResponse({ jsonrpc: "2.0", id: "hedgemony-1", ...responseBody }),
+        jsonResponse({ jsonrpc: "2.0", id: "rts-1", ...responseBody }),
       );
       const client = new CloudTaskClient(auth);
 

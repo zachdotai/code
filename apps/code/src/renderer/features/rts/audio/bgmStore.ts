@@ -24,7 +24,7 @@ export const useBgmStore = create<BgmStore>()(
         set({ volume: Math.max(0, Math.min(100, volume)) }),
     }),
     {
-      name: "hedgemony-bgm-storage",
+      name: "rts-bgm-storage",
       storage: electronStorage,
       partialize: (state) => ({ muted: state.muted, volume: state.volume }),
     },

@@ -505,7 +505,7 @@ describe("NestService", () => {
     expect(git.cloneRepository).toHaveBeenCalledWith(
       "https://github.com/Brooker-Fam/nexus-game.git",
       expect.stringContaining("Brooker-Fam/nexus-game"),
-      `hedgemony-bootstrap-${nest.id}`,
+      `rts-bootstrap-${nest.id}`,
     );
     expect(folders.addFolder).toHaveBeenCalledWith(
       expect.stringContaining("Brooker-Fam/nexus-game"),

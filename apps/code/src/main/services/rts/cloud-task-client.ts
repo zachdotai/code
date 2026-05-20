@@ -22,7 +22,7 @@ import {
   repoSlugSchema,
 } from "./schemas";
 
-const log = logger.scope("hedgemony-cloud-task-client");
+const log = logger.scope("rts-cloud-task-client");
 
 const REPO_INTEGRATION_CACHE_TTL_MS = 5 * 60 * 1000;
 

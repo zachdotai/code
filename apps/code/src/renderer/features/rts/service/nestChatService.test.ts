@@ -5,7 +5,7 @@ const mockLogError = vi.hoisted(() => vi.fn());
 
 vi.mock("@renderer/trpc/client", () => ({
   trpcClient: {
-    hedgemony: {
+    rts: {
       nestChat: {
         list: {
           query: mockListNestChat,

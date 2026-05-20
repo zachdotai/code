@@ -8,7 +8,7 @@ import {
   scratchpadStateSchema,
 } from "./schemas";
 
-const schemaLog = logger.scope("hedgemony-schemas");
+const schemaLog = logger.scope("rts-schemas");
 
 export interface HedgehogPersistedState {
   scratchpad: z.infer<typeof scratchpadEntrySchema>[];

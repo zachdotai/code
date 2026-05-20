@@ -314,7 +314,7 @@ export class NestService extends TypedEventEmitter<RtsEvents> {
                 .cloneRepository(
                   repoUrl,
                   targetPath,
-                  `hedgemony-bootstrap-${nest.id}`,
+                  `rts-bootstrap-${nest.id}`,
                 )
                 .then(() => undefined),
             registerFolder: (folderPath, remoteUrl) =>

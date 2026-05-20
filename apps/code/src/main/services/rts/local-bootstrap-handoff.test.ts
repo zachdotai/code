@@ -39,7 +39,7 @@ function makeRepository(overrides: Partial<Repository> = {}): Repository {
 
 describe("buildLocalBootstrapHandoff", () => {
   beforeEach(() => {
-    worktreeLocation = mkdtempSync(join(tmpdir(), "hedgemony-bootstrap-"));
+    worktreeLocation = mkdtempSync(join(tmpdir(), "rts-bootstrap-"));
   });
 
   afterEach(() => {

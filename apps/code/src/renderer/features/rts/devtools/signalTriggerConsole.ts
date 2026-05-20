@@ -45,7 +45,7 @@ export function registerRtsSignalTriggerConsoleCommand(): void {
     const message = `${tag} ${stamp}`;
     const error = new Error(message);
     error.name = "RtsSignalTriggerError";
-    captureException(error, { hedgemony_signal_trigger: true, tag, stamp });
+    captureException(error, { rts_signal_trigger: true, tag, stamp });
     log.info("Fired test exception for signal ingestion", { message });
     return message;
   };

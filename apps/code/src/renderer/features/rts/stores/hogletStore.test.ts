@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@renderer/trpc/client", () => ({
   trpcClient: {
-    hedgemony: {
+    rts: {
       hoglets: {
         list: { query: vi.fn() },
         watch: { subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })) },
