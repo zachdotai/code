@@ -61,52 +61,46 @@ function extractSource(node: MdNode, source: string): string | null {
   return source.slice(start, end);
 }
 
-interface MdDefinition extends MdNode {
-  type: "definition";
-  label?: string;
-  url?: string;
-}
-
 /**
- * Parses a blockquote node as a plan thread if it contains only `[H]`/`[A]`/
- * `[resolved]` lines. Returns `null` for blockquotes that are regular
- * markdown quotes.
+ * Parses a blockquote node as a plan thread if every non-blank line in
+ * its source matches the `[H]:` / `[A]:` / `[resolved]` pattern.
+ * Returns `null` for blockquotes that are regular markdown quotes.
  *
- * Why this is fiddly: CommonMark parses `[H]: short_value` as a link
- * reference *definition* node, not a paragraph. That happens whenever the
- * "url" portion has no spaces. Multi-word messages stay as paragraph text.
- * So a blockquote thread is a mix of `definition` and `paragraph` children,
- * and we accept either.
+ * Why we parse the source slice and ignore mdast children: CommonMark
+ * treats `[H]: short_value` as a link reference *definition*, and once
+ * such a definition exists in the document, every subsequent `[H]` is
+ * parsed as a `linkReference` node that consumes the brackets. The
+ * mdast tree for a multi-line thread thus ends up as a mix of
+ * `definition`, `paragraph`, `linkReference`, and `text` nodes — and
+ * reconstructing the original line text from those children mangles it.
+ * The verbatim source slice (between the blockquote's offsets) is the
+ * authoritative answer.
  */
-function parseThreadBlockquote(node: MdNode): ParsedThread | null {
+function parseThreadBlockquote(
+  node: MdNode,
+  source: string,
+): ParsedThread | null {
   if (node.type !== "blockquote") return null;
-  if (!node.children || node.children.length === 0) return null;
+  const blockSource = extractSource(node, source);
+  if (blockSource === null) return null;
 
   const messages: ParsedThreadMessage[] = [];
   let resolved = false;
 
-  for (const child of node.children) {
-    if (child.type === "definition") {
-      const def = child as MdDefinition;
-      const tag = def.label;
-      if (tag !== "H" && tag !== "A") return null;
-      const message = (def.url ?? "").trim();
-      messages.push({ speaker: tag, text: message });
-      continue;
-    }
-
-    if (child.type !== "paragraph") return null;
-    const lines = getNodeText(child).split("\n");
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const match = THREAD_LINE_RE.exec(line);
-      if (!match) return null;
-      const tag = match[1] as "H" | "A" | "resolved";
-      if (tag === "resolved") {
-        resolved = true;
-      } else {
-        messages.push({ speaker: tag, text: (match[2] ?? "").trim() });
-      }
+  for (const rawLine of blockSource.split("\n")) {
+    // Strip the blockquote marker (`>` plus optional single space) so the
+    // line lines up with the THREAD_LINE_RE shape. Lazy-continuation
+    // lines (no leading `>`) pass through unchanged and won't match —
+    // they correctly disqualify the blockquote as a thread.
+    const stripped = rawLine.replace(/^>\s?/, "");
+    if (!stripped.trim()) continue;
+    const match = THREAD_LINE_RE.exec(stripped);
+    if (!match) return null;
+    const tag = match[1] as "H" | "A" | "resolved";
+    if (tag === "resolved") {
+      resolved = true;
+    } else {
+      messages.push({ speaker: tag, text: (match[2] ?? "").trim() });
     }
   }
 
@@ -204,7 +198,7 @@ export const remarkPlanThreads: Plugin<[], Root> = () => {
     for (let i = 0; i < children.length; i += 1) {
       const node = children[i];
 
-      const thread = parseThreadBlockquote(node);
+      const thread = parseThreadBlockquote(node, source);
       if (thread) {
         // Find the nearest preceding non-thread sibling as the anchor.
         let anchorIndex = i - 1;

@@ -132,6 +132,53 @@ describe("remarkPlanThreads", () => {
     expect(children.find((c) => c.type === "blockquote")).toBeDefined();
   });
 
+  it("parses a thread even when CommonMark sees mixed definition + linkReference nodes", () => {
+    // The bug: once `[H]: Why?` parses as a link reference definition,
+    // any subsequent `[H]` in the file (including inside the same
+    // blockquote) becomes a `linkReference` node that "consumes" the
+    // brackets, leaving raw text like `H: Got it.` after reconstruction.
+    // The parser must work directly off the source slice to survive
+    // this — not off the mdast children.
+    const tree = parse(
+      [
+        "Anchor.",
+        "",
+        "> [H]: Why?",
+        "> [A]: Because Z.",
+        "> [H]: Got it.",
+      ].join("\n"),
+    );
+    const threadNodes = getTopChildren(tree).filter(
+      (c) => c.type === "planThread",
+    );
+    expect(threadNodes).toHaveLength(1);
+    const props = threadNodes[0].data?.hProperties;
+    expect(JSON.parse(props?.["data-messages"] ?? "[]")).toEqual([
+      { speaker: "H", text: "Why?" },
+      { speaker: "A", text: "Because Z." },
+      { speaker: "H", text: "Got it." },
+    ]);
+  });
+
+  it("parses a thread of two single-word messages (consecutive definitions)", () => {
+    // Each line parses as its own `definition` node; the parser must
+    // accept both definition children AND survive the source-based
+    // reconstruction.
+    const tree = parse(
+      ["Anchor.", "", "> [H]: question", "> [H]: followup"].join("\n"),
+    );
+    const threadNodes = getTopChildren(tree).filter(
+      (c) => c.type === "planThread",
+    );
+    expect(threadNodes).toHaveLength(1);
+    expect(
+      JSON.parse(threadNodes[0].data?.hProperties?.["data-messages"] ?? "[]"),
+    ).toEqual([
+      { speaker: "H", text: "question" },
+      { speaker: "H", text: "followup" },
+    ]);
+  });
+
   it("does NOT annotate `code` or `table` blocks (UI surfaces no gutter for them)", () => {
     // mdast-util-to-hast moves a fenced `code` node's hProperties onto the
     // inner `<code>` element (wrapped in `<pre>`), and the base `table`
