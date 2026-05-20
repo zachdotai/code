@@ -9,6 +9,7 @@ import {
   getLeafPanel,
   parseTabId,
 } from "@features/panels/store/panelStoreHelpers";
+import { usePlanTab } from "@features/plans/hooks/usePlanTab";
 import { MIN_CHAT_WIDTH } from "@features/sessions/constants";
 import { getSessionService } from "@features/sessions/service/service";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
@@ -90,6 +91,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   });
 
   useFileWatcher(effectiveRepoPath ?? null, taskId);
+  usePlanTab(taskId);
 
   useBlurOnEscape();
   useWorkspaceEvents(taskId);

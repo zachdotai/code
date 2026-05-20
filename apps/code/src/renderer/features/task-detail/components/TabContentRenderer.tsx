@@ -1,5 +1,6 @@
 import { CodeEditorPanel } from "@features/code-editor/components/CodeEditorPanel";
 import type { Tab } from "@features/panels/store/panelTypes";
+import { PlanView } from "@features/plans/components/PlanView";
 import { ActionPanel } from "@features/task-detail/components/ActionPanel";
 import { ChangesPanel } from "@features/task-detail/components/ChangesPanel";
 import { FileTreePanel } from "@features/task-detail/components/FileTreePanel";
@@ -49,6 +50,9 @@ export function TabContentRenderer({
         <ReviewPage task={task} />
       );
     }
+
+    case "plan":
+      return <PlanView taskId={taskId} filePath={data.filePath} />;
 
     case "action":
       return (

@@ -104,6 +104,7 @@ export interface PanelLayoutStore {
       label: string;
     },
   ) => void;
+  ensurePlanTab: (taskId: string, filePath: string) => void;
   clearAllLayouts: () => void;
 }
 
@@ -889,6 +890,75 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
                   content: {
                     ...panel.content,
                     tabs: [...panel.content.tabs, newTab],
+                  },
+                };
+              },
+            );
+
+            return { panelTree: updatedTree };
+          }),
+        );
+      },
+
+      ensurePlanTab: (taskId, filePath) => {
+        set((state) =>
+          updateTaskLayout(state, taskId, (layout) => {
+            const existingTab = findTabInTree(
+              layout.panelTree,
+              DEFAULT_TAB_IDS.PLAN,
+            );
+
+            if (existingTab) {
+              // Tab exists — refresh the filePath (the agent may have started
+              // a fresh plan file in this session) and activate it.
+              const updatedTree = updateTreeNode(
+                layout.panelTree,
+                existingTab.panelId,
+                (panel) => {
+                  if (panel.type !== "leaf") return panel;
+                  return {
+                    ...panel,
+                    content: {
+                      ...panel.content,
+                      tabs: panel.content.tabs.map((tab) =>
+                        tab.id === DEFAULT_TAB_IDS.PLAN
+                          ? { ...tab, data: { type: "plan", filePath } }
+                          : tab,
+                      ),
+                      activeTabId: DEFAULT_TAB_IDS.PLAN,
+                    },
+                  };
+                },
+              );
+              return { panelTree: updatedTree };
+            }
+
+            const targetPanelId =
+              layout.focusedPanelId ?? DEFAULT_PANEL_IDS.MAIN_PANEL;
+            const targetPanel =
+              getLeafPanel(layout.panelTree, targetPanelId) ??
+              getLeafPanel(layout.panelTree, DEFAULT_PANEL_IDS.MAIN_PANEL);
+            if (!targetPanel) return {};
+
+            const updatedTree = updateTreeNode(
+              layout.panelTree,
+              targetPanel.id,
+              (panel) => {
+                if (panel.type !== "leaf") return panel;
+                const newTab: Tab = {
+                  id: DEFAULT_TAB_IDS.PLAN,
+                  label: "Plan",
+                  data: { type: "plan", filePath },
+                  component: null,
+                  draggable: true,
+                  closeable: true,
+                };
+                return {
+                  ...panel,
+                  content: {
+                    ...panel.content,
+                    tabs: [...panel.content.tabs, newTab],
+                    activeTabId: DEFAULT_TAB_IDS.PLAN,
                   },
                 };
               },

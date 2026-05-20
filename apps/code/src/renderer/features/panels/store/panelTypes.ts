@@ -32,6 +32,10 @@ export type TabData =
       type: "review";
     }
   | {
+      type: "plan";
+      filePath: string;
+    }
+  | {
       type: "other";
     };
 

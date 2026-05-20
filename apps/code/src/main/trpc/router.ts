@@ -25,6 +25,7 @@ import { mcpCallbackRouter } from "./routers/mcp-callback";
 import { notificationRouter } from "./routers/notification";
 import { oauthRouter } from "./routers/oauth";
 import { osRouter } from "./routers/os";
+import { plansRouter } from "./routers/plans";
 import { processTrackingRouter } from "./routers/process-tracking";
 import { provisioningRouter } from "./routers/provisioning";
 import { secureStoreRouter } from "./routers/secure-store";
@@ -65,6 +66,7 @@ export const trpcRouter = router({
   oauth: oauthRouter,
   logs: logsRouter,
   os: osRouter,
+  plans: plansRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,
   sleep: sleepRouter,

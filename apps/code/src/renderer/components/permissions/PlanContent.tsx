@@ -1,5 +1,15 @@
-import { ArrowsIn, ArrowsOut, ListChecks, X } from "@phosphor-icons/react";
-import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
+import { DEFAULT_TAB_IDS } from "@features/panels/constants/panelConstants";
+import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
+import { findTabInTree } from "@features/panels/store/panelTree";
+import { useTaskStore } from "@features/tasks/stores/taskStore";
+import {
+  ArrowsIn,
+  ArrowsOut,
+  ListChecks,
+  SidebarSimple,
+  X,
+} from "@phosphor-icons/react";
+import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
@@ -12,9 +22,26 @@ interface PlanContentProps {
   plan: string;
 }
 
+function openPlanTab(taskId: string): void {
+  const { taskLayouts, setActiveTab } = usePanelLayoutStore.getState();
+  const layout = taskLayouts[taskId];
+  if (!layout) return;
+  const result = findTabInTree(layout.panelTree, DEFAULT_TAB_IDS.PLAN);
+  if (result) {
+    setActiveTab(taskId, result.panelId, DEFAULT_TAB_IDS.PLAN);
+  }
+}
+
 export function PlanContent({ id, plan }: PlanContentProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const taskId = useTaskStore((s) => s.selectedTaskId);
+  const hasPlanTab = usePanelLayoutStore((state) => {
+    if (!taskId) return false;
+    const layout = state.taskLayouts[taskId];
+    if (!layout) return false;
+    return !!findTabInTree(layout.panelTree, DEFAULT_TAB_IDS.PLAN);
+  });
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -109,16 +136,30 @@ export function PlanContent({ id, plan }: PlanContentProps) {
       ref={scrollRef}
       className="relative max-h-[50vh] max-w-[750px] overflow-y-auto rounded-lg border-2 border-blue-6 bg-blue-2 p-4"
     >
-      <IconButton
-        size="1"
-        variant="ghost"
-        color="gray"
-        className="sticky top-0 z-10 float-right"
-        onClick={() => setIsFullscreen(true)}
-        title="Expand to fullscreen"
-      >
-        <ArrowsOut size={12} />
-      </IconButton>
+      <Flex gap="1" align="center" className="sticky top-0 z-10 float-right">
+        {taskId && hasPlanTab && (
+          <Tooltip content="Open in Plan view">
+            <IconButton
+              size="1"
+              variant="ghost"
+              color="gray"
+              onClick={() => openPlanTab(taskId)}
+              title="Open in Plan view"
+            >
+              <SidebarSimple size={12} />
+            </IconButton>
+          </Tooltip>
+        )}
+        <IconButton
+          size="1"
+          variant="ghost"
+          color="gray"
+          onClick={() => setIsFullscreen(true)}
+          title="Expand to fullscreen"
+        >
+          <ArrowsOut size={12} />
+        </IconButton>
+      </Flex>
 
       <Box className="plan-markdown text-blue-12">{markdown}</Box>
     </Box>
