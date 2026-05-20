@@ -1,12 +1,12 @@
 import { and, asc, eq } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { hedgemonyOperatorDecisions } from "../schema";
+import { rtsOperatorDecisions } from "../schema";
 import type { DatabaseService } from "../service";
 
-export type OperatorDecision = typeof hedgemonyOperatorDecisions.$inferSelect;
+export type OperatorDecision = typeof rtsOperatorDecisions.$inferSelect;
 export type NewOperatorDecision =
-  typeof hedgemonyOperatorDecisions.$inferInsert;
+  typeof rtsOperatorDecisions.$inferInsert;
 
 export type OperatorDecisionKind = "suppress_signal_report" | "revive_hoglet";
 
@@ -28,9 +28,9 @@ const bySubject = (
   subjectKey: string,
 ) =>
   and(
-    eq(hedgemonyOperatorDecisions.nestId, nestId),
-    eq(hedgemonyOperatorDecisions.kind, kind),
-    eq(hedgemonyOperatorDecisions.subjectKey, subjectKey),
+    eq(rtsOperatorDecisions.nestId, nestId),
+    eq(rtsOperatorDecisions.kind, kind),
+    eq(rtsOperatorDecisions.subjectKey, subjectKey),
   );
 
 @injectable()
@@ -53,13 +53,13 @@ export class OperatorDecisionRepository {
     const existing =
       this.db
         .select()
-        .from(hedgemonyOperatorDecisions)
+        .from(rtsOperatorDecisions)
         .where(bySubject(nestId, kind, subjectKey))
         .get() ?? null;
     if (existing) {
       const updatedAt = new Date().toISOString();
       this.db
-        .update(hedgemonyOperatorDecisions)
+        .update(rtsOperatorDecisions)
         .set({ reason, updatedAt })
         .where(bySubject(nestId, kind, subjectKey))
         .run();
@@ -73,7 +73,7 @@ export class OperatorDecisionRepository {
       reason,
     };
     const returned = this.db
-      .insert(hedgemonyOperatorDecisions)
+      .insert(rtsOperatorDecisions)
       .values(row)
       .returning()
       .all();
@@ -108,9 +108,9 @@ export class OperatorDecisionRepository {
   listForNest(nestId: string): OperatorDecision[] {
     return this.db
       .select()
-      .from(hedgemonyOperatorDecisions)
-      .where(eq(hedgemonyOperatorDecisions.nestId, nestId))
-      .orderBy(asc(hedgemonyOperatorDecisions.createdAt))
+      .from(rtsOperatorDecisions)
+      .where(eq(rtsOperatorDecisions.nestId, nestId))
+      .orderBy(asc(rtsOperatorDecisions.createdAt))
       .all();
   }
 
@@ -121,7 +121,7 @@ export class OperatorDecisionRepository {
     return (
       this.db
         .select()
-        .from(hedgemonyOperatorDecisions)
+        .from(rtsOperatorDecisions)
         .where(bySubject(nestId, "suppress_signal_report", signalReportId))
         .get() ?? null
     );
@@ -131,7 +131,7 @@ export class OperatorDecisionRepository {
     return (
       this.db
         .select()
-        .from(hedgemonyOperatorDecisions)
+        .from(rtsOperatorDecisions)
         .where(bySubject(nestId, "revive_hoglet", hogletKey))
         .get() ?? null
     );

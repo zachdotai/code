@@ -1090,7 +1090,7 @@ button,
 
 /* Radix Dialog/AlertDialog portals to document.body and ships the overlay
    with no z-index (effectively auto). Anything in the page rendered at a
-   higher z-index — notably Hedgemony's z-1000 fullscreen overlay —
+   higher z-index — notably Rts's z-1000 fullscreen overlay —
    silently paints over modals, leaving them mounted-but-invisible. Bump
    the overlay above any in-app full-screen layer so modals always win. */
 .rt-BaseDialogOverlay {

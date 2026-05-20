@@ -46,7 +46,7 @@ export function FinOpsPanel({ onClose }: FinOpsPanelProps) {
       <CommandConsole.Header
         eyebrow="FinOps"
         title="Money Hedgehog"
-        subtitle="Raw token spend across Hedgemony · demo-only"
+        subtitle="Raw token spend across Rts · demo-only"
         onClose={onClose}
       />
       <CommandConsole.Body scroll>

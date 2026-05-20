@@ -19,8 +19,8 @@ import type { PrGraphService } from "./pr-graph-service";
 import {
   type AdoptHogletInput,
   type DismissSignalHogletInput,
-  HedgemonyEvent,
-  type HedgemonyEvents,
+  RtsEvent,
+  type RtsEvents,
   type Hoglet,
   type HogletBucket,
   type HogletWatchEvent,
@@ -100,7 +100,7 @@ class HogletSpawnSaga<TOutput> extends Saga<
       rollback: async (createdRun) => {
         await this.cloudTasks.updateTaskRun(task.id, createdRun.id, {
           status: "cancelled",
-          errorMessage: "Cancelled after Hedgemony spawn failed",
+          errorMessage: "Cancelled after Rts spawn failed",
         });
       },
     });
@@ -120,7 +120,7 @@ class HogletSpawnSaga<TOutput> extends Saga<
       rollback: async () => {
         await this.cloudTasks.updateTaskRun(task.id, run.id, {
           status: "cancelled",
-          errorMessage: "Cancelled after Hedgemony spawn failed",
+          errorMessage: "Cancelled after Rts spawn failed",
         });
       },
     });
@@ -145,7 +145,7 @@ function bucketForHoglet(h: Hoglet): HogletBucket {
  * is intentionally not coupled here — observers narrate creation later.
  */
 @injectable()
-export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
+export class HogletService extends TypedEventEmitter<RtsEvents> {
   constructor(
     @inject(MAIN_TOKENS.HogletRepository)
     private readonly hoglets: HogletRepository,
@@ -455,7 +455,7 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
    * caller (renderer) is responsible for the upstream "suppress" call to
    * the Inbox signals API; this service intentionally doesn't reach across
    * that boundary. Audit log capture for the underlying signal happens via
-   * the Inbox lifecycle, not Hedgemony.
+   * the Inbox lifecycle, not Rts.
    */
   dismissSignal(input: DismissSignalHogletInput): void {
     const existing = this.hoglets.findById(input.hogletId);
@@ -711,7 +711,7 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
   }
 
   private emitChange(bucket: HogletBucket, event: HogletWatchEvent): void {
-    this.emit(HedgemonyEvent.HogletChanged, { bucket, event });
+    this.emit(RtsEvent.HogletChanged, { bucket, event });
   }
 }
 

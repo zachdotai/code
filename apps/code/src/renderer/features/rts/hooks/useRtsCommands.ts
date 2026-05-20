@@ -33,7 +33,7 @@ import { collectHogletWorldPositions } from "../utils/hogletPositions";
 import { applyHogletVisualPositions } from "../utils/hogletVisualPositions";
 import type { Vec2 } from "../utils/pathfinding";
 
-export interface UseHedgemonyCommandsOptions {
+export interface UseRtsCommandsOptions {
   nests: Nest[];
   selection: Selection;
   setMode: (next: ViewMode) => void;
@@ -42,7 +42,7 @@ export interface UseHedgemonyCommandsOptions {
   surfaceRef: RefObject<MapSurfaceHandle | null>;
 }
 
-export interface HedgemonyCommands {
+export interface RtsCommands {
   selectBuilder: () => void;
   selectHedgehouse: () => void;
   cycleNest: (direction: 1 | -1) => void;
@@ -77,7 +77,7 @@ export function useRtsCommands({
   setSelection,
   builderPosOrFallback,
   surfaceRef,
-}: UseHedgemonyCommandsOptions): HedgemonyCommands {
+}: UseRtsCommandsOptions): RtsCommands {
   const voiceGenderForHoglet = useCallback((hogletId: string) => {
     const hoglet = selectHogletById(hogletId)(useHogletStore.getState());
     return genderForName(hoglet?.name ?? null);

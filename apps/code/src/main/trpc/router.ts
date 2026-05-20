@@ -17,7 +17,7 @@ import { fsRouter } from "./routers/fs";
 import { gitRouter } from "./routers/git";
 import { githubIntegrationRouter } from "./routers/github-integration";
 import { handoffRouter } from "./routers/handoff";
-import { hedgemonyRouter } from "./routers/rts";
+import { rtsRouter } from "./routers/rts";
 import { linearIntegrationRouter } from "./routers/linear-integration.js";
 import { llmGatewayRouter } from "./routers/llm-gateway";
 import { logsRouter } from "./routers/logs";
@@ -58,7 +58,7 @@ export const trpcRouter = router({
   git: gitRouter,
   githubIntegration: githubIntegrationRouter,
   handoff: handoffRouter,
-  hedgemony: hedgemonyRouter,
+  hedgemony: rtsRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
   mcpApps: mcpAppsRouter,

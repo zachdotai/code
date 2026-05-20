@@ -103,8 +103,8 @@ export function CommandCenterToolbar({
   const viewMode = useCommandCenterStore((s) => s.viewMode);
   const setViewMode = useCommandCenterStore((s) => s.setViewMode);
 
-  const hedgemonyEnabled = useFeatureFlag(RTS_FLAG, import.meta.env.DEV);
-  const effectiveViewMode: CommandCenterViewMode = hedgemonyEnabled
+  const rtsEnabled = useFeatureFlag(RTS_FLAG, import.meta.env.DEV);
+  const effectiveViewMode: CommandCenterViewMode = rtsEnabled
     ? viewMode
     : "grid";
 
@@ -132,7 +132,7 @@ export function CommandCenterToolbar({
       py="2"
       className="no-drag shrink-0 border-gray-6 border-b"
     >
-      {hedgemonyEnabled && (
+      {rtsEnabled && (
         <ViewModeToggle value={effectiveViewMode} onChange={setViewMode} />
       )}
 

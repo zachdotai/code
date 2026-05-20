@@ -7,7 +7,7 @@ import {
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
-import { useHedgemonySelectionStore } from "@features/rts/stores/rtsSelectionStore";
+import { useRtsSelectionStore } from "@features/rts/stores/rtsSelectionStore";
 import { useHogletStore } from "@features/rts/stores/hogletStore";
 import { getSessionService } from "@features/sessions/service/service";
 import { useSetupStore } from "@features/setup/stores/setupStore";
@@ -102,10 +102,10 @@ function SidebarMenuComponent() {
     (taskId) => taskId != null && taskMap.has(taskId),
   ).length;
 
-  // Tasks whose hoglet is selected on the Hedgemony map. These get the same
+  // Tasks whose hoglet is selected on the Rts map. These get the same
   // highlight as the currently navigated task so the player can see at a
   // glance which sidebar row corresponds to the unit they just picked.
-  const selectedHogletIds = useHedgemonySelectionStore(
+  const selectedHogletIds = useRtsSelectionStore(
     (s) => s.selectedHogletIds,
   );
   const hogletBuckets = useHogletStore((s) => s.byBucket);

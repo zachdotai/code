@@ -234,7 +234,7 @@ export const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   navigation: "Navigation",
   panels: "Panels & Tabs",
   editor: "Editor",
-  hedgemony: "Hedgemony",
+  hedgemony: "Rts",
 };
 
 export function getShortcutsByCategory(): Record<

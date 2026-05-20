@@ -1,11 +1,11 @@
 import { and, desc, eq } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { hedgemonyFeedbackEvents } from "../schema";
+import { rtsFeedbackEvents } from "../schema";
 import type { DatabaseService } from "../service";
 
-export type FeedbackEvent = typeof hedgemonyFeedbackEvents.$inferSelect;
-export type NewFeedbackEvent = typeof hedgemonyFeedbackEvents.$inferInsert;
+export type FeedbackEvent = typeof rtsFeedbackEvents.$inferSelect;
+export type NewFeedbackEvent = typeof rtsFeedbackEvents.$inferInsert;
 
 export type FeedbackEventSource = "pr_review" | "ci" | "issue" | "hedgehog";
 export type FeedbackEventOutcome =
@@ -35,9 +35,9 @@ export interface DedupeKey {
 
 const byDedupeKey = (key: DedupeKey) =>
   and(
-    eq(hedgemonyFeedbackEvents.hogletTaskId, key.hogletTaskId),
-    eq(hedgemonyFeedbackEvents.source, key.source),
-    eq(hedgemonyFeedbackEvents.payloadHash, key.payloadHash),
+    eq(rtsFeedbackEvents.hogletTaskId, key.hogletTaskId),
+    eq(rtsFeedbackEvents.source, key.source),
+    eq(rtsFeedbackEvents.payloadHash, key.payloadHash),
   );
 
 @injectable()
@@ -55,7 +55,7 @@ export class FeedbackEventRepository {
     return (
       this.db
         .select()
-        .from(hedgemonyFeedbackEvents)
+        .from(rtsFeedbackEvents)
         .where(byDedupeKey(key))
         .get() ?? null
     );
@@ -77,7 +77,7 @@ export class FeedbackEventRepository {
     });
     if (existing) {
       this.db
-        .update(hedgemonyFeedbackEvents)
+        .update(rtsFeedbackEvents)
         .set({
           routedOutcome: data.routedOutcome,
           nestId: data.nestId,
@@ -139,13 +139,13 @@ export class FeedbackEventRepository {
       injectedAt,
     };
     const returned = this.db
-      .insert(hedgemonyFeedbackEvents)
+      .insert(rtsFeedbackEvents)
       .values(row)
       .onConflictDoNothing({
         target: [
-          hedgemonyFeedbackEvents.hogletTaskId,
-          hedgemonyFeedbackEvents.source,
-          hedgemonyFeedbackEvents.payloadHash,
+          rtsFeedbackEvents.hogletTaskId,
+          rtsFeedbackEvents.source,
+          rtsFeedbackEvents.payloadHash,
         ],
       })
       .returning()
@@ -169,9 +169,9 @@ export class FeedbackEventRepository {
   listForNest(nestId: string, limit: number): FeedbackEvent[] {
     return this.db
       .select()
-      .from(hedgemonyFeedbackEvents)
-      .where(eq(hedgemonyFeedbackEvents.nestId, nestId))
-      .orderBy(desc(hedgemonyFeedbackEvents.injectedAt))
+      .from(rtsFeedbackEvents)
+      .where(eq(rtsFeedbackEvents.nestId, nestId))
+      .orderBy(desc(rtsFeedbackEvents.injectedAt))
       .limit(limit)
       .all();
   }

@@ -14,7 +14,7 @@ import { BgmPlayer } from "@features/rts/audio/BgmPlayer";
 import { SfxBridge } from "@features/rts/audio/SfxBridge";
 import { useRtsPrGraphRouter } from "@features/rts/hooks/useRtsPrGraphRouter";
 import { useRtsPromptRouter } from "@features/rts/hooks/useRtsPromptRouter";
-import { useHedgemonyViewStore } from "@features/rts/stores/rtsViewStore";
+import { useRtsViewStore } from "@features/rts/stores/rtsViewStore";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
@@ -162,18 +162,18 @@ export function MainLayout() {
     toggleCommandMenu();
   }, [toggleCommandMenu]);
 
-  // When the Hedgemony map enters fullscreen, hide all chrome (header, left
+  // When the Rts map enters fullscreen, hide all chrome (header, left
   // sidebar, bottom space-switcher). The header's `app-region: drag` would
   // otherwise capture pointer events at the top edge of the screen — even
   // with the map portal at z-[1000] over it — and the sidebar would visually
   // bleed under semi-transparent map UI.
-  const hedgemonyFullscreen = useHedgemonyViewStore((s) => s.fullscreen);
+  const rtsFullscreen = useRtsViewStore((s) => s.fullscreen);
 
   return (
     <Flex direction="column" height="100vh">
-      {!hedgemonyFullscreen && <HeaderRow />}
+      {!rtsFullscreen && <HeaderRow />}
       <Flex flexGrow="1" overflow="hidden">
-        {!hedgemonyFullscreen && <MainSidebar />}
+        {!rtsFullscreen && <MainSidebar />}
 
         <Box flexGrow="1" overflow="hidden">
           {view.type === "task-input" && (
@@ -208,7 +208,7 @@ export function MainLayout() {
         </Box>
       </Flex>
 
-      {!hedgemonyFullscreen && (
+      {!rtsFullscreen && (
         <SpaceSwitcher
           tasks={visualTaskOrder}
           activeTaskId={activeTaskId}

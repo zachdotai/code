@@ -219,7 +219,7 @@ describe("CloudTaskClient", () => {
       method: "user_message",
       params: {
         content:
-          "Message from the Hedgemony hedgehog orchestrating this nest:\n\nStatus?",
+          "Message from the Rts hedgehog orchestrating this nest:\n\nStatus?",
       },
       id: expect.stringMatching(/^hedgemony-hedgehog-/),
     });

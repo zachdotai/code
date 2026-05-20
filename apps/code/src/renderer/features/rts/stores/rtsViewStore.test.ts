@@ -11,12 +11,12 @@ vi.mock("@utils/electronStorage", () => ({
 import {
   HEDGEMONY_ZOOM_MAX,
   HEDGEMONY_ZOOM_MIN,
-  useHedgemonyViewStore,
+  useRtsViewStore,
 } from "./rtsViewStore";
 
 describe("rtsViewStore", () => {
   beforeEach(() => {
-    useHedgemonyViewStore.setState({
+    useRtsViewStore.setState({
       panX: 0,
       panY: 0,
       zoom: 1,
@@ -27,18 +27,18 @@ describe("rtsViewStore", () => {
   });
 
   it("clamps zoom and saves camera bookmarks", () => {
-    useHedgemonyViewStore.getState().setZoom(100);
-    expect(useHedgemonyViewStore.getState().zoom).toBe(HEDGEMONY_ZOOM_MAX);
+    useRtsViewStore.getState().setZoom(100);
+    expect(useRtsViewStore.getState().zoom).toBe(HEDGEMONY_ZOOM_MAX);
 
-    useHedgemonyViewStore.getState().setView(10, 20, 0);
-    expect(useHedgemonyViewStore.getState()).toMatchObject({
+    useRtsViewStore.getState().setView(10, 20, 0);
+    expect(useRtsViewStore.getState()).toMatchObject({
       panX: 10,
       panY: 20,
       zoom: HEDGEMONY_ZOOM_MIN,
     });
 
-    useHedgemonyViewStore.getState().saveBookmark(1);
-    expect(useHedgemonyViewStore.getState().bookmarks[1]).toEqual({
+    useRtsViewStore.getState().saveBookmark(1);
+    expect(useRtsViewStore.getState().bookmarks[1]).toEqual({
       panX: 10,
       panY: 20,
       zoom: HEDGEMONY_ZOOM_MIN,

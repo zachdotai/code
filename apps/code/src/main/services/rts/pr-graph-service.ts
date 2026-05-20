@@ -16,7 +16,7 @@ import {
   buildRebasePrompt,
 } from "./pr-graph-prompts";
 import {
-  HedgemonyEvent,
+  RtsEvent,
   type LinkPrDependencyInput,
   type PrGraphChangedEvent,
   type RebaseChildEventPayload,
@@ -41,7 +41,7 @@ export const PrGraphServiceEvent = {
 
 export interface PrGraphServiceEvents {
   [PrGraphServiceEvent.RebaseChild]: RebaseChildEventPayload;
-  [HedgemonyEvent.PrGraphChanged]: PrGraphChangedEvent;
+  [RtsEvent.PrGraphChanged]: PrGraphChangedEvent;
 }
 
 interface RequestRebaseInput {
@@ -50,7 +50,7 @@ interface RequestRebaseInput {
 }
 
 /**
- * Slice 8 of Hedgemony — the PR-graph router. Polls each `pending` edge's
+ * Slice 8 of Rts — the PR-graph router. Polls each `pending` edge's
  * parent PR every {@link POLL_INTERVAL_MS}; when the parent PR is detected as
  * merged, builds a rebase prompt and emits a `rebaseChild` event. A renderer
  * hook routes each event into the child hoglet's live session (or spawns a
@@ -395,7 +395,7 @@ export class PrGraphService extends TypedEventEmitter<PrGraphServiceEvents> {
     nestId: string,
     event: PrGraphChangedEvent["event"],
   ): void {
-    this.emit(HedgemonyEvent.PrGraphChanged, { nestId, event });
+    this.emit(RtsEvent.PrGraphChanged, { nestId, event });
   }
 }
 

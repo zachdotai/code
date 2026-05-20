@@ -8,7 +8,7 @@ import { useSubscription } from "@trpc/tanstack-react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef } from "react";
-import { resolveHedgemonyPromptRoute } from "./promptRouting";
+import { resolveRtsPromptRoute } from "./promptRouting";
 
 const log = logger.scope("hedgemony-prompt-router");
 
@@ -47,7 +47,7 @@ export function useRtsPromptRouter() {
     async (payload: InjectPromptEventPayload) => {
       try {
         const session = sessionStoreSetters.getSessionByTaskId(payload.taskId);
-        const route = resolveHedgemonyPromptRoute({
+        const route = resolveRtsPromptRoute({
           payload,
           sessionStatus: session?.status,
         });

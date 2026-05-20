@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { hedgemonyHedgehogState } from "../schema";
+import { rtsHedgehogState } from "../schema";
 import type { DatabaseService } from "../service";
 
-export type HedgehogState = typeof hedgemonyHedgehogState.$inferSelect;
-export type NewHedgehogState = typeof hedgemonyHedgehogState.$inferInsert;
+export type HedgehogState = typeof rtsHedgehogState.$inferSelect;
+export type NewHedgehogState = typeof rtsHedgehogState.$inferInsert;
 export type HedgehogTickState = "idle" | "ticking" | "proposing_completion";
 
 export interface UpsertHedgehogStateData {
@@ -15,7 +15,7 @@ export interface UpsertHedgehogStateData {
   serializedStateJson?: string | null;
 }
 
-const byNestId = (nestId: string) => eq(hedgemonyHedgehogState.nestId, nestId);
+const byNestId = (nestId: string) => eq(rtsHedgehogState.nestId, nestId);
 const now = () => new Date().toISOString();
 
 @injectable()
@@ -33,7 +33,7 @@ export class HedgehogStateRepository {
     return (
       this.db
         .select()
-        .from(hedgemonyHedgehogState)
+        .from(rtsHedgehogState)
         .where(byNestId(nestId))
         .get() ?? null
     );
@@ -49,7 +49,7 @@ export class HedgehogStateRepository {
         patch.serializedStateJson = data.serializedStateJson;
       }
       this.db
-        .update(hedgemonyHedgehogState)
+        .update(rtsHedgehogState)
         .set(patch)
         .where(byNestId(data.nestId))
         .run();
@@ -63,7 +63,7 @@ export class HedgehogStateRepository {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      this.db.insert(hedgemonyHedgehogState).values(row).run();
+      this.db.insert(rtsHedgehogState).values(row).run();
     }
     const result = this.findByNestId(data.nestId);
     if (!result) {
@@ -80,19 +80,19 @@ export class HedgehogStateRepository {
   resetStuckTicks(): HedgehogState[] {
     const stuck = this.db
       .select()
-      .from(hedgemonyHedgehogState)
-      .where(eq(hedgemonyHedgehogState.state, "ticking"))
+      .from(rtsHedgehogState)
+      .where(eq(rtsHedgehogState.state, "ticking"))
       .all();
     if (stuck.length === 0) return [];
     this.db
-      .update(hedgemonyHedgehogState)
+      .update(rtsHedgehogState)
       .set({ state: "idle", updatedAt: now() })
-      .where(eq(hedgemonyHedgehogState.state, "ticking"))
+      .where(eq(rtsHedgehogState.state, "ticking"))
       .run();
     return stuck.map((row) => ({ ...row, state: "idle" }));
   }
 
   delete(nestId: string): void {
-    this.db.delete(hedgemonyHedgehogState).where(byNestId(nestId)).run();
+    this.db.delete(rtsHedgehogState).where(byNestId(nestId)).run();
   }
 }

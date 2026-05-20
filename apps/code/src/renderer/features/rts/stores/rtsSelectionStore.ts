@@ -6,17 +6,17 @@ import { create } from "zustand";
  * can react to selection without lifting the whole selection union into a
  * shared store. The map clears this on unmount.
  */
-interface HedgemonySelectionState {
+interface RtsSelectionState {
   selectedHogletIds: string[];
 }
 
-interface HedgemonySelectionActions {
+interface RtsSelectionActions {
   setSelectedHogletIds: (ids: string[]) => void;
   clear: () => void;
 }
 
-type HedgemonySelectionStore = HedgemonySelectionState &
-  HedgemonySelectionActions;
+type RtsSelectionStore = RtsSelectionState &
+  RtsSelectionActions;
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
@@ -26,7 +26,7 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
   return true;
 }
 
-export const useHedgemonySelectionStore = create<HedgemonySelectionStore>()(
+export const useRtsSelectionStore = create<RtsSelectionStore>()(
   (set) => ({
     selectedHogletIds: [],
     setSelectedHogletIds: (ids) =>

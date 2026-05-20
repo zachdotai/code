@@ -11,7 +11,7 @@ interface SettingsSchema {
   autoSuspendEnabled: boolean;
   maxActiveWorktrees: number;
   autoSuspendAfterDays: number;
-  hedgemonyMaxTicksPerHour: number;
+  rtsMaxTicksPerHour: number;
 }
 
 export const HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT = 60;
@@ -87,7 +87,7 @@ const schema = {
     minimum: 1,
     maximum: 365,
   },
-  hedgemonyMaxTicksPerHour: {
+  rtsMaxTicksPerHour: {
     type: "number" as const,
     default: HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
     minimum: 1,
@@ -105,7 +105,7 @@ export const settingsStore = new Store<SettingsSchema>({
     autoSuspendEnabled: true,
     maxActiveWorktrees: 5,
     autoSuspendAfterDays: 7,
-    hedgemonyMaxTicksPerHour: HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
+    rtsMaxTicksPerHour: HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
   },
 });
 
@@ -177,13 +177,13 @@ export function setAutoSuspendAfterDays(value: number): void {
   settingsStore.set("autoSuspendAfterDays", value);
 }
 
-export function getHedgemonyMaxTicksPerHour(): number {
+export function getRtsMaxTicksPerHour(): number {
   return settingsStore.get(
-    "hedgemonyMaxTicksPerHour",
+    "rtsMaxTicksPerHour",
     HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
   );
 }
 
-export function setHedgemonyMaxTicksPerHour(value: number): void {
-  settingsStore.set("hedgemonyMaxTicksPerHour", value);
+export function setRtsMaxTicksPerHour(value: number): void {
+  settingsStore.set("rtsMaxTicksPerHour", value);
 }

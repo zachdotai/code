@@ -106,7 +106,7 @@ export const raiseHogletHandler: HedgehogToolHandler = {
             createdRunId,
             {
               status: "cancelled",
-              errorMessage: "Cancelled after Hedgemony raise failed",
+              errorMessage: "Cancelled after Rts raise failed",
             },
           );
         } catch (rollbackError) {

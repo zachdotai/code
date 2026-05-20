@@ -18,7 +18,7 @@ import type { AuthService } from "../auth/service";
 import {
   type FeedbackProcessingState,
   feedbackProcessingState,
-  type HedgemonyReasoningEffort,
+  type RtsReasoningEffort,
   repoSlugSchema,
 } from "./schemas";
 
@@ -245,7 +245,7 @@ interface CreateTaskRunOptions {
   branch?: string | null;
   runtimeAdapter?: "claude" | "codex";
   model?: string;
-  reasoningEffort?: HedgemonyReasoningEffort;
+  reasoningEffort?: RtsReasoningEffort;
   initialPermissionMode?: ExecutionMode;
   prAuthorshipMode?: "user" | "bot";
   runSource?: string;
@@ -839,7 +839,7 @@ function formatInjectedPrompt(input: {
   prompt: string;
   authoredBy: "hedgehog";
 }): string {
-  return `Message from the Hedgemony hedgehog orchestrating this nest:\n\n${input.prompt}`;
+  return `Message from the Rts hedgehog orchestrating this nest:\n\n${input.prompt}`;
 }
 
 function extractProcessedState(

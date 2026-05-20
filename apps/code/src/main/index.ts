@@ -169,7 +169,7 @@ async function initializeServices(): Promise<void> {
   suspensionService.startInactivityChecker();
 
   // Boot the per-nest hedgehog scheduler. The service is inert when there are
-  // no active nests, so this is safe even when the Hedgemony flag is off.
+  // no active nests, so this is safe even when the Rts flag is off.
   const hedgehogTickService = container.get<HedgehogTickService>(
     MAIN_TOKENS.HedgehogTickService,
   );

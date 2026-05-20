@@ -1,11 +1,11 @@
 import { eq, ne, sql } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { hedgemonyNests } from "../schema";
+import { rtsNests } from "../schema";
 import type { DatabaseService } from "../service";
 
-export type Nest = typeof hedgemonyNests.$inferSelect;
-export type NewNest = typeof hedgemonyNests.$inferInsert;
+export type Nest = typeof rtsNests.$inferSelect;
+export type NewNest = typeof rtsNests.$inferInsert;
 
 export interface IncrementUsageData {
   inputTokens: number;
@@ -43,8 +43,8 @@ export interface UpdateNestData {
   primaryRepository?: string | null;
 }
 
-const byId = (id: string) => eq(hedgemonyNests.id, id);
-const notArchived = ne(hedgemonyNests.status, "archived");
+const byId = (id: string) => eq(rtsNests.id, id);
+const notArchived = ne(rtsNests.status, "archived");
 const now = () => new Date().toISOString();
 
 @injectable()
@@ -59,15 +59,15 @@ export class NestRepository {
   }
 
   findById(id: string): Nest | null {
-    return this.db.select().from(hedgemonyNests).where(byId(id)).get() ?? null;
+    return this.db.select().from(rtsNests).where(byId(id)).get() ?? null;
   }
 
   findAll(): Nest[] {
-    return this.db.select().from(hedgemonyNests).all();
+    return this.db.select().from(rtsNests).all();
   }
 
   findAllVisible(): Nest[] {
-    return this.db.select().from(hedgemonyNests).where(notArchived).all();
+    return this.db.select().from(rtsNests).where(notArchived).all();
   }
 
   create(data: CreateNestData): Nest {
@@ -86,7 +86,7 @@ export class NestRepository {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    this.db.insert(hedgemonyNests).values(row).run();
+    this.db.insert(rtsNests).values(row).run();
     const created = this.findById(id);
     if (!created) {
       throw new Error(`Failed to create nest ${id}`);
@@ -99,7 +99,7 @@ export class NestRepository {
     if (!existing) return null;
 
     this.db
-      .update(hedgemonyNests)
+      .update(rtsNests)
       .set({ ...data, updatedAt: now() })
       .where(byId(id))
       .run();
@@ -117,13 +117,13 @@ export class NestRepository {
 
   incrementUsage(id: string, data: IncrementUsageData): void {
     this.db
-      .update(hedgemonyNests)
+      .update(rtsNests)
       .set({
-        totalInputTokens: sql`${hedgemonyNests.totalInputTokens} + ${data.inputTokens}`,
-        totalOutputTokens: sql`${hedgemonyNests.totalOutputTokens} + ${data.outputTokens}`,
-        totalCacheReadTokens: sql`${hedgemonyNests.totalCacheReadTokens} + ${data.cacheReadTokens}`,
-        totalCacheCreationTokens: sql`${hedgemonyNests.totalCacheCreationTokens} + ${data.cacheCreationTokens}`,
-        totalCostUsd: sql`${hedgemonyNests.totalCostUsd} + ${data.costUsd}`,
+        totalInputTokens: sql`${rtsNests.totalInputTokens} + ${data.inputTokens}`,
+        totalOutputTokens: sql`${rtsNests.totalOutputTokens} + ${data.outputTokens}`,
+        totalCacheReadTokens: sql`${rtsNests.totalCacheReadTokens} + ${data.cacheReadTokens}`,
+        totalCacheCreationTokens: sql`${rtsNests.totalCacheCreationTokens} + ${data.cacheCreationTokens}`,
+        totalCostUsd: sql`${rtsNests.totalCostUsd} + ${data.costUsd}`,
         lastUsageAt: data.occurredAt,
         updatedAt: now(),
       })

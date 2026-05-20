@@ -1,11 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { hedgemonyPrDependencies } from "../schema";
+import { rtsPrDependencies } from "../schema";
 import type { DatabaseService } from "../service";
 
-export type PrDependency = typeof hedgemonyPrDependencies.$inferSelect;
-export type NewPrDependency = typeof hedgemonyPrDependencies.$inferInsert;
+export type PrDependency = typeof rtsPrDependencies.$inferSelect;
+export type NewPrDependency = typeof rtsPrDependencies.$inferInsert;
 
 export type PrDependencyState =
   | "pending"
@@ -43,11 +43,11 @@ export class PrDependencyRepository {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    this.db.insert(hedgemonyPrDependencies).values(row).run();
+    this.db.insert(rtsPrDependencies).values(row).run();
     const created = this.db
       .select()
-      .from(hedgemonyPrDependencies)
-      .where(eq(hedgemonyPrDependencies.id, id))
+      .from(rtsPrDependencies)
+      .where(eq(rtsPrDependencies.id, id))
       .get();
     if (!created) {
       throw new Error(`Failed to create pr dependency ${id}`);
@@ -78,13 +78,13 @@ export class PrDependencyRepository {
       updatedAt: timestamp,
     };
     const returned = this.db
-      .insert(hedgemonyPrDependencies)
+      .insert(rtsPrDependencies)
       .values(row)
       .onConflictDoNothing({
         target: [
-          hedgemonyPrDependencies.nestId,
-          hedgemonyPrDependencies.parentTaskId,
-          hedgemonyPrDependencies.childTaskId,
+          rtsPrDependencies.nestId,
+          rtsPrDependencies.parentTaskId,
+          rtsPrDependencies.childTaskId,
         ],
       })
       .returning()
@@ -109,8 +109,8 @@ export class PrDependencyRepository {
     return (
       this.db
         .select()
-        .from(hedgemonyPrDependencies)
-        .where(eq(hedgemonyPrDependencies.id, id))
+        .from(rtsPrDependencies)
+        .where(eq(rtsPrDependencies.id, id))
         .get() ?? null
     );
   }
@@ -123,12 +123,12 @@ export class PrDependencyRepository {
     return (
       this.db
         .select()
-        .from(hedgemonyPrDependencies)
+        .from(rtsPrDependencies)
         .where(
           and(
-            eq(hedgemonyPrDependencies.nestId, key.nestId),
-            eq(hedgemonyPrDependencies.parentTaskId, key.parentTaskId),
-            eq(hedgemonyPrDependencies.childTaskId, key.childTaskId),
+            eq(rtsPrDependencies.nestId, key.nestId),
+            eq(rtsPrDependencies.parentTaskId, key.parentTaskId),
+            eq(rtsPrDependencies.childTaskId, key.childTaskId),
           ),
         )
         .get() ?? null
@@ -138,41 +138,41 @@ export class PrDependencyRepository {
   findPending(): PrDependency[] {
     return this.db
       .select()
-      .from(hedgemonyPrDependencies)
-      .where(eq(hedgemonyPrDependencies.state, "pending"))
+      .from(rtsPrDependencies)
+      .where(eq(rtsPrDependencies.state, "pending"))
       .all();
   }
 
   findByParentTaskId(parentTaskId: string): PrDependency[] {
     return this.db
       .select()
-      .from(hedgemonyPrDependencies)
-      .where(eq(hedgemonyPrDependencies.parentTaskId, parentTaskId))
+      .from(rtsPrDependencies)
+      .where(eq(rtsPrDependencies.parentTaskId, parentTaskId))
       .all();
   }
 
   findByChildTaskId(childTaskId: string): PrDependency[] {
     return this.db
       .select()
-      .from(hedgemonyPrDependencies)
-      .where(eq(hedgemonyPrDependencies.childTaskId, childTaskId))
+      .from(rtsPrDependencies)
+      .where(eq(rtsPrDependencies.childTaskId, childTaskId))
       .all();
   }
 
   listForNest(nestId: string): PrDependency[] {
     return this.db
       .select()
-      .from(hedgemonyPrDependencies)
-      .where(eq(hedgemonyPrDependencies.nestId, nestId))
+      .from(rtsPrDependencies)
+      .where(eq(rtsPrDependencies.nestId, nestId))
       .all();
   }
 
   updateState(id: string, state: PrDependencyState): PrDependency {
     const timestamp = new Date().toISOString();
     this.db
-      .update(hedgemonyPrDependencies)
+      .update(rtsPrDependencies)
       .set({ state, updatedAt: timestamp })
-      .where(eq(hedgemonyPrDependencies.id, id))
+      .where(eq(rtsPrDependencies.id, id))
       .run();
     const updated = this.findById(id);
     if (!updated) {
@@ -183,8 +183,8 @@ export class PrDependencyRepository {
 
   delete(id: string): void {
     this.db
-      .delete(hedgemonyPrDependencies)
-      .where(eq(hedgemonyPrDependencies.id, id))
+      .delete(rtsPrDependencies)
+      .where(eq(rtsPrDependencies.id, id))
       .run();
   }
 }

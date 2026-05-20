@@ -7,9 +7,9 @@ import {
   DEFAULT_HOGLET_RUNTIME_ADAPTER,
   defaultModelForAdapter,
   defaultReasoningEffortForAdapter,
-  type HedgemonyReasoningEffort,
+  type RtsReasoningEffort,
   type HogletRuntimeAdapter,
-  hedgemonyReasoningEffort,
+  rtsReasoningEffort,
   hogletRuntimeAdapter,
   modelIdentifierSchema,
   type NestLoadout,
@@ -26,13 +26,13 @@ interface RendererSettingsState {
 export interface UserTaskPreferences {
   runtimeAdapter?: HogletRuntimeAdapter;
   model?: string;
-  reasoningEffort?: HedgemonyReasoningEffort;
+  reasoningEffort?: RtsReasoningEffort;
 }
 
 export interface ResolvedHogletRuntime {
   runtimeAdapter: HogletRuntimeAdapter;
   model: string;
-  reasoningEffort: HedgemonyReasoningEffort;
+  reasoningEffort: RtsReasoningEffort;
   executionMode: HogletExecutionMode;
   environment: "local" | "cloud";
 }
@@ -54,7 +54,7 @@ export function readUserTaskPreferences(): UserTaskPreferences {
     const runtimeAdapter = hogletRuntimeAdapter.safeParse(
       state.lastUsedAdapter,
     );
-    const reasoningEffort = hedgemonyReasoningEffort.safeParse(
+    const reasoningEffort = rtsReasoningEffort.safeParse(
       state.lastUsedReasoningEffort,
     );
     const modelParse = modelIdentifierSchema.safeParse(state.lastUsedModel);

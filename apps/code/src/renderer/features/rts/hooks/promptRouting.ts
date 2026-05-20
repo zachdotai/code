@@ -2,7 +2,7 @@ import type { InjectPromptEventPayload } from "@main/services/rts/schemas";
 
 export type PromptRoute = "inject" | "spawn_follow_up" | "failed";
 
-export function resolveHedgemonyPromptRoute(input: {
+export function resolveRtsPromptRoute(input: {
   payload: InjectPromptEventPayload;
   sessionStatus: string | null | undefined;
 }): PromptRoute {

@@ -447,7 +447,7 @@ export const ANALYTICS_EVENTS = {
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 
-  // Hedgemony events
+  // Rts events
   HEDGEMONY_HOGLET_SPAWNED: "hedgemony.hoglet_spawned",
   HEDGEMONY_HOGLET_ADOPTED: "hedgemony.hoglet_adopted",
   HEDGEMONY_HOGLET_RELEASED: "hedgemony.hoglet_released",
@@ -458,39 +458,39 @@ export const ANALYTICS_EVENTS = {
   HEDGEMONY_PR_GRAPH_REBASE: "hedgemony.pr_graph_rebase",
 } as const;
 
-export interface HedgemonyHogletSpawnedProperties {
+export interface RtsHogletSpawnedProperties {
   source: "adhoc" | "signal";
 }
 
-export interface HedgemonyHogletAdoptedProperties {
+export interface RtsHogletAdoptedProperties {
   // `signal` is a wild hoglet with `signalReportId` set; `wild` is an
   // operator-spawned ad-hoc hoglet. "nest" added in a future slice when
   // nest → nest transfer ships alongside PR dep graph migration.
   source: "wild" | "signal";
 }
 
-export interface HedgemonyHogletReleasedProperties {
+export interface RtsHogletReleasedProperties {
   source: "nest";
 }
 
-export interface HedgemonyHogletIngestedProperties {
+export interface RtsHogletIngestedProperties {
   source: "signal";
 }
 
-export interface HedgemonyHogletDismissedProperties {
+export interface RtsHogletDismissedProperties {
   source: "signal";
 }
 
-export interface HedgemonyHogletRetiredProperties {
+export interface RtsHogletRetiredProperties {
   source: "wild" | "signal" | "nest";
 }
 
-export interface HedgemonyFeedbackRoutedProperties {
+export interface RtsFeedbackRoutedProperties {
   source: "pr_review" | "ci";
   outcome: "injected" | "follow_up_spawned" | "failed";
 }
 
-export interface HedgemonyPrGraphRebaseProperties {
+export interface RtsPrGraphRebaseProperties {
   outcome: "injected" | "follow_up_spawned" | "failed" | "broken";
 }
 
@@ -580,13 +580,13 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 
-  // Hedgemony events
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED]: HedgemonyHogletSpawnedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED]: HedgemonyHogletAdoptedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED]: HedgemonyHogletReleasedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_INGESTED]: HedgemonyHogletIngestedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_DISMISSED]: HedgemonyHogletDismissedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RETIRED]: HedgemonyHogletRetiredProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED]: HedgemonyFeedbackRoutedProperties;
-  [ANALYTICS_EVENTS.HEDGEMONY_PR_GRAPH_REBASE]: HedgemonyPrGraphRebaseProperties;
+  // Rts events
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED]: RtsHogletSpawnedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED]: RtsHogletAdoptedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED]: RtsHogletReleasedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_INGESTED]: RtsHogletIngestedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_DISMISSED]: RtsHogletDismissedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RETIRED]: RtsHogletRetiredProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED]: RtsFeedbackRoutedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_PR_GRAPH_REBASE]: RtsPrGraphRebaseProperties;
 };

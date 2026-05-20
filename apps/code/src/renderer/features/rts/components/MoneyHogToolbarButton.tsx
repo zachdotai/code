@@ -45,7 +45,7 @@ export function MoneyHogToolbarButton({
     : "border-(--gray-5) bg-(--gray-2) text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12)";
 
   return (
-    <Tooltip content="Money Hedgehog · token spend across Hedgemony">
+    <Tooltip content="Money Hedgehog · token spend across Rts">
       <button
         type="button"
         onClick={onSelect}

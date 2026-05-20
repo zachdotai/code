@@ -1,11 +1,11 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
-  type HedgemonyHotkeyCallbacks,
+  type RtsHotkeyCallbacks,
   useRtsHotkeys,
 } from "./useRtsHotkeys";
 
-function makeCallbacks(): HedgemonyHotkeyCallbacks {
+function makeCallbacks(): RtsHotkeyCallbacks {
   return {
     onToggleFullscreen: vi.fn(),
     onToggleInAppFullscreen: vi.fn(),

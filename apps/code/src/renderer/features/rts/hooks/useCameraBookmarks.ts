@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import {
   type BookmarkSlot,
-  useHedgemonyViewStore,
+  useRtsViewStore,
 } from "../stores/rtsViewStore";
 
 export interface UseCameraBookmarksOptions {
@@ -26,8 +26,8 @@ export interface CameraBookmarks {
 export function useCameraBookmarks({
   animateToView,
 }: UseCameraBookmarksOptions): CameraBookmarks {
-  const saveBookmarkToStore = useHedgemonyViewStore((s) => s.saveBookmark);
-  const setView = useHedgemonyViewStore((s) => s.setView);
+  const saveBookmarkToStore = useRtsViewStore((s) => s.saveBookmark);
+  const setView = useRtsViewStore((s) => s.setView);
 
   const saveBookmark = useCallback(
     (slot: BookmarkSlot) => {
@@ -41,7 +41,7 @@ export function useCameraBookmarks({
 
   const recallBookmark = useCallback(
     (slot: BookmarkSlot) => {
-      const bookmark = useHedgemonyViewStore.getState().bookmarks[slot];
+      const bookmark = useRtsViewStore.getState().bookmarks[slot];
       if (!bookmark) {
         toast(`No view saved in slot ${slot}`, {
           description: `Press Shift+${slot} on the map to save this view.`,

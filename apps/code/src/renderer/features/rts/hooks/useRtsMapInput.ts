@@ -34,7 +34,7 @@ interface UnitObstaclesOptions {
   includeBuilder: boolean;
 }
 
-export interface UseHedgemonyMapInputOptions {
+export interface UseRtsMapInputOptions {
   mode: ViewMode;
   selection: Selection;
   nests: Nest[];
@@ -48,7 +48,7 @@ export interface UseHedgemonyMapInputOptions {
   flashMoveMarker: (x: number, y: number) => void;
 }
 
-export interface HedgemonyMapInput {
+export interface RtsMapInput {
   handleMapClick: (x: number, y: number) => void;
   handleMapRightClick: (x: number, y: number) => void;
   handleBoxSelect: (selection: MapBoxSelection) => void;
@@ -73,7 +73,7 @@ export function useRtsMapInput({
   setSelection,
   setPendingPlacement,
   flashMoveMarker,
-}: UseHedgemonyMapInputOptions): HedgemonyMapInput {
+}: UseRtsMapInputOptions): RtsMapInput {
   const collectLiveHogletPositions = useCallback(() => {
     return applyHogletVisualPositions(
       collectHogletWorldPositions(

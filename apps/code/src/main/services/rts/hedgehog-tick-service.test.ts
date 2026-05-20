@@ -47,7 +47,7 @@ vi.mock("./hoglet-runtime-preferences", async () => {
 });
 
 vi.mock("../settingsStore", () => ({
-  getHedgemonyMaxTicksPerHour: () => 60,
+  getRtsMaxTicksPerHour: () => 60,
 }));
 
 import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
@@ -88,8 +88,8 @@ import type { PrGraphService } from "./pr-graph-service";
 import {
   DEFAULT_CODEX_REASONING_EFFORT,
   defaultModelForAdapter,
-  HedgemonyEvent,
-  type HedgemonyEvents,
+  RtsEvent,
+  type RtsEvents,
   type Hoglet,
   type Nest,
   type NestMessage,
@@ -173,7 +173,7 @@ interface Mocks {
   repositoryRepo: RepositoryRepository;
   tickLog: ReturnType<typeof createMockTickLogRepository>;
   operatorDecisions: ReturnType<typeof createMockOperatorDecisionRepository>;
-  emittedNestChanged: HedgemonyEvents["nest-changed"][];
+  emittedNestChanged: RtsEvents["nest-changed"][];
 }
 
 function makeRepository(overrides: Partial<Repository> = {}): Repository {
@@ -222,7 +222,7 @@ function setupMocks(input: {
   const hoglets = input.hoglets ?? [];
   const hogletStates = input.hogletStates ?? {};
 
-  const emittedNestChanged: HedgemonyEvents["nest-changed"][] = [];
+  const emittedNestChanged: RtsEvents["nest-changed"][] = [];
   const listeners = new Map<string, AnyListener[]>();
 
   const nestService = {
@@ -252,8 +252,8 @@ function setupMocks(input: {
       return nestService;
     }),
     emit: vi.fn((event: string, payload: unknown) => {
-      if (event === HedgemonyEvent.NestChanged) {
-        emittedNestChanged.push(payload as HedgemonyEvents["nest-changed"]);
+      if (event === RtsEvent.NestChanged) {
+        emittedNestChanged.push(payload as RtsEvents["nest-changed"]);
       }
       for (const l of listeners.get(event) ?? []) {
         l(payload);
@@ -261,7 +261,7 @@ function setupMocks(input: {
       return true;
     }),
     emitMessageAppended: vi.fn((message: NestMessage) => {
-      const payload: HedgemonyEvents["nest-changed"] = {
+      const payload: RtsEvents["nest-changed"] = {
         nestId: message.nestId,
         event: { kind: "message_appended", message },
       };
@@ -275,7 +275,7 @@ function setupMocks(input: {
             kind: "hedgehog_tick",
             state,
           },
-        } as HedgemonyEvents["nest-changed"];
+        } as RtsEvents["nest-changed"];
         emittedNestChanged.push(payload);
       },
     ),
@@ -1009,7 +1009,7 @@ describe("HedgehogTickService", () => {
 
     service.start();
     try {
-      mocks.nestService.emit(HedgemonyEvent.NestChanged, {
+      mocks.nestService.emit(RtsEvent.NestChanged, {
         nestId: "nest-1",
         event: {
           kind: "message_appended",

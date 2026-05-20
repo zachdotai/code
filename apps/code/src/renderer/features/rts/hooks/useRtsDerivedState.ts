@@ -1,6 +1,6 @@
 import type { Hoglet, Nest } from "@main/services/rts/schemas";
 import { useMemo } from "react";
-import type { HedgemonyHotkeyContext } from "../constants/hotkeys";
+import type { RtsHotkeyContext } from "../constants/hotkeys";
 import type { ViewMode } from "../state/computeMapClickAction";
 import {
   type Selection,
@@ -9,14 +9,14 @@ import {
 } from "../state/RtsController";
 import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 
-export interface UseHedgemonyDerivedStateOptions {
+export interface UseRtsDerivedStateOptions {
   selection: Selection;
   mode: ViewMode;
   nests: Nest[];
   dialogOpen: boolean;
 }
 
-export interface HedgemonyDerivedState {
+export interface RtsDerivedState {
   activeNest: Nest | null;
   builderSelected: boolean;
   hedgehouseSelected: boolean;
@@ -27,7 +27,7 @@ export interface HedgemonyDerivedState {
   dimWildFlock: boolean;
   buildMode: boolean;
   relocatingNestId: string | null;
-  activeHotkeyContext: HedgemonyHotkeyContext | null;
+  activeHotkeyContext: RtsHotkeyContext | null;
 }
 
 /**
@@ -40,7 +40,7 @@ export function useRtsDerivedState({
   mode,
   nests,
   dialogOpen,
-}: UseHedgemonyDerivedStateOptions): HedgemonyDerivedState {
+}: UseRtsDerivedStateOptions): RtsDerivedState {
   const activeNest =
     selection?.type === "nest"
       ? (nests.find((nest) => nest.id === selection.id) ?? null)
@@ -68,7 +68,7 @@ export function useRtsDerivedState({
   const buildMode = mode.kind === "placingNest";
   const relocatingNestId = mode.kind === "relocatingNest" ? mode.nestId : null;
 
-  const activeHotkeyContext: HedgemonyHotkeyContext | null =
+  const activeHotkeyContext: RtsHotkeyContext | null =
     selectActiveHotkeyContext({
       dialogOpen,
       activeNestId: activeNest?.id ?? null,

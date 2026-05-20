@@ -26,7 +26,7 @@ const GOAL_DRAFT_EFFORT = "max";
 const GOAL_DRAFT_MAX_TOKENS = 128_000;
 const MAX_DRAFT_QUESTION_LENGTH = 500;
 
-const SYSTEM_PROMPT = `You help a PostHog Code operator write a Hedgemony nest goal before the nest exists.
+const SYSTEM_PROMPT = `You help a PostHog Code operator write a Rts nest goal before the nest exists.
 
 Return JSON only, with exactly one of these shapes:
 {"kind":"ask_question","question":"One short clarifying question"}
@@ -199,7 +199,7 @@ export class GoalSpecDraftService {
 - If the desired outcome is clear, propose a spec that makes repo discovery the first requirement and records unknown repo details as assumptions/open questions.`
       : "";
 
-    return `Draft a Hedgemony nest goal from this creation transcript.
+    return `Draft a Rts nest goal from this creation transcript.
 
 Return structured spec fields. The app will render goalPrompt from those fields as an editable Markdown feature specification with:
 - summary and primary scenario
@@ -631,7 +631,7 @@ function buildBootstrapContext(
     repositories,
     primaryRepository,
     prompt: [
-      "You are preparing a local-only Hedgemony bootstrap handoff. Your job is discovery framing and handoff, not implementation.",
+      "You are preparing a local-only Rts bootstrap handoff. Your job is discovery framing and handoff, not implementation.",
       "",
       "Operator transcript:",
       transcriptText,
@@ -649,7 +649,7 @@ function buildBootstrapContext(
       "- Do not spawn agents or implement the feature.",
       "",
       "Return a concise handoff packet with exactly these headings:",
-      "## Hedgemony Bootstrap Context",
+      "## Rts Bootstrap Context",
       "## Repositories Inspected",
       "## Commands Run",
       "## Architecture And Dependencies",

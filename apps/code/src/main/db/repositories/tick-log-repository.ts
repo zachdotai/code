@@ -1,11 +1,11 @@
 import { and, count, eq, gt } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { hedgemonyTickLog } from "../schema";
+import { rtsTickLog } from "../schema";
 import type { DatabaseService } from "../service";
 
-export type TickLog = typeof hedgemonyTickLog.$inferSelect;
-export type NewTickLog = typeof hedgemonyTickLog.$inferInsert;
+export type TickLog = typeof rtsTickLog.$inferSelect;
+export type NewTickLog = typeof rtsTickLog.$inferInsert;
 
 export type TickOutcome = "completed" | "errored" | "aborted" | "capped";
 
@@ -35,7 +35,7 @@ export class TickLogRepository {
       tickedAt,
       outcome: data.outcome,
     };
-    this.db.insert(hedgemonyTickLog).values(row).run();
+    this.db.insert(rtsTickLog).values(row).run();
     return row;
   }
 
@@ -47,11 +47,11 @@ export class TickLogRepository {
   countSince(nestId: string, sinceIso: string): number {
     const result = this.db
       .select({ value: count() })
-      .from(hedgemonyTickLog)
+      .from(rtsTickLog)
       .where(
         and(
-          eq(hedgemonyTickLog.nestId, nestId),
-          gt(hedgemonyTickLog.tickedAt, sinceIso),
+          eq(rtsTickLog.nestId, nestId),
+          gt(rtsTickLog.tickedAt, sinceIso),
         ),
       )
       .get();

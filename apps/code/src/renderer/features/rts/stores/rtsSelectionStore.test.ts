@@ -1,37 +1,37 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useHedgemonySelectionStore } from "./rtsSelectionStore";
+import { useRtsSelectionStore } from "./rtsSelectionStore";
 
 describe("rtsSelectionStore", () => {
   beforeEach(() => {
-    useHedgemonySelectionStore.getState().clear();
+    useRtsSelectionStore.getState().clear();
   });
 
   it("sets and clears selected hoglet ids", () => {
-    expect(useHedgemonySelectionStore.getState().selectedHogletIds).toEqual([]);
+    expect(useRtsSelectionStore.getState().selectedHogletIds).toEqual([]);
 
-    useHedgemonySelectionStore.getState().setSelectedHogletIds(["a", "b"]);
-    expect(useHedgemonySelectionStore.getState().selectedHogletIds).toEqual([
+    useRtsSelectionStore.getState().setSelectedHogletIds(["a", "b"]);
+    expect(useRtsSelectionStore.getState().selectedHogletIds).toEqual([
       "a",
       "b",
     ]);
 
-    useHedgemonySelectionStore.getState().clear();
-    expect(useHedgemonySelectionStore.getState().selectedHogletIds).toEqual([]);
+    useRtsSelectionStore.getState().clear();
+    expect(useRtsSelectionStore.getState().selectedHogletIds).toEqual([]);
   });
 
   it("keeps reference identity when content does not change", () => {
-    const setter = useHedgemonySelectionStore.getState().setSelectedHogletIds;
+    const setter = useRtsSelectionStore.getState().setSelectedHogletIds;
     setter(["a"]);
-    const first = useHedgemonySelectionStore.getState().selectedHogletIds;
+    const first = useRtsSelectionStore.getState().selectedHogletIds;
     setter(["a"]);
-    const second = useHedgemonySelectionStore.getState().selectedHogletIds;
+    const second = useRtsSelectionStore.getState().selectedHogletIds;
     expect(second).toBe(first);
   });
 
   it("clear is a no-op when already empty", () => {
-    const first = useHedgemonySelectionStore.getState().selectedHogletIds;
-    useHedgemonySelectionStore.getState().clear();
-    const second = useHedgemonySelectionStore.getState().selectedHogletIds;
+    const first = useRtsSelectionStore.getState().selectedHogletIds;
+    useRtsSelectionStore.getState().clear();
+    const second = useRtsSelectionStore.getState().selectedHogletIds;
     expect(second).toBe(first);
   });
 });

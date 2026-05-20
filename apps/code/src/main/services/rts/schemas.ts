@@ -48,7 +48,7 @@ export const modelIdentifierSchema = z
  * back from settings-storage. Tighter than `executionModeSchema`:
  * `bypassPermissions` is excluded so a tampered `loadoutJson` row cannot
  * silently disable per-tool approvals for every hoglet spawned from a nest.
- * Hedgemony may still choose a bypassing default internally for autonomous
+ * Rts may still choose a bypassing default internally for autonomous
  * background hoglets.
  */
 export const persistedExecutionModeSchema = z.enum([
@@ -205,14 +205,14 @@ export type UpdateNestInput = z.infer<typeof updateNestInput>;
  * any 36-char UUID-ish so older rows still parse but reject unbounded strings
  * and shell metacharacters.
  */
-export const hedgemonyIdSchema = z
+export const rtsIdSchema = z
   .string()
   .trim()
   .min(1)
   .max(64)
   .regex(/^[A-Za-z0-9._-]+$/);
 
-export const nestIdInput = z.object({ id: hedgemonyIdSchema });
+export const nestIdInput = z.object({ id: rtsIdSchema });
 export type NestIdInput = z.infer<typeof nestIdInput>;
 
 export const markValidatedInput = nestIdInput.extend({
@@ -331,14 +331,14 @@ export const hoglet = z.object({
 });
 export type Hoglet = z.infer<typeof hoglet>;
 
-export const hedgemonyReasoningEffort = z.enum([
+export const rtsReasoningEffort = z.enum([
   "low",
   "medium",
   "high",
   "xhigh",
   "max",
 ]);
-export type HedgemonyReasoningEffort = z.infer<typeof hedgemonyReasoningEffort>;
+export type RtsReasoningEffort = z.infer<typeof rtsReasoningEffort>;
 
 export const hogletRuntimeAdapter = z.enum(["claude", "codex"]);
 export type HogletRuntimeAdapter = z.infer<typeof hogletRuntimeAdapter>;
@@ -346,7 +346,7 @@ export type HogletRuntimeAdapter = z.infer<typeof hogletRuntimeAdapter>;
 export const nestLoadout = z.object({
   model: modelIdentifierSchema.optional(),
   runtimeAdapter: hogletRuntimeAdapter.optional(),
-  reasoningEffort: hedgemonyReasoningEffort.optional(),
+  reasoningEffort: rtsReasoningEffort.optional(),
   executionMode: persistedExecutionModeSchema.optional(),
   environment: z.enum(["local", "cloud"]).optional(),
   heartbeatIntervalMs: z.number().int().min(60_000).max(600_000).optional(),
@@ -435,8 +435,8 @@ export const DEFAULT_HOGLET_MODEL = "claude-opus-4-7";
 export const DEFAULT_CODEX_HOGLET_MODEL = "gpt-5.5";
 export const DEFAULT_HOGLET_RUNTIME_ADAPTER = "claude" as const;
 export const DEFAULT_HOGLET_ENVIRONMENT = "cloud" as const;
-export const DEFAULT_CLAUDE_REASONING_EFFORT: HedgemonyReasoningEffort = "max";
-export const DEFAULT_CODEX_REASONING_EFFORT: HedgemonyReasoningEffort = "high";
+export const DEFAULT_CLAUDE_REASONING_EFFORT: RtsReasoningEffort = "max";
+export const DEFAULT_CODEX_REASONING_EFFORT: RtsReasoningEffort = "high";
 
 export function defaultModelForAdapter(
   adapter: HogletRuntimeAdapter | undefined,
@@ -448,20 +448,20 @@ export function defaultModelForAdapter(
 
 export function defaultReasoningEffortForAdapter(
   adapter: HogletRuntimeAdapter | undefined,
-): HedgemonyReasoningEffort {
+): RtsReasoningEffort {
   return adapter === "codex"
     ? DEFAULT_CODEX_REASONING_EFFORT
     : DEFAULT_CLAUDE_REASONING_EFFORT;
 }
 
-const CODEX_MAX_EFFORT: HedgemonyReasoningEffort = "high";
+const CODEX_MAX_EFFORT: RtsReasoningEffort = "high";
 
 export function clampReasoningEffortForAdapter(
-  effort: HedgemonyReasoningEffort,
+  effort: RtsReasoningEffort,
   adapter: HogletRuntimeAdapter | undefined,
-): HedgemonyReasoningEffort {
+): RtsReasoningEffort {
   if (adapter !== "codex") return effort;
-  const order: HedgemonyReasoningEffort[] = [
+  const order: RtsReasoningEffort[] = [
     "low",
     "medium",
     "high",
@@ -494,23 +494,23 @@ export type RecordSignalBackedHogletInput = z.infer<
 >;
 
 export const adoptHogletInput = z.object({
-  hogletId: hedgemonyIdSchema,
-  nestId: hedgemonyIdSchema,
+  hogletId: rtsIdSchema,
+  nestId: rtsIdSchema,
 });
 export type AdoptHogletInput = z.infer<typeof adoptHogletInput>;
 
 export const releaseHogletInput = z.object({
-  hogletId: hedgemonyIdSchema,
+  hogletId: rtsIdSchema,
 });
 export type ReleaseHogletInput = z.infer<typeof releaseHogletInput>;
 
 export const dismissSignalHogletInput = z.object({
-  hogletId: hedgemonyIdSchema,
+  hogletId: rtsIdSchema,
 });
 export type DismissSignalHogletInput = z.infer<typeof dismissSignalHogletInput>;
 
 export const retireHogletInput = z.object({
-  hogletId: hedgemonyIdSchema,
+  hogletId: rtsIdSchema,
 });
 export type RetireHogletInput = z.infer<typeof retireHogletInput>;
 
@@ -825,7 +825,7 @@ export const finopsSummary = z.object({
 });
 export type FinopsSummary = z.infer<typeof finopsSummary>;
 
-export const HedgemonyEvent = {
+export const RtsEvent = {
   NestChanged: "nest-changed",
   HogletChanged: "hoglet-changed",
   PrGraphChanged: "pr-graph-changed",
@@ -868,8 +868,8 @@ export interface PrGraphChangedEvent {
   event: PrGraphWatchEvent;
 }
 
-export interface HedgemonyEvents {
-  [HedgemonyEvent.NestChanged]: NestChangedEvent;
-  [HedgemonyEvent.HogletChanged]: HogletChangedEvent;
-  [HedgemonyEvent.PrGraphChanged]: PrGraphChangedEvent;
+export interface RtsEvents {
+  [RtsEvent.NestChanged]: NestChangedEvent;
+  [RtsEvent.HogletChanged]: HogletChangedEvent;
+  [RtsEvent.PrGraphChanged]: PrGraphChangedEvent;
 }

@@ -3,7 +3,7 @@ import { initializeWildHogletStore } from "../service/hogletSubscriptionService"
 import { initializeNestStore } from "../service/nestSubscriptionService";
 import { initializePrGraphForNest } from "../service/prGraphSubscriptionService";
 
-export interface UseHedgemonySubscriptionsOptions {
+export interface UseRtsSubscriptionsOptions {
   /** Live nest IDs the view is rendering. The hook opens / closes one PR-graph
    * subscription per id, keyed by membership so nests being reshuffled in the
    * array doesn't churn every subscription. */
@@ -17,7 +17,7 @@ export interface UseHedgemonySubscriptionsOptions {
  */
 export function useRtsSubscriptions({
   nestIds,
-}: UseHedgemonySubscriptionsOptions): void {
+}: UseRtsSubscriptionsOptions): void {
   useEffect(() => {
     return initializeWildHogletStore();
   }, []);

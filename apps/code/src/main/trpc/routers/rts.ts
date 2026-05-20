@@ -28,7 +28,7 @@ import {
   finopsSummaryInput,
   goalDraftRespondInput,
   goalDraftResponse,
-  HedgemonyEvent,
+  RtsEvent,
   hoglet,
   hogletIngestedEventPayload,
   hogletWatchEvent,
@@ -100,7 +100,7 @@ const getSignalIngestionService = () =>
 const getUsageEventRepository = () =>
   container.get<UsageEventRepository>(MAIN_TOKENS.UsageEventRepository);
 
-export const hedgemonyRouter = router({
+export const rtsRouter = router({
   goalDraft: router({
     respond: publicProcedure
       .input(goalDraftRespondInput)
@@ -167,7 +167,7 @@ export const hedgemonyRouter = router({
       signal,
     }) {
       const service = getService();
-      const iterable = service.toIterable(HedgemonyEvent.NestChanged, {
+      const iterable = service.toIterable(RtsEvent.NestChanged, {
         signal,
       });
       for await (const data of iterable) {
@@ -263,7 +263,7 @@ export const hedgemonyRouter = router({
       .input(hogletWatchScope)
       .subscription(async function* ({ input, signal }) {
         const service = getHogletService();
-        const iterable = service.toIterable(HedgemonyEvent.HogletChanged, {
+        const iterable = service.toIterable(RtsEvent.HogletChanged, {
           signal,
         });
         for await (const data of iterable) {
@@ -395,7 +395,7 @@ export const hedgemonyRouter = router({
     }) {
       const service = getPrGraphService();
       for await (const data of service.toIterable(
-        HedgemonyEvent.PrGraphChanged,
+        RtsEvent.PrGraphChanged,
         { signal },
       )) {
         if (data.nestId === input.id) {
@@ -438,7 +438,7 @@ export const hedgemonyRouter = router({
   signalIngestion: router({
     /**
      * Idempotent start of the main-side signal ingestion poll loop. The
-     * renderer calls this when the Hedgemony map view mounts. The loop
+     * renderer calls this when the Rts map view mounts. The loop
      * survives renderer unmount — only `cancel` (an explicit operator
      * action) stops it.
      */

@@ -221,7 +221,7 @@ function formatLocalHandoff(
     .join("\n");
 
   return [
-    "## Hedgemony Bootstrap Context",
+    "## Rts Bootstrap Context",
     "Local-only bootstrap handoff captured during nest creation. No cloud bootstrap task was started.",
     "",
     "## Repositories Inspected",

@@ -24,7 +24,7 @@ import { HEDGEMONY_CONFIG } from "../config";
 import {
   HEDGEMONY_ZOOM_MAX,
   HEDGEMONY_ZOOM_MIN,
-  useHedgemonyViewStore,
+  useRtsViewStore,
 } from "../stores/rtsViewStore";
 import { clientToWorld, fitZoom, panToCenter } from "../utils/coordinates";
 import type { Vec2 } from "../utils/pathfinding";
@@ -158,13 +158,13 @@ function RtsMapSurfaceImpl(
   }: RtsMapSurfaceProps,
   ref: Ref<MapSurfaceHandle>,
 ) {
-  const panX = useHedgemonyViewStore((s) => s.panX);
-  const panY = useHedgemonyViewStore((s) => s.panY);
-  const zoom = useHedgemonyViewStore((s) => s.zoom);
-  const setPan = useHedgemonyViewStore((s) => s.setPan);
-  const setZoom = useHedgemonyViewStore((s) => s.setZoom);
-  const resetView = useHedgemonyViewStore((s) => s.resetView);
-  const fullscreen = useHedgemonyViewStore((s) => s.fullscreen);
+  const panX = useRtsViewStore((s) => s.panX);
+  const panY = useRtsViewStore((s) => s.panY);
+  const zoom = useRtsViewStore((s) => s.zoom);
+  const setPan = useRtsViewStore((s) => s.setPan);
+  const setZoom = useRtsViewStore((s) => s.setZoom);
+  const resetView = useRtsViewStore((s) => s.resetView);
+  const fullscreen = useRtsViewStore((s) => s.fullscreen);
 
   const x = useMotionValue(panX);
   const y = useMotionValue(panY);

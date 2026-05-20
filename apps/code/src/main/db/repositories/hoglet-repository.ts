@@ -1,11 +1,11 @@
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { hedgemonyHoglets } from "../schema";
+import { rtsHoglets } from "../schema";
 import type { DatabaseService } from "../service";
 
-export type Hoglet = typeof hedgemonyHoglets.$inferSelect;
-export type NewHoglet = typeof hedgemonyHoglets.$inferInsert;
+export type Hoglet = typeof rtsHoglets.$inferSelect;
+export type NewHoglet = typeof rtsHoglets.$inferInsert;
 
 export interface CreateHogletData {
   taskId: string;
@@ -32,12 +32,12 @@ export interface IncrementUsageData {
   occurredAt: string;
 }
 
-const byId = (id: string) => eq(hedgemonyHoglets.id, id);
-const notDeleted = isNull(hedgemonyHoglets.deletedAt);
+const byId = (id: string) => eq(rtsHoglets.id, id);
+const notDeleted = isNull(rtsHoglets.deletedAt);
 // "Wild" is now every non-nested, non-deleted hoglet — both operator-spawned
 // ad-hoc work and signal-backed hoglets the affinity router didn't auto-route.
 // They all share one wild bucket and render directly on the map.
-const isWild = and(isNull(hedgemonyHoglets.nestId), notDeleted);
+const isWild = and(isNull(rtsHoglets.nestId), notDeleted);
 const now = () => new Date().toISOString();
 
 @injectable()
@@ -53,7 +53,7 @@ export class HogletRepository {
 
   findById(id: string): Hoglet | null {
     return (
-      this.db.select().from(hedgemonyHoglets).where(byId(id)).get() ?? null
+      this.db.select().from(rtsHoglets).where(byId(id)).get() ?? null
     );
   }
 
@@ -61,8 +61,8 @@ export class HogletRepository {
     return (
       this.db
         .select()
-        .from(hedgemonyHoglets)
-        .where(eq(hedgemonyHoglets.taskId, taskId))
+        .from(rtsHoglets)
+        .where(eq(rtsHoglets.taskId, taskId))
         .get() ?? null
     );
   }
@@ -71,28 +71,28 @@ export class HogletRepository {
     return (
       this.db
         .select()
-        .from(hedgemonyHoglets)
-        .where(eq(hedgemonyHoglets.signalReportId, signalReportId))
+        .from(rtsHoglets)
+        .where(eq(rtsHoglets.signalReportId, signalReportId))
         .get() ?? null
     );
   }
 
   findAllWild(): Hoglet[] {
-    return this.db.select().from(hedgemonyHoglets).where(isWild).all();
+    return this.db.select().from(rtsHoglets).where(isWild).all();
   }
 
   findAllForNest(nestId: string): Hoglet[] {
     return this.db
       .select()
-      .from(hedgemonyHoglets)
-      .where(and(eq(hedgemonyHoglets.nestId, nestId), notDeleted))
+      .from(rtsHoglets)
+      .where(and(eq(rtsHoglets.nestId, nestId), notDeleted))
       .all();
   }
 
   countWild(): number {
     const row = this.db
       .select({ count: sql<number>`count(*)` })
-      .from(hedgemonyHoglets)
+      .from(rtsHoglets)
       .where(isWild)
       .get();
     return row?.count ?? 0;
@@ -100,9 +100,9 @@ export class HogletRepository {
 
   findAllNames(): string[] {
     return this.db
-      .select({ name: hedgemonyHoglets.name })
-      .from(hedgemonyHoglets)
-      .where(and(isNotNull(hedgemonyHoglets.name), notDeleted))
+      .select({ name: rtsHoglets.name })
+      .from(rtsHoglets)
+      .where(and(isNotNull(rtsHoglets.name), notDeleted))
       .all()
       .map((row) => row.name)
       .filter((n): n is string => n !== null);
@@ -122,7 +122,7 @@ export class HogletRepository {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    this.db.insert(hedgemonyHoglets).values(row).run();
+    this.db.insert(rtsHoglets).values(row).run();
     const created = this.findById(id);
     if (!created) {
       throw new Error(`Failed to create hoglet ${id}`);
@@ -132,13 +132,13 @@ export class HogletRepository {
 
   incrementUsage(id: string, data: IncrementUsageData): void {
     this.db
-      .update(hedgemonyHoglets)
+      .update(rtsHoglets)
       .set({
-        totalInputTokens: sql`${hedgemonyHoglets.totalInputTokens} + ${data.inputTokens}`,
-        totalOutputTokens: sql`${hedgemonyHoglets.totalOutputTokens} + ${data.outputTokens}`,
-        totalCacheReadTokens: sql`${hedgemonyHoglets.totalCacheReadTokens} + ${data.cacheReadTokens}`,
-        totalCacheCreationTokens: sql`${hedgemonyHoglets.totalCacheCreationTokens} + ${data.cacheCreationTokens}`,
-        totalCostUsd: sql`${hedgemonyHoglets.totalCostUsd} + ${data.costUsd}`,
+        totalInputTokens: sql`${rtsHoglets.totalInputTokens} + ${data.inputTokens}`,
+        totalOutputTokens: sql`${rtsHoglets.totalOutputTokens} + ${data.outputTokens}`,
+        totalCacheReadTokens: sql`${rtsHoglets.totalCacheReadTokens} + ${data.cacheReadTokens}`,
+        totalCacheCreationTokens: sql`${rtsHoglets.totalCacheCreationTokens} + ${data.cacheCreationTokens}`,
+        totalCostUsd: sql`${rtsHoglets.totalCostUsd} + ${data.costUsd}`,
         lastUsageAt: data.occurredAt,
         updatedAt: now(),
       })
@@ -151,7 +151,7 @@ export class HogletRepository {
     if (!existing) return null;
 
     this.db
-      .update(hedgemonyHoglets)
+      .update(rtsHoglets)
       .set({ ...data, updatedAt: now() })
       .where(byId(id))
       .run();
@@ -164,7 +164,7 @@ export class HogletRepository {
     if (!existing) return null;
     const timestamp = now();
     this.db
-      .update(hedgemonyHoglets)
+      .update(rtsHoglets)
       .set({ deletedAt: timestamp, updatedAt: timestamp })
       .where(byId(id))
       .run();

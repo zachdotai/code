@@ -94,7 +94,7 @@ export function RtsMapView() {
     onPendingBuildCommit: (nest) => useNestStore.getState().upsert(nest),
   });
 
-  // Mirrors Signals Inbox reports into Hedgemony as signal-backed hoglets
+  // Mirrors Signals Inbox reports into Rts as signal-backed hoglets
   // while the map view is mounted. Tears down with the view.
   useSignalIngestion();
 

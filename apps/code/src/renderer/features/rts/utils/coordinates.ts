@@ -1,7 +1,7 @@
 import type { Vec2 } from "./pathfinding";
 
 /**
- * Convert client (viewport) pixel coords to world coords for the Hedgemony
+ * Convert client (viewport) pixel coords to world coords for the Rts
  * pan/zoom surface. The surface's origin is the center of its bounding rect;
  * pan offsets the world; zoom scales it.
  */

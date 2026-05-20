@@ -78,7 +78,7 @@ interface RouteHedgehogPromptInput {
 }
 
 /**
- * Slice 7 of Hedgemony — the feedback router. Polls each hoglet's PR for
+ * Slice 7 of Rts — the feedback router. Polls each hoglet's PR for
  * new review comments and failing check runs every {@link POLL_INTERVAL_MS}.
  * For each new item, builds a prompt with the same builders used by the
  * manual "Fix with agent" button and emits an `injectPrompt` event. A

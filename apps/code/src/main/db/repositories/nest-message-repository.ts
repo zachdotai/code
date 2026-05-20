@@ -1,11 +1,11 @@
 import { and, asc, eq, or } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { hedgemonyNestMessages } from "../schema";
+import { rtsNestMessages } from "../schema";
 import type { DatabaseService } from "../service";
 
-export type NestMessage = typeof hedgemonyNestMessages.$inferSelect;
-export type NewNestMessage = typeof hedgemonyNestMessages.$inferInsert;
+export type NestMessage = typeof rtsNestMessages.$inferSelect;
+export type NewNestMessage = typeof rtsNestMessages.$inferInsert;
 export type NestMessageKind =
   | "user_message"
   | "hedgehog_message"
@@ -29,7 +29,7 @@ export interface CompactNestContextResult {
   compactedContextMessages: number;
 }
 
-const byNestId = (nestId: string) => eq(hedgemonyNestMessages.nestId, nestId);
+const byNestId = (nestId: string) => eq(rtsNestMessages.nestId, nestId);
 const now = () => new Date().toISOString();
 
 const COMPACTED_CONTEXT_BODY =
@@ -49,9 +49,9 @@ export class NestMessageRepository {
   listByNestId(nestId: string): NestMessage[] {
     return this.db
       .select()
-      .from(hedgemonyNestMessages)
+      .from(rtsNestMessages)
       .where(byNestId(nestId))
-      .orderBy(asc(hedgemonyNestMessages.createdAt))
+      .orderBy(asc(rtsNestMessages.createdAt))
       .all();
   }
 
@@ -96,12 +96,12 @@ export class NestMessageRepository {
       createdAt: now(),
     };
 
-    this.db.insert(hedgemonyNestMessages).values(row).run();
+    this.db.insert(rtsNestMessages).values(row).run();
 
     const created = this.db
       .select()
-      .from(hedgemonyNestMessages)
-      .where(eq(hedgemonyNestMessages.id, id))
+      .from(rtsNestMessages)
+      .where(eq(rtsNestMessages.id, id))
       .get();
 
     if (!created) {
@@ -121,15 +121,15 @@ export class NestMessageRepository {
   }): NestMessage | null {
     const candidates = this.db
       .select()
-      .from(hedgemonyNestMessages)
+      .from(rtsNestMessages)
       .where(
         and(
           byNestId(input.nestId),
-          eq(hedgemonyNestMessages.kind, input.kind),
-          eq(hedgemonyNestMessages.sourceTaskId, input.sourceTaskId),
+          eq(rtsNestMessages.kind, input.kind),
+          eq(rtsNestMessages.sourceTaskId, input.sourceTaskId),
         ),
       )
-      .orderBy(asc(hedgemonyNestMessages.createdAt))
+      .orderBy(asc(rtsNestMessages.createdAt))
       .all();
 
     return (
@@ -144,14 +144,14 @@ export class NestMessageRepository {
 
   compactCompletedContext(nestId: string): CompactNestContextResult {
     const deletedDetailMessages = this.db
-      .delete(hedgemonyNestMessages)
+      .delete(rtsNestMessages)
       .where(
-        and(byNestId(nestId), eq(hedgemonyNestMessages.visibility, "detail")),
+        and(byNestId(nestId), eq(rtsNestMessages.visibility, "detail")),
       )
       .run().changes;
 
     const compactedContextMessages = this.db
-      .update(hedgemonyNestMessages)
+      .update(rtsNestMessages)
       .set({
         body: COMPACTED_CONTEXT_BODY,
         payloadJson: null,
@@ -161,10 +161,10 @@ export class NestMessageRepository {
         and(
           byNestId(nestId),
           or(
-            eq(hedgemonyNestMessages.kind, "user_message"),
-            eq(hedgemonyNestMessages.kind, "tool_result"),
-            eq(hedgemonyNestMessages.kind, "hoglet_summary"),
-            eq(hedgemonyNestMessages.kind, "hoglet_message"),
+            eq(rtsNestMessages.kind, "user_message"),
+            eq(rtsNestMessages.kind, "tool_result"),
+            eq(rtsNestMessages.kind, "hoglet_summary"),
+            eq(rtsNestMessages.kind, "hoglet_message"),
           ),
         ),
       )

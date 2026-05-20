@@ -252,7 +252,7 @@ export function applyEscape({
 
 /* ───────────────────────── Hotkey context selector ──────────────────────── */
 
-export type HedgemonyHotkeyContextKind =
+export type RtsHotkeyContextKind =
   | "dialog"
   | "nest"
   | "builder"
@@ -278,7 +278,7 @@ export function selectActiveHotkeyContext({
   builderSelected,
   hedgehouseSelected,
   singleSelectedHogletId,
-}: HotkeyContextInput): HedgemonyHotkeyContextKind {
+}: HotkeyContextInput): RtsHotkeyContextKind {
   if (dialogOpen) return "dialog";
   if (activeNestId) return "nest";
   if (builderSelected) return "builder";

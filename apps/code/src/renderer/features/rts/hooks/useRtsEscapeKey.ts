@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { ViewMode } from "../state/computeMapClickAction";
 import { applyEscape, type Selection } from "../state/RtsController";
 
-export interface UseHedgemonyEscapeKeyOptions {
+export interface UseRtsEscapeKeyOptions {
   mode: ViewMode;
   selection: Selection;
   fullscreen: boolean;
@@ -24,7 +24,7 @@ export function useRtsEscapeKey({
   setMode,
   setSelection,
   exitFullscreen,
-}: UseHedgemonyEscapeKeyOptions): void {
+}: UseRtsEscapeKeyOptions): void {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;

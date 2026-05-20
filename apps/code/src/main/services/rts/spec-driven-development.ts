@@ -1,6 +1,6 @@
 export const SPEC_DRIVEN_DEVELOPMENT_METHOD = "spec-driven-development";
 
-export const SPEC_DRIVEN_GOAL_DESIGN_GUIDANCE = `Use a spec-driven-development shape for Hedgemony nest goals:
+export const SPEC_DRIVEN_GOAL_DESIGN_GUIDANCE = `Use a spec-driven-development shape for Rts nest goals:
 - Keep the goal focused on WHAT and WHY before HOW. Avoid implementation details unless the operator explicitly gives hard constraints.
 - Prefer a lightweight feature specification structure: operator scenario, prioritized user stories, independently testable acceptance scenarios, functional requirements, key entities, assumptions, and measurable success criteria.
 - Preserve those sections as explicit structured fields so the app can render and persist a stable Markdown spec.

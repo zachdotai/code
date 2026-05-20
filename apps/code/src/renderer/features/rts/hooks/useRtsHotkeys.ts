@@ -2,7 +2,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import type { ControlGroupSlot } from "../stores/controlGroupStore";
 import type { BookmarkSlot } from "../stores/rtsViewStore";
 
-export interface HedgemonyHotkeyCallbacks {
+export interface RtsHotkeyCallbacks {
   onToggleFullscreen: () => void;
   onToggleInAppFullscreen: () => void;
   onRecallBookmark: (slot: BookmarkSlot) => void;
@@ -19,7 +19,7 @@ export interface HedgemonyHotkeyCallbacks {
   onAssignControlGroup: (slot: ControlGroupSlot) => void;
 }
 
-export interface UseHedgemonyHotkeysOptions {
+export interface UseRtsHotkeysOptions {
   /** When true, suppresses map-only bindings so typing in modals doesn't fire
    * fullscreen / bookmark recall. Audio bindings stay live (players want to
    * silence the hedgehog from anywhere). */
@@ -32,8 +32,8 @@ export interface UseHedgemonyHotkeysOptions {
  * loop — each call must be a stable hook position in the render order.
  */
 export function useRtsHotkeys(
-  callbacks: HedgemonyHotkeyCallbacks,
-  options: UseHedgemonyHotkeysOptions,
+  callbacks: RtsHotkeyCallbacks,
+  options: UseRtsHotkeysOptions,
 ): void {
   const {
     onToggleFullscreen,

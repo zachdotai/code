@@ -5,15 +5,15 @@ import {
   HEDGEMONY_CONTEXT_LABELS,
   HEDGEMONY_CONTEXT_ORDER,
   HEDGEMONY_HOTKEYS,
-  type HedgemonyHotkey,
-  type HedgemonyHotkeyContext,
+  type RtsHotkey,
+  type RtsHotkeyContext,
 } from "../constants/hotkeys";
 
 interface RtsHotkeyHelperProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Highlighted in the overlay so the player sees what's bound *right now*. */
-  activeContext?: HedgemonyHotkeyContext | null;
+  activeContext?: RtsHotkeyContext | null;
 }
 
 const KEY_LABELS: Record<string, string> = {
@@ -61,7 +61,7 @@ function HotkeyChip({ keys }: { keys: string }) {
   );
 }
 
-function HotkeyRow({ hotkey }: { hotkey: HedgemonyHotkey }) {
+function HotkeyRow({ hotkey }: { hotkey: RtsHotkey }) {
   return (
     <div className="flex items-center justify-between gap-3 py-0.5">
       <span className="text-(--gray-11) text-[11px] leading-tight">
@@ -133,7 +133,7 @@ export function RtsHotkeyHelper({
               <div className="flex items-center gap-1.5">
                 <Keyboard size={14} className="text-(--accent-11)" />
                 <span className="font-semibold text-(--gray-12) text-[12px]">
-                  Hedgemony shortcuts
+                  Rts shortcuts
                 </span>
               </div>
               <button

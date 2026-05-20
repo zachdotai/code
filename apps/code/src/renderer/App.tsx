@@ -82,8 +82,8 @@ function App() {
       },
     );
     void import("@features/rts/devtools/signalTriggerConsole").then(
-      ({ registerHedgemonySignalTriggerConsoleCommand }) => {
-        registerHedgemonySignalTriggerConsoleCommand();
+      ({ registerRtsSignalTriggerConsoleCommand }) => {
+        registerRtsSignalTriggerConsoleCommand();
       },
     );
   }, []);

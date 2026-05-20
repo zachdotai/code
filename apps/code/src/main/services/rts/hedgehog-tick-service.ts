@@ -15,7 +15,7 @@ import { logger } from "../../utils/logger";
 import type { GitService } from "../git/service";
 import type { PromptWithToolsOutput } from "../llm-gateway/schemas";
 import type { LlmGatewayService } from "../llm-gateway/service";
-import { getHedgemonyMaxTicksPerHour } from "../settingsStore";
+import { getRtsMaxTicksPerHour } from "../settingsStore";
 import type { CloudTaskClient } from "./cloud-task-client";
 import type { FeedbackRoutingService } from "./feedback-routing-service";
 import { HEDGEHOG_HANDLERS } from "./hedgehog-handlers/registry";
@@ -50,7 +50,7 @@ import { parseHedgehogState, parseNestLoadout } from "./schema-parsers";
 import {
   type ActiveHoldState,
   DEFAULT_HOGLET_MODEL,
-  HedgemonyEvent,
+  RtsEvent,
   type Hoglet,
   type HogletChangedEvent,
   type Nest,
@@ -90,7 +90,7 @@ function getHeartbeatIntervalMs(): number {
 }
 
 /**
- * Slice 6 of Hedgemony — the hedgehog. A per-nest ephemeral orchestrator that
+ * Slice 6 of Rts — the hedgehog. A per-nest ephemeral orchestrator that
  * ticks on (heartbeat | new hoglet event | operator chat message), assembles
  * fresh context from sqlite, calls Claude with the constrained tool list, and
  * dispatches each tool_use block back to a service method. State persists in
@@ -165,8 +165,8 @@ export class HedgehogTickService {
       });
     }
 
-    this.nestService.on(HedgemonyEvent.NestChanged, this.onNestChanged);
-    this.hogletService.on(HedgemonyEvent.HogletChanged, this.onHogletChanged);
+    this.nestService.on(RtsEvent.NestChanged, this.onNestChanged);
+    this.hogletService.on(RtsEvent.HogletChanged, this.onHogletChanged);
 
     this.heartbeatHandle = setInterval(() => {
       this.runHeartbeat().catch((error) =>
@@ -187,8 +187,8 @@ export class HedgehogTickService {
       clearInterval(this.heartbeatHandle);
       this.heartbeatHandle = null;
     }
-    this.nestService.off(HedgemonyEvent.NestChanged, this.onNestChanged);
-    this.hogletService.off(HedgemonyEvent.HogletChanged, this.onHogletChanged);
+    this.nestService.off(RtsEvent.NestChanged, this.onNestChanged);
+    this.hogletService.off(RtsEvent.HogletChanged, this.onHogletChanged);
     for (const [nestId, controller] of this.tickAbortControllers) {
       controller.abort();
       this.stateRepo.upsert({ nestId, state: "idle" });
@@ -351,7 +351,7 @@ export class HedgehogTickService {
     // Enforce the hourly cap before doing any work. The window is the last
     // hour from now; `capped` rows count too so a flood of capped attempts
     // self-quenches.
-    const cap = getHedgemonyMaxTicksPerHour();
+    const cap = getRtsMaxTicksPerHour();
     const windowStart = new Date(Date.now() - TICK_WINDOW_MS).toISOString();
     const recentTicks = this.tickLog.countSince(nestId, windowStart);
     if (recentTicks >= cap) {

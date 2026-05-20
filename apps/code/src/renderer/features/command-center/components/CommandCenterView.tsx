@@ -1,5 +1,5 @@
 import { RtsMapView } from "@features/rts/components/RtsMapView";
-import { useHedgemonyViewStore } from "@features/rts/stores/rtsViewStore";
+import { useRtsViewStore } from "@features/rts/stores/rtsViewStore";
 import { useTaskViewed } from "@features/sidebar/hooks/useTaskViewed";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
@@ -15,9 +15,9 @@ import { CommandCenterToolbar } from "./CommandCenterToolbar";
 export function CommandCenterView() {
   const layout = useCommandCenterStore((s) => s.layout);
   const viewMode = useCommandCenterStore((s) => s.viewMode);
-  const hedgemonyEnabled = useFeatureFlag(RTS_FLAG, import.meta.env.DEV);
-  const isMap = hedgemonyEnabled && viewMode === "map";
-  const hedgemonyFullscreen = useHedgemonyViewStore((s) => s.fullscreen);
+  const rtsEnabled = useFeatureFlag(RTS_FLAG, import.meta.env.DEV);
+  const isMap = rtsEnabled && viewMode === "map";
+  const rtsFullscreen = useRtsViewStore((s) => s.fullscreen);
 
   const { cells, summary } = useCommandCenterData();
   const { markAsViewed } = useTaskViewed();
@@ -55,7 +55,7 @@ export function CommandCenterView() {
 
   return (
     <Flex direction="column" height="100%">
-      {!hedgemonyFullscreen && (
+      {!rtsFullscreen && (
         <CommandCenterToolbar summary={summary} cells={cells} />
       )}
       <Box className="min-h-0 flex-1">

@@ -1,6 +1,6 @@
 import type { InjectPromptEventPayload } from "@main/services/rts/schemas";
 import { describe, expect, it } from "vitest";
-import { resolveHedgemonyPromptRoute } from "./promptRouting";
+import { resolveRtsPromptRoute } from "./promptRouting";
 
 function makePayload(
   overrides: Partial<InjectPromptEventPayload> = {},
@@ -20,10 +20,10 @@ function makePayload(
   };
 }
 
-describe("resolveHedgemonyPromptRoute", () => {
+describe("resolveRtsPromptRoute", () => {
   it("injects external feedback when the session is connected", () => {
     expect(
-      resolveHedgemonyPromptRoute({
+      resolveRtsPromptRoute({
         payload: makePayload({
           source: "pr_review",
           prUrl: "https://github.com/org/repo/pull/1",
@@ -35,7 +35,7 @@ describe("resolveHedgemonyPromptRoute", () => {
 
   it("spawns follow-ups for hedgehog fallback events even with stale connected session state", () => {
     expect(
-      resolveHedgemonyPromptRoute({
+      resolveRtsPromptRoute({
         payload: makePayload({ targetRunStatus: "in_progress" }),
         sessionStatus: "connected",
       }),
@@ -44,7 +44,7 @@ describe("resolveHedgemonyPromptRoute", () => {
 
   it("fails detached events without a nest", () => {
     expect(
-      resolveHedgemonyPromptRoute({
+      resolveRtsPromptRoute({
         payload: makePayload({ nestId: null }),
         sessionStatus: "disconnected",
       }),
@@ -53,7 +53,7 @@ describe("resolveHedgemonyPromptRoute", () => {
 
   it("still spawns follow-ups for external feedback", () => {
     expect(
-      resolveHedgemonyPromptRoute({
+      resolveRtsPromptRoute({
         payload: makePayload({
           source: "pr_review",
           targetRunStatus: "in_progress",

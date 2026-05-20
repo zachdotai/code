@@ -1,10 +1,10 @@
 import { logger } from "@utils/logger";
 import { useCallback, useEffect } from "react";
-import { useHedgemonyViewStore } from "../stores/rtsViewStore";
+import { useRtsViewStore } from "../stores/rtsViewStore";
 
 const log = logger.scope("hedgemony-fullscreen");
 
-export interface HedgemonyFullscreen {
+export interface RtsFullscreen {
   fullscreen: boolean;
   exitFullscreen: () => void;
   toggleFullscreen: () => void;
@@ -19,15 +19,15 @@ export interface HedgemonyFullscreen {
  * traffic lights through; OS fullscreen is the only way to hide them and
  * give players a Starcraft/AoE-style experience.
  */
-export function useRtsFullscreen(): HedgemonyFullscreen {
-  const fullscreen = useHedgemonyViewStore((s) => s.fullscreen);
-  const setFullscreen = useHedgemonyViewStore((s) => s.setFullscreen);
-  const setOsFullscreen = useHedgemonyViewStore((s) => s.setOsFullscreen);
+export function useRtsFullscreen(): RtsFullscreen {
+  const fullscreen = useRtsViewStore((s) => s.fullscreen);
+  const setFullscreen = useRtsViewStore((s) => s.setFullscreen);
+  const setOsFullscreen = useRtsViewStore((s) => s.setOsFullscreen);
 
   useEffect(() => {
     const handler = () => {
       const isOs = Boolean(document.fullscreenElement);
-      const wasOs = useHedgemonyViewStore.getState().osFullscreen;
+      const wasOs = useRtsViewStore.getState().osFullscreen;
       setOsFullscreen(isOs);
       if (wasOs && !isOs) {
         setFullscreen(false);

@@ -16,8 +16,8 @@ import {
   type CompactValidatedNestInput,
   type CreateNestInput,
   type HedgehogStateView,
-  HedgemonyEvent,
-  type HedgemonyEvents,
+  RtsEvent,
+  type RtsEvents,
   type MarkValidatedInput,
   type Nest,
   type NestIdInput,
@@ -30,7 +30,7 @@ import { stringifyError } from "./utils";
 const log = logger.scope("nest-service");
 
 @injectable()
-export class NestService extends TypedEventEmitter<HedgemonyEvents> {
+export class NestService extends TypedEventEmitter<RtsEvents> {
   constructor(
     @inject(MAIN_TOKENS.NestRepository)
     private readonly nests: NestRepository,
@@ -223,7 +223,7 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
    * single channel.
    */
   emitMessageAppended(message: NestMessage): void {
-    this.emit(HedgemonyEvent.NestChanged, {
+    this.emit(RtsEvent.NestChanged, {
       nestId: message.nestId,
       event: { kind: "message_appended", message },
     });
@@ -234,14 +234,14 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
    * "ticking" sprite glow in the renderer.
    */
   emitHedgehogTick(nestId: string, state: HedgehogStateView): void {
-    this.emit(HedgemonyEvent.NestChanged, {
+    this.emit(RtsEvent.NestChanged, {
       nestId,
       event: { kind: "hedgehog_tick", state },
     });
   }
 
   private emitChange(nest: Nest, event: NestWatchEvent): void {
-    this.emit(HedgemonyEvent.NestChanged, { nestId: nest.id, event });
+    this.emit(RtsEvent.NestChanged, { nestId: nest.id, event });
   }
 
   private async validateAndCorrectRepository(

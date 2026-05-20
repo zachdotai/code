@@ -16,10 +16,10 @@ export function BgmPlayer() {
   const volume = useBgmStore((s) => s.volume);
   const viewType = useNavigationStore((s) => s.view.type);
   const viewMode = useCommandCenterStore((s) => s.viewMode);
-  const hedgemonyEnabled = useFeatureFlag(RTS_FLAG, import.meta.env.DEV);
+  const rtsEnabled = useFeatureFlag(RTS_FLAG, import.meta.env.DEV);
 
   const shouldPlay =
-    hedgemonyEnabled && viewType === "command-center" && viewMode === "map";
+    rtsEnabled && viewType === "command-center" && viewMode === "map";
 
   useEffect(() => {
     if (!audioRef.current) {

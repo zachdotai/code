@@ -22,7 +22,7 @@ import type { GitService } from "../git/service";
 import type { CloudTaskClient } from "./cloud-task-client";
 import type { NestChatService } from "./nest-chat-service";
 import { NestService } from "./nest-service";
-import { HedgemonyEvent, type Nest, type NestMessage } from "./schemas";
+import { RtsEvent, type Nest, type NestMessage } from "./schemas";
 
 type NestPatch = Parameters<NestRepository["update"]>[1];
 type CreateNestData = Parameters<NestRepository["create"]>[0];
@@ -195,7 +195,7 @@ describe("NestService", () => {
 
   it("creates a nest, records creation context, and emits a CRUD watch event", async () => {
     const listener = vi.fn();
-    service.on(HedgemonyEvent.NestChanged, listener);
+    service.on(RtsEvent.NestChanged, listener);
 
     const input = {
       name: "Checkout lift",
@@ -529,7 +529,7 @@ describe("NestService", () => {
       throw new Error("db_down");
     });
     const listener = vi.fn();
-    service.on(HedgemonyEvent.NestChanged, listener);
+    service.on(RtsEvent.NestChanged, listener);
 
     const nest = await service.create({
       name: "Explore repo",
@@ -630,7 +630,7 @@ describe("NestService", () => {
 
   it("validates an active nest and records the validation context", async () => {
     const listener = vi.fn();
-    service.on(HedgemonyEvent.NestChanged, listener);
+    service.on(RtsEvent.NestChanged, listener);
     const nest = await service.create({
       name: "Checkout",
       goalPrompt: "Improve checkout",
@@ -667,7 +667,7 @@ describe("NestService", () => {
     });
     const validated = service.markValidated({ id: nest.id, summary: "Done" });
     const listener = vi.fn();
-    service.on(HedgemonyEvent.NestChanged, listener);
+    service.on(RtsEvent.NestChanged, listener);
 
     const repeated = service.markValidated({
       id: nest.id,

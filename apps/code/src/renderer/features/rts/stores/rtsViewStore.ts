@@ -20,7 +20,7 @@ export type BookmarkSlot = 1 | 2 | 3;
 
 type BookmarkMap = Partial<Record<BookmarkSlot, CameraView>>;
 
-interface HedgemonyViewState {
+interface RtsViewState {
   panX: number;
   panY: number;
   zoom: number;
@@ -29,7 +29,7 @@ interface HedgemonyViewState {
   bookmarks: BookmarkMap;
 }
 
-interface HedgemonyViewActions {
+interface RtsViewActions {
   setPan: (x: number, y: number) => void;
   setZoom: (zoom: number) => void;
   setView: (panX: number, panY: number, zoom: number) => void;
@@ -40,10 +40,10 @@ interface HedgemonyViewActions {
   clearBookmark: (slot: BookmarkSlot) => void;
 }
 
-type HedgemonyViewStore = HedgemonyViewState & HedgemonyViewActions;
+type RtsViewStore = RtsViewState & RtsViewActions;
 
 const DEFAULT_VIEW: Omit<
-  HedgemonyViewState,
+  RtsViewState,
   "fullscreen" | "osFullscreen" | "bookmarks"
 > = {
   panX: 0,
@@ -51,7 +51,7 @@ const DEFAULT_VIEW: Omit<
   zoom: 1,
 };
 
-export const useHedgemonyViewStore = create<HedgemonyViewStore>()(
+export const useRtsViewStore = create<RtsViewStore>()(
   persist(
     (set) => ({
       ...DEFAULT_VIEW,

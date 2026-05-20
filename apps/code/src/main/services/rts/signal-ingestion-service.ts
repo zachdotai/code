@@ -42,8 +42,8 @@ interface QueryParams {
 }
 
 /**
- * Slice-of-Hedgemony service that mirrors net-new PostHog signal reports
- * into Hedgemony as signal-backed hoglets. Polls the cloud `signals/reports`
+ * Slice-of-Rts service that mirrors net-new PostHog signal reports
+ * into Rts as signal-backed hoglets. Polls the cloud `signals/reports`
  * endpoint every {@link POLL_INTERVAL_MS} and, for each report not already
  * ingested, spawns a fresh cloud Task (via {@link HogletService.spawnSignalBacked})
  * which writes the local `hedgemony_hoglet` sidecar.

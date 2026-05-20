@@ -1,11 +1,11 @@
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { hedgemonyUsageEvents } from "../schema";
+import { rtsUsageEvents } from "../schema";
 import type { DatabaseService } from "../service";
 
-export type UsageEvent = typeof hedgemonyUsageEvents.$inferSelect;
-export type NewUsageEvent = typeof hedgemonyUsageEvents.$inferInsert;
+export type UsageEvent = typeof rtsUsageEvents.$inferSelect;
+export type NewUsageEvent = typeof rtsUsageEvents.$inferInsert;
 
 export type UsageWorkload = "hedgehog-tick" | "brood-hoglet" | "wild-hoglet";
 export type CostSource = "sdk" | "pricing_table";
@@ -83,12 +83,12 @@ export class UsageEventRepository {
       occurredAt,
     };
     const returned = this.db
-      .insert(hedgemonyUsageEvents)
+      .insert(rtsUsageEvents)
       .values(row)
       .onConflictDoNothing({
         target: [
-          hedgemonyUsageEvents.taskRunId,
-          hedgemonyUsageEvents.turnIndex,
+          rtsUsageEvents.taskRunId,
+          rtsUsageEvents.turnIndex,
         ],
       })
       .returning()
@@ -101,11 +101,11 @@ export class UsageEventRepository {
     if (data.taskRunId != null && data.turnIndex != null) {
       const existing = this.db
         .select()
-        .from(hedgemonyUsageEvents)
+        .from(rtsUsageEvents)
         .where(
           and(
-            eq(hedgemonyUsageEvents.taskRunId, data.taskRunId),
-            eq(hedgemonyUsageEvents.turnIndex, data.turnIndex),
+            eq(rtsUsageEvents.taskRunId, data.taskRunId),
+            eq(rtsUsageEvents.turnIndex, data.turnIndex),
           ),
         )
         .get();
@@ -121,9 +121,9 @@ export class UsageEventRepository {
   listByNest(nestId: string, limit = 1000): UsageEvent[] {
     return this.db
       .select()
-      .from(hedgemonyUsageEvents)
-      .where(eq(hedgemonyUsageEvents.nestId, nestId))
-      .orderBy(desc(hedgemonyUsageEvents.occurredAt))
+      .from(rtsUsageEvents)
+      .where(eq(rtsUsageEvents.nestId, nestId))
+      .orderBy(desc(rtsUsageEvents.occurredAt))
       .limit(limit)
       .all();
   }
@@ -131,9 +131,9 @@ export class UsageEventRepository {
   listByHoglet(hogletId: string, limit = 1000): UsageEvent[] {
     return this.db
       .select()
-      .from(hedgemonyUsageEvents)
-      .where(eq(hedgemonyUsageEvents.hogletId, hogletId))
-      .orderBy(desc(hedgemonyUsageEvents.occurredAt))
+      .from(rtsUsageEvents)
+      .where(eq(rtsUsageEvents.hogletId, hogletId))
+      .orderBy(desc(rtsUsageEvents.occurredAt))
       .limit(limit)
       .all();
   }
@@ -141,21 +141,21 @@ export class UsageEventRepository {
   aggregateByNest(nestId: string, since?: string): AggregateRow {
     const row = this.db
       .select({
-        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
-        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
-        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
-        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
-        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        totalInputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${rtsUsageEvents.costUsd}), 0)`,
         eventCount: sql<number>`count(*)`,
       })
-      .from(hedgemonyUsageEvents)
+      .from(rtsUsageEvents)
       .where(
         since
           ? and(
-              eq(hedgemonyUsageEvents.nestId, nestId),
-              gte(hedgemonyUsageEvents.occurredAt, since),
+              eq(rtsUsageEvents.nestId, nestId),
+              gte(rtsUsageEvents.occurredAt, since),
             )
-          : eq(hedgemonyUsageEvents.nestId, nestId),
+          : eq(rtsUsageEvents.nestId, nestId),
       )
       .get();
     return row ?? emptyAggregate;
@@ -164,21 +164,21 @@ export class UsageEventRepository {
   aggregateByHoglet(hogletId: string, since?: string): AggregateRow {
     const row = this.db
       .select({
-        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
-        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
-        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
-        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
-        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        totalInputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${rtsUsageEvents.costUsd}), 0)`,
         eventCount: sql<number>`count(*)`,
       })
-      .from(hedgemonyUsageEvents)
+      .from(rtsUsageEvents)
       .where(
         since
           ? and(
-              eq(hedgemonyUsageEvents.hogletId, hogletId),
-              gte(hedgemonyUsageEvents.occurredAt, since),
+              eq(rtsUsageEvents.hogletId, hogletId),
+              gte(rtsUsageEvents.occurredAt, since),
             )
-          : eq(hedgemonyUsageEvents.hogletId, hogletId),
+          : eq(rtsUsageEvents.hogletId, hogletId),
       )
       .get();
     return row ?? emptyAggregate;
@@ -187,15 +187,15 @@ export class UsageEventRepository {
   aggregateGlobal(since?: string): AggregateRow {
     const row = this.db
       .select({
-        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
-        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
-        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
-        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
-        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        totalInputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${rtsUsageEvents.costUsd}), 0)`,
         eventCount: sql<number>`count(*)`,
       })
-      .from(hedgemonyUsageEvents)
-      .where(since ? gte(hedgemonyUsageEvents.occurredAt, since) : undefined)
+      .from(rtsUsageEvents)
+      .where(since ? gte(rtsUsageEvents.occurredAt, since) : undefined)
       .get();
     return row ?? emptyAggregate;
   }
@@ -205,17 +205,17 @@ export class UsageEventRepository {
   ): Array<{ workload: UsageWorkload; row: AggregateRow }> {
     const rows = this.db
       .select({
-        workload: hedgemonyUsageEvents.workload,
-        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
-        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
-        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
-        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
-        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        workload: rtsUsageEvents.workload,
+        totalInputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${rtsUsageEvents.costUsd}), 0)`,
         eventCount: sql<number>`count(*)`,
       })
-      .from(hedgemonyUsageEvents)
-      .where(since ? gte(hedgemonyUsageEvents.occurredAt, since) : undefined)
-      .groupBy(hedgemonyUsageEvents.workload)
+      .from(rtsUsageEvents)
+      .where(since ? gte(rtsUsageEvents.occurredAt, since) : undefined)
+      .groupBy(rtsUsageEvents.workload)
       .all();
     return rows.map(({ workload, ...row }) => ({
       workload: workload as UsageWorkload,
@@ -228,18 +228,18 @@ export class UsageEventRepository {
   ): Array<{ model: string; row: AggregateRow }> {
     const rows = this.db
       .select({
-        model: hedgemonyUsageEvents.model,
-        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
-        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
-        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
-        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
-        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        model: rtsUsageEvents.model,
+        totalInputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${rtsUsageEvents.costUsd}), 0)`,
         eventCount: sql<number>`count(*)`,
       })
-      .from(hedgemonyUsageEvents)
-      .where(since ? gte(hedgemonyUsageEvents.occurredAt, since) : undefined)
-      .groupBy(hedgemonyUsageEvents.model)
-      .orderBy(desc(sql`sum(${hedgemonyUsageEvents.costUsd})`))
+      .from(rtsUsageEvents)
+      .where(since ? gte(rtsUsageEvents.occurredAt, since) : undefined)
+      .groupBy(rtsUsageEvents.model)
+      .orderBy(desc(sql`sum(${rtsUsageEvents.costUsd})`))
       .all();
     return rows.map(({ model, ...row }) => ({ model, row }));
   }
@@ -255,25 +255,25 @@ export class UsageEventRepository {
   ): Array<{ nestId: string; row: AggregateRow }> {
     const rows = this.db
       .select({
-        nestId: hedgemonyUsageEvents.nestId,
-        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
-        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
-        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
-        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
-        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        nestId: rtsUsageEvents.nestId,
+        totalInputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${rtsUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${rtsUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${rtsUsageEvents.costUsd}), 0)`,
         eventCount: sql<number>`count(*)`,
       })
-      .from(hedgemonyUsageEvents)
+      .from(rtsUsageEvents)
       .where(
         since
           ? and(
-              isNotNull(hedgemonyUsageEvents.nestId),
-              gte(hedgemonyUsageEvents.occurredAt, since),
+              isNotNull(rtsUsageEvents.nestId),
+              gte(rtsUsageEvents.occurredAt, since),
             )
-          : isNotNull(hedgemonyUsageEvents.nestId),
+          : isNotNull(rtsUsageEvents.nestId),
       )
-      .groupBy(hedgemonyUsageEvents.nestId)
-      .orderBy(desc(sql`sum(${hedgemonyUsageEvents.costUsd})`))
+      .groupBy(rtsUsageEvents.nestId)
+      .orderBy(desc(sql`sum(${rtsUsageEvents.costUsd})`))
       .limit(limit)
       .all();
     return rows

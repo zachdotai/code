@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { Selection } from "../state/RtsController";
-import { useHedgemonySelectionStore } from "../stores/rtsSelectionStore";
+import { useRtsSelectionStore } from "../stores/rtsSelectionStore";
 
 /**
  * Mirrors the hoglet portion of the local selection out to a small global
@@ -11,12 +11,12 @@ import { useHedgemonySelectionStore } from "../stores/rtsSelectionStore";
 export function useRtsSelectionSync(selection: Selection): void {
   useEffect(() => {
     const ids = selection?.type === "hoglets" ? selection.ids : [];
-    useHedgemonySelectionStore.getState().setSelectedHogletIds(ids);
+    useRtsSelectionStore.getState().setSelectedHogletIds(ids);
   }, [selection]);
 
   useEffect(() => {
     return () => {
-      useHedgemonySelectionStore.getState().clear();
+      useRtsSelectionStore.getState().clear();
     };
   }, []);
 }

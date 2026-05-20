@@ -9,7 +9,7 @@ import { type Obstacle, snapPointOutsideObstacles } from "./pathfinding";
 
 /*
  * Global per-frame collision resolution for moving sprites on the
- * Hedgemony map.
+ * Rts map.
  *
  * Pathfinding (findPath + useTransitPath) plans collision-free routes when
  * a target changes, but each sprite then animates along its path

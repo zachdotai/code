@@ -1,11 +1,11 @@
 /**
- * Hedgemony hotkey catalog — the single source of truth for every key bound
+ * Rts hotkey catalog — the single source of truth for every key bound
  * on the map. `react-hotkeys-hook` calls live next to the handlers, but this
  * catalog is what both the in-game helper overlay and the global cheatsheet
  * render from, so renames stay in lockstep.
  */
 
-export type HedgemonyHotkeyContext =
+export type RtsHotkeyContext =
   | "camera"
   | "selection"
   | "builder"
@@ -16,15 +16,15 @@ export type HedgemonyHotkeyContext =
   | "panels"
   | "dialog";
 
-export interface HedgemonyHotkey {
+export interface RtsHotkey {
   id: string;
   /** Comma-separated react-hotkeys-hook key string (first is what we display). */
   keys: string;
   description: string;
-  context: HedgemonyHotkeyContext;
+  context: RtsHotkeyContext;
 }
 
-export const HEDGEMONY_HOTKEYS: HedgemonyHotkey[] = [
+export const HEDGEMONY_HOTKEYS: RtsHotkey[] = [
   // Camera
   {
     id: "camera-pan",
@@ -224,7 +224,7 @@ export const HEDGEMONY_HOTKEYS: HedgemonyHotkey[] = [
   },
 ];
 
-export const HEDGEMONY_CONTEXT_LABELS: Record<HedgemonyHotkeyContext, string> =
+export const HEDGEMONY_CONTEXT_LABELS: Record<RtsHotkeyContext, string> =
   {
     camera: "Camera",
     selection: "Selection",
@@ -237,7 +237,7 @@ export const HEDGEMONY_CONTEXT_LABELS: Record<HedgemonyHotkeyContext, string> =
     dialog: "Dialogs",
   };
 
-export const HEDGEMONY_CONTEXT_ORDER: HedgemonyHotkeyContext[] = [
+export const HEDGEMONY_CONTEXT_ORDER: RtsHotkeyContext[] = [
   "camera",
   "selection",
   "builder",

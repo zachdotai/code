@@ -31,11 +31,11 @@ const log = logger.scope("hedgemony-signal-trigger");
  * but `posthog.captureException(...)` is an explicit call that bypasses that
  * gate and ships the event regardless. So this works in dev builds.
  */
-export function registerHedgemonySignalTriggerConsoleCommand(): void {
+export function registerRtsSignalTriggerConsoleCommand(): void {
   if (import.meta.env.PROD || typeof window === "undefined") {
     return;
   }
-  if (typeof window.__hedgemonyTriggerSignal === "function") {
+  if (typeof window.__rtsTriggerSignal === "function") {
     return;
   }
 
@@ -44,28 +44,28 @@ export function registerHedgemonySignalTriggerConsoleCommand(): void {
     const tag = label?.trim() || "hedgemony-signal-trigger";
     const message = `${tag} ${stamp}`;
     const error = new Error(message);
-    error.name = "HedgemonySignalTriggerError";
+    error.name = "RtsSignalTriggerError";
     captureException(error, { hedgemony_signal_trigger: true, tag, stamp });
     log.info("Fired test exception for signal ingestion", { message });
     return message;
   };
 
-  Object.defineProperty(window, "__hedgemonyTriggerSignal", {
+  Object.defineProperty(window, "__rtsTriggerSignal", {
     value: command,
     configurable: true,
     writable: false,
   });
 
-  if (typeof window.__hedgemonyStubSignal !== "function") {
-    Object.defineProperty(window, "__hedgemonyStubSignal", {
+  if (typeof window.__rtsStubSignal !== "function") {
+    Object.defineProperty(window, "__rtsStubSignal", {
       value: stubSignalCommand,
       configurable: true,
       writable: false,
     });
   }
 
-  if (typeof window.__hedgemonyListTasks !== "function") {
-    Object.defineProperty(window, "__hedgemonyListTasks", {
+  if (typeof window.__rtsListTasks !== "function") {
+    Object.defineProperty(window, "__rtsListTasks", {
       value: listTasksCommand,
       configurable: true,
       writable: false,
@@ -120,12 +120,12 @@ const listTasksCommand: ListTasksCommand = async () => {
  *
  * Useful for verifying UI rendering / drag without waiting for the real
  * signal pipeline. Pass any existing cloud task id — get a list via
- * `window.__hedgemonyListTasks()` in the console.
+ * `window.__rtsListTasks()` in the console.
  */
 const stubSignalCommand: SignalStubCommand = async (taskId, options = {}) => {
   if (!taskId || typeof taskId !== "string") {
     throw new Error(
-      "Usage: window.__hedgemonyStubSignal('<existing-task-id>', { title?, summary? })",
+      "Usage: window.__rtsStubSignal('<existing-task-id>', { title?, summary? })",
     );
   }
 
@@ -136,7 +136,7 @@ const stubSignalCommand: SignalStubCommand = async (taskId, options = {}) => {
     title: options.title ?? `Stub signal ${nowIso}`,
     summary:
       options.summary ??
-      "Synthetic signal injected via window.__hedgemonyStubSignal — bypasses the real ingestion pipeline.",
+      "Synthetic signal injected via window.__rtsStubSignal — bypasses the real ingestion pipeline.",
     status: "ready",
     total_weight: 1,
     signal_count: 1,
@@ -170,8 +170,8 @@ const stubSignalCommand: SignalStubCommand = async (taskId, options = {}) => {
 
 declare global {
   interface Window {
-    __hedgemonyTriggerSignal?: SignalTriggerCommand;
-    __hedgemonyStubSignal?: SignalStubCommand;
-    __hedgemonyListTasks?: ListTasksCommand;
+    __rtsTriggerSignal?: SignalTriggerCommand;
+    __rtsStubSignal?: SignalStubCommand;
+    __rtsListTasks?: ListTasksCommand;
   }
 }

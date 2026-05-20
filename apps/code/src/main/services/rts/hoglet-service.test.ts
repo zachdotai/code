@@ -65,7 +65,7 @@ import {
   DEFAULT_CODEX_REASONING_EFFORT,
   DEFAULT_HOGLET_MODEL,
   defaultModelForAdapter,
-  HedgemonyEvent,
+  RtsEvent,
   type Hoglet,
   type Nest,
 } from "./schemas";
@@ -309,7 +309,7 @@ describe("HogletService", () => {
 
   it("records an adhoc hoglet and emits a wild change event", () => {
     const listener = vi.fn();
-    service.on(HedgemonyEvent.HogletChanged, listener);
+    service.on(RtsEvent.HogletChanged, listener);
 
     const hoglet = service.recordAdhoc({ taskId: "task-1" });
 
@@ -333,7 +333,7 @@ describe("HogletService", () => {
   it("can emit an upsert change for an existing hoglet", () => {
     const hoglet = service.recordAdhoc({ taskId: "task-1" });
     const listener = vi.fn();
-    service.on(HedgemonyEvent.HogletChanged, listener);
+    service.on(RtsEvent.HogletChanged, listener);
 
     service.emitChanged(hoglet);
 
@@ -390,7 +390,7 @@ describe("HogletService", () => {
     it("emits removed for wild + upsert for the target nest", () => {
       const wild = service.recordAdhoc({ taskId: "task-1" });
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
 
       const adopted = service.adopt({
         hogletId: wild.id,
@@ -413,7 +413,7 @@ describe("HogletService", () => {
       const first = service.adopt({ hogletId: wild.id, nestId: "nest-A" });
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
       const second = service.adopt({ hogletId: wild.id, nestId: "nest-A" });
 
       expect(second.id).toBe(first.id);
@@ -456,7 +456,7 @@ describe("HogletService", () => {
       const adopted = service.adopt({ hogletId: wild.id, nestId: "nest-A" });
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
       const released = service.release({ hogletId: adopted.id });
 
       expect(released.nestId).toBeNull();
@@ -478,7 +478,7 @@ describe("HogletService", () => {
       const adopted = service.adopt({ hogletId: signal.id, nestId: "nest-A" });
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
       const released = service.release({ hogletId: adopted.id });
 
       expect(released.signalReportId).toBe("sr-1");
@@ -496,7 +496,7 @@ describe("HogletService", () => {
     it("is a no-op for already-wild hoglets", () => {
       const wild = service.recordAdhoc({ taskId: "task-1" });
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
 
       const result = service.release({ hogletId: wild.id });
 
@@ -515,7 +515,7 @@ describe("HogletService", () => {
   describe("recordSignalBacked", () => {
     it("records a signal-backed hoglet and emits a wild event when unrouted", async () => {
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
 
       const hoglet = await service.recordSignalBacked({
         taskId: "task-1",
@@ -556,7 +556,7 @@ describe("HogletService", () => {
         workspaceService,
       );
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
 
       const hoglet = await service.recordSignalBacked({
         taskId: "task-1",
@@ -678,7 +678,7 @@ describe("HogletService", () => {
       });
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
       const adopted = service.adopt({ hogletId: signal.id, nestId: "nest-A" });
 
       expect(adopted.nestId).toBe("nest-A");
@@ -748,7 +748,7 @@ describe("HogletService", () => {
       });
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
       service.dismissSignal({ hogletId: signal.id });
 
       expect(repo.softDelete).toHaveBeenCalledWith(signal.id);
@@ -778,7 +778,7 @@ describe("HogletService", () => {
       const wild = service.recordAdhoc({ taskId: "task-1" });
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
       service.retire({ hogletId: wild.id });
 
       expect(repo.softDelete).toHaveBeenCalledWith(wild.id);
@@ -795,7 +795,7 @@ describe("HogletService", () => {
       });
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
       service.retire({ hogletId: signal.id });
 
       expect(repo.softDelete).toHaveBeenCalledWith(signal.id);
@@ -810,7 +810,7 @@ describe("HogletService", () => {
       const adopted = service.adopt({ hogletId: wild.id, nestId: "nest-X" });
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
       service.retire({ hogletId: adopted.id });
 
       expect(repo.softDelete).toHaveBeenCalledWith(adopted.id);
@@ -831,7 +831,7 @@ describe("HogletService", () => {
       service.retire({ hogletId: wild.id });
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
       service.retire({ hogletId: wild.id });
 
       expect(listener).not.toHaveBeenCalled();
@@ -851,7 +851,7 @@ describe("HogletService", () => {
         workspaceService,
       );
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
 
       const { hoglet, taskRunId } = await service.spawnInNest({
         nestId: "nest-1",
@@ -1107,7 +1107,7 @@ describe("HogletService", () => {
         expect.any(String),
         {
           status: "cancelled",
-          errorMessage: "Cancelled after Hedgemony spawn failed",
+          errorMessage: "Cancelled after Rts spawn failed",
         },
       );
       expect(cloudTasks.deleteTask).toHaveBeenCalledWith(
@@ -1139,7 +1139,7 @@ describe("HogletService", () => {
         expect.any(String),
         {
           status: "cancelled",
-          errorMessage: "Cancelled after Hedgemony spawn failed",
+          errorMessage: "Cancelled after Rts spawn failed",
         },
       );
       expect(cloudTasks.deleteTask).toHaveBeenCalledWith("cloud-fail-2");
@@ -1169,7 +1169,7 @@ describe("HogletService", () => {
         expect.any(String),
         {
           status: "cancelled",
-          errorMessage: "Cancelled after Hedgemony spawn failed",
+          errorMessage: "Cancelled after Rts spawn failed",
         },
       );
       expect(cloudTasks.deleteTask).toHaveBeenCalledWith("cloud-local-fail");
@@ -1259,7 +1259,7 @@ describe("HogletService", () => {
       );
 
       const listener = vi.fn();
-      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.on(RtsEvent.HogletChanged, listener);
 
       const child = await service.spawnFollowUp(
         {
@@ -1398,7 +1398,7 @@ describe("HogletService", () => {
         expect.any(String),
         {
           status: "cancelled",
-          errorMessage: "Cancelled after Hedgemony spawn failed",
+          errorMessage: "Cancelled after Rts spawn failed",
         },
       );
       expect(cloudTasks.deleteTask).toHaveBeenCalledWith("child-task-fail");
@@ -1436,7 +1436,7 @@ describe("HogletService", () => {
         expect.any(String),
         {
           status: "cancelled",
-          errorMessage: "Cancelled after Hedgemony spawn failed",
+          errorMessage: "Cancelled after Rts spawn failed",
         },
       );
       expect(cloudTasks.deleteTask).toHaveBeenCalledWith(

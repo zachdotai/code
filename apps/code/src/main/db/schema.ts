@@ -95,7 +95,7 @@ export const authSessions = sqliteTable("auth_sessions", {
   updatedAt: updatedAt(),
 });
 
-export const hedgemonyNests = sqliteTable(
+export const rtsNests = sqliteTable(
   "hedgemony_nest",
   {
     id: id(),
@@ -129,13 +129,13 @@ export const hedgemonyNests = sqliteTable(
   (t) => [index("hedgemony_nest_status_idx").on(t.status)],
 );
 
-export const hedgemonyHoglets = sqliteTable(
+export const rtsHoglets = sqliteTable(
   "hedgemony_hoglet",
   {
     id: id(),
     name: text(),
     taskId: text().notNull().unique(),
-    nestId: text().references(() => hedgemonyNests.id, {
+    nestId: text().references(() => rtsNests.id, {
       onDelete: "set null",
     }),
     signalReportId: text().unique(),
@@ -154,13 +154,13 @@ export const hedgemonyHoglets = sqliteTable(
   (t) => [index("hedgemony_hoglet_nest_id_idx").on(t.nestId)],
 );
 
-export const hedgemonyNestMessages = sqliteTable(
+export const rtsNestMessages = sqliteTable(
   "hedgemony_nest_message",
   {
     id: id(),
     nestId: text()
       .notNull()
-      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+      .references(() => rtsNests.id, { onDelete: "cascade" }),
     kind: text({
       enum: [
         "user_message",
@@ -185,10 +185,10 @@ export const hedgemonyNestMessages = sqliteTable(
   ],
 );
 
-export const hedgemonyHedgehogState = sqliteTable("hedgemony_hedgehog_state", {
+export const rtsHedgehogState = sqliteTable("hedgemony_hedgehog_state", {
   nestId: text()
     .primaryKey()
-    .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+    .references(() => rtsNests.id, { onDelete: "cascade" }),
   state: text({
     enum: ["idle", "ticking", "proposing_completion"],
   })
@@ -200,11 +200,11 @@ export const hedgemonyHedgehogState = sqliteTable("hedgemony_hedgehog_state", {
   updatedAt: updatedAt(),
 });
 
-export const hedgemonyFeedbackEvents = sqliteTable(
+export const rtsFeedbackEvents = sqliteTable(
   "hedgemony_feedback_event",
   {
     id: id(),
-    nestId: text().references(() => hedgemonyNests.id, {
+    nestId: text().references(() => rtsNests.id, {
       onDelete: "set null",
     }),
     hogletTaskId: text().notNull(),
@@ -232,13 +232,13 @@ export const hedgemonyFeedbackEvents = sqliteTable(
   ],
 );
 
-export const hedgemonyPrDependencies = sqliteTable(
+export const rtsPrDependencies = sqliteTable(
   "hedgemony_pr_dependency",
   {
     id: id(),
     nestId: text()
       .notNull()
-      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+      .references(() => rtsNests.id, { onDelete: "cascade" }),
     parentTaskId: text().notNull(),
     childTaskId: text().notNull(),
     state: text({
@@ -258,13 +258,13 @@ export const hedgemonyPrDependencies = sqliteTable(
   ],
 );
 
-export const hedgemonyOperatorDecisions = sqliteTable(
+export const rtsOperatorDecisions = sqliteTable(
   "hedgemony_operator_decision",
   {
     id: id(),
     nestId: text()
       .notNull()
-      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+      .references(() => rtsNests.id, { onDelete: "cascade" }),
     kind: text({
       enum: ["suppress_signal_report", "revive_hoglet"],
     }).notNull(),
@@ -283,14 +283,14 @@ export const hedgemonyOperatorDecisions = sqliteTable(
   ],
 );
 
-export const hedgemonyUsageEvents = sqliteTable(
+export const rtsUsageEvents = sqliteTable(
   "hedgemony_usage_event",
   {
     id: id(),
-    nestId: text().references(() => hedgemonyNests.id, {
+    nestId: text().references(() => rtsNests.id, {
       onDelete: "set null",
     }),
-    hogletId: text().references(() => hedgemonyHoglets.id, {
+    hogletId: text().references(() => rtsHoglets.id, {
       onDelete: "set null",
     }),
     taskId: text(),
@@ -325,13 +325,13 @@ export const hedgemonyUsageEvents = sqliteTable(
   ],
 );
 
-export const hedgemonyTickLog = sqliteTable(
+export const rtsTickLog = sqliteTable(
   "hedgemony_tick_log",
   {
     id: id(),
     nestId: text()
       .notNull()
-      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+      .references(() => rtsNests.id, { onDelete: "cascade" }),
     tickedAt: text().notNull().default(sql`(CURRENT_TIMESTAMP)`),
     outcome: text({
       enum: ["completed", "errored", "aborted", "capped"],
