@@ -1,7 +1,7 @@
 import {
   HEDGEMONY_CONTEXT_LABELS,
   HEDGEMONY_HOTKEYS,
-} from "@features/hedgemony/constants/hotkeys";
+} from "@features/rts/constants/hotkeys";
 import { isMac } from "@utils/platform";
 
 export const SHORTCUTS = {

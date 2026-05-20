@@ -81,7 +81,7 @@ function App() {
         registerInboxDemoConsoleCommand();
       },
     );
-    void import("@features/hedgemony/devtools/signalTriggerConsole").then(
+    void import("@features/rts/devtools/signalTriggerConsole").then(
       ({ registerHedgemonySignalTriggerConsoleCommand }) => {
         registerHedgemonySignalTriggerConsoleCommand();
       },

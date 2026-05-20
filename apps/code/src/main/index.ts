@@ -14,9 +14,6 @@ import type { AppLifecycleService } from "./services/app-lifecycle/service";
 import type { AuthService } from "./services/auth/service";
 import type { ExternalAppsService } from "./services/external-apps/service";
 import type { GitHubIntegrationService } from "./services/github-integration/service";
-import type { FeedbackRoutingService } from "./services/hedgemony/feedback-routing-service";
-import type { HedgehogTickService } from "./services/hedgemony/hedgehog-tick-service";
-import type { PrGraphService } from "./services/hedgemony/pr-graph-service";
 import type { InboxLinkService } from "./services/inbox-link/service";
 import type { NotificationService } from "./services/notification/service";
 import type { OAuthService } from "./services/oauth/service";
@@ -27,6 +24,9 @@ import {
   trackAppEvent,
 } from "./services/posthog-analytics";
 import type { PosthogPluginService } from "./services/posthog-plugin/service";
+import type { FeedbackRoutingService } from "./services/rts/feedback-routing-service";
+import type { HedgehogTickService } from "./services/rts/hedgehog-tick-service";
+import type { PrGraphService } from "./services/rts/pr-graph-service";
 import type { SuspensionService } from "./services/suspension/service";
 import type { TaskLinkService } from "./services/task-link/service";
 import type { UpdatesService } from "./services/updates/service";

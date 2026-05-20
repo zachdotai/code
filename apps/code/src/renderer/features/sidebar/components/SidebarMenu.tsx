@@ -1,7 +1,5 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
-import { useHedgemonySelectionStore } from "@features/hedgemony/stores/hedgemonySelectionStore";
-import { useHogletStore } from "@features/hedgemony/stores/hogletStore";
 import { useInboxReports } from "@features/inbox/hooks/useInboxReports";
 import { isReportUpForReview } from "@features/inbox/utils/filterReports";
 import {
@@ -9,6 +7,8 @@ import {
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
+import { useHedgemonySelectionStore } from "@features/rts/stores/hedgemonySelectionStore";
+import { useHogletStore } from "@features/rts/stores/hogletStore";
 import { getSessionService } from "@features/sessions/service/service";
 import { useSetupStore } from "@features/setup/stores/setupStore";
 import {

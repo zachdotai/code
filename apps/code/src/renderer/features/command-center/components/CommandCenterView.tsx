@@ -1,5 +1,5 @@
-import { HedgemonyMapView } from "@features/hedgemony/components/HedgemonyMapView";
-import { useHedgemonyViewStore } from "@features/hedgemony/stores/hedgemonyViewStore";
+import { HedgemonyMapView } from "@features/rts/components/HedgemonyMapView";
+import { useHedgemonyViewStore } from "@features/rts/stores/hedgemonyViewStore";
 import { useTaskViewed } from "@features/sidebar/hooks/useTaskViewed";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";

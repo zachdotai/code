@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Hedgemony voice line generator.
 //
-// Reads notes/hedgemony/voice-lines.json, calls ElevenLabs for every
+// Reads notes/rts/voice-lines.json, calls ElevenLabs for every
 // (mode, gender, unit, intent, line, take) tuple, writes mp3 files into
 // apps/code/src/renderer/assets/sounds/voice/<mode>/<gender>/.
 // Output is mp3_22050_32 (32 kbps mono mp3 at 22 kHz) — small + ready to ship.
@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..");
-const SCRIPT_PATH = join(REPO_ROOT, "notes/hedgemony/voice-lines.json");
+const SCRIPT_PATH = join(REPO_ROOT, "notes/rts/voice-lines.json");
 const OUT_DIR = join(REPO_ROOT, "apps/code/src/renderer/assets/sounds/voice");
 
 const FORCE = process.argv.includes("--force");
@@ -173,7 +173,7 @@ function writeManifest() {
   entries.sort();
   const manifestPath = join(
     REPO_ROOT,
-    "apps/code/src/renderer/features/hedgemony/audio/voice-manifest.json",
+    "apps/code/src/renderer/features/rts/audio/voice-manifest.json",
   );
   writeFileSync(manifestPath, `${JSON.stringify(entries, null, 2)}\n`);
   console.log(`Manifest: ${manifestPath} (${entries.length} entries)`);

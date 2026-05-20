@@ -1,0 +1,718 @@
+import { EnvironmentSelector } from "@features/environments/components/EnvironmentSelector";
+import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
+import { GitHubRepoPicker } from "@features/folder-picker/components/GitHubRepoPicker";
+import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
+import { BranchSelector } from "@features/git-interaction/components/BranchSelector";
+import { GitBranchDialog } from "@features/git-interaction/components/GitInteractionDialogs";
+import { useGitQueries } from "@features/git-interaction/hooks/useGitQueries";
+import { useGitInteractionStore } from "@features/git-interaction/state/gitInteractionStore";
+import {
+  createBranch,
+  getBranchNameInputState,
+} from "@features/git-interaction/utils/branchCreation";
+import { PromptHistoryDialog } from "@features/message-editor/components/PromptHistoryDialog";
+import { PromptInput } from "@features/message-editor/components/PromptInput";
+import { useDraftStore } from "@features/message-editor/stores/draftStore";
+import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
+import type { EditorHandle } from "@features/message-editor/types";
+import { resolveAndAttachDroppedFiles } from "@features/message-editor/utils/persistFile";
+import { DropZoneOverlay } from "@features/sessions/components/DropZoneOverlay";
+import { ReasoningLevelSelector } from "@features/sessions/components/ReasoningLevelSelector";
+import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModelSelector";
+import { getCurrentModeFromConfigOptions } from "@features/sessions/stores/sessionStore";
+import type { AgentAdapter } from "@features/settings/stores/settingsStore";
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { CloudGithubMissingNotice } from "@features/task-detail/components/CloudGithubMissingNotice";
+import {
+  type WorkspaceMode,
+  WorkspaceModeSelect,
+} from "@features/task-detail/components/WorkspaceModeSelect";
+import { usePreviewConfig } from "@features/task-detail/hooks/usePreviewConfig";
+import { useTaskCreation } from "@features/task-detail/hooks/useTaskCreation";
+import { useConnectivity } from "@hooks/useConnectivity";
+import {
+  useUserGithubBranches,
+  useUserGithubRepositories,
+  useUserRepositoryIntegration,
+} from "@hooks/useIntegrations";
+import { genderForName } from "@main/services/rts/hoglet-names";
+import { ButtonGroup } from "@posthog/quill";
+import { Flex } from "@radix-ui/themes";
+import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import type { Task } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { useQuery } from "@tanstack/react-query";
+import { track } from "@utils/analytics";
+import { logger } from "@utils/logger";
+import { toast } from "@utils/toast";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
+import { playVoice } from "../audio/voice";
+import { WILD_BUCKET } from "../constants/buckets";
+import { useHogletStore } from "../stores/hogletStore";
+import { CommandConsole } from "./CommandConsole";
+
+const log = logger.scope("spawn-hoglet-panel");
+const PROMPT_SESSION_ID = "spawn-hoglet";
+
+export interface SpawnHogletPanelProps {
+  onClose: () => void;
+}
+
+export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
+  const t = useFunSpeak();
+  const trpcReact = useTRPC();
+  const {
+    lastUsedLocalWorkspaceMode,
+    setLastUsedLocalWorkspaceMode,
+    lastUsedWorkspaceMode,
+    setLastUsedWorkspaceMode,
+    lastUsedAdapter,
+    setLastUsedAdapter,
+    lastUsedCloudRepository,
+    setLastUsedCloudRepository,
+    allowBypassPermissions,
+    setLastUsedEnvironment,
+    getLastUsedEnvironment,
+    defaultInitialTaskMode,
+    lastUsedInitialTaskMode,
+    setLastUsedReasoningEffort,
+  } = useSettingsStore();
+
+  const editorRef = useRef<EditorHandle>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const buttonGroupRef = useRef<HTMLDivElement>(null);
+  const dragCounterRef = useRef(0);
+
+  const [editorIsEmpty, setEditorIsEmpty] = useState(true);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [cloudRepoSearchQuery, setCloudRepoSearchQuery] = useState("");
+  const [isCloudRepoPickerOpen, setIsCloudRepoPickerOpen] = useState(false);
+  const [cloudBranchSearchQuery, setCloudBranchSearchQuery] = useState("");
+  const [isCloudBranchPickerOpen, setIsCloudBranchPickerOpen] = useState(false);
+  const [selectedEnvironment, setSelectedEnvironmentRaw] = useState<
+    string | null
+  >(null);
+  const [selectedCloudEnvId, setSelectedCloudEnvId] = useState<string | null>(
+    null,
+  );
+
+  const [selectedDirectory, setSelectedDirectory] = useState("");
+  const adapter = lastUsedAdapter;
+
+  const { data: mostRecentRepo } = useQuery(
+    trpcReact.folders.getMostRecentlyAccessedRepository.queryOptions(),
+  );
+
+  useEffect(() => {
+    if (!selectedDirectory && mostRecentRepo?.path) {
+      setSelectedDirectory(mostRecentRepo.path);
+    }
+  }, [mostRecentRepo?.path, selectedDirectory]);
+
+  const setAdapter = (newAdapter: AgentAdapter) =>
+    setLastUsedAdapter(newAdapter);
+
+  const {
+    repositories,
+    getInstallationIdForRepo,
+    getUserIntegrationIdForRepo,
+    isLoadingRepos,
+    isRefreshingRepos,
+    refreshRepositories,
+    hasGithubIntegration,
+  } = useUserRepositoryIntegration();
+
+  const cloudAvailable = isLoadingRepos || hasGithubIntegration;
+  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
+    if (!cloudAvailable && lastUsedWorkspaceMode === "cloud") {
+      return lastUsedLocalWorkspaceMode;
+    }
+    return lastUsedWorkspaceMode || "cloud";
+  });
+
+  const setWorkspaceMode = (mode: WorkspaceMode) => {
+    setWorkspaceModeState(mode);
+    setLastUsedWorkspaceMode(mode);
+    if (mode !== "cloud") {
+      setLastUsedLocalWorkspaceMode(mode);
+    }
+  };
+
+  useEffect(() => {
+    if (workspaceMode === "cloud" && !cloudAvailable) {
+      setWorkspaceModeState(lastUsedLocalWorkspaceMode);
+    }
+  }, [workspaceMode, cloudAvailable, lastUsedLocalWorkspaceMode]);
+
+  const {
+    repositories: visibleCloudRepositories,
+    isPending: cloudRepositoriesLoading,
+    hasMore: cloudRepositoriesHasMore,
+    loadMore: loadMoreCloudRepositories,
+  } = useUserGithubRepositories(cloudRepoSearchQuery, isCloudRepoPickerOpen);
+
+  const [selectedRepository, setSelectedRepository] = useState<string | null>(
+    () => lastUsedCloudRepository?.toLowerCase() ?? null,
+  );
+  const selectedCloudRepository = useMemo(() => {
+    if (!selectedRepository) return null;
+    const lower = selectedRepository.toLowerCase();
+    return repositories.includes(lower) ? lower : null;
+  }, [selectedRepository, repositories]);
+  const { currentBranch, branchLoading, defaultBranch } =
+    useGitQueries(selectedDirectory);
+
+  const selectedGithubUserIntegrationId = selectedCloudRepository
+    ? getUserIntegrationIdForRepo(selectedCloudRepository)
+    : undefined;
+  const selectedInstallationId = selectedCloudRepository
+    ? getInstallationIdForRepo(selectedCloudRepository)
+    : undefined;
+
+  const {
+    data: cloudBranchData,
+    isPending: cloudBranchesLoading,
+    isRefreshing: cloudBranchesRefreshing,
+    isFetchingMore: cloudBranchesFetchingMore,
+    hasMore: cloudBranchesHasMore,
+    loadMore: loadMoreCloudBranches,
+    refresh: refreshCloudBranches,
+  } = useUserGithubBranches(
+    selectedInstallationId,
+    selectedCloudRepository,
+    cloudBranchSearchQuery,
+    isCloudBranchPickerOpen,
+  );
+  const cloudBranches = cloudBranchData?.branches;
+  const cloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+
+  const {
+    branchOpen,
+    branchName: newBranchName,
+    branchError,
+    actions: gitActions,
+  } = useGitInteractionStore();
+
+  const handleNewBranchNameChange = useCallback(
+    (value: string) => {
+      const { sanitized, error } = getBranchNameInputState(value);
+      gitActions.setBranchName(sanitized);
+      gitActions.setBranchError(error);
+    },
+    [gitActions],
+  );
+
+  const handleCreateBranch = useCallback(async () => {
+    setIsCreatingBranch(true);
+    try {
+      const result = await createBranch({
+        repoPath: selectedDirectory || undefined,
+        rawBranchName: newBranchName,
+      });
+      if (!result.success) {
+        gitActions.setBranchError(result.error);
+        return;
+      }
+      setSelectedBranch(result.branchName);
+      gitActions.closeBranch();
+    } finally {
+      setIsCreatingBranch(false);
+    }
+  }, [selectedDirectory, newBranchName, gitActions]);
+
+  const handleRepositorySelect = useCallback(
+    (repo: string | null) => {
+      if (!repo) {
+        setSelectedRepository(null);
+        setLastUsedCloudRepository(null);
+        return;
+      }
+      const normalizedRepo = repo.toLowerCase();
+      setSelectedRepository(normalizedRepo);
+      setLastUsedCloudRepository(normalizedRepo);
+    },
+    [setLastUsedCloudRepository],
+  );
+
+  const handleRefreshRepositories = useCallback(() => {
+    void refreshRepositories().catch((error) => {
+      toast.error("Failed to refresh repositories", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    });
+  }, [refreshRepositories]);
+
+  const handleRefreshBranches = useCallback(() => {
+    void refreshCloudBranches().catch((error) => {
+      toast.error("Failed to refresh branches", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    });
+  }, [refreshCloudBranches]);
+
+  const handleCloudBranchPickerOpen = useCallback(() => {
+    setIsCloudBranchPickerOpen(true);
+  }, []);
+
+  const handleCloudRepoPickerOpenChange = useCallback((open: boolean) => {
+    setIsCloudRepoPickerOpen(open);
+    if (!open) {
+      setCloudRepoSearchQuery("");
+    }
+  }, []);
+
+  const handleCloudRepoSearchChange = useCallback((value: string) => {
+    setCloudRepoSearchQuery(value);
+  }, []);
+
+  const handleLoadMoreCloudRepositories = useCallback(() => {
+    loadMoreCloudRepositories();
+  }, [loadMoreCloudRepositories]);
+
+  const handleCloudBranchPickerClose = useCallback(() => {
+    setIsCloudBranchPickerOpen(false);
+    setCloudBranchSearchQuery("");
+  }, []);
+
+  const handleCloudBranchSearchChange = useCallback((value: string) => {
+    setCloudBranchSearchQuery(value);
+  }, []);
+
+  const handleLoadMoreCloudBranches = useCallback(() => {
+    loadMoreCloudBranches();
+  }, [loadMoreCloudBranches]);
+
+  const {
+    modeOption,
+    modelOption,
+    thoughtOption,
+    isLoading: isPreviewLoading,
+    setConfigOption,
+  } = usePreviewConfig(adapter);
+
+  useEffect(() => {
+    if (selectedRepository || !lastUsedCloudRepository) return;
+    setSelectedRepository(lastUsedCloudRepository.toLowerCase());
+  }, [lastUsedCloudRepository, selectedRepository]);
+
+  useEffect(() => {
+    if (
+      isLoadingRepos ||
+      repositories.length === 0 ||
+      !selectedRepository ||
+      selectedCloudRepository
+    ) {
+      return;
+    }
+    setSelectedRepository(null);
+    if (lastUsedCloudRepository === selectedRepository) {
+      setLastUsedCloudRepository(null);
+    }
+  }, [
+    isLoadingRepos,
+    repositories.length,
+    lastUsedCloudRepository,
+    selectedCloudRepository,
+    selectedRepository,
+    setLastUsedCloudRepository,
+  ]);
+
+  const effectiveRepoPath =
+    workspaceMode === "cloud" ? selectedCloudRepository : selectedDirectory;
+
+  const setSelectedEnvironment = useCallback(
+    (envId: string | null) => {
+      setSelectedEnvironmentRaw(envId);
+      if (effectiveRepoPath) {
+        setLastUsedEnvironment(effectiveRepoPath, envId);
+      }
+    },
+    [effectiveRepoPath, setLastUsedEnvironment],
+  );
+
+  useEffect(() => {
+    setSelectedBranch(null);
+    if (effectiveRepoPath) {
+      setSelectedEnvironmentRaw(getLastUsedEnvironment(effectiveRepoPath));
+    } else {
+      setSelectedEnvironmentRaw(null);
+    }
+  }, [effectiveRepoPath, getLastUsedEnvironment]);
+
+  const currentModel =
+    modelOption?.type === "select" ? modelOption.currentValue : undefined;
+  const adapterDefault = adapter === "codex" ? "auto" : "plan";
+  const modeFallback =
+    defaultInitialTaskMode === "last_used"
+      ? (lastUsedInitialTaskMode ?? adapterDefault)
+      : adapterDefault;
+  const currentExecutionMode =
+    getCurrentModeFromConfigOptions(modeOption ? [modeOption] : undefined) ??
+    modeFallback;
+  const currentReasoningLevel =
+    thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+
+  const branchForTaskCreation =
+    workspaceMode === "worktree" || workspaceMode === "cloud"
+      ? selectedBranch
+      : null;
+
+  const handleTaskCreated = useCallback(
+    async (task: Task) => {
+      try {
+        const hoglet = await trpcClient.hedgemony.hoglets.recordAdhoc.mutate({
+          taskId: task.id,
+        });
+        useHogletStore.getState().upsert(WILD_BUCKET, hoglet);
+        playVoice("hoglet:order_work", genderForName(hoglet.name));
+        track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED, { source: "adhoc" });
+      } catch (error) {
+        log.error("Failed to register wild hoglet", { error, taskId: task.id });
+        toast.error("Hoglet created but couldn't join the wild flock", {
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        });
+      } finally {
+        onClose();
+      }
+    },
+    [onClose],
+  );
+
+  const { isCreatingTask, canSubmit, handleSubmit } = useTaskCreation({
+    editorRef,
+    selectedDirectory,
+    selectedRepository: selectedCloudRepository,
+    githubUserIntegrationId: selectedGithubUserIntegrationId,
+    workspaceMode,
+    branch: branchForTaskCreation,
+    editorIsEmpty,
+    adapter,
+    executionMode: currentExecutionMode,
+    model: currentModel,
+    reasoningLevel: currentReasoningLevel,
+    environmentId: selectedEnvironment,
+    sandboxEnvironmentId:
+      workspaceMode === "cloud" && selectedCloudEnvId
+        ? selectedCloudEnvId
+        : undefined,
+    cloudPrAuthorshipMode: workspaceMode === "cloud" ? "bot" : undefined,
+    cloudRunSource: workspaceMode === "cloud" ? "manual" : undefined,
+    onTaskCreated: handleTaskCreated,
+  });
+
+  const handleModeChange = useCallback(
+    (value: string) => {
+      if (modeOption) setConfigOption(modeOption.id, value);
+    },
+    [modeOption, setConfigOption],
+  );
+
+  const handleModelChange = useCallback(
+    (value: string) => {
+      if (modelOption) setConfigOption(modelOption.id, value);
+    },
+    [modelOption, setConfigOption],
+  );
+
+  const handleThoughtChange = useCallback(
+    (value: string) => {
+      if (thoughtOption) {
+        setConfigOption(thoughtOption.id, value);
+        setLastUsedReasoningEffort(value);
+      }
+    },
+    [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
+  );
+
+  const { isOnline } = useConnectivity();
+
+  useEffect(() => {
+    let cancelled = false;
+    trpcClient.skills.list.query().then((skills) => {
+      if (cancelled) return;
+      useDraftStore.getState().actions.setCommands(
+        PROMPT_SESSION_ID,
+        skills.map((s) => ({ name: s.name, description: s.description })),
+      );
+    });
+    return () => {
+      cancelled = true;
+      useDraftStore.getState().actions.clearCommands(PROMPT_SESSION_ID);
+    };
+  }, []);
+
+  const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
+  const getPromptHistory = useCallback(
+    () => useTaskInputHistoryStore.getState().entries.map((e) => e.text),
+    [],
+  );
+  const handleHistorySelect = useCallback((text: string) => {
+    editorRef.current?.setContent(text);
+    editorRef.current?.focus();
+  }, []);
+  const hasPendingDraft = useCallback(
+    () => !(editorRef.current?.isEmpty() ?? true),
+    [],
+  );
+  const hints = [
+    "@ to add files",
+    "/ for skills",
+    hasHistory ? "\u2191\u2193 for history" : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDraggingFile(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDraggingFile(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDraggingFile(false);
+    if ((e.target as HTMLElement).closest(".ProseMirror")) return;
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    resolveAndAttachDroppedFiles(files, (a) =>
+      editorRef.current?.addAttachment(a),
+    )
+      .then(() => editorRef.current?.focus())
+      .catch(() => toast.error("Failed to attach files"));
+  }, []);
+
+  const handleClose = () => {
+    if (!isCreatingTask) onClose();
+  };
+
+  const submitDisabled = !canSubmit || isCreatingTask || !isOnline;
+
+  // `Mod+Enter` submits from anywhere in the panel — matches the app-wide
+  // SUBMIT_BLUR convention and keeps the dispatch flow keyboard-friendly.
+  useHotkeys(
+    "mod+enter",
+    () => {
+      if (!submitDisabled) void handleSubmit();
+    },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      preventDefault: true,
+    },
+    [submitDisabled, handleSubmit],
+  );
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop container
+    <div
+      ref={containerRef}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      <DropZoneOverlay isVisible={isDraggingFile} />
+      <CommandConsole
+        consoleKey="spawn-hoglet"
+        size="wide"
+        style={{ maxHeight: "min(90vh, 760px)" }}
+      >
+        <CommandConsole.Header
+          eyebrow={t("Hedgehouse")}
+          title={t("Send out a wild hog")}
+          subtitle="Dispatched from the town hall of the wilds — joins the map flock, no nest required."
+          onClose={handleClose}
+          closeDisabled={isCreatingTask}
+        />
+
+        <CommandConsole.Body scroll>
+          <Flex gap="2" align="center" wrap="wrap" className="min-w-0">
+            <WorkspaceModeSelect
+              value={workspaceMode}
+              onChange={setWorkspaceMode}
+              selectedCloudEnvironmentId={selectedCloudEnvId}
+              onCloudEnvironmentChange={setSelectedCloudEnvId}
+              cloudAvailable={cloudAvailable}
+              size="1"
+              disabled={isCreatingTask}
+            />
+            {workspaceMode === "worktree" && (
+              <EnvironmentSelector
+                repoPath={effectiveRepoPath ?? null}
+                value={selectedEnvironment}
+                onChange={setSelectedEnvironment}
+                disabled={isCreatingTask}
+              />
+            )}
+            <ButtonGroup ref={buttonGroupRef}>
+              {workspaceMode === "cloud" ? (
+                <GitHubRepoPicker
+                  value={selectedRepository}
+                  onChange={handleRepositorySelect}
+                  repositories={
+                    isCloudRepoPickerOpen
+                      ? visibleCloudRepositories
+                      : repositories
+                  }
+                  isLoading={
+                    isLoadingRepos ||
+                    (isCloudRepoPickerOpen && cloudRepositoriesLoading)
+                  }
+                  isRefreshing={isRefreshingRepos}
+                  onRefresh={handleRefreshRepositories}
+                  open={isCloudRepoPickerOpen}
+                  onOpenChange={handleCloudRepoPickerOpenChange}
+                  searchQuery={cloudRepoSearchQuery}
+                  onSearchQueryChange={handleCloudRepoSearchChange}
+                  hasMore={cloudRepositoriesHasMore}
+                  onLoadMore={handleLoadMoreCloudRepositories}
+                  placeholder="Select repository..."
+                  size="1"
+                  side="top"
+                  disabled={isCreatingTask}
+                />
+              ) : (
+                <FolderPicker
+                  value={selectedDirectory}
+                  onChange={setSelectedDirectory}
+                  placeholder="Select repository..."
+                  size="1"
+                  anchor={buttonGroupRef}
+                />
+              )}
+              <BranchSelector
+                repoPath={
+                  workspaceMode === "cloud"
+                    ? selectedCloudRepository
+                    : selectedDirectory
+                }
+                currentBranch={currentBranch}
+                defaultBranch={
+                  workspaceMode === "cloud" ? cloudDefaultBranch : defaultBranch
+                }
+                disabled={
+                  isCreatingTask ||
+                  (workspaceMode === "cloud" && !selectedCloudRepository)
+                }
+                loading={workspaceMode === "cloud" ? false : branchLoading}
+                workspaceMode={workspaceMode}
+                selectedBranch={selectedBranch}
+                onBranchSelect={setSelectedBranch}
+                cloudBranches={cloudBranches}
+                cloudBranchesLoading={cloudBranchesLoading}
+                isRefreshing={cloudBranchesRefreshing}
+                cloudBranchesFetchingMore={cloudBranchesFetchingMore}
+                cloudBranchesHasMore={cloudBranchesHasMore}
+                cloudSearchQuery={cloudBranchSearchQuery}
+                onCloudPickerOpen={handleCloudBranchPickerOpen}
+                onCloudPickerClose={handleCloudBranchPickerClose}
+                onCloudSearchChange={handleCloudBranchSearchChange}
+                onCloudLoadMore={handleLoadMoreCloudBranches}
+                onRefresh={
+                  workspaceMode === "cloud" ? handleRefreshBranches : undefined
+                }
+                anchor={buttonGroupRef}
+              />
+            </ButtonGroup>
+          </Flex>
+
+          <PromptInput
+            ref={editorRef}
+            sessionId={PROMPT_SESSION_ID}
+            placeholder={`What do you want to ship? ${hints}`}
+            editorHeight="large"
+            disabled={isCreatingTask}
+            isLoading={isCreatingTask}
+            autoFocus
+            clearOnSubmit={false}
+            submitDisabledExternal={submitDisabled}
+            repoPath={selectedDirectory}
+            modeOption={modeOption}
+            onModeChange={handleModeChange}
+            allowBypassPermissions={allowBypassPermissions}
+            enableCommands
+            enableBashMode={false}
+            modelSelector={
+              <UnifiedModelSelector
+                modelOption={modelOption}
+                adapter={adapter ?? "claude"}
+                onAdapterChange={setAdapter}
+                disabled={isCreatingTask}
+                isConnecting={isPreviewLoading}
+                onModelChange={handleModelChange}
+              />
+            }
+            historyButton={
+              <PromptHistoryDialog
+                onSelect={handleHistorySelect}
+                hasPendingDraft={hasPendingDraft}
+                disabled={isCreatingTask}
+              />
+            }
+            reasoningSelector={
+              !isPreviewLoading && (
+                <ReasoningLevelSelector
+                  thoughtOption={thoughtOption}
+                  adapter={adapter}
+                  onChange={handleThoughtChange}
+                  disabled={isCreatingTask}
+                />
+              )
+            }
+            getPromptHistory={getPromptHistory}
+            onEmptyChange={setEditorIsEmpty}
+            onSubmitClick={handleSubmit}
+            onSubmit={() => {
+              if (canSubmit) handleSubmit();
+            }}
+          />
+
+          {workspaceMode === "cloud" &&
+            !isLoadingRepos &&
+            !hasGithubIntegration && (
+              <div className="mx-2">
+                <CloudGithubMissingNotice />
+              </div>
+            )}
+        </CommandConsole.Body>
+      </CommandConsole>
+
+      <GitBranchDialog
+        open={branchOpen}
+        onOpenChange={(open) => {
+          if (!open) gitActions.closeBranch();
+        }}
+        branchName={newBranchName}
+        onBranchNameChange={handleNewBranchNameChange}
+        onConfirm={handleCreateBranch}
+        isSubmitting={isCreatingBranch}
+        error={branchError}
+      />
+    </div>
+  );
+}

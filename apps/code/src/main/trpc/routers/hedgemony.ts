@@ -7,17 +7,17 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import {
   FeedbackRoutingEvent,
   type FeedbackRoutingService,
-} from "../../services/hedgemony/feedback-routing-service";
-import type { GoalSpecDraftService } from "../../services/hedgemony/goal-spec-draft-service";
-import type { HedgehogTickService } from "../../services/hedgemony/hedgehog-tick-service";
-import type { HogletService } from "../../services/hedgemony/hoglet-service";
-import type { NestChatService } from "../../services/hedgemony/nest-chat-service";
-import type { NestService } from "../../services/hedgemony/nest-service";
+} from "../../services/rts/feedback-routing-service";
+import type { GoalSpecDraftService } from "../../services/rts/goal-spec-draft-service";
+import type { HedgehogTickService } from "../../services/rts/hedgehog-tick-service";
+import type { HogletService } from "../../services/rts/hoglet-service";
+import type { NestChatService } from "../../services/rts/nest-chat-service";
+import type { NestService } from "../../services/rts/nest-service";
 import {
   type PrGraphService,
   PrGraphServiceEvent,
-} from "../../services/hedgemony/pr-graph-service";
-import { parseNestLoadout } from "../../services/hedgemony/schema-parsers";
+} from "../../services/rts/pr-graph-service";
+import { parseNestLoadout } from "../../services/rts/schema-parsers";
 import {
   adoptHogletInput,
   compactValidatedNestInput,
@@ -69,11 +69,11 @@ import {
   suppressSignalReportInput,
   unlinkPrDependencyInput,
   updateNestInput,
-} from "../../services/hedgemony/schemas";
+} from "../../services/rts/schemas";
 import {
   SignalIngestionEvent,
   type SignalIngestionService,
-} from "../../services/hedgemony/signal-ingestion-service";
+} from "../../services/rts/signal-ingestion-service";
 import { publicProcedure, router } from "../trpc";
 
 const getService = () => container.get<NestService>(MAIN_TOKENS.NestService);
