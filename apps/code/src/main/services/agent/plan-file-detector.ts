@@ -13,11 +13,14 @@ function getClaudePlansDir(): string {
   return path.join(configDir, "plans");
 }
 
-const WRITE_TOOL_NAMES = new Set(["Write", "Edit", "MultiEdit"]);
+const WRITE_TOOL_NAMES = new Set([
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+]);
 
-const ToolInputWithFilePath = z
-  .object({ file_path: z.string().min(1) })
-  .passthrough();
+const ToolCallLocation = z.object({ path: z.string().min(1) }).passthrough();
 
 const SessionUpdateNotification = z.object({
   method: z.literal("session/update"),
@@ -26,7 +29,13 @@ const SessionUpdateNotification = z.object({
       update: z
         .object({
           sessionUpdate: z.string(),
-          rawInput: z.unknown().optional(),
+          // `locations` is the typed ACP channel for "what files does this
+          // tool call touch". The Claude adapter populates it for every
+          // Write/Edit/MultiEdit/NotebookEdit call (see
+          // packages/agent/.../conversion/tool-use-to-acp.ts). We rely on
+          // this instead of `rawInput.file_path` to honour the repo
+          // guidance against building contracts on agent rawInput.
+          locations: z.array(ToolCallLocation).optional(),
           _meta: z
             .object({
               claudeCode: z
@@ -59,9 +68,9 @@ function isPlanFilePath(filePath: string): boolean {
  * boot, so the detection matches the directory the watcher actually
  * watches.
  *
- * Validation note: per repo guidance we don't trust `rawInput` for stable
- * contracts — we validate the small subset we care about with Zod at this
- * boundary so callers receive a typed `string | null`.
+ * Source of the file path: the typed `tool_call.locations` ACP field. We
+ * deliberately do not consult `rawInput`, per the repo guidance — that
+ * field is the raw, unstable agent SDK contract.
  */
 export function getPlanFilePathFromSessionUpdate(
   message: unknown,
@@ -80,9 +89,8 @@ export function getPlanFilePathFromSessionUpdate(
   const toolName = update._meta?.claudeCode?.toolName;
   if (!toolName || !WRITE_TOOL_NAMES.has(toolName)) return null;
 
-  const inputParse = ToolInputWithFilePath.safeParse(update.rawInput);
-  if (!inputParse.success) return null;
+  const firstLocation = update.locations?.[0];
+  if (!firstLocation) return null;
 
-  const filePath = inputParse.data.file_path;
-  return isPlanFilePath(filePath) ? filePath : null;
+  return isPlanFilePath(firstLocation.path) ? firstLocation.path : null;
 }

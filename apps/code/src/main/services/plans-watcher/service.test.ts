@@ -43,19 +43,22 @@ describe("plans-watcher helpers", () => {
   });
 
   describe("findBlockInsertionLine", () => {
-    it("returns the line after the matched block", () => {
+    it("returns the line after the matched block (exact paragraph text)", () => {
       const lines = SAMPLE_PLAN.split("\n");
       const line = findBlockInsertionLine(
         lines,
-        "Move session validation from middleware",
+        "Move session validation from middleware to a dedicated service.",
       );
       // Source line 4 (0-indexed) is the paragraph; insertion is line 5.
       expect(line).toBe(5);
     });
 
-    it("matches across multiple source lines", () => {
+    it("matches a multi-line block when blockText spans all of its lines", () => {
       const lines = ["a paragraph", "spanning", "three lines", "", "next"];
-      const line = findBlockInsertionLine(lines, "paragraph\nspanning\nthree");
+      const line = findBlockInsertionLine(
+        lines,
+        "a paragraph\nspanning\nthree lines",
+      );
       expect(line).toBe(3);
     });
 
@@ -94,14 +97,31 @@ describe("plans-watcher helpers", () => {
       expect(findBlockInsertionLine(lines, "## Step 1", 1)).toBe(null);
     });
 
-    it("skips matches that overlap with already-counted matches", () => {
-      // Multi-line block that itself contains the search text twice in a row
-      // would otherwise double-count. We want each match to advance the
-      // cursor past the matched window.
-      const lines = ["foo", "foo", "bar", "foo", "baz"];
-      expect(findBlockInsertionLine(lines, "foo", 0)).toBe(1);
-      expect(findBlockInsertionLine(lines, "foo", 1)).toBe(2);
-      expect(findBlockInsertionLine(lines, "foo", 2)).toBe(4);
+    it("requires an exact block match — `## Step 1` must not match `## Step 10`", () => {
+      const lines = ["## Step 1", "", "first", "", "## Step 10", "", "tenth"];
+      // Only one block exactly equals "## Step 1" (line 0).
+      expect(findBlockInsertionLine(lines, "## Step 1", 0)).toBe(1);
+      expect(findBlockInsertionLine(lines, "## Step 1", 1)).toBe(null);
+    });
+
+    it("doesn't count thread blockquote content as an anchor match", () => {
+      // A previous reply that mentions the snippet must not be counted as
+      // an occurrence of the heading itself.
+      const lines = [
+        "## Step 1",
+        "",
+        "> [H]: I think `## Step 1` should be renamed",
+        "> [A]: Got it.",
+        "",
+        "## Step 1",
+        "",
+        "second",
+      ];
+      // There are two real "## Step 1" headings (line 0 and line 5). The
+      // blockquote does not count.
+      expect(findBlockInsertionLine(lines, "## Step 1", 0)).toBe(1);
+      expect(findBlockInsertionLine(lines, "## Step 1", 1)).toBe(6);
+      expect(findBlockInsertionLine(lines, "## Step 1", 2)).toBe(null);
     });
   });
 

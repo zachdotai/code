@@ -39,43 +39,48 @@ export function isThreadLine(line: string): boolean {
   return THREAD_LINE_RE.test(line);
 }
 
+/**
+ * Iterate the source as a sequence of source-blocks: each block is a
+ * contiguous run of non-blank lines, separated by blank lines (the
+ * standard markdown paragraph boundary). Thread blockquotes are emitted
+ * but flagged so the caller can skip them when looking for anchor blocks.
+ */
+function* iterSourceBlocks(
+  lines: string[],
+): Generator<{ start: number; end: number; text: string; isThread: boolean }> {
+  let i = 0;
+  while (i < lines.length) {
+    while (i < lines.length && lines[i].trim() === "") i += 1;
+    if (i >= lines.length) return;
+    const start = i;
+    while (i < lines.length && lines[i].trim() !== "") i += 1;
+    const end = i;
+    const blockLines = lines.slice(start, end);
+    const isThread = blockLines.every(
+      (l) => l.trim() === "" || isThreadLine(l),
+    );
+    yield { start, end, text: blockLines.join("\n"), isThread };
+  }
+}
+
 export function findBlockInsertionLine(
   lines: string[],
   blockText: string,
   occurrence = 0,
 ): number | null {
-  const trimmed = blockText.trim();
-  if (!trimmed) return null;
+  const target = blockText.trim();
+  if (!target) return null;
 
-  // Walk the file looking for a contiguous window of source lines that
-  // fully contains the user-supplied text. When `occurrence > 0`, skip
-  // earlier matches and advance the cursor past each matched window so a
-  // single source line isn't double-counted across calls.
   let remainingToSkip = occurrence;
-  let i = 0;
-  while (i < lines.length) {
-    if (!lines[i].trim()) {
-      i += 1;
-      continue;
-    }
-    let acc = lines[i];
-    let j = i;
-    while (j < lines.length - 1 && !acc.includes(trimmed)) {
-      j += 1;
-      acc = `${acc}\n${lines[j]}`;
-      if (acc.length > trimmed.length + 400) break;
-    }
-    if (acc.includes(trimmed)) {
-      if (remainingToSkip === 0) {
-        return j + 1;
-      }
-      remainingToSkip -= 1;
-      // Advance past the matched window so the next iteration looks at
-      // strictly later source lines.
-      i = j + 1;
-      continue;
-    }
-    i += 1;
+  for (const block of iterSourceBlocks(lines)) {
+    if (block.isThread) continue;
+    // Exact match against the source-block text. This is what the renderer
+    // computed `occurrence` for — substring containment would let
+    // `## Step 1` match `## Step 10` (and would count thread reply text
+    // that mentions the snippet as an occurrence).
+    if (block.text.trim() !== target) continue;
+    if (remainingToSkip === 0) return block.end;
+    remainingToSkip -= 1;
   }
   return null;
 }

@@ -3,18 +3,23 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getPlanFilePathFromSessionUpdate } from "./plan-file-detector";
 
-function buildToolCall(toolName: string, filePath: string) {
-  return {
-    method: "session/update",
-    params: {
-      update: {
-        sessionUpdate: "tool_call",
-        toolCallId: "tc-1",
-        rawInput: { file_path: filePath },
-        _meta: { claudeCode: { toolName } },
-      },
-    },
+function buildToolCall(
+  toolName: string,
+  filePath: string,
+  opts: { useLocations?: boolean; useRawInput?: boolean } = {},
+) {
+  // Default: produce a "complete" notification with both fields (matching
+  // what the Claude adapter actually emits).
+  const useLocations = opts.useLocations ?? true;
+  const useRawInput = opts.useRawInput ?? true;
+  const update: Record<string, unknown> = {
+    sessionUpdate: "tool_call",
+    toolCallId: "tc-1",
+    _meta: { claudeCode: { toolName } },
   };
+  if (useLocations) update.locations = [{ path: filePath }];
+  if (useRawInput) update.rawInput = { file_path: filePath };
+  return { method: "session/update", params: { update } };
 }
 
 describe("getPlanFilePathFromSessionUpdate", () => {
@@ -100,7 +105,38 @@ describe("getPlanFilePathFromSessionUpdate", () => {
     ).toBe(null);
   });
 
-  it("returns null when there is no rawInput with a file_path", () => {
+  it("uses the typed ACP `locations` field as the source of the file path", () => {
+    // Per repo guidance we don't trust `rawInput` for agent-facing
+    // contracts. The Claude adapter populates `tool_call.locations` for
+    // Write / Edit / MultiEdit / NotebookEdit — that's the canonical
+    // typed channel.
+    process.env.CLAUDE_CONFIG_DIR = "/var/data/claude";
+    const planPath = "/var/data/claude/plans/my-plan.md";
+    expect(
+      getPlanFilePathFromSessionUpdate(
+        buildToolCall("Write", planPath, { useRawInput: false }),
+      ),
+    ).toBe(planPath);
+  });
+
+  it("returns null when there is no typed `locations` entry", () => {
+    process.env.CLAUDE_CONFIG_DIR = "/var/data/claude";
+    expect(
+      getPlanFilePathFromSessionUpdate({
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            _meta: { claudeCode: { toolName: "Write" } },
+            rawInput: { file_path: "/var/data/claude/plans/x.md" },
+            // no `locations`
+          },
+        },
+      }),
+    ).toBe(null);
+  });
+
+  it("returns null when there is no rawInput with a file_path (still requires locations)", () => {
     expect(
       getPlanFilePathFromSessionUpdate({
         method: "session/update",
