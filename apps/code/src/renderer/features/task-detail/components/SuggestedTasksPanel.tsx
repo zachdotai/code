@@ -26,10 +26,21 @@ const LOG_FEED_PADDING = 16;
 
 interface SuggestedTasksPanelProps {
   onSelect: (task: DiscoveredTask) => void;
+  // The repo currently selected on the new task page. Suggestions are only
+  // shown if their `repoPath` matches this value. Suggestions persisted
+  // before the field existed (no `repoPath`) are shown unconditionally so
+  // existing users don't lose their inbox until the next discovery run.
+  repoPath?: string | null;
 }
 
-export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
-  const discoveredTasks = useSetupStore((s) => s.discoveredTasks);
+export function SuggestedTasksPanel({
+  onSelect,
+  repoPath,
+}: SuggestedTasksPanelProps) {
+  const allDiscoveredTasks = useSetupStore((s) => s.discoveredTasks);
+  const discoveredTasks = repoPath
+    ? allDiscoveredTasks.filter((t) => !t.repoPath || t.repoPath === repoPath)
+    : allDiscoveredTasks;
   const discoveryStatus = useSetupStore((s) => s.discoveryStatus);
   const enricherStatus = useSetupStore((s) => s.enricherStatus);
   const discoveryFeed = useSetupStore((s) => s.discoveryFeed);

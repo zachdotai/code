@@ -272,13 +272,19 @@ export class SetupRunService {
           });
 
         if (installState === "initialized") {
-          useSetupStore
-            .getState()
-            .addEnricherSuggestionIfMissing(buildSdkHealthSuggestion());
+          useSetupStore.getState().addEnricherSuggestionIfMissing({
+            ...buildSdkHealthSuggestion(),
+            repoPath: directory,
+          });
           await this.injectStaleFlagSuggestions(directory);
         } else {
           const suggestion = buildPosthogSetupSuggestion(installState);
-          useSetupStore.getState().addEnricherSuggestionIfMissing(suggestion);
+          useSetupStore
+            .getState()
+            .addEnricherSuggestionIfMissing({
+              ...suggestion,
+              repoPath: directory,
+            });
         }
         useSetupStore.getState().completeEnrichment();
       } catch (err) {
@@ -297,7 +303,10 @@ export class SetupRunService {
       });
       const store = useSetupStore.getState();
       for (const flag of flags) {
-        store.addEnricherSuggestionIfMissing(buildStaleFlagSuggestion(flag));
+        store.addEnricherSuggestionIfMissing({
+          ...buildStaleFlagSuggestion(flag),
+          repoPath: directory,
+        });
       }
     } catch (err) {
       log.warn("Failed to find stale flag suggestions", { error: err });
@@ -423,7 +432,8 @@ export class SetupRunService {
           taskCount: tasks.length,
           signalSource,
         });
-        useSetupStore.getState().completeDiscovery(tasks);
+        const tasksWithRepo = tasks.map((t) => ({ ...t, repoPath: directory }));
+        useSetupStore.getState().completeDiscovery(tasksWithRepo);
         track(ANALYTICS_EVENTS.SETUP_DISCOVERY_COMPLETED, {
           discovery_task_id: task.id,
           discovery_task_run_id: taskRun.id,

@@ -837,7 +837,10 @@ export function TaskInput({
                     <CloudGithubMissingNotice />
                   </div>
                 )}
-              <SuggestedTasksPanel onSelect={handleSelectSuggestion} />
+              <SuggestedTasksPanel
+                onSelect={handleSelectSuggestion}
+                repoPath={effectiveRepoPath}
+              />
             </Flex>
           </motion.div>
         </LayoutGroup>

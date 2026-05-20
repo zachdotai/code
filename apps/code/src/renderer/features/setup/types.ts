@@ -17,6 +17,12 @@ export interface DiscoveredTask {
     | "posthog_setup"
     | "experiment";
   source: DiscoveredTaskSource;
+  // The repo this suggestion was produced for — a local filesystem path for
+  // local-workspace runs, or "org/repo" for cloud runs. Stamped at the time
+  // the suggestion is created so the new task page can filter suggestions
+  // when the selected repo changes. Optional for backward compatibility with
+  // suggestions persisted before this field existed.
+  repoPath?: string;
   file?: string;
   lineHint?: number;
   impact?: string;
