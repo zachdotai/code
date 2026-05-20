@@ -7,6 +7,10 @@ import { logger } from "@utils/logger";
 import { isSendMessageSubmitKey } from "@utils/sendMessageKey";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  buildThreadKey,
+  usePlanAgentActivityStore,
+} from "../stores/planAgentActivityStore";
 import { buildAskAgentToReplyToPlanThreadPrompt } from "../utils/planPrompts";
 
 const log = logger.scope("plan-block-gutter");
@@ -41,6 +45,8 @@ function InlineComposer({
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
 
+  const enqueueAgentActivity = usePlanAgentActivityStore((s) => s.enqueue);
+
   const handleSubmit = useCallback(async () => {
     const text = textareaRef.current?.value?.trim();
     if (!text) return;
@@ -53,6 +59,7 @@ function InlineComposer({
         message: text,
         speaker: "H",
       });
+      enqueueAgentActivity(buildThreadKey({ filePath, blockText, occurrence }));
       // `sendPrompt` directly — `sendPromptToAgent` would also switch the
       // active tab to Chat, which is the wrong behavior when the user is
       // commenting from inside the Plan tab.
@@ -66,7 +73,7 @@ function InlineComposer({
       setPending(false);
       onClose();
     }
-  }, [blockText, occurrence, filePath, taskId, onClose]);
+  }, [blockText, occurrence, filePath, taskId, onClose, enqueueAgentActivity]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

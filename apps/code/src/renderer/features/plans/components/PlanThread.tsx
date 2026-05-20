@@ -1,12 +1,22 @@
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { getSessionService } from "@features/sessions/service/service";
-import { CheckCircle, Robot, User, X } from "@phosphor-icons/react";
+import {
+  CheckCircle,
+  CircleNotch,
+  Robot,
+  User,
+  X,
+} from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Avatar, Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import { isSendMessageSubmitKey } from "@utils/sendMessageKey";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  buildThreadKey,
+  usePlanAgentActivityStore,
+} from "../stores/planAgentActivityStore";
 import {
   buildAskAgentToIncorporateResolvedThreadPrompt,
   buildAskAgentToReplyToPlanThreadPrompt,
@@ -26,6 +36,54 @@ interface PlanThreadProps {
   occurrence: number;
   messages: ParsedMessage[];
   resolved: boolean;
+}
+
+function AgentActivityRow({
+  status,
+  resolved,
+}: {
+  status: "active" | "queued";
+  resolved: boolean;
+}) {
+  const isActive = status === "active";
+  const activeLabel = resolved ? "Incorporating feedback…" : "Responding…";
+  return (
+    <div className="flex gap-2">
+      <div className="flex flex-col items-center">
+        <div className="h-1.5 w-0.5 rounded-full bg-(--gray-5)" />
+        <Avatar
+          size="1"
+          radius="full"
+          fallback={<Robot size={12} />}
+          className="shrink-0"
+          color="blue"
+        />
+      </div>
+      <div className="min-w-0 flex-1 pt-1 pb-1.5">
+        <Flex align="center" gap="2" className="mb-0.5">
+          <Text className="font-medium text-(--gray-12) text-[13px]">
+            Agent
+          </Text>
+        </Flex>
+        <Flex align="center" gap="1" className="text-(--gray-11) text-[13px]">
+          {isActive ? (
+            <>
+              <CircleNotch
+                size={12}
+                className="animate-spin text-(--blue-11)"
+              />
+              <span>{activeLabel}</span>
+            </>
+          ) : (
+            <>
+              <CircleNotch size={12} className="text-(--gray-9)" />
+              <span>Queued behind earlier comments</span>
+            </>
+          )}
+        </Flex>
+      </div>
+    </div>
+  );
 }
 
 function MessageRow({
@@ -83,6 +141,39 @@ export function PlanThread({
   const [pending, setPending] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  const threadKey = useMemo(
+    () => buildThreadKey({ filePath, blockText, occurrence }),
+    [filePath, blockText, occurrence],
+  );
+  const activityStatus = usePlanAgentActivityStore((s) =>
+    s.getStatus(threadKey),
+  );
+  const enqueueAgentActivity = usePlanAgentActivityStore((s) => s.enqueue);
+  const dequeueAgentActivity = usePlanAgentActivityStore((s) => s.dequeue);
+
+  // When the agent's reply lands (the thread's last non-resolved message
+  // flips to `[A]:`), clear this thread from the activity queue so the
+  // next queued thread is promoted to "active".
+  const lastSpeaker = useMemo(
+    () => (messages.length > 0 ? messages[messages.length - 1].speaker : null),
+    [messages],
+  );
+  useEffect(() => {
+    if (lastSpeaker === "A" && activityStatus !== null) {
+      dequeueAgentActivity(threadKey);
+    }
+  }, [lastSpeaker, activityStatus, dequeueAgentActivity, threadKey]);
+
+  // Safety net: when the agent rewrites the plan and removes this thread
+  // block entirely (the typical end of a `Resolve` flow), the component
+  // unmounts. Dequeue here so any threads queued behind us are promoted
+  // to "active" instead of being stuck.
+  useEffect(() => {
+    return () => {
+      dequeueAgentActivity(threadKey);
+    };
+  }, [dequeueAgentActivity, threadKey]);
+
   const handleReplySubmit = useCallback(async () => {
     const text = textareaRef.current?.value?.trim();
     if (!text) return;
@@ -96,6 +187,7 @@ export function PlanThread({
         message: text,
         speaker: "H",
       });
+      enqueueAgentActivity(threadKey);
       // sendPrompt directly — sendPromptToAgent also switches the active
       // tab to Chat, which is the wrong behavior from inside Plan view.
       getSessionService().sendPrompt(
@@ -107,7 +199,14 @@ export function PlanThread({
     } finally {
       setPending(null);
     }
-  }, [blockText, occurrence, filePath, taskId]);
+  }, [
+    blockText,
+    occurrence,
+    filePath,
+    taskId,
+    threadKey,
+    enqueueAgentActivity,
+  ]);
 
   const handleResolve = useCallback(async () => {
     try {
@@ -116,6 +215,7 @@ export function PlanThread({
         blockText,
         occurrence,
       });
+      enqueueAgentActivity(threadKey);
       // sendPrompt directly — sendPromptToAgent also switches the active
       // tab to Chat, which is the wrong behavior from inside Plan view.
       getSessionService().sendPrompt(
@@ -125,7 +225,14 @@ export function PlanThread({
     } catch (err) {
       log.warn("Failed to resolve plan thread", { err });
     }
-  }, [blockText, occurrence, filePath, taskId]);
+  }, [
+    blockText,
+    occurrence,
+    filePath,
+    taskId,
+    threadKey,
+    enqueueAgentActivity,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -164,9 +271,17 @@ export function PlanThread({
             key={`${message.speaker}-${index}`}
             message={message}
             showLineAbove={index > 0}
-            showLineBelow={index < renderedMessages.length - 1 || !!pending}
+            showLineBelow={
+              index < renderedMessages.length - 1 ||
+              !!pending ||
+              activityStatus !== null
+            }
           />
         ))}
+
+        {activityStatus !== null && (
+          <AgentActivityRow status={activityStatus} resolved={resolved} />
+        )}
 
         {pending && (
           <div className="flex gap-2 opacity-50">
