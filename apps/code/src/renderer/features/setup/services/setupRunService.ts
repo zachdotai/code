@@ -279,12 +279,10 @@ export class SetupRunService {
           await this.injectStaleFlagSuggestions(directory);
         } else {
           const suggestion = buildPosthogSetupSuggestion(installState);
-          useSetupStore
-            .getState()
-            .addEnricherSuggestionIfMissing({
-              ...suggestion,
-              repoPath: directory,
-            });
+          useSetupStore.getState().addEnricherSuggestionIfMissing({
+            ...suggestion,
+            repoPath: directory,
+          });
         }
         useSetupStore.getState().completeEnrichment();
       } catch (err) {
