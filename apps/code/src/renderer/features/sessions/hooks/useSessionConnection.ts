@@ -79,20 +79,23 @@ export function useSessionConnection({
     const adapter =
       task.latest_run.runtime_adapter === "codex" ? "codex" : "claude";
     const initialModel = task.latest_run.model ?? undefined;
-    const cleanup = getSessionService().watchCloudTask(
-      task.id,
+    const initialReasoningEffort =
+      task.latest_run.reasoning_effort ?? undefined;
+    const cleanup = getSessionService().watchCloudTask({
+      taskId: task.id,
       runId,
-      getCloudUrlFromRegion(cloudAuthState.cloudRegion),
-      cloudAuthState.projectId,
-      () => {
+      apiHost: getCloudUrlFromRegion(cloudAuthState.cloudRegion),
+      teamId: cloudAuthState.projectId,
+      onStatusChange: () => {
         queryClient.invalidateQueries({ queryKey: ["tasks"] });
       },
-      task.latest_run?.log_url,
+      logUrl: task.latest_run?.log_url,
       initialMode,
       adapter,
       initialModel,
-      task.description ?? undefined,
-    );
+      taskDescription: task.description ?? undefined,
+      initialReasoningEffort,
+    });
     return cleanup;
   }, [
     cloudAuthState.bootstrapComplete,
@@ -105,6 +108,7 @@ export function useSessionConnection({
     task.latest_run?.id,
     task.latest_run?.log_url,
     task.latest_run?.model,
+    task.latest_run?.reasoning_effort,
     task.latest_run?.runtime_adapter,
     task.latest_run?.state?.initial_permission_mode,
     task.description,
