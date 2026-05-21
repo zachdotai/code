@@ -4,10 +4,10 @@ import {
 } from "@features/editor/components/MarkdownRenderer";
 import { usePendingPermissionsForTask } from "@features/sessions/hooks/useSession";
 import { getSessionService } from "@features/sessions/service/service";
-import type { PermissionRequest } from "@features/sessions/utils/parseSessionLogs";
-import { CheckCircle, ListChecks, X } from "@phosphor-icons/react";
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { CheckCircle, ListChecks, Warning, X } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex, Select, Text } from "@radix-ui/themes";
 import { trpc, trpcClient } from "@renderer/trpc";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
@@ -19,6 +19,10 @@ import { remarkPlanThreads } from "../remark/remarkPlanThreads";
 import { usePlanAgentActivityStore } from "../stores/planAgentActivityStore";
 import { extractThreadKeys } from "../utils/extractThreadKeys";
 import { handlePlanDeletion } from "../utils/handlePlanDeletion";
+import {
+  findPendingPlanPermission,
+  type PendingPlanPermission,
+} from "../utils/planApprovalPermission";
 import { PlanBlockGutter } from "./PlanBlockGutter";
 import { PlanThread } from "./PlanThread";
 
@@ -56,40 +60,6 @@ declare module "react" {
   }
 }
 
-interface PendingPlanPermission {
-  toolCallId: string;
-  approveOptionId: string;
-  rejectOptionId: string | null;
-}
-
-function findPendingPlanPermission(
-  permissions: Map<string, PermissionRequest>,
-): PendingPlanPermission | null {
-  for (const req of permissions.values()) {
-    const toolCallId = req.toolCall?.toolCallId;
-    if (!toolCallId) continue;
-    if (req.toolCall?.kind !== "switch_mode") continue;
-
-    // First option is the user's previous mode (or `auto` by default) —
-    // see buildExitPlanModePermissionOptions in @posthog/agent.
-    const approve = req.options.find(
-      (o) => o.kind === "allow_once" || o.kind === "allow_always",
-    );
-    if (!approve) continue;
-
-    const reject = req.options.find(
-      (o) => o.kind === "reject_once" || o.kind === "reject_always",
-    );
-
-    return {
-      toolCallId,
-      approveOptionId: approve.optionId,
-      rejectOptionId: reject?.optionId ?? null,
-    };
-  }
-  return null;
-}
-
 interface PlanApprovalBarProps {
   taskId: string;
   permission: PendingPlanPermission;
@@ -99,6 +69,16 @@ function PlanApprovalBar({ taskId, permission }: PlanApprovalBarProps) {
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [pending, setPending] = useState<"approve" | "reject" | null>(null);
+  const [selectedOptionId, setSelectedOptionId] = useState(
+    permission.defaultOptionId,
+  );
+
+  const selectedOption = useMemo(
+    () =>
+      permission.approveOptions.find((o) => o.optionId === selectedOptionId) ??
+      permission.approveOptions[0],
+    [permission.approveOptions, selectedOptionId],
+  );
 
   const respond = useCallback(
     async (optionId: string, customInput?: string) => {
@@ -118,9 +98,9 @@ function PlanApprovalBar({ taskId, permission }: PlanApprovalBarProps) {
 
   const handleApprove = useCallback(async () => {
     setPending("approve");
-    await respond(permission.approveOptionId);
+    await respond(selectedOption.optionId);
     setPending(null);
-  }, [respond, permission.approveOptionId]);
+  }, [respond, selectedOption.optionId]);
 
   const handleReject = useCallback(async () => {
     if (!permission.rejectOptionId) return;
@@ -134,11 +114,27 @@ function PlanApprovalBar({ taskId, permission }: PlanApprovalBarProps) {
   return (
     <Box className="sticky top-0 z-10 border-(--gray-5) border-b bg-(--color-background) px-12 py-3">
       <Flex direction="column" gap="2">
-        <Flex align="center" justify="between" gap="3">
+        <Flex align="center" justify="between" gap="3" wrap="wrap">
           <Text className="text-(--gray-11) text-sm">
             The agent is waiting for plan approval.
           </Text>
-          <Flex gap="2">
+          <Flex gap="2" align="center">
+            <Text className="text-(--gray-11) text-[13px]">Mode</Text>
+            <Select.Root
+              value={selectedOptionId}
+              onValueChange={setSelectedOptionId}
+              size="1"
+              disabled={!!pending}
+            >
+              <Select.Trigger className="min-w-[200px]" />
+              <Select.Content>
+                {permission.approveOptions.map((option) => (
+                  <Select.Item key={option.optionId} value={option.optionId}>
+                    {option.name}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
             {permission.rejectOptionId && (
               <Button
                 size="sm"
@@ -160,6 +156,15 @@ function PlanApprovalBar({ taskId, permission }: PlanApprovalBarProps) {
             </Button>
           </Flex>
         </Flex>
+        {selectedOption.isBypass && (
+          <Flex align="center" gap="1" className="text-(--orange-11) text-xs">
+            <Warning size={12} weight="fill" />
+            <Text size="1">
+              Bypass permissions allows the agent to run any tool without
+              asking. Use with caution.
+            </Text>
+          </Flex>
+        )}
         {showRejectInput && permission.rejectOptionId && (
           <Flex direction="column" gap="2">
             <textarea
@@ -195,6 +200,31 @@ function PlanApprovalBar({ taskId, permission }: PlanApprovalBarProps) {
 }
 
 export function PlanView({ taskId, filePath }: PlanViewProps) {
+  const enabled = useSettingsStore((s) => s.planThreadsEnabled);
+
+  if (!enabled) return <PlanViewDisabledPlaceholder />;
+  return <PlanViewInner taskId={taskId} filePath={filePath} />;
+}
+
+function PlanViewDisabledPlaceholder() {
+  return (
+    <Flex
+      align="center"
+      justify="center"
+      direction="column"
+      gap="2"
+      className="h-full px-8 text-center"
+    >
+      <ListChecks size={24} className="text-(--gray-10)" />
+      <Text className="text-(--gray-11) text-sm">Plan view is disabled.</Text>
+      <Text className="text-(--gray-10) text-xs">
+        Enable it from Settings → General → Experimental.
+      </Text>
+    </Flex>
+  );
+}
+
+function PlanViewInner({ taskId, filePath }: PlanViewProps) {
   const queryClient = useQueryClient();
   const planQuery = useQuery(
     trpc.plans.read.queryOptions({ filePath }, { staleTime: 0 }),

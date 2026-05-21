@@ -46,11 +46,13 @@ function InlineComposer({
   }, []);
 
   const enqueueAgentActivity = usePlanAgentActivityStore((s) => s.enqueue);
+  const dequeueAgentActivity = usePlanAgentActivityStore((s) => s.dequeue);
 
   const handleSubmit = useCallback(async () => {
     const text = textareaRef.current?.value?.trim();
     if (!text) return;
     setPending(true);
+    const threadKey = buildThreadKey({ filePath, blockText, occurrence });
     try {
       await trpcClient.plans.appendThreadMessage.mutate({
         filePath,
@@ -59,21 +61,36 @@ function InlineComposer({
         message: text,
         speaker: "H",
       });
-      enqueueAgentActivity(buildThreadKey({ filePath, blockText, occurrence }));
+      enqueueAgentActivity(threadKey);
       // `sendPrompt` directly — `sendPromptToAgent` would also switch the
       // active tab to Chat, which is the wrong behavior when the user is
-      // commenting from inside the Plan tab.
-      getSessionService().sendPrompt(
-        taskId,
-        buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
-      );
+      // commenting from inside the Plan tab. Await so we can dequeue on
+      // failure (offline, disconnected session, etc.) — otherwise the
+      // "Responding…" indicator sticks and the rejection is unhandled.
+      try {
+        await getSessionService().sendPrompt(
+          taskId,
+          buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
+        );
+      } catch (sendErr) {
+        log.warn("Failed to send plan-thread prompt", { err: sendErr });
+        dequeueAgentActivity(threadKey);
+      }
     } catch (err) {
       log.warn("Failed to append plan thread", { err });
     } finally {
       setPending(false);
       onClose();
     }
-  }, [blockText, occurrence, filePath, taskId, onClose, enqueueAgentActivity]);
+  }, [
+    blockText,
+    occurrence,
+    filePath,
+    taskId,
+    onClose,
+    enqueueAgentActivity,
+    dequeueAgentActivity,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

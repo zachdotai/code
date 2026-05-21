@@ -187,10 +187,17 @@ export function PlanThread({
       enqueueAgentActivity(threadKey);
       // sendPrompt directly — sendPromptToAgent also switches the active
       // tab to Chat, which is the wrong behavior from inside Plan view.
-      getSessionService().sendPrompt(
-        taskId,
-        buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
-      );
+      // Await so we can dequeue on failure — otherwise the indicator
+      // sticks and the rejection is unhandled.
+      try {
+        await getSessionService().sendPrompt(
+          taskId,
+          buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
+        );
+      } catch (sendErr) {
+        log.warn("Failed to send plan-thread reply prompt", { err: sendErr });
+        dequeueAgentActivity(threadKey);
+      }
     } catch (err) {
       log.warn("Failed to append plan thread reply", { err });
     } finally {
@@ -203,6 +210,7 @@ export function PlanThread({
     taskId,
     threadKey,
     enqueueAgentActivity,
+    dequeueAgentActivity,
   ]);
 
   const handleResolve = useCallback(async () => {
@@ -213,12 +221,15 @@ export function PlanThread({
         occurrence,
       });
       enqueueAgentActivity(threadKey);
-      // sendPrompt directly — sendPromptToAgent also switches the active
-      // tab to Chat, which is the wrong behavior from inside Plan view.
-      getSessionService().sendPrompt(
-        taskId,
-        buildAskAgentToIncorporateResolvedThreadPrompt(filePath),
-      );
+      try {
+        await getSessionService().sendPrompt(
+          taskId,
+          buildAskAgentToIncorporateResolvedThreadPrompt(filePath),
+        );
+      } catch (sendErr) {
+        log.warn("Failed to send plan-resolve prompt", { err: sendErr });
+        dequeueAgentActivity(threadKey);
+      }
     } catch (err) {
       log.warn("Failed to resolve plan thread", { err });
     }
@@ -229,6 +240,7 @@ export function PlanThread({
     taskId,
     threadKey,
     enqueueAgentActivity,
+    dequeueAgentActivity,
   ]);
 
   const handleKeyDown = useCallback(
