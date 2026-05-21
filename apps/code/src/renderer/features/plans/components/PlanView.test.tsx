@@ -79,6 +79,35 @@ vi.mock("@features/settings/stores/settingsStore", () => ({
   ) => selector({ planThreadsEnabled: planThreadsEnabledMock() }),
 }));
 
+const setActiveTabMock = vi.hoisted(() => vi.fn());
+vi.mock("@features/panels/store/panelLayoutStore", () => ({
+  usePanelLayoutStore: {
+    getState: () => ({
+      taskLayouts: {
+        "task-1": {
+          panelTree: {
+            type: "leaf",
+            id: "main-panel",
+            content: {
+              tabs: [{ id: "logs", label: "Chat", data: { type: "logs" } }],
+              activeTabId: "logs",
+            },
+          },
+        },
+      },
+      setActiveTab: setActiveTabMock,
+    }),
+  },
+}));
+vi.mock("@features/code-review/stores/reviewNavigationStore", () => ({
+  useReviewNavigationStore: {
+    getState: () => ({
+      getReviewMode: () => "split",
+      setReviewMode: vi.fn(),
+    }),
+  },
+}));
+
 import { PlanView } from "./PlanView";
 
 function renderPlanView() {
@@ -130,6 +159,7 @@ describe("PlanView approval bar", () => {
     sessionServiceMock.respondToPermission.mockClear();
     sessionServiceMock.setSessionConfigOption.mockClear();
     sessionServiceMock.sendPrompt.mockClear();
+    setActiveTabMock.mockClear();
     planThreadsEnabledMock.mockReturnValue(true);
   });
 
@@ -155,7 +185,7 @@ describe("PlanView approval bar", () => {
     expect(screen.getByText("Default")).toBeInTheDocument();
   });
 
-  it("Approve in mode-driven flow calls setSessionConfigOption('mode', selectedOptionId)", async () => {
+  it("Approve in mode-driven flow sets mode, sends an implement prompt, and switches to chat tab", async () => {
     modeOptionMock.mockReturnValue({
       id: "mode",
       name: "Approval Preset",
@@ -179,7 +209,70 @@ describe("PlanView approval bar", () => {
         "default",
       );
     });
+    // A prompt telling the agent to start implementing must follow.
+    await waitFor(() => {
+      expect(sessionServiceMock.sendPrompt).toHaveBeenCalledTimes(1);
+    });
+    const [, implementPrompt] = sessionServiceMock.sendPrompt.mock.calls[0];
+    expect(implementPrompt).toMatch(/implement/i);
+    // And the view should switch to the chat tab.
+    expect(setActiveTabMock).toHaveBeenCalledWith(
+      "task-1",
+      expect.any(String),
+      "logs",
+    );
+
     expect(sessionServiceMock.respondToPermission).not.toHaveBeenCalled();
+  });
+
+  it("Approve in permission flow resolves the permission AND switches to chat tab", async () => {
+    pendingPermissionsMock.mockReturnValue(
+      new Map([
+        [
+          "tc-1",
+          {
+            taskRunId: "task-1",
+            receivedAt: 0,
+            options: [
+              {
+                optionId: "default",
+                name: "Yes, manually approve edits",
+                kind: "allow_once",
+              },
+              {
+                optionId: "reject_with_feedback",
+                name: "No, give feedback",
+                kind: "reject_once",
+              },
+            ],
+            toolCall: {
+              toolCallId: "tc-1",
+              title: "Ready to code?",
+              kind: "switch_mode",
+              content: [],
+              locations: [],
+              rawInput: {},
+            },
+          },
+        ],
+      ]) as never,
+    );
+
+    renderPlanView();
+    fireEvent.click(await screen.findByText("Approve plan"));
+
+    await waitFor(() => {
+      expect(sessionServiceMock.respondToPermission).toHaveBeenCalledWith(
+        "task-1",
+        "tc-1",
+        "default",
+      );
+    });
+    expect(setActiveTabMock).toHaveBeenCalledWith(
+      "task-1",
+      expect.any(String),
+      "logs",
+    );
   });
 
   it("Reject in mode-driven flow sends a rejection prompt (does not change mode)", async () => {

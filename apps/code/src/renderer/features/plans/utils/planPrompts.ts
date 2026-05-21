@@ -46,6 +46,19 @@ export function buildAskAgentToIncorporateResolvedThreadPrompt(
 }
 
 /**
+ * Prompt sent when the user clicks Approve in the Plan view's approval bar
+ * AND no ExitPlanMode permission is currently pending (i.e. the agent is
+ * idle in plan mode after a comment loop). Kicks the agent off to start
+ * implementing in the new mode.
+ */
+export function buildPlanImplementationPrompt(): string {
+  return [
+    "I approved the plan. Please proceed with implementing it now.",
+    "If anything is unclear, ask before making major changes.",
+  ].join("\n");
+}
+
+/**
  * Prompt sent when the user clicks Reject in the Plan view's approval bar
  * AND no ExitPlanMode permission is currently pending (i.e. the agent is
  * mid-iteration on the plan). The agent stays in plan mode and revises.

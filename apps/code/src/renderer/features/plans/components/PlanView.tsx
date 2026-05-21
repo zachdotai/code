@@ -2,6 +2,9 @@ import {
   baseComponents,
   MarkdownRenderer,
 } from "@features/editor/components/MarkdownRenderer";
+import { DEFAULT_TAB_IDS } from "@features/panels/constants/panelConstants";
+import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
+import { findTabInTree } from "@features/panels/store/panelTree";
 import {
   useConfigOptionForTask,
   usePendingPermissionsForTask,
@@ -26,11 +29,24 @@ import {
   buildPlanApprovalState,
   type PlanApprovalState,
 } from "../utils/planApprovalPermission";
-import { buildPlanRejectionPrompt } from "../utils/planPrompts";
+import {
+  buildPlanImplementationPrompt,
+  buildPlanRejectionPrompt,
+} from "../utils/planPrompts";
 import { PlanBlockGutter } from "./PlanBlockGutter";
 import { PlanThread } from "./PlanThread";
 
 const log = logger.scope("plan-view");
+
+/** Switch the task's active tab to Chat (the default Logs tab). */
+function activateChatTab(taskId: string): void {
+  const { taskLayouts, setActiveTab } = usePanelLayoutStore.getState();
+  const layout = taskLayouts[taskId];
+  if (!layout) return;
+  const result = findTabInTree(layout.panelTree, DEFAULT_TAB_IDS.LOGS);
+  if (!result) return;
+  setActiveTab(taskId, result.panelId, DEFAULT_TAB_IDS.LOGS);
+}
 
 interface PlanViewProps {
   taskId: string;
@@ -93,18 +109,27 @@ function PlanApprovalBar({ taskId, state }: PlanApprovalBarProps) {
     setPending("approve");
     try {
       if (state.source === "permission") {
+        // Resolving the permission moves the agent out of plan mode and it
+        // continues on its own — we just need to bring the user to Chat.
         await getSessionService().respondToPermission(
           taskId,
           state.toolCallId,
           selectedOption.optionId,
         );
       } else {
+        // Mode-driven: the agent is idle in plan mode. Switch the mode,
+        // then send a prompt telling it to start implementing.
         await getSessionService().setSessionConfigOption(
           taskId,
           "mode",
           selectedOption.optionId,
         );
+        await getSessionService().sendPrompt(
+          taskId,
+          buildPlanImplementationPrompt(),
+        );
       }
+      activateChatTab(taskId);
     } catch (err) {
       log.warn("Failed to approve plan", { err });
     } finally {
