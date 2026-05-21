@@ -1,7 +1,6 @@
 import { DEFAULT_TAB_IDS } from "@features/panels/constants/panelConstants";
 import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
 import { findTabInTree } from "@features/panels/store/panelTree";
-import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useTaskStore } from "@features/tasks/stores/taskStore";
 import {
   ArrowsIn,
@@ -37,7 +36,11 @@ export function PlanContent({ id, plan }: PlanContentProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const taskId = useTaskStore((s) => s.selectedTaskId);
-  const planThreadsEnabled = useSettingsStore((s) => s.planThreadsEnabled);
+  // The button is gated on `hasPlanTab` alone — `usePlanTab` is the
+  // single load-bearing check for `planThreadsEnabled`, so reading the
+  // setting here would just duplicate that gate AND drag the
+  // `electronStorage` → `trpcClient` import chain into every test that
+  // mounts PlanContent (breaking jsdom unless explicitly mocked).
   const hasPlanTab = usePanelLayoutStore((state) => {
     if (!taskId) return false;
     const layout = state.taskLayouts[taskId];
@@ -139,7 +142,7 @@ export function PlanContent({ id, plan }: PlanContentProps) {
       className="relative max-h-[50vh] max-w-[750px] overflow-y-auto rounded-lg border-2 border-blue-6 bg-blue-2 p-4"
     >
       <Flex gap="1" align="center" className="sticky top-0 z-10 float-right">
-        {planThreadsEnabled && taskId && hasPlanTab && (
+        {taskId && hasPlanTab && (
           <Tooltip content="Open in Plan view">
             <IconButton
               size="1"

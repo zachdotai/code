@@ -34,6 +34,7 @@ import {
   buildPlanRejectionPrompt,
 } from "../utils/planPrompts";
 import { PlanBlockGutter } from "./PlanBlockGutter";
+import { PlanListItemGutter } from "./PlanListItemGutter";
 import { PlanThread } from "./PlanThread";
 
 const log = logger.scope("plan-view");
@@ -378,6 +379,32 @@ function PlanViewInner({ taskId, filePath }: PlanViewProps) {
       };
     };
 
+    // `<li>` is wrapped by a dedicated `PlanListItemGutter` that renders
+    // a `<li>` itself (rather than `<div>`) so the resulting DOM stays
+    // valid inside `<ul>`/`<ol>` — browsers hoist stray `<div>`s out of
+    // lists, which silently breaks layout.
+    const wrapLi = (props: Record<string, unknown>) => {
+      const blockText = props["data-plan-block"] as string | undefined;
+      const occurrence = parseOccurrence(props["data-occurrence"]);
+      const {
+        "data-plan-block": _unusedBlock,
+        "data-occurrence": _unusedOcc,
+        children,
+        ...rest
+      } = props as Record<string, unknown> & { children?: React.ReactNode };
+      void rest; // We deliberately ignore any other props passed to <li>
+      return (
+        <PlanListItemGutter
+          blockText={blockText}
+          occurrence={occurrence}
+          filePath={filePath}
+          taskId={taskId}
+        >
+          {children as React.ReactNode}
+        </PlanListItemGutter>
+      );
+    };
+
     // Wrap only the components whose mdast types are in
     // `remarkPlanThreads`'s `ANCHORABLE_TYPES`. The set must agree on
     // both sides — see the comment in `remarkPlanThreads.ts` for why
@@ -393,7 +420,7 @@ function PlanViewInner({ taskId, filePath }: PlanViewProps) {
       h5: wrap("h5"),
       h6: wrap("h6"),
       p: wrap("p"),
-      li: wrap("li"),
+      li: wrapLi,
       "plan-thread": (props: PlanThreadElementProps) => {
         const blockText = props["data-block-text"] ?? "";
         const occurrence = parseOccurrence(props["data-occurrence"]);

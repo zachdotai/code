@@ -58,6 +58,67 @@ function key() {
   });
 }
 
+describe("PlanBlockGutter — composer does not block on the agent turn", () => {
+  beforeEach(() => {
+    usePlanAgentActivityStore.setState({ queue: [] });
+    mutateMock.mockClear();
+    mutateMock.mockResolvedValue(undefined);
+    sendPromptMock.mockReset();
+  });
+
+  it("closes the composer immediately after the plan write, without waiting for the agent's full turn", async () => {
+    // Simulate a sendPrompt that hasn't resolved yet — like the agent
+    // taking 30s to generate a response. The composer should close
+    // immediately and the "Add a comment" trigger should be visible
+    // again, without waiting for the prompt to resolve.
+    let resolveSend: () => void = () => undefined;
+    sendPromptMock.mockReturnValue(
+      new Promise<{ stopReason: string }>((res) => {
+        resolveSend = () => res({ stopReason: "ok" });
+      }),
+    );
+
+    render(
+      <Theme>
+        <PlanBlockGutter
+          blockText={BLOCK}
+          occurrence={0}
+          filePath={FILE}
+          taskId="task-1"
+        >
+          <p>{BLOCK}</p>
+        </PlanBlockGutter>
+      </Theme>,
+    );
+
+    fireEvent.click(screen.getByLabelText("Add a comment"));
+    fireEvent.change(screen.getByPlaceholderText(/add a comment/i), {
+      target: { value: "Looks good" },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Add comment"));
+    });
+
+    // Composer must have closed even though sendPrompt is still pending.
+    expect(screen.queryByPlaceholderText(/add a comment/i)).toBeNull();
+    // And the "+" trigger should be available again to start a new
+    // comment without waiting.
+    expect(screen.getByLabelText("Add a comment")).toBeInTheDocument();
+    // Activity should be queued — the agent is still working.
+    expect(usePlanAgentActivityStore.getState().getStatus(key())).toBe(
+      "active",
+    );
+
+    // Now let the prompt finally resolve — should not affect any state.
+    resolveSend();
+    await act(async () => undefined);
+    expect(usePlanAgentActivityStore.getState().getStatus(key())).toBe(
+      "active",
+    );
+  });
+});
+
 describe("PlanBlockGutter — sendPrompt error handling", () => {
   beforeEach(() => {
     usePlanAgentActivityStore.setState({ queue: [] });

@@ -187,24 +187,23 @@ export function PlanThread({
         speaker: "H",
       });
       enqueueAgentActivity(threadKey);
-      // Use dispatchPlanComment so the reply isn't silently queued when
-      // ExitPlanMode is still pending. Await so we can dequeue on
-      // failure — otherwise the indicator sticks.
-      try {
-        const service = getSessionService();
-        await dispatchPlanComment({
-          taskId,
-          pendingPermissions: getPendingPermissionsForTask(taskId),
-          prompt: buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
-          sessionService: {
-            respondToPermission: service.respondToPermission.bind(service),
-            sendPrompt: service.sendPrompt.bind(service),
-          },
-        });
-      } catch (sendErr) {
+      // Fire-and-forget — `sendPrompt` only resolves when the agent's
+      // turn ends. Awaiting it would freeze the Reply button in
+      // "Sending…" until the agent stops talking. Dequeue on rejection
+      // so the activity indicator doesn't stick.
+      const service = getSessionService();
+      dispatchPlanComment({
+        taskId,
+        pendingPermissions: getPendingPermissionsForTask(taskId),
+        prompt: buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
+        sessionService: {
+          respondToPermission: service.respondToPermission.bind(service),
+          sendPrompt: service.sendPrompt.bind(service),
+        },
+      }).catch((sendErr) => {
         log.warn("Failed to send plan-thread reply prompt", { err: sendErr });
         dequeueAgentActivity(threadKey);
-      }
+      });
     } catch (err) {
       log.warn("Failed to append plan thread reply", { err });
     } finally {
@@ -228,21 +227,22 @@ export function PlanThread({
         occurrence,
       });
       enqueueAgentActivity(threadKey);
-      try {
-        const service = getSessionService();
-        await dispatchPlanComment({
-          taskId,
-          pendingPermissions: getPendingPermissionsForTask(taskId),
-          prompt: buildAskAgentToIncorporateResolvedThreadPrompt(filePath),
-          sessionService: {
-            respondToPermission: service.respondToPermission.bind(service),
-            sendPrompt: service.sendPrompt.bind(service),
-          },
-        });
-      } catch (sendErr) {
+      // Fire-and-forget — see comment on `handleReplySubmit`. The
+      // "Incorporating feedback…" indicator on the thread surfaces the
+      // ongoing work; the user can move on.
+      const service = getSessionService();
+      dispatchPlanComment({
+        taskId,
+        pendingPermissions: getPendingPermissionsForTask(taskId),
+        prompt: buildAskAgentToIncorporateResolvedThreadPrompt(filePath),
+        sessionService: {
+          respondToPermission: service.respondToPermission.bind(service),
+          sendPrompt: service.sendPrompt.bind(service),
+        },
+      }).catch((sendErr) => {
         log.warn("Failed to send plan-resolve prompt", { err: sendErr });
         dequeueAgentActivity(threadKey);
-      }
+      });
     } catch (err) {
       log.warn("Failed to resolve plan thread", { err });
     }

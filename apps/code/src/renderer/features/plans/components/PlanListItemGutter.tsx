@@ -15,9 +15,9 @@ import {
 import { dispatchPlanComment } from "../utils/dispatchPlanComment";
 import { buildAskAgentToReplyToPlanThreadPrompt } from "../utils/planPrompts";
 
-const log = logger.scope("plan-block-gutter");
+const log = logger.scope("plan-list-item-gutter");
 
-interface PlanBlockGutterProps {
+interface PlanListItemGutterProps {
   blockText: string | undefined;
   occurrence: number;
   filePath: string;
@@ -25,7 +25,7 @@ interface PlanBlockGutterProps {
   children: ReactNode;
 }
 
-interface InlineComposerProps {
+interface InlineComposerLiProps {
   blockText: string;
   occurrence: number;
   filePath: string;
@@ -33,13 +33,18 @@ interface InlineComposerProps {
   onClose: () => void;
 }
 
-function InlineComposer({
+/**
+ * Composer rendered as a sibling `<li>` so the resulting DOM stays
+ * valid inside `<ul>`/`<ol>`. Mirrors `PlanBlockGutter`'s inline
+ * composer in behavior, but with a `<li>` outer element.
+ */
+function InlineComposerLi({
   blockText,
   occurrence,
   filePath,
   taskId,
   onClose,
-}: InlineComposerProps) {
+}: InlineComposerLiProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -64,11 +69,7 @@ function InlineComposer({
         speaker: "H",
       });
       enqueueAgentActivity(threadKey);
-      // Fire-and-forget — `sendPrompt` resolves only when the agent's
-      // turn ends (potentially many seconds). Awaiting it would freeze
-      // the composer in "Sending…" until the agent stops talking; the
-      // user already sees ongoing work via the per-thread activity
-      // indicator. Dequeue on rejection so the indicator doesn't stick.
+      // Fire-and-forget — see `PlanBlockGutter` for rationale.
       const service = getSessionService();
       dispatchPlanComment({
         taskId,
@@ -112,7 +113,7 @@ function InlineComposer({
   );
 
   return (
-    <div className="my-2 ml-6">
+    <li className="my-2 list-none">
       <div className="rounded-md border border-(--gray-5) bg-(--gray-2) p-2">
         <textarea
           ref={textareaRef}
@@ -134,28 +135,32 @@ function InlineComposer({
           </Button>
         </Flex>
       </div>
-    </div>
+    </li>
   );
 }
 
 /**
- * Wraps a markdown block (heading, paragraph, list) with a hover-revealed
- * `+` button in the left gutter. Clicking opens an inline composer
- * directly below the block — comments appear in the document flow, not
- * as a floating popover.
+ * Variant of `PlanBlockGutter` that renders an `<li>` (with the gutter
+ * button as a positioned child) instead of wrapping the original element
+ * in a `<div>`. Using a `<div>` inside `<ul>`/`<ol>` produces invalid
+ * DOM — the browser's parser hoists the `<div>` out of the list and
+ * the layout breaks.
+ *
+ * The composer renders as a sibling `<li>` (with `list-none` so no
+ * marker is drawn) for the same reason.
  */
-export function PlanBlockGutter({
+export function PlanListItemGutter({
   blockText,
   occurrence,
   filePath,
   taskId,
   children,
-}: PlanBlockGutterProps) {
+}: PlanListItemGutterProps) {
   const [composing, setComposing] = useState(false);
 
   return (
     <>
-      <div className="group relative">
+      <li className="group relative">
         {blockText && (
           <Tooltip content="Add a comment" side="left">
             <button
@@ -169,9 +174,9 @@ export function PlanBlockGutter({
           </Tooltip>
         )}
         {children}
-      </div>
+      </li>
       {composing && blockText && (
-        <InlineComposer
+        <InlineComposerLi
           blockText={blockText}
           occurrence={occurrence}
           filePath={filePath}
