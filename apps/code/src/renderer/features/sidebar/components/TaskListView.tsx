@@ -30,6 +30,7 @@ import { Fragment, useCallback, useEffect, useMemo } from "react";
 import type { TaskData, TaskGroup } from "../hooks/useSidebarData";
 import { useTaskPrStatus } from "../hooks/useTaskPrStatus";
 import { useSidebarStore } from "../stores/sidebarStore";
+import { getNewTaskTarget } from "../utils/getNewTaskTarget";
 import { DraggableFolder } from "./DraggableFolder";
 import { TaskItem } from "./items/TaskItem";
 import { SidebarSection } from "./SidebarSection";
@@ -418,10 +419,14 @@ export function TaskListView({
                     addSpacingBefore={false}
                     tooltipContent={folder?.path ?? group.id}
                     onNewTask={() => {
-                      if (groupFolderId) {
-                        navigateToTaskInput(groupFolderId);
-                      } else {
+                      const target = getNewTaskTarget({
+                        groupFolderId,
+                        groupId: group.id,
+                      });
+                      if (target === undefined) {
                         navigateToTaskInput();
+                      } else {
+                        navigateToTaskInput(target);
                       }
                     }}
                     newTaskTooltip={`Start new task in ${folder?.name ?? group.name}`}
