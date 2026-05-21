@@ -1,4 +1,5 @@
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
+import { getPendingPermissionsForTask } from "@features/sessions/hooks/useSession";
 import { getSessionService } from "@features/sessions/service/service";
 import {
   CheckCircle,
@@ -17,6 +18,7 @@ import {
   buildThreadKey,
   usePlanAgentActivityStore,
 } from "../stores/planAgentActivityStore";
+import { dispatchPlanComment } from "../utils/dispatchPlanComment";
 import {
   buildAskAgentToIncorporateResolvedThreadPrompt,
   buildAskAgentToReplyToPlanThreadPrompt,
@@ -185,15 +187,20 @@ export function PlanThread({
         speaker: "H",
       });
       enqueueAgentActivity(threadKey);
-      // sendPrompt directly — sendPromptToAgent also switches the active
-      // tab to Chat, which is the wrong behavior from inside Plan view.
-      // Await so we can dequeue on failure — otherwise the indicator
-      // sticks and the rejection is unhandled.
+      // Use dispatchPlanComment so the reply isn't silently queued when
+      // ExitPlanMode is still pending. Await so we can dequeue on
+      // failure — otherwise the indicator sticks.
       try {
-        await getSessionService().sendPrompt(
+        const service = getSessionService();
+        await dispatchPlanComment({
           taskId,
-          buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
-        );
+          pendingPermissions: getPendingPermissionsForTask(taskId),
+          prompt: buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
+          sessionService: {
+            respondToPermission: service.respondToPermission.bind(service),
+            sendPrompt: service.sendPrompt.bind(service),
+          },
+        });
       } catch (sendErr) {
         log.warn("Failed to send plan-thread reply prompt", { err: sendErr });
         dequeueAgentActivity(threadKey);
@@ -222,10 +229,16 @@ export function PlanThread({
       });
       enqueueAgentActivity(threadKey);
       try {
-        await getSessionService().sendPrompt(
+        const service = getSessionService();
+        await dispatchPlanComment({
           taskId,
-          buildAskAgentToIncorporateResolvedThreadPrompt(filePath),
-        );
+          pendingPermissions: getPendingPermissionsForTask(taskId),
+          prompt: buildAskAgentToIncorporateResolvedThreadPrompt(filePath),
+          sessionService: {
+            respondToPermission: service.respondToPermission.bind(service),
+            sendPrompt: service.sendPrompt.bind(service),
+          },
+        });
       } catch (sendErr) {
         log.warn("Failed to send plan-resolve prompt", { err: sendErr });
         dequeueAgentActivity(threadKey);

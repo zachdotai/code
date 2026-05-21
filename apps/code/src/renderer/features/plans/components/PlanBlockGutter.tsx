@@ -1,3 +1,4 @@
+import { getPendingPermissionsForTask } from "@features/sessions/hooks/useSession";
 import { getSessionService } from "@features/sessions/service/service";
 import { Plus, X } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
@@ -11,6 +12,7 @@ import {
   buildThreadKey,
   usePlanAgentActivityStore,
 } from "../stores/planAgentActivityStore";
+import { dispatchPlanComment } from "../utils/dispatchPlanComment";
 import { buildAskAgentToReplyToPlanThreadPrompt } from "../utils/planPrompts";
 
 const log = logger.scope("plan-block-gutter");
@@ -62,16 +64,22 @@ function InlineComposer({
         speaker: "H",
       });
       enqueueAgentActivity(threadKey);
-      // `sendPrompt` directly — `sendPromptToAgent` would also switch the
-      // active tab to Chat, which is the wrong behavior when the user is
-      // commenting from inside the Plan tab. Await so we can dequeue on
-      // failure (offline, disconnected session, etc.) — otherwise the
-      // "Responding…" indicator sticks and the rejection is unhandled.
+      // Use dispatchPlanComment so the comment isn't silently queued
+      // when ExitPlanMode is pending — see helper for the full
+      // explanation. Await so we can dequeue on failure (offline,
+      // disconnected session, etc.) — otherwise the "Responding…"
+      // indicator sticks and the rejection is unhandled.
       try {
-        await getSessionService().sendPrompt(
+        const service = getSessionService();
+        await dispatchPlanComment({
           taskId,
-          buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
-        );
+          pendingPermissions: getPendingPermissionsForTask(taskId),
+          prompt: buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
+          sessionService: {
+            respondToPermission: service.respondToPermission.bind(service),
+            sendPrompt: service.sendPrompt.bind(service),
+          },
+        });
       } catch (sendErr) {
         log.warn("Failed to send plan-thread prompt", { err: sendErr });
         dequeueAgentActivity(threadKey);
