@@ -1,6 +1,8 @@
 import { getSessionService } from "@features/sessions/service/service";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import {
+  Broadcast,
+  CellSignalSlash,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
   MapTrifold,
@@ -8,8 +10,11 @@ import {
   Stop,
   Trash,
 } from "@phosphor-icons/react";
-import { Flex, Select, Text } from "@radix-ui/themes";
+import { Flex, Select, Text, Tooltip } from "@radix-ui/themes";
+import { useTRPC } from "@renderer/trpc/client";
 import { RTS_FLAG } from "@shared/constants";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import type {
   CommandCenterCellData,
   StatusSummary,
@@ -90,6 +95,67 @@ function StatusSummaryText({ summary }: { summary: StatusSummary }) {
   );
 }
 
+function SignalIngestionToggle() {
+  const trpcReact = useTRPC();
+  const queryClient = useQueryClient();
+  const statusQueryKey = trpcReact.rts.signalIngestion.status.queryKey();
+  const { data } = useQuery(
+    trpcReact.rts.signalIngestion.status.queryOptions(undefined, {
+      staleTime: Number.POSITIVE_INFINITY,
+    }),
+  );
+  const setEnabled = useMutation(
+    trpcReact.rts.signalIngestion.setEnabled.mutationOptions({
+      onMutate: ({ enabled }) => {
+        const previous = queryClient.getQueryData<typeof data>(statusQueryKey);
+        queryClient.setQueryData<typeof data>(statusQueryKey, () => ({
+          enabled,
+          running: enabled,
+        }));
+        return { previous };
+      },
+      onSuccess: (status) => {
+        queryClient.setQueryData(statusQueryKey, status);
+      },
+      onError: (_error, variables, context) => {
+        queryClient.setQueryData(
+          statusQueryKey,
+          context?.previous ?? {
+            enabled: !variables.enabled,
+            running: false,
+          },
+        );
+        toast.error("Could not update signal hoglet mode");
+      },
+    }),
+  );
+
+  const enabled = data?.enabled ?? false;
+  const Icon = enabled ? Broadcast : CellSignalSlash;
+  const label = enabled ? "Signals on" : "Signals off";
+  const tooltip = enabled
+    ? "Signals can trigger hoglets"
+    : "Signals will not trigger hoglets";
+  const stateClasses = enabled
+    ? "border-(--green-6) bg-(--green-2) text-(--green-11) hover:bg-(--green-3) hover:text-(--green-12)"
+    : "border-(--gray-5) bg-(--gray-2) text-(--gray-9) hover:bg-(--gray-3) hover:text-(--gray-12)";
+
+  return (
+    <Tooltip content={tooltip}>
+      <button
+        type="button"
+        aria-pressed={enabled}
+        onClick={() => setEnabled.mutate({ enabled: !enabled })}
+        disabled={setEnabled.isPending}
+        className={`flex h-6 items-center gap-1 rounded-(--radius-2) border px-2 text-[12px] transition-colors disabled:opacity-50 ${stateClasses}`}
+      >
+        <Icon size={12} weight={enabled ? "fill" : "regular"} />
+        {label}
+      </button>
+    </Tooltip>
+  );
+}
+
 export function CommandCenterToolbar({
   summary,
   cells,
@@ -133,7 +199,10 @@ export function CommandCenterToolbar({
       className="no-drag shrink-0 border-gray-6 border-b"
     >
       {rtsEnabled && (
-        <ViewModeToggle value={effectiveViewMode} onChange={setViewMode} />
+        <>
+          <ViewModeToggle value={effectiveViewMode} onChange={setViewMode} />
+          <SignalIngestionToggle />
+        </>
       )}
 
       {!isMap && (

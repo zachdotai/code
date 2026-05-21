@@ -100,6 +100,11 @@ const getSignalIngestionService = () =>
 const getUsageEventRepository = () =>
   container.get<UsageEventRepository>(MAIN_TOKENS.UsageEventRepository);
 
+const signalIngestionStatus = z.object({
+  enabled: z.boolean(),
+  running: z.boolean(),
+});
+
 export const rtsRouter = router({
   goalDraft: router({
     respond: publicProcedure
@@ -450,9 +455,16 @@ export const rtsRouter = router({
       getSignalIngestionService().cancel();
     }),
 
-    isRunning: publicProcedure
-      .output(z.boolean())
-      .query(() => getSignalIngestionService().isRunning()),
+    status: publicProcedure
+      .output(signalIngestionStatus)
+      .query(() => getSignalIngestionService().status()),
+
+    setEnabled: publicProcedure
+      .input(z.object({ enabled: z.boolean() }))
+      .output(signalIngestionStatus)
+      .mutation(({ input }) =>
+        getSignalIngestionService().setEnabled(input.enabled),
+      ),
 
     /**
      * Live stream of `hogletIngested` events. The renderer subscribes once

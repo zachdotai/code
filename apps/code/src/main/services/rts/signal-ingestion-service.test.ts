@@ -11,6 +11,15 @@ vi.mock("../../utils/logger.js", () => ({
   },
 }));
 
+const mockSignalIngestionSetting = vi.hoisted(() => ({ enabled: true }));
+
+vi.mock("../settingsStore", () => ({
+  getRtsSignalIngestionEnabled: () => mockSignalIngestionSetting.enabled,
+  setRtsSignalIngestionEnabled: (enabled: boolean) => {
+    mockSignalIngestionSetting.enabled = enabled;
+  },
+}));
+
 import type { SignalReport } from "../../../shared/types";
 import type { CloudTaskClient } from "./cloud-task-client";
 import type { HogletService } from "./hoglet-service";
@@ -89,6 +98,7 @@ describe("SignalIngestionService", () => {
 
   beforeEach(() => {
     vi.useRealTimers();
+    mockSignalIngestionSetting.enabled = true;
   });
 
   it("emits hogletIngested for each new signal report on a poll cycle", async () => {
@@ -170,6 +180,32 @@ describe("SignalIngestionService", () => {
     ]);
   });
 
+  it("emits ingestion after spawn commits even if disabled mid-spawn", async () => {
+    cloudTasks = createMockCloudTaskClient({
+      reports: [makeReport({ id: "committed" })],
+    });
+    hoglets = createMockHogletService(async ({ signalReportId }) => {
+      mockSignalIngestionSetting.enabled = false;
+      return makeHoglet({ signalReportId, taskId: `task-${signalReportId}` });
+    });
+    const service = new SignalIngestionService(cloudTasks, hoglets);
+
+    const received: HogletIngestedEventPayload[] = [];
+    service.on(SignalIngestionEvent.HogletIngested, (e) => {
+      received.push(e);
+    });
+
+    await service.runPoll();
+
+    expect(received).toEqual([
+      {
+        signalReportId: "committed",
+        taskId: "task-committed",
+        hogletId: "hoglet-1",
+      },
+    ]);
+  });
+
   it("caps a single poll cycle at MAX_INGESTIONS_PER_TICK", async () => {
     const reports = Array.from({ length: 10 }, (_, i) =>
       makeReport({ id: `r${i}` }),
@@ -190,11 +226,57 @@ describe("SignalIngestionService", () => {
 
     service.start();
     service.start();
-    expect(service.isRunning()).toBe(true);
+    expect(service.status().running).toBe(true);
 
     service.cancel();
-    expect(service.isRunning()).toBe(false);
+    expect(service.status().running).toBe(false);
     // cancel is safe to call twice.
     service.cancel();
+  });
+
+  it("does not poll or spawn while signal ingestion is disabled", async () => {
+    mockSignalIngestionSetting.enabled = false;
+    cloudTasks = createMockCloudTaskClient({
+      reports: [makeReport({ id: "paused" })],
+    });
+    hoglets = createMockHogletService();
+    const service = new SignalIngestionService(cloudTasks, hoglets);
+
+    service.start();
+    expect(service.status()).toEqual({ enabled: false, running: false });
+
+    await service.runPoll();
+
+    expect(cloudTasks.listSignalReports).not.toHaveBeenCalled();
+    expect(hoglets.spawnSignalBacked).not.toHaveBeenCalled();
+  });
+
+  it("persists the disabled state and stops a running loop", () => {
+    cloudTasks = createMockCloudTaskClient({ reports: [] });
+    hoglets = createMockHogletService();
+    const service = new SignalIngestionService(cloudTasks, hoglets);
+
+    service.start();
+    expect(service.status()).toEqual({ enabled: true, running: true });
+
+    const status = service.setEnabled(false);
+
+    expect(status).toEqual({ enabled: false, running: false });
+    expect(mockSignalIngestionSetting.enabled).toBe(false);
+  });
+
+  it("persists the enabled state and starts a stopped loop", async () => {
+    mockSignalIngestionSetting.enabled = false;
+    cloudTasks = createMockCloudTaskClient({ reports: [] });
+    hoglets = createMockHogletService();
+    const service = new SignalIngestionService(cloudTasks, hoglets);
+
+    const status = service.setEnabled(true);
+
+    expect(status).toEqual({ enabled: true, running: true });
+    expect(mockSignalIngestionSetting.enabled).toBe(true);
+    await vi.waitFor(() => {
+      expect(cloudTasks.listSignalReports).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -12,6 +12,7 @@ interface SettingsSchema {
   maxActiveWorktrees: number;
   autoSuspendAfterDays: number;
   rtsMaxTicksPerHour: number;
+  rtsSignalIngestionEnabled: boolean;
 }
 
 export const RTS_MAX_TICKS_PER_HOUR_DEFAULT = 60;
@@ -93,6 +94,10 @@ const schema = {
     minimum: 1,
     maximum: 600,
   },
+  rtsSignalIngestionEnabled: {
+    type: "boolean" as const,
+    default: false,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -106,6 +111,7 @@ export const settingsStore = new Store<SettingsSchema>({
     maxActiveWorktrees: 5,
     autoSuspendAfterDays: 7,
     rtsMaxTicksPerHour: RTS_MAX_TICKS_PER_HOUR_DEFAULT,
+    rtsSignalIngestionEnabled: false,
   },
 });
 
@@ -186,4 +192,12 @@ export function getRtsMaxTicksPerHour(): number {
 
 export function setRtsMaxTicksPerHour(value: number): void {
   settingsStore.set("rtsMaxTicksPerHour", value);
+}
+
+export function getRtsSignalIngestionEnabled(): boolean {
+  return settingsStore.get("rtsSignalIngestionEnabled", false);
+}
+
+export function setRtsSignalIngestionEnabled(value: boolean): void {
+  settingsStore.set("rtsSignalIngestionEnabled", value);
 }

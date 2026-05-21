@@ -3,6 +3,10 @@ import type { SignalReport } from "../../../shared/types";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
+import {
+  getRtsSignalIngestionEnabled,
+  setRtsSignalIngestionEnabled,
+} from "../settingsStore";
 import type { CloudTaskClient } from "./cloud-task-client";
 import type { HogletService } from "./hoglet-service";
 import { buildSignalPrompt } from "./signal-prompt";
@@ -33,6 +37,11 @@ export interface HogletIngestedEventPayload {
 
 export interface SignalIngestionEvents {
   [SignalIngestionEvent.HogletIngested]: HogletIngestedEventPayload;
+}
+
+export interface SignalIngestionStatus {
+  enabled: boolean;
+  running: boolean;
 }
 
 interface QueryParams {
@@ -76,6 +85,11 @@ export class SignalIngestionService extends TypedEventEmitter<SignalIngestionEve
 
   /** Idempotent. Renderer calls this on map-view mount. */
   start(): void {
+    if (!this.isEnabled()) {
+      // setEnabled(true) flips the persisted gate before re-entering start().
+      log.debug("SignalIngestionService start skipped; ingestion disabled");
+      return;
+    }
     if (this.started) return;
     this.started = true;
     void this.runPoll();
@@ -91,20 +105,32 @@ export class SignalIngestionService extends TypedEventEmitter<SignalIngestionEve
 
   /**
    * Explicit operator override — the renderer does NOT call this on unmount.
-   * Useful for tests and for a future "pause ingestion" UI toggle.
+   * Useful for tests and for stopping the current loop without changing the
+   * persisted signal-ingestion preference.
    */
   cancel(): void {
-    if (!this.started) return;
-    this.started = false;
-    if (this.pollHandle) {
-      clearInterval(this.pollHandle);
-      this.pollHandle = null;
-    }
-    log.info("SignalIngestionService cancelled");
+    this.stop("cancelled");
   }
 
-  isRunning(): boolean {
-    return this.started;
+  isEnabled(): boolean {
+    return getRtsSignalIngestionEnabled();
+  }
+
+  status(): SignalIngestionStatus {
+    return {
+      enabled: this.isEnabled(),
+      running: this.started,
+    };
+  }
+
+  setEnabled(enabled: boolean): SignalIngestionStatus {
+    setRtsSignalIngestionEnabled(enabled);
+    if (enabled) {
+      this.start();
+    } else {
+      this.stop("disabled");
+    }
+    return this.status();
   }
 
   /**
@@ -112,6 +138,7 @@ export class SignalIngestionService extends TypedEventEmitter<SignalIngestionEve
    * In production the interval timer in {@link start} runs it.
    */
   async runPoll(): Promise<void> {
+    if (!this.isEnabled()) return;
     if (this.pollingNow) return;
     this.pollingNow = true;
     try {
@@ -127,6 +154,7 @@ export class SignalIngestionService extends TypedEventEmitter<SignalIngestionEve
       }
       const reports = response.results ?? [];
       if (reports.length === 0) return;
+      if (!this.isEnabled()) return;
       await this.ingestNewReports(reports);
     } finally {
       this.pollingNow = false;
@@ -146,6 +174,7 @@ export class SignalIngestionService extends TypedEventEmitter<SignalIngestionEve
 
     const batch = candidates.slice(0, MAX_INGESTIONS_PER_TICK);
     for (const report of batch) {
+      if (!this.isEnabled()) return;
       this.inFlight.add(report.id);
       try {
         await this.ingestOne(report);
@@ -162,6 +191,7 @@ export class SignalIngestionService extends TypedEventEmitter<SignalIngestionEve
 
   private async ingestOne(report: SignalReport): Promise<void> {
     const artefacts = await this.cloudTasks.getSignalReportArtefacts(report.id);
+    if (!this.isEnabled()) return;
     const prompt = buildSignalPrompt({
       report: { id: report.id, title: report.title, summary: report.summary },
       artefacts: artefacts.results,
@@ -183,6 +213,16 @@ export class SignalIngestionService extends TypedEventEmitter<SignalIngestionEve
       taskId: hoglet.taskId,
       hogletId: hoglet.id,
     });
+  }
+
+  private stop(reason: "cancelled" | "disabled"): void {
+    if (!this.started) return;
+    this.started = false;
+    if (this.pollHandle) {
+      clearInterval(this.pollHandle);
+      this.pollHandle = null;
+    }
+    log.info(`SignalIngestionService ${reason}`);
   }
 
   // In dev, ingest reports still in research (in_progress) and candidate
