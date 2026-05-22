@@ -11,8 +11,8 @@ vi.mock("../../utils/logger.js", () => ({
   },
 }));
 
-import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
-import { createMockFeedbackEventRepository } from "../../db/repositories/feedback-event-repository.mock";
+import type { FeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository";
+import { createMockFeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository.mock";
 import type { GitService } from "../git/service";
 import type { CloudTaskClient } from "./cloud-task-client";
 import {

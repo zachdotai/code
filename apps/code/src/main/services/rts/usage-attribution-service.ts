@@ -1,11 +1,11 @@
 import { inject, injectable, postConstruct } from "inversify";
-import type { HogletRepository } from "../../db/repositories/hoglet-repository";
-import type { NestRepository } from "../../db/repositories/nest-repository";
+import type { HogletRepository } from "../../db/repositories/rts/hoglet-repository";
+import type { NestRepository } from "../../db/repositories/rts/nest-repository";
 import type {
   CostSource,
   UsageEventRepository,
   UsageWorkload,
-} from "../../db/repositories/usage-event-repository";
+} from "../../db/repositories/rts/usage-event-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { AgentServiceEvent } from "../agent/schemas";

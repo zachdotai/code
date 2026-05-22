@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import { rtsHedgehogState } from "../schema";
-import type { DatabaseService } from "../service";
+import { MAIN_TOKENS } from "../../../di/tokens";
+import { rtsHedgehogState } from "../../schema";
+import type { DatabaseService } from "../../service";
 
 export type HedgehogState = typeof rtsHedgehogState.$inferSelect;
 export type NewHedgehogState = typeof rtsHedgehogState.$inferInsert;

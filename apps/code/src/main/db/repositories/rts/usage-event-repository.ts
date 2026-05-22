@@ -1,8 +1,8 @@
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import { rtsUsageEvents } from "../schema";
-import type { DatabaseService } from "../service";
+import { MAIN_TOKENS } from "../../../di/tokens";
+import { rtsUsageEvents } from "../../schema";
+import type { DatabaseService } from "../../service";
 
 export type UsageEvent = typeof rtsUsageEvents.$inferSelect;
 export type NewUsageEvent = typeof rtsUsageEvents.$inferInsert;

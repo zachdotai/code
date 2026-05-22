@@ -46,10 +46,10 @@ vi.mock("./hoglet-runtime-preferences", async () => {
   };
 });
 
-import type { HogletRepository } from "../../db/repositories/hoglet-repository";
-import type { NestRepository } from "../../db/repositories/nest-repository";
-import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
-import { createMockPrDependencyRepository } from "../../db/repositories/pr-dependency-repository.mock";
+import type { HogletRepository } from "../../db/repositories/rts/hoglet-repository";
+import type { NestRepository } from "../../db/repositories/rts/nest-repository";
+import type { PrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository";
+import { createMockPrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository.mock";
 import type { WorkspaceService } from "../workspace/service";
 import type { AffinityRouterService } from "./affinity-router";
 import type { CloudTaskClient } from "./cloud-task-client";

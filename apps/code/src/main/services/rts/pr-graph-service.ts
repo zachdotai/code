@@ -1,9 +1,9 @@
 import { inject, injectable } from "inversify";
-import type { HogletRepository } from "../../db/repositories/hoglet-repository";
+import type { HogletRepository } from "../../db/repositories/rts/hoglet-repository";
 import type {
   PrDependency,
   PrDependencyRepository,
-} from "../../db/repositories/pr-dependency-repository";
+} from "../../db/repositories/rts/pr-dependency-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";

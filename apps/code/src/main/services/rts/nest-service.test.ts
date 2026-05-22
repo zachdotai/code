@@ -15,7 +15,7 @@ vi.mock("../settingsStore", () => ({
   getWorktreeLocation: () => "/tmp/posthog-code-worktrees",
 }));
 
-import type { NestRepository } from "../../db/repositories/nest-repository";
+import type { NestRepository } from "../../db/repositories/rts/nest-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import type { FoldersService } from "../folders/service";
 import type { GitService } from "../git/service";

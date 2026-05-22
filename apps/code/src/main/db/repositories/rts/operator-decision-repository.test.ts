@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTestDb, type TestDatabase } from "../test-helpers";
+import { createTestDb, type TestDatabase } from "../../test-helpers";
 import {
   type OperatorDecision,
   OperatorDecisionRepository,

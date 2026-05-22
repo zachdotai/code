@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
-import type { OperatorDecisionRepository } from "../../db/repositories/operator-decision-repository";
-import type { UsageEventRepository } from "../../db/repositories/usage-event-repository";
+import type { FeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository";
+import type { OperatorDecisionRepository } from "../../db/repositories/rts/operator-decision-repository";
+import type { UsageEventRepository } from "../../db/repositories/rts/usage-event-repository";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
 import {

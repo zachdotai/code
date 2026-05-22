@@ -1,5 +1,5 @@
-import type { OperatorDecision } from "../../db/repositories/operator-decision-repository";
-import type { PrDependency } from "../../db/repositories/pr-dependency-repository";
+import type { OperatorDecision } from "../../db/repositories/rts/operator-decision-repository";
+import type { PrDependency } from "../../db/repositories/rts/pr-dependency-repository";
 import {
   clampReasoningEffortForAdapter,
   DEFAULT_HOGLET_RUNTIME_ADAPTER,

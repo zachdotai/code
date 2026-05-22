@@ -1,9 +1,9 @@
 import { Saga, type SagaLogger } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import type { Task, TaskRun } from "../../../shared/types";
-import type { HogletRepository } from "../../db/repositories/hoglet-repository";
-import type { NestRepository } from "../../db/repositories/nest-repository";
-import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
+import type { HogletRepository } from "../../db/repositories/rts/hoglet-repository";
+import type { NestRepository } from "../../db/repositories/rts/nest-repository";
+import type { PrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";

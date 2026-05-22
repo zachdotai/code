@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import { rtsPrDependencies } from "../schema";
-import type { DatabaseService } from "../service";
+import { MAIN_TOKENS } from "../../../di/tokens";
+import { rtsPrDependencies } from "../../schema";
+import type { DatabaseService } from "../../service";
 
 export type PrDependency = typeof rtsPrDependencies.$inferSelect;
 export type NewPrDependency = typeof rtsPrDependencies.$inferInsert;

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTestDb, type TestDatabase } from "../test-helpers";
+import { createTestDb, type TestDatabase } from "../../test-helpers";
 import { HogletRepository } from "./hoglet-repository";
 import { NestRepository } from "./nest-repository";
 import { UsageEventRepository } from "./usage-event-repository";

@@ -1,15 +1,15 @@
 import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
 import { normalizeRepoKey } from "../../../shared/utils/repo";
-import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
-import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
-import type { OperatorDecisionRepository } from "../../db/repositories/operator-decision-repository";
-import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
+import type { FeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository";
+import type { HedgehogStateRepository } from "../../db/repositories/rts/hedgehog-state-repository";
+import type { OperatorDecisionRepository } from "../../db/repositories/rts/operator-decision-repository";
+import type { PrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import type {
   TickLogRepository,
   TickOutcome,
-} from "../../db/repositories/tick-log-repository";
+} from "../../db/repositories/rts/tick-log-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { GitService } from "../git/service";

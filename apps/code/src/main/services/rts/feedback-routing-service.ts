@@ -7,7 +7,7 @@ import type {
   JsonRpcMessage,
   StoredLogEntry,
 } from "../../../shared/types/session-events";
-import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
+import type { FeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";

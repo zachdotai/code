@@ -1,5 +1,5 @@
 import { inject, injectable } from "inversify";
-import type { NestMessageRepository } from "../../db/repositories/nest-message-repository";
+import type { NestMessageRepository } from "../../db/repositories/rts/nest-message-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import type {
   CompactValidatedNestInput,

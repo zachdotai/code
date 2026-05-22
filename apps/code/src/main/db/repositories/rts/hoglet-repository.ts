@@ -1,8 +1,8 @@
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import { rtsHoglets } from "../schema";
-import type { DatabaseService } from "../service";
+import { MAIN_TOKENS } from "../../../di/tokens";
+import { rtsHoglets } from "../../schema";
+import type { DatabaseService } from "../../service";
 
 export type Hoglet = typeof rtsHoglets.$inferSelect;
 export type NewHoglet = typeof rtsHoglets.$inferInsert;

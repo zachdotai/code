@@ -1,7 +1,7 @@
 import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
 import { normalizeRepoKey } from "../../../shared/utils/repo";
-import type { NestRepository } from "../../db/repositories/nest-repository";
+import type { NestRepository } from "../../db/repositories/rts/nest-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";

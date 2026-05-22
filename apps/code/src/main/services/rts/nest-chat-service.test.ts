@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { NestMessageRepository } from "../../db/repositories/nest-message-repository";
+import type { NestMessageRepository } from "../../db/repositories/rts/nest-message-repository";
 import { NestChatService } from "./nest-chat-service";
 import type { Nest, NestMessage } from "./schemas";
 import { SPEC_DRIVEN_DEVELOPMENT_METHOD } from "./spec-driven-development";

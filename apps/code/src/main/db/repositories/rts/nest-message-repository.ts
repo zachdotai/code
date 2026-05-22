@@ -1,8 +1,8 @@
 import { and, asc, eq, or } from "drizzle-orm";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import { rtsNestMessages } from "../schema";
-import type { DatabaseService } from "../service";
+import { MAIN_TOKENS } from "../../../di/tokens";
+import { rtsNestMessages } from "../../schema";
+import type { DatabaseService } from "../../service";
 
 export type NestMessage = typeof rtsNestMessages.$inferSelect;
 export type NewNestMessage = typeof rtsNestMessages.$inferInsert;

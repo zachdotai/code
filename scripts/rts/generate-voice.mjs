@@ -28,7 +28,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(__dirname, "..");
+const REPO_ROOT = join(__dirname, "..", "..");
 const SCRIPT_PATH = join(REPO_ROOT, "notes/rts/voice-lines.json");
 const OUT_DIR = join(REPO_ROOT, "apps/code/src/renderer/assets/sounds/voice");
 

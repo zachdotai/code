@@ -1,5 +1,5 @@
-import type { OperatorDecision } from "../../../db/repositories/operator-decision-repository";
-import type { PrDependency } from "../../../db/repositories/pr-dependency-repository";
+import type { OperatorDecision } from "../../../db/repositories/rts/operator-decision-repository";
+import type { PrDependency } from "../../../db/repositories/rts/pr-dependency-repository";
 import type { AnthropicToolUseBlock } from "../../llm-gateway/schemas";
 import type { CloudTaskClient } from "../cloud-task-client";
 import type { FeedbackRoutingService } from "../feedback-routing-service";

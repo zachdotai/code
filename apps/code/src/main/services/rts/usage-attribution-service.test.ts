@@ -11,9 +11,9 @@ vi.mock("../../utils/logger.js", () => ({
   },
 }));
 
-import type { HogletRepository } from "../../db/repositories/hoglet-repository";
-import type { NestRepository } from "../../db/repositories/nest-repository";
-import type { UsageEventRepository } from "../../db/repositories/usage-event-repository";
+import type { HogletRepository } from "../../db/repositories/rts/hoglet-repository";
+import type { NestRepository } from "../../db/repositories/rts/nest-repository";
+import type { UsageEventRepository } from "../../db/repositories/rts/usage-event-repository";
 import { AgentServiceEvent } from "../agent/schemas";
 import type { AgentService } from "../agent/service";
 import type { AuthService } from "../auth/service";

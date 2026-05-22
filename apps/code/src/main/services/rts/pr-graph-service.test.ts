@@ -11,9 +11,9 @@ vi.mock("../../utils/logger.js", () => ({
   },
 }));
 
-import type { HogletRepository } from "../../db/repositories/hoglet-repository";
-import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
-import { createMockPrDependencyRepository } from "../../db/repositories/pr-dependency-repository.mock";
+import type { HogletRepository } from "../../db/repositories/rts/hoglet-repository";
+import type { PrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository";
+import { createMockPrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository.mock";
 import type { GitService } from "../git/service";
 import type { CloudTaskClient } from "./cloud-task-client";
 import type { NestChatService } from "./nest-chat-service";

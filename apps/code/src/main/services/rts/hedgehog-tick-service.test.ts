@@ -50,23 +50,23 @@ vi.mock("../settingsStore", () => ({
   getRtsMaxTicksPerHour: () => 60,
 }));
 
-import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
-import { createMockFeedbackEventRepository } from "../../db/repositories/feedback-event-repository.mock";
-import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
-import { createMockHedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository.mock";
-import type { OperatorDecisionRepository } from "../../db/repositories/operator-decision-repository";
-import { createMockOperatorDecisionRepository } from "../../db/repositories/operator-decision-repository.mock";
+import type { FeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository";
+import { createMockFeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository.mock";
+import type { HedgehogStateRepository } from "../../db/repositories/rts/hedgehog-state-repository";
+import { createMockHedgehogStateRepository } from "../../db/repositories/rts/hedgehog-state-repository.mock";
+import type { OperatorDecisionRepository } from "../../db/repositories/rts/operator-decision-repository";
+import { createMockOperatorDecisionRepository } from "../../db/repositories/rts/operator-decision-repository.mock";
 import type {
   PrDependency,
   PrDependencyRepository,
-} from "../../db/repositories/pr-dependency-repository";
-import { createMockPrDependencyRepository } from "../../db/repositories/pr-dependency-repository.mock";
+} from "../../db/repositories/rts/pr-dependency-repository";
+import { createMockPrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository.mock";
 import type {
   Repository,
   RepositoryRepository,
 } from "../../db/repositories/repository-repository";
-import type { TickLogRepository } from "../../db/repositories/tick-log-repository";
-import { createMockTickLogRepository } from "../../db/repositories/tick-log-repository.mock";
+import type { TickLogRepository } from "../../db/repositories/rts/tick-log-repository";
+import { createMockTickLogRepository } from "../../db/repositories/rts/tick-log-repository.mock";
 import type { GitService } from "../git/service";
 import type {
   AnthropicToolUseBlock,
