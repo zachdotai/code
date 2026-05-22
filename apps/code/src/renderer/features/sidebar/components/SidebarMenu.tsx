@@ -352,6 +352,7 @@ function SidebarMenuComponent() {
               pinnedTasks={sidebarData.pinnedTasks}
               flatTasks={sidebarData.flatTasks}
               groupedTasks={sidebarData.groupedTasks}
+              statusGroupedTasks={sidebarData.statusGroupedTasks}
               activeTaskId={sidebarData.activeTaskId}
               editingTaskId={editingTaskId}
               onTaskClick={handleTaskClick}

@@ -10,7 +10,7 @@ interface SidebarStoreState {
   collapsedSections: Set<string>;
   folderOrder: string[];
   historyVisibleCount: number;
-  organizeMode: "by-project" | "chronological";
+  organizeMode: "by-project" | "chronological" | "by-status";
   sortMode: "updated" | "created";
   showAllUsers: boolean;
   showInternal: boolean;

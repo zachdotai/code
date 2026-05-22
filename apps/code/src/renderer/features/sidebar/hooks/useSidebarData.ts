@@ -19,6 +19,10 @@ import {
   groupByRepository,
   type TaskRepositoryInfo,
 } from "../utils/groupTasks";
+import {
+  groupByStatus,
+  type StatusTaskGroup,
+} from "../utils/groupByStatus";
 import { computeSummaryIds } from "../utils/summaryIds";
 import { usePinnedTasks } from "./usePinnedTasks";
 import { useTaskViewed } from "./useTaskViewed";
@@ -46,6 +50,7 @@ export interface TaskData {
 }
 
 export type TaskGroup = GenericTaskGroup<TaskData>;
+export type StatusGroup = StatusTaskGroup<TaskData>;
 
 export interface SidebarData {
   isHomeActive: boolean;
@@ -58,6 +63,7 @@ export interface SidebarData {
   pinnedTasks: TaskData[];
   flatTasks: TaskData[];
   groupedTasks: TaskGroup[];
+  statusGroupedTasks: StatusGroup[];
   totalCount: number;
   hasMore: boolean;
 }
@@ -331,6 +337,11 @@ export function useSidebarData({
     [sortedUnpinnedTasks, folderOrder],
   );
 
+  const statusGroupedTasks = useMemo(
+    () => groupByStatus(sortedUnpinnedTasks),
+    [sortedUnpinnedTasks],
+  );
+
   const groupIdsRef = useRef<string[]>([]);
   useEffect(() => {
     if (groupedTasks.length === 0) return;
@@ -357,6 +368,7 @@ export function useSidebarData({
     pinnedTasks,
     flatTasks,
     groupedTasks,
+    statusGroupedTasks,
     totalCount,
     hasMore,
   };

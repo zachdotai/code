@@ -27,9 +27,14 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
 import { Fragment, useCallback, useEffect, useMemo } from "react";
-import type { TaskData, TaskGroup } from "../hooks/useSidebarData";
+import type {
+  StatusGroup,
+  TaskData,
+  TaskGroup,
+} from "../hooks/useSidebarData";
 import { useTaskPrStatus } from "../hooks/useTaskPrStatus";
 import { useSidebarStore } from "../stores/sidebarStore";
+import { STATUS_GROUP_META } from "../utils/groupByStatus";
 import { DraggableFolder } from "./DraggableFolder";
 import { TaskItem } from "./items/TaskItem";
 import { SidebarSection } from "./SidebarSection";
@@ -38,6 +43,7 @@ interface TaskListViewProps {
   pinnedTasks: TaskData[];
   flatTasks: TaskData[];
   groupedTasks: TaskGroup[];
+  statusGroupedTasks: StatusGroup[];
   activeTaskId: string | null;
   editingTaskId: string | null;
   onTaskClick: (taskId: string) => void;
@@ -187,6 +193,9 @@ function TaskFilterMenu() {
           <DropdownMenuRadioItem value="by-project">
             By project
           </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="by-status">
+            By status
+          </DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="chronological">
             Chronological list
           </DropdownMenuRadioItem>
@@ -249,6 +258,7 @@ export function TaskListView({
   pinnedTasks,
   flatTasks,
   groupedTasks,
+  statusGroupedTasks,
   activeTaskId,
   editingTaskId,
   onTaskClick,
@@ -384,6 +394,48 @@ export function TaskListView({
             </motion.button>
           )}
         </div>
+      ) : organizeMode === "by-status" ? (
+        <Flex direction="column">
+          {statusGroupedTasks.map((group) => {
+            const isExpanded = !collapsedSections.has(group.id);
+            const meta = STATUS_GROUP_META[group.id];
+            const Icon = meta.icon;
+            return (
+              <SidebarSection
+                key={group.id}
+                id={group.id}
+                label={group.name}
+                icon={<Icon size={14} color={meta.color} />}
+                isExpanded={isExpanded}
+                onToggle={() => toggleSection(group.id)}
+                addSpacingBefore={false}
+                tooltipContent={meta.description}
+              >
+                {group.tasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    isActive={activeTaskId === task.id}
+                    isEditing={editingTaskId === task.id}
+                    onClick={() => onTaskClick(task.id)}
+                    onDoubleClick={() => onTaskDoubleClick(task.id)}
+                    onContextMenu={(e, isPinned) =>
+                      onTaskContextMenu(task.id, e, isPinned)
+                    }
+                    onArchive={() => onTaskArchive(task.id)}
+                    onTogglePin={() => onTaskTogglePin(task.id)}
+                    onEditSubmit={(newTitle) =>
+                      onTaskEditSubmit(task.id, newTitle)
+                    }
+                    onEditCancel={onTaskEditCancel}
+                    timestamp={task[timestampKey]}
+                    depth={1}
+                  />
+                ))}
+              </SidebarSection>
+            );
+          })}
+        </Flex>
       ) : organizeMode === "by-project" ? (
         <DragDropProvider
           onDragOver={handleDragOver}
