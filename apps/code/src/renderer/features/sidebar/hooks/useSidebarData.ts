@@ -13,16 +13,13 @@ import type { Task, TaskRunStatus } from "@shared/types";
 import { useEffect, useMemo, useRef } from "react";
 import { useSidebarStore } from "../stores/sidebarStore";
 import type { SortMode } from "../types";
+import { groupByStatus, type StatusTaskGroup } from "../utils/groupByStatus";
 import {
   type TaskGroup as GenericTaskGroup,
   getRepositoryInfo,
   groupByRepository,
   type TaskRepositoryInfo,
 } from "../utils/groupTasks";
-import {
-  groupByStatus,
-  type StatusTaskGroup,
-} from "../utils/groupByStatus";
 import { computeSummaryIds } from "../utils/summaryIds";
 import { usePinnedTasks } from "./usePinnedTasks";
 import { useTaskViewed } from "./useTaskViewed";

@@ -27,11 +27,7 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
 import { Fragment, useCallback, useEffect, useMemo } from "react";
-import type {
-  StatusGroup,
-  TaskData,
-  TaskGroup,
-} from "../hooks/useSidebarData";
+import type { StatusGroup, TaskData, TaskGroup } from "../hooks/useSidebarData";
 import { useTaskPrStatus } from "../hooks/useTaskPrStatus";
 import { useSidebarStore } from "../stores/sidebarStore";
 import { STATUS_GROUP_META } from "../utils/groupByStatus";
