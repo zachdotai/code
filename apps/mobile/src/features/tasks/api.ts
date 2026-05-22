@@ -1,12 +1,22 @@
 import { fetch } from "expo/fetch";
-import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
+import {
+  createTimeoutSignal,
+  getAccessToken,
+  getBaseUrl,
+  getHeaders,
+  getProjectId,
+} from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type {
+  CreateTaskAutomationOptions,
   CreateTaskOptions,
   Integration,
   StoredLogEntry,
   Task,
+  TaskAutomation,
   TaskRun,
+  UpdateTaskAutomationOptions,
+  UserGithubIntegration,
 } from "./types";
 
 const log = logger.scope("tasks-api");
@@ -19,6 +29,50 @@ export class HttpError extends Error {
     this.name = "HttpError";
     this.status = status;
   }
+}
+
+export class TaskAutomationValidationError extends Error {
+  readonly code: string;
+  readonly attr: string | null;
+
+  constructor(message: string, code: string, attr: string | null) {
+    super(message);
+    this.name = "TaskAutomationValidationError";
+    this.code = code;
+    this.attr = attr;
+  }
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  return (await response.json()) as T;
+}
+
+async function parseTaskAutomationError(response: Response): Promise<never> {
+  let payload: {
+    code?: string;
+    detail?: string;
+    attr?: string;
+  } | null = null;
+
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (response.status === 400 && payload?.detail) {
+    throw new TaskAutomationValidationError(
+      payload.detail,
+      payload.code ?? "invalid_input",
+      payload.attr ?? null,
+    );
+  }
+
+  throw new HttpError(
+    response.status,
+    response.statusText,
+    "Task automation request failed",
+  );
 }
 
 async function withRetry<T>(
@@ -69,6 +123,7 @@ function isRetryableError(error: unknown): boolean {
 export async function getTasks(filters?: {
   repository?: string;
   createdBy?: number;
+  originProduct?: string;
 }): Promise<Task[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
@@ -80,6 +135,9 @@ export async function getTasks(filters?: {
   }
   if (filters?.createdBy) {
     params.set("created_by", String(filters.createdBy));
+  }
+  if (filters?.originProduct) {
+    params.set("origin_product", filters.originProduct);
   }
 
   const response = await fetch(
@@ -95,7 +153,7 @@ export async function getTasks(filters?: {
     );
   }
 
-  const data = await response.json();
+  const data = await parseJsonResponse<{ results?: Task[] }>(response);
   return data.results ?? [];
 }
 
@@ -117,7 +175,151 @@ export async function getTask(taskId: string): Promise<Task> {
     );
   }
 
-  return await response.json();
+  return await parseJsonResponse<Task>(response);
+}
+
+export async function getTaskAutomations(): Promise<TaskAutomation[]> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/?limit=500`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch task automations",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: TaskAutomation[] }>(
+    response,
+  );
+  return data.results ?? [];
+}
+
+export async function getTaskAutomation(
+  automationId: string,
+): Promise<TaskAutomation> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch task automation",
+    );
+  }
+
+  return await parseJsonResponse<TaskAutomation>(response);
+}
+
+export async function createTaskAutomation(
+  options: CreateTaskAutomationOptions,
+): Promise<TaskAutomation> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(options),
+    },
+  );
+
+  if (!response.ok) {
+    await parseTaskAutomationError(response);
+  }
+
+  return await parseJsonResponse<TaskAutomation>(response);
+}
+
+export async function updateTaskAutomation(
+  automationId: string,
+  updates: UpdateTaskAutomationOptions,
+): Promise<TaskAutomation> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/`,
+    {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify(updates),
+    },
+  );
+
+  if (!response.ok) {
+    await parseTaskAutomationError(response);
+  }
+
+  return await parseJsonResponse<TaskAutomation>(response);
+}
+
+export async function deleteTaskAutomation(
+  automationId: string,
+): Promise<void> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/`,
+    {
+      method: "DELETE",
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to delete task automation",
+    );
+  }
+}
+
+export async function runTaskAutomation(
+  automationId: string,
+): Promise<TaskAutomation> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/run/`,
+    {
+      method: "POST",
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to run task automation",
+    );
+  }
+
+  return await parseJsonResponse<TaskAutomation>(response);
 }
 
 export async function createTask(options: CreateTaskOptions): Promise<Task> {
@@ -144,7 +346,7 @@ export async function createTask(options: CreateTaskOptions): Promise<Task> {
     );
   }
 
-  return await response.json();
+  return await parseJsonResponse<Task>(response);
 }
 
 export async function updateTask(
@@ -172,7 +374,7 @@ export async function updateTask(
     );
   }
 
-  return await response.json();
+  return await parseJsonResponse<Task>(response);
 }
 
 export async function deleteTask(taskId: string): Promise<void> {
@@ -202,6 +404,18 @@ export interface RunTaskInCloudOptions {
   resumeFromRunId?: string;
   pendingUserMessage?: string;
   mode?: "interactive" | "background";
+  /** Adapter to use on the cloud runner. Currently only "claude" on mobile. */
+  runtimeAdapter?: "claude" | "codex";
+  /** Gateway model ID, e.g. "claude-opus-4-7". */
+  model?: string;
+  /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */
+  reasoningEffort?: string;
+  /** Permission mode: "default" | "acceptEdits" | "plan" | "auto". */
+  initialPermissionMode?: string;
+  /** Source that triggered this run. */
+  runSource?: "manual" | "signal_report";
+  /** Signal report ID when run_source is "signal_report". */
+  signalReportId?: string;
 }
 
 export async function runTaskInCloud(
@@ -220,7 +434,13 @@ export async function runTaskInCloud(
     (options.branch !== undefined ||
       options.resumeFromRunId !== undefined ||
       options.pendingUserMessage !== undefined ||
-      options.mode !== undefined);
+      options.mode !== undefined ||
+      options.runtimeAdapter !== undefined ||
+      options.model !== undefined ||
+      options.reasoningEffort !== undefined ||
+      options.initialPermissionMode !== undefined ||
+      options.runSource !== undefined ||
+      options.signalReportId !== undefined);
 
   let body: string | undefined;
   if (hasOptions) {
@@ -234,6 +454,19 @@ export async function runTaskInCloud(
     if (options?.pendingUserMessage) {
       payload.pending_user_message = options.pendingUserMessage;
     }
+    if (options?.runtimeAdapter) {
+      payload.runtime_adapter = options.runtimeAdapter;
+      if (options?.model) payload.model = options.model;
+      if (options?.reasoningEffort) {
+        payload.reasoning_effort = options.reasoningEffort;
+      }
+    }
+    if (options?.initialPermissionMode) {
+      payload.initial_permission_mode = options.initialPermissionMode;
+    }
+    if (options?.runSource) payload.run_source = options.runSource;
+    if (options?.signalReportId)
+      payload.signal_report_id = options.signalReportId;
     body = JSON.stringify(payload);
   }
 
@@ -414,28 +647,85 @@ export async function sendCloudCommand(
   return data?.result;
 }
 
-export async function fetchS3Logs(logUrl: string): Promise<string> {
+export interface SessionLogsPage {
+  entries: StoredLogEntry[];
+  hasMore: boolean;
+}
+
+export async function fetchSessionLogs(
+  taskId: string,
+  runId: string,
+  options: { limit?: number; offset?: number } = {},
+): Promise<SessionLogsPage> {
   return withRetry(
     async () => {
-      const response = await fetch(logUrl, {
-        signal: AbortSignal.timeout(10_000),
+      const baseUrl = getBaseUrl();
+      const projectId = getProjectId();
+      const headers = getHeaders();
+
+      const params = new URLSearchParams({
+        limit: String(options.limit ?? 5000),
+        offset: String(options.offset ?? 0),
       });
 
+      const response = await fetch(
+        `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/session_logs/?${params}`,
+        { headers, signal: createTimeoutSignal(10_000) },
+      );
+
       if (!response.ok) {
-        if (response.status === 404) {
-          return "";
-        }
         throw new HttpError(
           response.status,
           response.statusText,
-          "Failed to fetch logs",
+          "Failed to fetch session logs",
         );
       }
 
-      return await response.text();
+      const entries = (await response.json()) as StoredLogEntry[];
+      return {
+        entries,
+        hasMore: response.headers.get("X-Has-More") === "true",
+      };
     },
     { shouldRetry: isRetryableError },
   );
+}
+
+export interface StreamCloudTaskOptions {
+  lastEventId?: string | null;
+  startLatest?: boolean;
+  signal: AbortSignal;
+}
+
+export async function streamCloudTask(
+  taskId: string,
+  runId: string,
+  options: StreamCloudTaskOptions,
+): Promise<Response> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const accessToken = getAccessToken();
+
+  const url = new URL(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/stream/`,
+  );
+  if (options.startLatest && !options.lastEventId) {
+    url.searchParams.set("start", "latest");
+  }
+
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+    Authorization: `Bearer ${accessToken}`,
+  };
+  if (options.lastEventId) {
+    headers["Last-Event-ID"] = options.lastEventId;
+  }
+
+  return await fetch(url.toString(), {
+    method: "GET",
+    headers,
+    signal: options.signal,
+  });
 }
 
 export async function getIntegrations(): Promise<Integration[]> {
@@ -456,8 +746,13 @@ export async function getIntegrations(): Promise<Integration[]> {
     );
   }
 
-  const data = await response.json();
-  return data.results ?? data ?? [];
+  const data = await parseJsonResponse<
+    | {
+        results?: Integration[];
+      }
+    | Integration[]
+  >(response);
+  return Array.isArray(data) ? data : (data.results ?? []);
 }
 
 const GITHUB_REPOS_PAGE_SIZE = 500;
@@ -479,6 +774,122 @@ export async function getGithubRepositories(
     });
     const response = await fetch(
       `${baseUrl}/api/environments/${projectId}/integrations/${integrationId}/github_repos/?${params}`,
+      { headers },
+    );
+
+    if (!response.ok) {
+      throw new HttpError(
+        response.status,
+        response.statusText,
+        "Failed to fetch repositories",
+      );
+    }
+
+    const data = await response.json();
+    const repos: Array<string | { full_name?: string; name?: string }> =
+      data.repositories ?? data.results ?? data ?? [];
+
+    const normalized = repos
+      .map((repo) => {
+        if (typeof repo === "string") return repo.toLowerCase();
+        return (repo.full_name ?? repo.name ?? "").toLowerCase();
+      })
+      .filter((name) => name.length > 0);
+
+    allRepos.push(...normalized);
+
+    if (!data.has_more || repos.length === 0) {
+      return allRepos;
+    }
+
+    offset += repos.length;
+  }
+}
+
+export interface GithubUserConnectResult {
+  install_url: string;
+  connect_flow?: "oauth_authorize" | "oauth_discover" | "app_install";
+}
+
+/**
+ * Starts the user-scoped GitHub connection flow (mirrors desktop). The backend
+ * picks the lightweight OAuth flow when the team already has the GitHub App
+ * installed, otherwise a discover/install flow, and returns the URL to open.
+ *
+ * `connect_from: "posthog_mobile"` tells the backend to redirect the OAuth
+ * callback to `posthog://github/callback` so the in-app browser auto-closes.
+ */
+export async function startGithubUserIntegrationConnect(): Promise<GithubUserConnectResult> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/users/@me/integrations/github/start/`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        team_id: projectId,
+        connect_from: "posthog_mobile",
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      detail?: unknown;
+    };
+    const detail =
+      typeof payload.detail === "string"
+        ? payload.detail
+        : "Failed to start GitHub connection";
+    throw new HttpError(response.status, response.statusText, detail);
+  }
+
+  return parseJsonResponse<GithubUserConnectResult>(response);
+}
+
+export async function getUserGithubIntegrations(): Promise<
+  UserGithubIntegration[]
+> {
+  const baseUrl = getBaseUrl();
+  const headers = getHeaders();
+
+  const response = await fetch(`${baseUrl}/api/users/@me/integrations/`, {
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch personal GitHub integrations",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: UserGithubIntegration[] }>(
+    response,
+  );
+  return (data.results ?? []).filter((i) => i.kind === "github");
+}
+
+export async function getUserGithubRepositories(
+  installationId: string,
+): Promise<string[]> {
+  const baseUrl = getBaseUrl();
+  const headers = getHeaders();
+
+  const allRepos: string[] = [];
+  let offset = 0;
+
+  while (true) {
+    const params = new URLSearchParams({
+      limit: String(GITHUB_REPOS_PAGE_SIZE),
+      offset: String(offset),
+    });
+    const response = await fetch(
+      `${baseUrl}/api/users/@me/integrations/github/${installationId}/repos/?${params}`,
       { headers },
     );
 

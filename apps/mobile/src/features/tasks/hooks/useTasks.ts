@@ -13,20 +13,54 @@ import { filterAndSortTasks, useTaskStore } from "../stores/taskStore";
 import type { CreateTaskOptions, Task } from "../types";
 
 const log = logger.scope("tasks-mutations");
+const ACTIVE_TASK_POLLING_INTERVAL_MS = 5_000;
+const TERMINAL_TASK_RUN_STATUSES = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+]);
 
 export const taskKeys = {
   all: ["tasks"] as const,
   lists: () => [...taskKeys.all, "list"] as const,
-  list: (filters?: { repository?: string; createdBy?: number }) =>
-    [...taskKeys.lists(), filters] as const,
+  list: (filters?: {
+    repository?: string;
+    createdBy?: number;
+    originProduct?: string;
+  }) => [...taskKeys.lists(), filters] as const,
   details: () => [...taskKeys.all, "detail"] as const,
   detail: (id: string) => [...taskKeys.details(), id] as const,
 };
 
-export function useTasks(filters?: { repository?: string }) {
+export function getTaskPollingInterval(
+  taskData: Task | Task[] | undefined,
+): number | false {
+  if (!taskData) {
+    return false;
+  }
+
+  if (Array.isArray(taskData)) {
+    return taskData.some((task) => {
+      const status = task.latest_run?.status;
+      return !!status && !TERMINAL_TASK_RUN_STATUSES.has(status);
+    })
+      ? ACTIVE_TASK_POLLING_INTERVAL_MS
+      : false;
+  }
+
+  const status = taskData.latest_run?.status;
+  return status && !TERMINAL_TASK_RUN_STATUSES.has(status)
+    ? ACTIVE_TASK_POLLING_INTERVAL_MS
+    : false;
+}
+
+export function useTasks(filters?: {
+  repository?: string;
+  originProduct?: string;
+}) {
   const { projectId, oauthAccessToken } = useAuthStore();
   const { data: currentUser } = useUserQuery();
-  const { orderBy, orderDirection, filter } = useTaskStore();
+  const { sortMode, showInternal, filter } = useTaskStore();
 
   const queryFilters = {
     ...filters,
@@ -37,18 +71,26 @@ export function useTasks(filters?: { repository?: string }) {
     queryKey: taskKeys.list(queryFilters),
     queryFn: () => getTasks(queryFilters),
     enabled: !!projectId && !!oauthAccessToken && !!currentUser?.id,
+    refetchInterval: (query) =>
+      getTaskPollingInterval(query.state.data as Task[] | undefined),
   });
 
+  // Mobile never runs tasks locally — hide desktop-only local runs so the
+  // mobile list mirrors what's actually shareable across devices.
+  const cloudTasks = (query.data ?? []).filter(
+    (task) => task.latest_run?.environment !== "local",
+  );
+
   const filteredTasks = filterAndSortTasks(
-    query.data ?? [],
-    orderBy,
-    orderDirection,
+    cloudTasks,
+    sortMode,
+    showInternal,
     filter,
   );
 
   return {
     tasks: filteredTasks,
-    allTasks: query.data ?? [],
+    allTasks: cloudTasks,
     isLoading: query.isLoading,
     error: query.error?.message ?? null,
     refetch: query.refetch,
@@ -62,6 +104,8 @@ export function useTask(taskId: string) {
     queryKey: taskKeys.detail(taskId),
     queryFn: () => getTask(taskId),
     enabled: !!projectId && !!oauthAccessToken && !!taskId,
+    refetchInterval: (query) =>
+      getTaskPollingInterval(query.state.data as Task | undefined),
   });
 }
 

@@ -23,6 +23,13 @@ import {
   View,
 } from "react-native";
 import {
+  formatPosthogExecBody,
+  getPostHogExecDisplay,
+  isPostHogExecTool,
+} from "@/features/chat/utils/posthogExecDisplay";
+import { McpAppHost } from "@/features/mcp/components/McpAppHost";
+import { isMcpToolName } from "@/features/mcp/utils/mcpToolName";
+import {
   getColorForClass,
   highlightCode,
   languageFromPath,
@@ -58,6 +65,8 @@ const kindIcons: Record<ToolKind, PhosphorIcon> = {
   create_task: ListChecks,
   other: Wrench,
 };
+
+const POSTHOG_EXEC_INPUT_PREVIEW_MAX_LENGTH = 120;
 
 export function deriveToolKind(toolName: string): ToolKind {
   // Agent titles can include file paths, e.g. "Edit `src/foo.ts`" or
@@ -142,6 +151,7 @@ interface CreateTaskArgs {
 
 export interface ToolMessageProps {
   toolName: string;
+  rawToolName?: string;
   kind?: ToolKind;
   status: ToolStatus;
   args?: Record<string, unknown>;
@@ -314,6 +324,10 @@ function shortenPath(path: string, maxLen = 48): string {
   const parts = path.split("/");
   if (parts.length <= 2) return `…${path.slice(-(maxLen - 1))}`;
   return `…/${parts.slice(-2).join("/")}`;
+}
+
+function truncateText(text: string, maxLen: number): string {
+  return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
 }
 
 // Unified diff support — detects and renders `git diff` output when the agent
@@ -752,6 +766,7 @@ function CreateTaskPreview({
 
 export function ToolMessage({
   toolName,
+  rawToolName,
   kind,
   status,
   args,
@@ -766,9 +781,10 @@ export function ToolMessage({
   const isFailed = status === "error";
   const displayTitle = formatToolTitle(toolName, args);
   const KindIcon = kind ? kindIcons[kind] : Wrench;
+  const effectiveToolName = rawToolName ?? toolName;
 
   const isCreateTask =
-    toolName.toLowerCase() === "create_task" || kind === "create_task";
+    effectiveToolName.toLowerCase() === "create_task" || kind === "create_task";
 
   // File-editing tools get a proper diff view using the rawInput we already
   // receive on the wire. Detection is by shape, not tool name, so it works
@@ -917,6 +933,103 @@ export function ToolMessage({
   const isRunning = status === "running";
   const isCompleted = status === "completed";
   const resultText = extractResultText(result);
+  const isPostHogExec = isPostHogExecTool(effectiveToolName);
+  const posthogExecDisplay = isPostHogExec ? getPostHogExecDisplay(args) : null;
+
+  // MCP App tools render via the WebView host — skip PostHog exec (which has
+  // its own renderer above) and only kick in once the tool finished or while
+  // it's running so we don't show empty WebView shells for pending tools.
+  const isMcpAppTool = !isPostHogExec && isMcpToolName(effectiveToolName);
+
+  if (isMcpAppTool && !isPending) {
+    return (
+      <View className="px-4 py-1">
+        <McpAppHost
+          rawToolName={effectiveToolName}
+          toolArgs={args}
+          toolResult={result}
+          status={status}
+        />
+      </View>
+    );
+  }
+
+  if (isPostHogExec) {
+    const label = posthogExecDisplay?.label ?? "exec";
+    const inputPreview = posthogExecDisplay?.input;
+    const fullInput =
+      formatPosthogExecBody(posthogExecDisplay?.input) ??
+      (typeof args?.command === "string" ? args.command : undefined);
+    const outputText = resultText ? stripAnsi(resultText) : null;
+    const hasOutput = !!outputText?.trim();
+    const isExpandable = !!fullInput || hasOutput;
+
+    return (
+      <View className={`px-4 py-1 ${isRunning ? "bg-accent-3/30" : ""}`}>
+        <Pressable
+          onPress={() => isExpandable && setIsOpen(!isOpen)}
+          className="flex-row items-center gap-2"
+          disabled={!isExpandable}
+        >
+          {isLoading ? (
+            <ActivityIndicator size={12} color={themeColors.gray[9]} />
+          ) : (
+            <Wrench
+              size={12}
+              color={isFailed ? themeColors.status.error : themeColors.gray[9]}
+            />
+          )}
+          <Text
+            className="flex-1 font-mono text-[13px] text-gray-12"
+            numberOfLines={1}
+          >
+            posthog - {label} (MCP)
+          </Text>
+          {isPending && (
+            <Text className="font-mono text-[11px] text-gray-8">Queued</Text>
+          )}
+          {isFailed && (
+            <Text className="font-mono text-[12px] text-status-error">
+              Failed
+            </Text>
+          )}
+        </Pressable>
+
+        {inputPreview && !isPending && (
+          <Text
+            className="mt-0.5 ml-5 font-mono text-[11px] text-gray-9"
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {truncateText(inputPreview, POSTHOG_EXEC_INPUT_PREVIEW_MAX_LENGTH)}
+          </Text>
+        )}
+
+        {isOpen && fullInput && (
+          <View className="mt-1.5 ml-5 rounded border border-gray-6 bg-gray-2 px-2 py-1.5">
+            <Text
+              className="font-mono text-[11px] text-gray-11 leading-4"
+              selectable
+            >
+              {fullInput}
+            </Text>
+          </View>
+        )}
+
+        {isOpen && isCompleted && hasOutput && outputText && (
+          <View className="mt-1.5 ml-5 rounded border border-gray-6 bg-gray-2 px-2 py-1.5">
+            <Text
+              className="font-mono text-[11px] text-gray-11 leading-4"
+              numberOfLines={30}
+              selectable
+            >
+              {outputText}
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  }
 
   // Execute/Bash: show description + command subtitle + expandable output
   if (resolvedKind === "execute") {
