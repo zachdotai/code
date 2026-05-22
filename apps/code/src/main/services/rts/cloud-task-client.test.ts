@@ -29,6 +29,39 @@ function textResponse(text: string, init: ResponseInit): Response {
   return new Response(text, init);
 }
 
+function taskRunFixture(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    id: "run-1",
+    task: "task-1",
+    team: 42,
+    branch: null,
+    status: "not_started",
+    log_url: "",
+    error_message: null,
+    output: null,
+    state: {},
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    completed_at: null,
+    ...overrides,
+  };
+}
+
+function taskFixture(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    id: "task-1",
+    task_number: null,
+    slug: "task-1",
+    title: "Task title",
+    description: "Task description",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    origin_product: "user_created",
+    latest_run: null,
+    ...overrides,
+  };
+}
+
 function createAuthMock(projectId: number | null = 123): AuthService {
   return {
     getValidAccessToken: vi.fn(async () => ({
@@ -57,7 +90,7 @@ describe("CloudTaskClient", () => {
   it("creates task runs with rts runtime and permission settings", async () => {
     const auth = createAuthMock(42);
     (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      jsonResponse({ id: "run-1", status: "not_started" }),
+      jsonResponse(taskRunFixture({ id: "run-1", status: "not_started" })),
     );
     const client = new CloudTaskClient(auth);
 
@@ -94,7 +127,7 @@ describe("CloudTaskClient", () => {
   it("uses auth project id without fetching the current user", async () => {
     const auth = createAuthMock(77);
     (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      jsonResponse({ id: "task-1", latest_run: null }),
+      jsonResponse(taskFixture({ id: "task-1" })),
     );
     const client = new CloudTaskClient(auth);
 
@@ -115,7 +148,7 @@ describe("CloudTaskClient", () => {
         if (url.endsWith("/api/users/@me/")) {
           return jsonResponse({ team: { id: currentTeamId } });
         }
-        return jsonResponse({ id: "task", latest_run: null });
+        return jsonResponse(taskFixture({ id: "task" }));
       },
     );
     const client = new CloudTaskClient(auth);

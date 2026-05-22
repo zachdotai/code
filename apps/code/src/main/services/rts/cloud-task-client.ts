@@ -1,9 +1,8 @@
 import crypto from "node:crypto";
 import { inject, injectable } from "inversify";
-import { z } from "zod";
+import type { z } from "zod";
 import type {
   ExecutionMode,
-  SignalReport,
   SignalReportArtefactsResponse,
   SignalReportsQueryParams,
   SignalReportsResponse,
@@ -16,10 +15,20 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { AuthService } from "../auth/service";
 import {
+  type IntegrationReposResponse,
+  integrationReposResponseSchema,
+  integrationsResponseSchema,
+  sessionLogsResponseSchema,
+  signalReportArtefactsResponseSchema,
+  signalReportsResponseSchema,
+  taskRunCommandResponseSchema,
+  taskRunSchema,
+  taskSchema,
+} from "./cloud-task-schemas";
+import {
   type FeedbackProcessingState,
   feedbackProcessingState,
   type RtsReasoningEffort,
-  repoSlugSchema,
 } from "./schemas";
 
 const log = logger.scope("rts-cloud-task-client");
@@ -68,92 +77,7 @@ async function parseJsonResponse<TSchema extends z.ZodTypeAny>(
   return result.data;
 }
 
-const githubPrUrlSchema = z
-  .string()
-  .max(512)
-  .refine((value) => {
-    try {
-      const url = new URL(value);
-      if (url.protocol !== "https:") return false;
-      return url.host === "github.com" || url.host.endsWith(".github.com");
-    } catch {
-      return false;
-    }
-  }, "pr_url must be an https URL on github.com");
-
-const branchSchema = z
-  .string()
-  .min(1)
-  .max(256)
-  .regex(/^[A-Za-z0-9._\-/]+$/);
-
-const taskRunOutputSchema = z
-  .object({
-    pr_url: githubPrUrlSchema.optional().nullable(),
-  })
-  .passthrough()
-  .nullable();
-
-const taskRunSchema = z
-  .object({
-    id: z.string().min(1).max(64),
-    task: z.string().min(1).max(64).optional(),
-    branch: branchSchema.nullable().optional(),
-    status: z.string().min(1).max(64).optional(),
-    output: taskRunOutputSchema.optional(),
-  })
-  .passthrough();
-
-const taskSchema = z
-  .object({
-    id: z.string().min(1).max(64),
-    repository: repoSlugSchema.nullable().optional(),
-    latest_run: taskRunSchema.nullable().optional(),
-  })
-  .passthrough();
-
-const integrationsResponseSchema = z
-  .object({
-    results: z
-      .array(
-        z
-          .object({
-            id: z.string().min(1).max(64),
-            installation_id: z.string().min(1).max(64),
-          })
-          .passthrough(),
-      )
-      .optional(),
-  })
-  .passthrough();
-
-const repoEntrySchema = z.union([
-  z.string().min(1).max(140),
-  z
-    .object({
-      full_name: z.string().min(1).max(140).optional(),
-      name: z.string().min(1).max(140).optional(),
-    })
-    .passthrough(),
-]);
-
-/**
- * The repos endpoint returns one of several shapes depending on installation
- * state and pagination wrapper. The renderer's `normalizeGithubRepositories`
- * already handles the same set; mirror its tolerance here so a wrapper change
- * doesn't silently empty the integration cache and lock the hedgehog out of
- * every repo for 5 minutes.
- */
-const integrationReposResponseSchema = z
-  .object({
-    repositories: z.array(repoEntrySchema).optional(),
-    results: z.array(repoEntrySchema).optional(),
-  })
-  .passthrough();
-
-function extractRepoSlugs(
-  data: z.infer<typeof integrationReposResponseSchema>,
-): string[] {
+function extractRepoSlugs(data: IntegrationReposResponse): string[] {
   const entries = data.repositories ?? data.results ?? [];
   const slugs: string[] = [];
   for (const entry of entries) {
@@ -166,54 +90,6 @@ function extractRepoSlugs(
   }
   return slugs;
 }
-
-const signalReportSchema = z
-  .object({
-    id: z.string().min(1).max(128),
-  })
-  .passthrough();
-
-const signalReportsResponseSchema = z
-  .object({
-    results: z.array(signalReportSchema).optional(),
-    count: z.number().optional(),
-  })
-  .passthrough();
-
-const signalReportArtefactSchema = z
-  .object({
-    id: z.string().min(1).max(128),
-    type: z.string().min(1).max(64),
-  })
-  .passthrough();
-
-const signalReportArtefactsResponseSchema = z
-  .object({
-    results: z.array(signalReportArtefactSchema).optional(),
-    count: z.number().optional(),
-    unavailableReason: z.string().optional(),
-  })
-  .passthrough();
-
-const taskRunCommandResponseSchema = z
-  .object({
-    jsonrpc: z.string().optional(),
-    id: z.unknown().optional(),
-    processed: z.unknown().optional(),
-    result: z.unknown().optional(),
-    error: z.unknown().optional(),
-  })
-  .passthrough();
-
-const storedLogEntrySchema = z
-  .object({
-    type: z.string().min(1).max(128),
-    timestamp: z.string().optional(),
-    notification: z.unknown().optional(),
-  })
-  .passthrough();
-
-const sessionLogsResponseSchema = z.array(storedLogEntrySchema);
 
 /**
  * Reject `apiHost` values that would let the cloud API base URL escape into a
@@ -340,11 +216,7 @@ export class CloudTaskClient {
       });
       throw new Error(`create_task_failed: HTTP ${response.status}`);
     }
-    return (await parseJsonResponse(
-      "POST /tasks/",
-      response,
-      taskSchema,
-    )) as unknown as Task;
+    return await parseJsonResponse("POST /tasks/", response, taskSchema);
   }
 
   async deleteTask(taskId: string): Promise<void> {
@@ -378,11 +250,11 @@ export class CloudTaskClient {
         `cloud_task_fetch_failed: HTTP ${response.status} for task ${taskId}`,
       );
     }
-    const task = (await parseJsonResponse(
+    const task = await parseJsonResponse(
       "GET /tasks/{id}/",
       response,
       taskSchema,
-    )) as unknown as Task;
+    );
     return { task, latestRun: task.latest_run ?? null };
   }
 
@@ -406,28 +278,14 @@ export class CloudTaskClient {
       );
     }
 
-    const raw = await response.json();
-    const parsed = sessionLogsResponseSchema.safeParse(raw);
-    if (!parsed.success) {
-      log.warn("cloud API response rejected by schema", {
-        endpoint: "GET /tasks/{id}/runs/{runId}/session_logs/",
-        issues: parsed.error.issues.slice(0, 8).map((issue) => ({
-          path: issue.path,
-          code: issue.code,
-          message: issue.message,
-        })),
-      });
-      throw new CloudApiResponseError(
-        "GET /tasks/{id}/runs/{runId}/session_logs/",
-        parsed.error.issues.map((issue) => ({
-          path: issue.path,
-          message: issue.message,
-        })),
-      );
-    }
+    const entries = await parseJsonResponse(
+      "GET /tasks/{id}/runs/{runId}/session_logs/",
+      response,
+      sessionLogsResponseSchema,
+    );
 
     return {
-      entries: parsed.data as StoredLogEntry[],
+      entries,
       hasMore: response.headers.get("X-Has-More") === "true",
     };
   }
@@ -483,11 +341,11 @@ export class CloudTaskClient {
       });
       throw new Error(`create_task_run_failed: HTTP ${response.status}`);
     }
-    return (await parseJsonResponse(
+    return await parseJsonResponse(
       "POST /tasks/{id}/runs/",
       response,
       taskRunSchema,
-    )) as unknown as TaskRun;
+    );
   }
 
   async startTaskRun(
@@ -519,11 +377,11 @@ export class CloudTaskClient {
       });
       throw new Error(`start_task_run_failed: HTTP ${response.status}`);
     }
-    return (await parseJsonResponse(
+    return await parseJsonResponse(
       "POST /tasks/{id}/runs/{runId}/start/",
       response,
       taskSchema,
-    )) as unknown as Task;
+    );
   }
 
   async injectPrompt(input: {
@@ -611,11 +469,11 @@ export class CloudTaskClient {
       });
       throw new Error(`update_task_run_failed: HTTP ${response.status}`);
     }
-    return (await parseJsonResponse(
+    return await parseJsonResponse(
       "PATCH /tasks/{id}/runs/{runId}/",
       response,
       taskRunSchema,
-    )) as unknown as TaskRun;
+    );
   }
 
   async listSignalReports(
@@ -647,7 +505,7 @@ export class CloudTaskClient {
       signalReportsResponseSchema,
     );
     return {
-      results: (data.results ?? []) as unknown as SignalReport[],
+      results: data.results ?? [],
       count: data.count ?? data.results?.length ?? 0,
     };
   }
@@ -677,8 +535,7 @@ export class CloudTaskClient {
       signalReportArtefactsResponseSchema,
     );
     return {
-      results: (data.results ??
-        []) as unknown as SignalReportArtefactsResponse["results"],
+      results: data.results ?? [],
       count: data.count ?? data.results?.length ?? 0,
     };
   }
