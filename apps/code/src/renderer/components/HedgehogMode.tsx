@@ -1,4 +1,4 @@
-import { PileSpawner } from "@components/hedgehog-mode/PileSpawner";
+import type { PileSpawner } from "@components/hedgehog-mode/PileSpawner";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useMeQuery } from "@hooks/useMeQuery";
 import type {
@@ -44,8 +44,11 @@ export function HedgehogMode() {
       | HedgehogActorOptions
       | undefined;
 
-    import("@posthog/hedgehog-mode")
-      .then(async ({ HedgeHogMode }) => {
+    Promise.all([
+      import("@posthog/hedgehog-mode"),
+      import("@components/hedgehog-mode/PileSpawner"),
+    ])
+      .then(async ([{ HedgeHogMode }, { PileSpawner }]) => {
         if (cancelled) return;
 
         log.info("Creating hedgehog game instance");
