@@ -2,7 +2,6 @@ import { Tooltip } from "@components/ui/Tooltip";
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useBranchLineage } from "@features/sessions/stores/branchLineageStore";
 import { GitFork } from "@phosphor-icons/react";
-import type { Task } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
 
@@ -28,7 +27,7 @@ export function BranchedFromChip({ taskId }: BranchedFromChipProps) {
     if (!client) return;
     try {
       const parent = await client.getTask(lineage.parentTaskId);
-      navigateToTask(parent as unknown as Task);
+      navigateToTask(parent);
     } catch (error) {
       log.warn("Failed to open parent task", { error });
     }

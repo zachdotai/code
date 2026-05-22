@@ -11,31 +11,25 @@ import { useNavigationStore } from "@stores/navigationStore";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
-type BranchMode = "context" | "context+code";
-
 interface BranchModeOptionProps {
   icon: ReactNode;
   label: string;
   description: string;
-  selected: boolean;
+  selected?: boolean;
   disabled?: boolean;
   disabledReason?: string;
-  onSelect: () => void;
 }
 
 function BranchModeOption({
   icon,
   label,
   description,
-  selected,
+  selected = false,
   disabled = false,
   disabledReason,
-  onSelect,
 }: BranchModeOptionProps) {
   const row = (
     <Box
-      role="button"
-      onClick={() => !disabled && onSelect()}
       className={`flex items-start justify-between gap-2 rounded-(--radius-2) border px-[8px] py-[6px] ${
         disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
       } ${selected ? "border-(--accent-7) bg-(--accent-3)" : "border-(--gray-6) bg-(--gray-2)"}`}
@@ -72,7 +66,6 @@ export function BranchTaskDialog({
   open,
   onOpenChange,
 }: BranchTaskDialogProps) {
-  const [mode, setMode] = useState<BranchMode>("context");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,17 +115,14 @@ export function BranchTaskDialog({
           icon={<ChatCircleText size={14} />}
           label="Branch with context"
           description="New task starts from a clean tree with the summarised conversation."
-          selected={mode === "context"}
-          onSelect={() => setMode("context")}
+          selected
         />
         <BranchModeOption
           icon={<Code size={14} />}
           label="Branch with context + code"
           description="Also carry over the current code changes."
-          selected={mode === "context+code"}
           disabled
           disabledReason="Available in a future update"
-          onSelect={() => setMode("context+code")}
         />
       </Flex>
     </GitDialog>
