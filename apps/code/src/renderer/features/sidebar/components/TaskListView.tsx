@@ -331,32 +331,31 @@ export function TaskListView({
     return groups;
   }, [flatTasks, timestampKey]);
 
-  const renderTaskRow = (task: TaskData, opts?: { depth?: number }) => (
-    <TaskRow
-      key={task.id}
-      task={task}
-      isActive={activeTaskId === task.id}
-      isSelected={selectedIdSet.has(task.id)}
-      hideHoverActions={hasMultiSelection}
-      isEditing={editingTaskId === task.id}
-      onClick={(e) => onTaskClick(task.id, e)}
-      onDoubleClick={() => onTaskDoubleClick(task.id)}
-      onContextMenu={(e, isPinned) => onTaskContextMenu(task.id, e, isPinned)}
-      onArchive={() => onTaskArchive(task.id)}
-      onTogglePin={() => onTaskTogglePin(task.id)}
-      onEditSubmit={(newTitle) => onTaskEditSubmit(task.id, newTitle)}
-      onEditCancel={onTaskEditCancel}
-      timestamp={task[timestampKey]}
-      depth={opts?.depth ?? 0}
-    />
-  );
-
   return (
     <Flex direction="column">
       {pinnedTasks.length > 0 && (
         <>
           <SectionLabel label="Pinned" />
-          {pinnedTasks.map((task) => renderTaskRow(task))}
+          {pinnedTasks.map((task) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              isActive={activeTaskId === task.id}
+              isSelected={selectedIdSet.has(task.id)}
+              hideHoverActions={hasMultiSelection}
+              isEditing={editingTaskId === task.id}
+              onClick={(e) => onTaskClick(task.id, e)}
+              onDoubleClick={() => onTaskDoubleClick(task.id)}
+              onContextMenu={(e, isPinned) =>
+                onTaskContextMenu(task.id, e, isPinned)
+              }
+              onArchive={() => onTaskArchive(task.id)}
+              onTogglePin={() => onTaskTogglePin(task.id)}
+              onEditSubmit={(newTitle) => onTaskEditSubmit(task.id, newTitle)}
+              onEditCancel={onTaskEditCancel}
+              timestamp={task[timestampKey]}
+            />
+          ))}
         </>
       )}
 
@@ -423,7 +422,29 @@ export function TaskListView({
                 addSpacingBefore={false}
                 tooltipContent={meta.description}
               >
-                {group.tasks.map((task) => renderTaskRow(task, { depth: 1 }))}
+                {group.tasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    isActive={activeTaskId === task.id}
+                    isSelected={selectedIdSet.has(task.id)}
+                    hideHoverActions={hasMultiSelection}
+                    isEditing={editingTaskId === task.id}
+                    onClick={(e) => onTaskClick(task.id, e)}
+                    onDoubleClick={() => onTaskDoubleClick(task.id)}
+                    onContextMenu={(e, isPinned) =>
+                      onTaskContextMenu(task.id, e, isPinned)
+                    }
+                    onArchive={() => onTaskArchive(task.id)}
+                    onTogglePin={() => onTaskTogglePin(task.id)}
+                    onEditSubmit={(newTitle) =>
+                      onTaskEditSubmit(task.id, newTitle)
+                    }
+                    onEditCancel={onTaskEditCancel}
+                    timestamp={task[timestampKey]}
+                    depth={1}
+                  />
+                ))}
               </SidebarSection>
             );
           })}
@@ -472,9 +493,29 @@ export function TaskListView({
                     }}
                     newTaskTooltip={`Start new task in ${folder?.name ?? group.name}`}
                   >
-                    {group.tasks.map((task) =>
-                      renderTaskRow(task, { depth: 1 }),
-                    )}
+                    {group.tasks.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        isActive={activeTaskId === task.id}
+                        isSelected={selectedIdSet.has(task.id)}
+                        hideHoverActions={hasMultiSelection}
+                        isEditing={editingTaskId === task.id}
+                        onClick={(e) => onTaskClick(task.id, e)}
+                        onDoubleClick={() => onTaskDoubleClick(task.id)}
+                        onContextMenu={(e, isPinned) =>
+                          onTaskContextMenu(task.id, e, isPinned)
+                        }
+                        onArchive={() => onTaskArchive(task.id)}
+                        onTogglePin={() => onTaskTogglePin(task.id)}
+                        onEditSubmit={(newTitle) =>
+                          onTaskEditSubmit(task.id, newTitle)
+                        }
+                        onEditCancel={onTaskEditCancel}
+                        timestamp={task[timestampKey]}
+                        depth={1}
+                      />
+                    ))}
                   </SidebarSection>
                 </DraggableFolder>
               );
@@ -486,7 +527,28 @@ export function TaskListView({
           {dateGroupedTasks.map((group, groupIndex) => (
             <Fragment key={`${group.label ?? "today"}-${groupIndex}`}>
               {group.label && <SectionLabel label={group.label} />}
-              {group.tasks.map((task) => renderTaskRow(task))}
+              {group.tasks.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  isActive={activeTaskId === task.id}
+                  isSelected={selectedIdSet.has(task.id)}
+                  hideHoverActions={hasMultiSelection}
+                  isEditing={editingTaskId === task.id}
+                  onClick={(e) => onTaskClick(task.id, e)}
+                  onDoubleClick={() => onTaskDoubleClick(task.id)}
+                  onContextMenu={(e, isPinned) =>
+                    onTaskContextMenu(task.id, e, isPinned)
+                  }
+                  onArchive={() => onTaskArchive(task.id)}
+                  onTogglePin={() => onTaskTogglePin(task.id)}
+                  onEditSubmit={(newTitle) =>
+                    onTaskEditSubmit(task.id, newTitle)
+                  }
+                  onEditCancel={onTaskEditCancel}
+                  timestamp={task[timestampKey]}
+                />
+              ))}
             </Fragment>
           ))}
           {hasMore && (
