@@ -52,6 +52,22 @@ export interface Task {
   signal_report?: string | null;
   internal?: boolean;
   latest_run?: TaskRun;
+  /** Set if this task was created by branching another task. Not yet
+   * persisted by the API — tracked client-side in `branchLineageStore`. */
+  branched_from?: BranchLineage | null;
+}
+
+/** Records that a task was created by branching from another task. */
+export interface BranchLineage {
+  parentTaskId: string;
+  parentTaskNumber: number | null;
+  parentTaskTitle: string;
+  /** Source run that was summarised, if any. */
+  parentRunId: string | null;
+  /** User turns elapsed in the parent at branch time. */
+  branchedAtTurn: number;
+  branchedAt: string;
+  mode: "context" | "context+code";
 }
 
 export type TaskRunStatus =

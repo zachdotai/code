@@ -44,6 +44,7 @@ export interface TaskCreationInput {
   // For creating new task (required if no taskId)
   content?: string;
   taskDescription?: string;
+  taskTitle?: string;
   filePaths?: string[];
   repoPath?: string;
   repository?: string | null;
@@ -403,7 +404,10 @@ export class TaskCreationSaga extends Saga<
         const description = input.taskDescription ?? input.content ?? "";
         const plainText = xmlToPlainText(description).trim();
         const result = await this.deps.posthogClient.createTask({
-          title: (plainText || "Untitled").slice(0, 255),
+          title: (input.taskTitle?.trim() || plainText || "Untitled").slice(
+            0,
+            255,
+          ),
           description,
           repository: repository ?? undefined,
           github_integration:

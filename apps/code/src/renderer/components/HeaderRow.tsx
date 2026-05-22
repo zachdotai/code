@@ -3,6 +3,8 @@ import { DiffStatsBadge } from "@features/code-review/components/DiffStatsBadge"
 import { BranchSelector } from "@features/git-interaction/components/BranchSelector";
 import { CloudGitInteractionHeader } from "@features/git-interaction/components/CloudGitInteractionHeader";
 import { TaskActionsMenu } from "@features/git-interaction/components/TaskActionsMenu";
+import { BranchedFromChip } from "@features/sessions/components/BranchedFromChip";
+import { BranchTaskControl } from "@features/sessions/components/BranchTaskControl";
 import { HandoffConfirmDialog } from "@features/sessions/components/HandoffConfirmDialog";
 import { useSessionForTask } from "@features/sessions/hooks/useSession";
 import { useSessionCallbacks } from "@features/sessions/hooks/useSessionCallbacks";
@@ -181,6 +183,7 @@ export function HeaderRow() {
           pl="1"
           className="h-full max-w-[50%] shrink-0 overflow-hidden"
         >
+          <BranchedFromChip taskId={view.data.id} />
           <div className="no-drag">
             <SkillButtonsMenu taskId={view.data.id} />
           </div>
@@ -208,6 +211,9 @@ export function HeaderRow() {
             <CloudGitInteractionHeader taskId={view.data.id} task={view.data} />
           ) : (
             <LocalHandoffButton taskId={view.data.id} task={view.data} />
+          )}
+          {activeWorkspace && (
+            <BranchTaskControl task={view.data} workspace={activeWorkspace} />
           )}
           <TaskActionsMenu taskId={view.data.id} isCloud={isCloudTask} />
         </Flex>
