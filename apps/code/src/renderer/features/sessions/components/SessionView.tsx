@@ -39,7 +39,6 @@ import {
 import { CloudInitializingView } from "./CloudInitializingView";
 import { ConversationView } from "./ConversationView";
 import { DropZoneOverlay } from "./DropZoneOverlay";
-import { MessagesSkeleton } from "./MessagesSkeleton";
 import { ModelSelector } from "./ModelSelector";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
@@ -510,12 +509,8 @@ export function SessionView({
                   </Box>
                 </Box>
               </>
-            ) : isInitializing ? (
-              isCloud ? (
-                <CloudInitializingView cloudStatus={cloudStatus} />
-              ) : (
-                <MessagesSkeleton />
-              )
+            ) : isInitializing && isCloud ? (
+              <CloudInitializingView cloudStatus={cloudStatus} />
             ) : (
               <>
                 <DropZoneOverlay isVisible={isDraggingFile} />

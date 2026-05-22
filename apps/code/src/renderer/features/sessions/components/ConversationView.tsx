@@ -26,6 +26,7 @@ import {
 import { ConversationSearchBar } from "./ConversationSearchBar";
 import { GitActionMessage } from "./GitActionMessage";
 import { GitActionResult } from "./GitActionResult";
+import { MessagesSkeleton } from "./MessagesSkeleton";
 import { mergeConversationItems } from "./mergeConversationItems";
 import { SessionFooter } from "./SessionFooter";
 import { QueuedMessageView } from "./session-update/QueuedMessageView";
@@ -268,6 +269,7 @@ export function ConversationView({
           />
         )}
 
+        {items.length === 0 && <MessagesSkeleton />}
         <SessionTaskIdProvider taskId={taskId}>
           <VirtualizedList
             ref={listRef}
