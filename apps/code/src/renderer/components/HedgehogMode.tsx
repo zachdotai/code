@@ -62,6 +62,9 @@ export function HedgehogMode() {
         });
 
         gameRef.current = game;
+        (
+          window as unknown as { __hedgehogGame?: HedgehogModeGame }
+        ).__hedgehogGame = game;
 
         try {
           await game.render(container);

@@ -3,8 +3,11 @@ import type {
   HedgeHogMode,
   UpdateTicker,
 } from "@posthog/hedgehog-mode";
+import { logger } from "@utils/logger";
 import Matter from "matter-js";
 import { Graphics } from "pixi.js";
+
+const log = logger.scope("pile-spawner");
 
 const PROJECTILE_CATEGORY = 0x0004;
 const MAX_PILES = 3;
@@ -48,11 +51,16 @@ class PileBlock implements GameElement {
     });
     Matter.Composite.add(game.engine.world, this.rigidBody);
 
-    this.graphics = new Graphics()
-      .rect(-BLOCK_SIZE / 2, -BLOCK_SIZE / 2, BLOCK_SIZE, BLOCK_SIZE)
-      .fill(color)
-      .stroke({ width: 1, color: 0x000000, alpha: 0.3 });
+    this.graphics = new Graphics();
+    this.graphics.rect(
+      -BLOCK_SIZE / 2,
+      -BLOCK_SIZE / 2,
+      BLOCK_SIZE,
+      BLOCK_SIZE,
+    );
+    this.graphics.fill(color);
     this.graphics.position.set(x, y);
+    this.graphics.zIndex = 1000;
     game.app.stage.addChild(this.graphics);
   }
 
@@ -158,5 +166,13 @@ export class PileSpawner {
       this.game.elements.push(block);
       this.blocks.add(block);
     }
+    log.info("Spawned pile", {
+      pileId,
+      x,
+      height,
+      groundTopY,
+      stageChildren: this.game.app.stage.children.length,
+      worldBodies: this.game.engine.world.bodies.length,
+    });
   }
 }
