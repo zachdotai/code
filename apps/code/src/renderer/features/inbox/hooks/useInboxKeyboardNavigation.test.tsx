@@ -1,6 +1,13 @@
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import type { SignalReport } from "@shared/types";
-import { act, renderHook } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+} from "@testing-library/react";
+import { useEffect } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useInboxKeyboardNavigation } from "./useInboxKeyboardNavigation";
 
@@ -319,33 +326,169 @@ describe("useInboxKeyboardNavigation", () => {
       expect(getSelection()).toEqual(["b"]);
     });
   });
+});
 
-  describe("multiple hook instances share cursor via the store", () => {
-    it("a click registered between mounts of two hooks moves the cursor consistently", () => {
-      // First hook walks the cursor, then unmounts.
-      const first = renderHook(() =>
-        useInboxKeyboardNavigation({ reports: REPORTS }),
+/**
+ * Test harness that wires the hook the same way `InboxSignalsTab` does:
+ * a window-level keydown handler, and row click handlers that mirror the
+ * production plain/cmd/shift dispatch into the selection store.
+ *
+ * Lets us drive the real bug scenario via `fireEvent.click` + `fireEvent.keyDown`.
+ */
+function TestInbox({ reports }: { reports: SignalReport[] }) {
+  const { navigateReport } = useInboxKeyboardNavigation({ reports });
+  const selectedIds = useInboxReportSelectionStore((s) => s.selectedReportIds);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        navigateReport(1, e.shiftKey);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        navigateReport(-1, e.shiftKey);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [navigateReport]);
+
+  const handleClick = (id: string, e: React.MouseEvent) => {
+    const store = useInboxReportSelectionStore.getState();
+    if (e.shiftKey) {
+      store.selectRange(
+        id,
+        reports.map((r) => r.id),
       );
-      act(() => {
-        first.result.current.navigateReport(1, false); // a
-        first.result.current.navigateReport(1, false); // b
-        first.result.current.navigateReport(1, false); // c
-      });
-      first.unmount();
+    } else if (e.metaKey) {
+      store.toggleReportSelection(id);
+    } else {
+      store.setSelectedReportIds([id]);
+    }
+  };
 
-      // Click somewhere else, then mount a new hook (e.g., tab re-mount).
-      plainClick("a");
+  return (
+    <ul>
+      {reports.map((r) => (
+        <li
+          key={r.id}
+          data-testid={`report-${r.id}`}
+          data-selected={selectedIds.includes(r.id) ? "true" : "false"}
+        >
+          <button type="button" onClick={(e) => handleClick(r.id, e)}>
+            {r.id}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
-      const second = renderHook(() =>
-        useInboxKeyboardNavigation({ reports: REPORTS }),
-      );
+function getSelectedTestIds() {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[data-selected="true"]'),
+  ).map((el) => el.dataset.testid?.replace(/^report-/, "") ?? "");
+}
 
-      // The new hook should pick up the clicked id as its cursor seed.
-      act(() => {
-        second.result.current.navigateReport(1, false);
-      });
-
-      expect(getSelection()).toEqual(["b"]);
+describe("inbox keyboard navigation — full event pipeline", () => {
+  beforeEach(() => {
+    useInboxReportSelectionStore.setState({
+      selectedReportIds: [],
+      lastClickedId: null,
     });
+  });
+
+  // The literal scenario from the bug report: click a report, hit ArrowDown,
+  // and it should select the report below — not the report below wherever the
+  // keyboard cursor previously was.
+  it("ArrowDown after clicking a report selects the report below it", () => {
+    render(<TestInbox reports={REPORTS} />);
+
+    // Drift the keyboard cursor down to "d".
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(getSelectedTestIds()).toEqual(["d"]);
+
+    // Click "b".
+    fireEvent.click(screen.getByRole("button", { name: "b" }));
+    expect(getSelectedTestIds()).toEqual(["b"]);
+
+    // ArrowDown should now select "c", not "e".
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+
+    expect(getSelectedTestIds()).toEqual(["c"]);
+  });
+
+  it("ArrowUp after clicking a report selects the report above it", () => {
+    render(<TestInbox reports={REPORTS} />);
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(getSelectedTestIds()).toEqual(["b"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "d" }));
+
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+
+    expect(getSelectedTestIds()).toEqual(["c"]);
+  });
+
+  it("Shift+ArrowDown after clicking extends a range from the clicked report", () => {
+    render(<TestInbox reports={REPORTS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "b" }));
+    fireEvent.keyDown(window, { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(window, { key: "ArrowDown", shiftKey: true });
+
+    expect(getSelectedTestIds()).toEqual(["b", "c", "d"]);
+  });
+
+  it("Shift+ArrowUp contracts the range when direction reverses", () => {
+    render(<TestInbox reports={REPORTS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "b" }));
+    fireEvent.keyDown(window, { key: "ArrowDown", shiftKey: true }); // b..c
+    fireEvent.keyDown(window, { key: "ArrowDown", shiftKey: true }); // b..d
+    fireEvent.keyDown(window, { key: "ArrowUp", shiftKey: true }); // b..c
+
+    expect(getSelectedTestIds()).toEqual(["b", "c"]);
+  });
+
+  it("Cmd+click moves the keyboard cursor to the cmd-clicked report", () => {
+    render(<TestInbox reports={REPORTS} />);
+
+    fireEvent.keyDown(window, { key: "ArrowDown" }); // a
+    fireEvent.click(screen.getByRole("button", { name: "c" }), {
+      metaKey: true,
+    });
+    expect(getSelectedTestIds()).toEqual(["a", "c"]);
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+
+    expect(getSelectedTestIds()).toEqual(["d"]);
+  });
+
+  it("Shift+click moves the anchor to the shift-clicked report", () => {
+    render(<TestInbox reports={REPORTS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "a" }));
+    fireEvent.click(screen.getByRole("button", { name: "c" }), {
+      shiftKey: true,
+    });
+    expect(getSelectedTestIds()).toEqual(["a", "b", "c"]);
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+
+    expect(getSelectedTestIds()).toEqual(["d"]);
+  });
+
+  it("ArrowDown from an empty list does nothing", () => {
+    render(<TestInbox reports={[]} />);
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+
+    expect(getSelectedTestIds()).toEqual([]);
   });
 });
