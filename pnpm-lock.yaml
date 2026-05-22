@@ -295,6 +295,9 @@ importers:
       lucide-react:
         specifier: ^1.7.0
         version: 1.7.0(react@19.1.0)
+      matter-js:
+        specifier: ^0.20.0
+        version: 0.20.0
       micromatch:
         specifier: ^4.0.5
         version: 4.0.8
@@ -307,6 +310,9 @@ importers:
       node-pty:
         specifier: 1.1.0
         version: 1.1.0(patch_hash=4dfdf785f5ac51a03f5d6032371cebe89036381acd403621f250a896245647c5)
+      pixi.js:
+        specifier: ^8.16.0
+        version: 8.16.0
       posthog-js:
         specifier: ^1.283.0
         version: 1.340.0
@@ -440,6 +446,9 @@ importers:
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
+      '@types/matter-js':
+        specifier: ^0.20.0
+        version: 0.20.2
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.0
@@ -5408,6 +5417,9 @@ packages:
 
   '@types/markdown-it@14.1.2':
     resolution: {integrity: sha512-promo4eFwuiW+TfGxhi+0x3czqTYJkG8qB17ZUJiVF10Xm7NLVRSLUsfRTU/6h1e24VvRnXCx+hG7li58lkzog==}
+
+  '@types/matter-js@0.20.2':
+    resolution: {integrity: sha512-3PPKy3QxvZ89h9+wdBV2488I1JLVs7DEpIkPvgO8JC1mUdiVSO37ZIvVctOTD7hIq8OAL2gJ3ugGSuUip6DhCw==}
 
   '@types/mdast@4.0.4':
     resolution: {integrity: sha512-kGaNbPh1k7AFzgpud/gMdvIm5xuECykRR+JnWKQno9TAXVa6WIVCGTPvYGekIDL4uwCZQSYbUxNBSb1aUo79oA==}
@@ -17575,6 +17587,8 @@ snapshots:
     dependencies:
       '@types/linkify-it': 5.0.0
       '@types/mdurl': 2.0.0
+
+  '@types/matter-js@0.20.2': {}
 
   '@types/mdast@4.0.4':
     dependencies:

@@ -1,3 +1,4 @@
+import { PileSpawner } from "@components/hedgehog-mode/PileSpawner";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useMeQuery } from "@hooks/useMeQuery";
 import type {
@@ -15,6 +16,7 @@ export function HedgehogMode() {
   const { data: user } = useMeQuery();
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<HedgehogModeGame | null>(null);
+  const pileSpawnerRef = useRef<PileSpawner | null>(null);
 
   useEffect(() => {
     if (!hedgehogMode || !containerRef.current || gameRef.current) return;
@@ -52,6 +54,9 @@ export function HedgehogMode() {
         try {
           await game.render(container);
           log.info("Game rendered, hedgehogs:", game.getAllHedgehogs().length);
+          if (!cancelled) {
+            pileSpawnerRef.current = new PileSpawner(game);
+          }
         } catch (err) {
           log.error("Game render failed", err);
         }
@@ -67,6 +72,10 @@ export function HedgehogMode() {
 
   useEffect(() => {
     return () => {
+      if (pileSpawnerRef.current) {
+        pileSpawnerRef.current.destroy();
+        pileSpawnerRef.current = null;
+      }
       if (gameRef.current) {
         gameRef.current.destroy();
         gameRef.current = null;
