@@ -3,7 +3,7 @@ import { useMcpAppsSidebarStore } from "@features/sessions/stores/mcpAppsSidebar
 import type { ToolCall, ToolCallStatus } from "@features/sessions/types";
 import { ArrowSquareOut, X } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface McpAppEntry {
   itemIndex: number;
@@ -22,37 +22,69 @@ interface McpAppsSidebarProps {
 }
 
 const MIN_WIDTH = 280;
-const MAX_WIDTH = 720;
+const MIN_RATIO = 0.2;
+const MAX_RATIO = 0.8;
 
 export function McpAppsSidebar({ entries, onSelect }: McpAppsSidebarProps) {
-  const width = useMcpAppsSidebarStore((s) => s.width);
-  const setWidth = useMcpAppsSidebarStore((s) => s.setWidth);
+  const widthRatio = useMcpAppsSidebarStore((s) => s.widthRatio);
+  const setWidthRatio = useMcpAppsSidebarStore((s) => s.setWidthRatio);
   const setOpen = useMcpAppsSidebarStore((s) => s.setOpen);
   const isResizing = useMcpAppsSidebarStore((s) => s.isResizing);
   const setIsResizing = useMcpAppsSidebarStore((s) => s.setIsResizing);
 
+  const outerRef = useRef<HTMLDivElement>(null);
+  const [parentWidth, setParentWidth] = useState(0);
+
+  useEffect(() => {
+    const parent = outerRef.current?.parentElement;
+    if (!parent) return;
+    setParentWidth(parent.getBoundingClientRect().width);
+    const observer = new ResizeObserver((observed) => {
+      for (const entry of observed) {
+        setParentWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, []);
+
+  const ratioMin = parentWidth > 0 ? MIN_WIDTH / parentWidth : MIN_RATIO;
+  const effectiveRatio = Math.min(
+    MAX_RATIO,
+    Math.max(Math.min(ratioMin, MAX_RATIO), widthRatio),
+  );
+  const width =
+    parentWidth > 0
+      ? Math.round(parentWidth * effectiveRatio)
+      : Math.round(MIN_WIDTH);
+
   const startXRef = useRef(0);
   const startWidthRef = useRef(width);
+  const startParentWidthRef = useRef(parentWidth);
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       startXRef.current = e.clientX;
       startWidthRef.current = width;
+      startParentWidthRef.current = parentWidth;
       setIsResizing(true);
     },
-    [width, setIsResizing],
+    [width, parentWidth, setIsResizing],
   );
 
   useEffect(() => {
     if (!isResizing) return;
     const onMouseMove = (e: MouseEvent) => {
       const delta = startXRef.current - e.clientX;
-      const next = Math.min(
-        MAX_WIDTH,
-        Math.max(MIN_WIDTH, startWidthRef.current + delta),
+      const parent = startParentWidthRef.current;
+      if (parent <= 0) return;
+      const nextPx = startWidthRef.current + delta;
+      const nextRatio = Math.min(
+        MAX_RATIO,
+        Math.max(MIN_WIDTH / parent, nextPx / parent),
       );
-      setWidth(next);
+      setWidthRatio(nextRatio);
     };
     const onMouseUp = () => {
       setIsResizing(false);
@@ -67,7 +99,7 @@ export function McpAppsSidebar({ entries, onSelect }: McpAppsSidebarProps) {
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     };
-  }, [isResizing, setIsResizing, setWidth]);
+  }, [isResizing, setIsResizing, setWidthRatio]);
 
   return (
     <>
@@ -76,6 +108,7 @@ export function McpAppsSidebar({ entries, onSelect }: McpAppsSidebarProps) {
         className="z-[1] w-[4px] shrink-0 cursor-col-resize border-l border-l-(--gray-6) bg-transparent transition-colors hover:bg-accent-6 active:bg-accent-8"
       />
       <Box
+        ref={outerRef}
         style={{ width: `${width}px` }}
         className="flex h-full shrink-0 flex-col bg-background"
       >
