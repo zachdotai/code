@@ -69,7 +69,7 @@ export function HedgehogMode() {
         try {
           await game.render(container);
           log.info("Game rendered, hedgehogs:", game.getAllHedgehogs().length);
-          if (!cancelled) {
+          if (gameRef.current === game) {
             pileSpawnerRef.current = new PileSpawner(game);
           }
         } catch (err) {
