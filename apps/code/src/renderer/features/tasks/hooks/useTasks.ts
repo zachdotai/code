@@ -1,5 +1,4 @@
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
-import { taskListPollInterval } from "@features/tasks/utils/taskListPollInterval";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
@@ -16,14 +15,11 @@ import { useCallback } from "react";
 
 const log = logger.scope("tasks");
 
-function useTaskListRefetchInterval(): () => number | false {
+const TASK_LIST_POLL_INTERVAL_MS = 3 * 60_000;
+
+function useTaskListRefetchInterval(): number | false {
   const focused = useRendererWindowFocusStore((s) => s.focused);
-  return useCallback(() => {
-    if (!focused) return false;
-    const focusedAt = useRendererWindowFocusStore.getState().focusedAt;
-    if (focusedAt == null) return false;
-    return taskListPollInterval(Date.now() - focusedAt);
-  }, [focused]);
+  return focused ? TASK_LIST_POLL_INTERVAL_MS : false;
 }
 
 const taskKeys = {
