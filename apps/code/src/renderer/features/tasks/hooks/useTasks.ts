@@ -6,6 +6,7 @@ import { useMeQuery } from "@hooks/useMeQuery";
 import type { Schemas } from "@renderer/api/generated";
 import { useFocusStore } from "@renderer/stores/focusStore";
 import { useNavigationStore } from "@renderer/stores/navigationStore";
+import { useRendererWindowFocusStore } from "@renderer/stores/rendererWindowFocusStore";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +15,7 @@ import { useCallback } from "react";
 
 const log = logger.scope("tasks");
 
-const TASK_LIST_POLL_INTERVAL_MS = 30_000;
+const TASK_LIST_POLL_INTERVAL_MS = 3 * 60_000;
 
 const taskKeys = {
   all: ["tasks"] as const,
@@ -42,6 +43,7 @@ export function useTasks(
   const { data: currentUser } = useMeQuery();
   const createdBy = filters?.showAllUsers ? undefined : currentUser?.id;
   const internal = filters?.showInternal ? true : undefined;
+  const windowFocused = useRendererWindowFocusStore((s) => s.focused);
 
   return useAuthenticatedQuery(
     taskKeys.list({ repository: filters?.repository, createdBy, internal }),
@@ -53,7 +55,7 @@ export function useTasks(
       }) as unknown as Promise<Task[]>,
     {
       enabled: (options?.enabled ?? true) && !!currentUser?.id,
-      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+      refetchInterval: windowFocused ? TASK_LIST_POLL_INTERVAL_MS : false,
     },
   );
 }
@@ -62,12 +64,13 @@ export function useTaskSummaries(
   ids: string[],
   options?: { enabled?: boolean },
 ) {
+  const windowFocused = useRendererWindowFocusStore((s) => s.focused);
   return useAuthenticatedQuery<Schemas.TaskSummary[]>(
     taskKeys.summaries(ids),
     (client) => client.getTaskSummaries(ids),
     {
       enabled: (options?.enabled ?? true) && ids.length > 0,
-      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+      refetchInterval: windowFocused ? TASK_LIST_POLL_INTERVAL_MS : false,
       placeholderData: keepPreviousData,
     },
   );
@@ -82,6 +85,7 @@ export function useSlackTasks(options?: {
   showInternal?: boolean;
 }) {
   const internal = options?.showInternal ? true : undefined;
+  const windowFocused = useRendererWindowFocusStore((s) => s.focused);
   return useAuthenticatedQuery<Task[]>(
     taskKeys.list({ originProduct: "slack", internal }),
     (client) =>
@@ -91,7 +95,7 @@ export function useSlackTasks(options?: {
       }) as unknown as Promise<Task[]>,
     {
       enabled: options?.enabled ?? true,
-      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+      refetchInterval: windowFocused ? TASK_LIST_POLL_INTERVAL_MS : false,
     },
   );
 }
