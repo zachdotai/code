@@ -1,5 +1,5 @@
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
-import { useTaskListQueryOptions } from "@features/tasks/hooks/useTaskListQueryOptions";
+import { TASK_LIST_QUERY_OPTIONS } from "@features/tasks/hooks/taskListQueryOptions";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
@@ -41,7 +41,6 @@ export function useTasks(
   const { data: currentUser } = useMeQuery();
   const createdBy = filters?.showAllUsers ? undefined : currentUser?.id;
   const internal = filters?.showInternal ? true : undefined;
-  const pollingOptions = useTaskListQueryOptions();
 
   return useAuthenticatedQuery(
     taskKeys.list({ repository: filters?.repository, createdBy, internal }),
@@ -53,7 +52,7 @@ export function useTasks(
       }) as unknown as Promise<Task[]>,
     {
       enabled: (options?.enabled ?? true) && !!currentUser?.id,
-      ...pollingOptions,
+      ...TASK_LIST_QUERY_OPTIONS,
     },
   );
 }
@@ -62,13 +61,12 @@ export function useTaskSummaries(
   ids: string[],
   options?: { enabled?: boolean },
 ) {
-  const pollingOptions = useTaskListQueryOptions();
   return useAuthenticatedQuery<Schemas.TaskSummary[]>(
     taskKeys.summaries(ids),
     (client) => client.getTaskSummaries(ids),
     {
       enabled: (options?.enabled ?? true) && ids.length > 0,
-      ...pollingOptions,
+      ...TASK_LIST_QUERY_OPTIONS,
       placeholderData: keepPreviousData,
     },
   );
@@ -83,7 +81,6 @@ export function useSlackTasks(options?: {
   showInternal?: boolean;
 }) {
   const internal = options?.showInternal ? true : undefined;
-  const pollingOptions = useTaskListQueryOptions();
   return useAuthenticatedQuery<Task[]>(
     taskKeys.list({ originProduct: "slack", internal }),
     (client) =>
@@ -93,7 +90,7 @@ export function useSlackTasks(options?: {
       }) as unknown as Promise<Task[]>,
     {
       enabled: options?.enabled ?? true,
-      ...pollingOptions,
+      ...TASK_LIST_QUERY_OPTIONS,
     },
   );
 }
