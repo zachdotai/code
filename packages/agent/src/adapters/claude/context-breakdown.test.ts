@@ -3,6 +3,9 @@ import {
   buildBreakdown,
   emptyBaseline,
   estimateJsonTokens,
+  estimateMcpTokens,
+  estimateRulesTokens,
+  estimateSkillsTokens,
   estimateSystemPrompt,
   estimateTokens,
 } from "./context-breakdown";
@@ -54,6 +57,49 @@ describe("estimateSystemPrompt", () => {
     expect(estimateSystemPrompt(undefined)).toBe(
       estimateSystemPrompt({ type: "preset" }),
     );
+  });
+});
+
+describe("estimateSkillsTokens", () => {
+  it("is 0 for an empty command list", () => {
+    expect(estimateSkillsTokens([])).toBe(0);
+  });
+
+  it("counts the JSON of name/description/hint", () => {
+    // [{"name":"review","description":"Review a PR","hint":"[pr]"}] ~ 55 chars
+    const result = estimateSkillsTokens([
+      { name: "review", description: "Review a PR", input: { hint: "[pr]" } },
+    ]);
+    expect(result).toBeGreaterThan(10);
+    expect(result).toBeLessThan(20);
+  });
+});
+
+describe("estimateMcpTokens", () => {
+  it("is 0 for no connected tools", () => {
+    expect(estimateMcpTokens([])).toBe(0);
+  });
+
+  it("scales with tool count", () => {
+    const one = estimateMcpTokens([{ name: "get_user", description: "x" }]);
+    const many = estimateMcpTokens(
+      Array.from({ length: 50 }, (_, i) => ({
+        name: `tool_${i}`,
+        description: "x",
+      })),
+    );
+    expect(many).toBeGreaterThan(one * 10);
+  });
+});
+
+describe("estimateRulesTokens", () => {
+  it("is 0 for missing rules", () => {
+    expect(estimateRulesTokens(undefined)).toBe(0);
+    expect(estimateRulesTokens("")).toBe(0);
+  });
+
+  it("counts the rules content", () => {
+    expect(estimateRulesTokens("a".repeat(350))).toBe(100);
   });
 });
 

@@ -37,6 +37,44 @@ export function estimateJsonTokens(value: unknown): number {
   }
 }
 
+interface SlashCommandLike {
+  name?: string;
+  description?: string;
+  input?: { hint?: string } | null;
+}
+
+/** Tokens for the slash-command list the SDK injects into the system prompt. */
+export function estimateSkillsTokens(commands: SlashCommandLike[]): number {
+  if (!commands.length) return 0;
+  return estimateJsonTokens(
+    commands.map((c) => ({
+      name: c.name,
+      description: c.description,
+      hint: c.input?.hint,
+    })),
+  );
+}
+
+interface McpToolLike {
+  name?: string;
+  description?: string;
+}
+
+/** Tokens for the connected MCP tools' name + description. The SDK doesn't
+ *  inject their full input schemas into the prompt by default (it relies on
+ *  tool search), so this is a conservative estimate of what's resident. */
+export function estimateMcpTokens(tools: McpToolLike[]): number {
+  if (!tools.length) return 0;
+  return estimateJsonTokens(
+    tools.map((t) => ({ name: t.name, description: t.description })),
+  );
+}
+
+/** Tokens for the rules content appended to the system prompt (CLAUDE.md). */
+export function estimateRulesTokens(rules: string | undefined): number {
+  return estimateTokens(rules);
+}
+
 export interface ContextBreakdownBaseline {
   systemPrompt: number;
   tools: number;
