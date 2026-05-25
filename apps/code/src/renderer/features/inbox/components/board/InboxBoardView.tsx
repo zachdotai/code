@@ -2,9 +2,10 @@ import { ReportCardContent } from "@features/inbox/components/utils/ReportCardCo
 import { SOURCE_PRODUCT_META } from "@features/inbox/components/utils/source-product-icons";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
 import {
-  inboxStatusAccentCss,
-  inboxStatusLabel,
-} from "@features/inbox/utils/inboxSort";
+  type BoardColumnDef,
+  getBoardColumns,
+  getReportColumnId,
+} from "@features/inbox/utils/inboxBoardGrouping";
 import {
   ArrowsClockwiseIcon,
   CircleNotchIcon,
@@ -21,15 +22,6 @@ import {
   useMemo,
   useRef,
 } from "react";
-
-const COLUMN_ORDER: SignalReportStatus[] = [
-  "ready",
-  "pending_input",
-  "in_progress",
-  "failed",
-  "candidate",
-  "potential",
-];
 
 function isInteractiveTarget(target: EventTarget | null): boolean {
   return (
@@ -167,7 +159,7 @@ function BoardLoadMoreTrigger({
 }
 
 interface InboxBoardColumnProps {
-  status: SignalReportStatus;
+  column: BoardColumnDef;
   reports: SignalReport[];
   selectedIdSet: Set<string>;
   onReportClick: (
@@ -178,14 +170,13 @@ interface InboxBoardColumnProps {
 }
 
 function InboxBoardColumn({
-  status,
+  column,
   reports,
   selectedIdSet,
   onReportClick,
   loadMoreTrigger,
 }: InboxBoardColumnProps) {
-  const accent = inboxStatusAccentCss(status);
-  const label = inboxStatusLabel(status);
+  const { accent, label } = column;
 
   return (
     <Flex
@@ -279,50 +270,50 @@ export function InboxBoardView({
   onReportClick,
 }: InboxBoardViewProps) {
   const statusFilter = useInboxSignalsFilterStore((s) => s.statusFilter);
+  const groupBy = useInboxSignalsFilterStore((s) => s.boardGroupBy);
 
-  const visibleStatuses = useMemo(() => {
-    const allowed = new Set(statusFilter);
-    return COLUMN_ORDER.filter((status) => allowed.has(status));
-  }, [statusFilter]);
+  const columns = useMemo<BoardColumnDef[]>(
+    () => getBoardColumns(groupBy, new Set<SignalReportStatus>(statusFilter)),
+    [groupBy, statusFilter],
+  );
 
-  const reportsByStatus = useMemo(() => {
-    const map = new Map<SignalReportStatus, SignalReport[]>();
-    for (const status of visibleStatuses) {
-      map.set(status, []);
+  const reportsByColumn = useMemo(() => {
+    const map = new Map<string, SignalReport[]>();
+    for (const column of columns) {
+      map.set(column.id, []);
     }
     for (const report of reports) {
-      const bucket = map.get(report.status);
-      if (bucket) {
-        bucket.push(report);
-      }
+      const columnId = getReportColumnId(report, groupBy);
+      const bucket = map.get(columnId);
+      if (bucket) bucket.push(report);
     }
     return map;
-  }, [reports, visibleStatuses]);
+  }, [reports, columns, groupBy]);
 
   const selectedIdSet = useMemo(
     () => new Set(selectedReportIds),
     [selectedReportIds],
   );
 
-  const longestColumnStatus = useMemo<SignalReportStatus | null>(() => {
-    let best: SignalReportStatus | null = null;
+  const longestColumnId = useMemo<string | null>(() => {
+    let best: string | null = null;
     let bestLen = -1;
-    for (const [status, list] of reportsByStatus) {
+    for (const [id, list] of reportsByColumn) {
       if (list.length > bestLen) {
-        best = status;
+        best = id;
         bestLen = list.length;
       }
     }
     return best;
-  }, [reportsByStatus]);
+  }, [reportsByColumn]);
 
   if (isLoading && allReports.length === 0 && hasSignalSources) {
     return (
       <div className="h-full overflow-hidden p-3">
         <Flex gap="3" className="h-full">
-          {visibleStatuses.map((status) => (
+          {columns.map((column) => (
             <Box
-              key={status}
+              key={column.id}
               className="w-[300px] shrink-0 animate-pulse rounded-(--radius-3) bg-(--gray-3)"
             />
           ))}
@@ -380,15 +371,15 @@ export function InboxBoardView({
   return (
     <div className="h-full min-h-0 overflow-x-auto overflow-y-hidden">
       <Flex gap="3" className="h-full w-max min-w-full p-3">
-        {visibleStatuses.map((status) => (
+        {columns.map((column) => (
           <InboxBoardColumn
-            key={status}
-            status={status}
-            reports={reportsByStatus.get(status) ?? []}
+            key={column.id}
+            column={column}
+            reports={reportsByColumn.get(column.id) ?? []}
             selectedIdSet={selectedIdSet}
             onReportClick={onReportClick}
             loadMoreTrigger={
-              status === longestColumnStatus ? (
+              column.id === longestColumnId ? (
                 <BoardLoadMoreTrigger
                   hasNextPage={hasNextPage}
                   isFetchingNextPage={isFetchingNextPage}

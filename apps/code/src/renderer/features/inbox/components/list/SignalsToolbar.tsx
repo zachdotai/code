@@ -33,6 +33,7 @@ import type { SignalReport } from "@shared/types";
 import type { InboxReportActionProperties } from "@shared/types/analytics";
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { BoardGroupByMenu } from "./BoardGroupByMenu";
 import { FilterSortMenu } from "./FilterSortMenu";
 import { SuggestedReviewerFilterMenu } from "./SuggestedReviewerFilterMenu";
 import { ViewModeToggle } from "./ViewModeToggle";
@@ -533,6 +534,7 @@ export function SignalsToolbar({
           </Tooltip>
           {!hideFilters && (
             <Flex align="center" gap="1" className="shrink-0">
+              <BoardGroupByMenu />
               <SuggestedReviewerFilterMenu />
               <FilterSortMenu />
               <ViewModeToggle />

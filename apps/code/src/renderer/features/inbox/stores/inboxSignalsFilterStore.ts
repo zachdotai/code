@@ -14,6 +14,8 @@ type SignalSortDirection = "asc" | "desc";
 
 export type InboxViewMode = "list" | "board";
 
+export type InboxBoardGroupBy = "status" | "actionability" | "priority";
+
 export type SourceProduct =
   | "session_replay"
   | "error_tracking"
@@ -45,6 +47,7 @@ interface InboxSignalsFilterState {
   /** Tracks whether we've seeded the reviewer filter with the current user once. Persisted so the seed only runs on first inbox visit. */
   hasInitializedSuggestedReviewerFilter: boolean;
   viewMode: InboxViewMode;
+  boardGroupBy: InboxBoardGroupBy;
 }
 
 interface InboxSignalsFilterActions {
@@ -64,6 +67,7 @@ interface InboxSignalsFilterActions {
   /** Reset all filters when a deep link arrives so the linked report isn't hidden. */
   resetFilters: () => void;
   setViewMode: (mode: InboxViewMode) => void;
+  setBoardGroupBy: (groupBy: InboxBoardGroupBy) => void;
 }
 
 type InboxSignalsFilterStore = InboxSignalsFilterState &
@@ -80,6 +84,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
       suggestedReviewerFilter: [],
       hasInitializedSuggestedReviewerFilter: false,
       viewMode: "list",
+      boardGroupBy: "actionability",
       setSort: (sortField, sortDirection) => set({ sortField, sortDirection }),
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
@@ -130,6 +135,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
           suggestedReviewerFilter: [],
         }),
       setViewMode: (viewMode) => set({ viewMode }),
+      setBoardGroupBy: (boardGroupBy) => set({ boardGroupBy }),
     }),
     {
       name: "inbox-signals-filter-storage",
@@ -142,6 +148,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         hasInitializedSuggestedReviewerFilter:
           state.hasInitializedSuggestedReviewerFilter,
         viewMode: state.viewMode,
+        boardGroupBy: state.boardGroupBy,
       }),
     },
   ),
