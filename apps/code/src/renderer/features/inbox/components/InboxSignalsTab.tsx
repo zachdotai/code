@@ -55,6 +55,7 @@ import {
 import { MultiSelectStack } from "./detail/MultiSelectStack";
 import { ReportDetailPane } from "./detail/ReportDetailPane";
 import { GitHubConnectionBanner } from "./list/GitHubConnectionBanner";
+import { ReportBoardPane } from "./list/ReportBoardPane";
 import { ReportListPane } from "./list/ReportListPane";
 import { SignalsToolbar } from "./list/SignalsToolbar";
 
@@ -75,6 +76,7 @@ export function InboxSignalsTab() {
   const seedSuggestedReviewerFilterWithCurrentUser = useInboxSignalsFilterStore(
     (s) => s.seedSuggestedReviewerFilterWithCurrentUser,
   );
+  const viewMode = useInboxSignalsFilterStore((s) => s.viewMode);
 
   // ── Current user (seeds reviewer filter on first inbox visit) ───────────
   const authClient = useOptionalAuthenticatedClient();
@@ -762,23 +764,43 @@ export function InboxSignalsTab() {
                 <RecommendedSetupTasks
                   onSelectTask={handleSelectDiscoveredTask}
                 />
-                <ReportListPane
-                  reports={reports}
-                  allReports={allReports}
-                  isLoading={isLoading}
-                  isFetching={isFetching}
-                  error={error}
-                  refetch={refetch}
-                  hasNextPage={hasNextPage}
-                  isFetchingNextPage={isFetchingNextPage}
-                  fetchNextPage={fetchNextPage}
-                  hasSignalSources={hasSignalSources}
-                  searchQuery={searchQuery}
-                  hasActiveFilters={hasActiveFilters}
-                  selectedReportIds={selectedReportIds}
-                  onReportClick={handleReportClick}
-                  onToggleReportSelection={toggleReportSelection}
-                />
+                {viewMode === "board" ? (
+                  <ReportBoardPane
+                    reports={reports}
+                    allReports={allReports}
+                    isLoading={isLoading}
+                    isFetching={isFetching}
+                    error={error}
+                    refetch={refetch}
+                    hasNextPage={hasNextPage}
+                    isFetchingNextPage={isFetchingNextPage}
+                    fetchNextPage={fetchNextPage}
+                    hasSignalSources={hasSignalSources}
+                    searchQuery={searchQuery}
+                    hasActiveFilters={hasActiveFilters}
+                    selectedReportIds={selectedReportIds}
+                    onReportClick={handleReportClick}
+                    onToggleReportSelection={toggleReportSelection}
+                  />
+                ) : (
+                  <ReportListPane
+                    reports={reports}
+                    allReports={allReports}
+                    isLoading={isLoading}
+                    isFetching={isFetching}
+                    error={error}
+                    refetch={refetch}
+                    hasNextPage={hasNextPage}
+                    isFetchingNextPage={isFetchingNextPage}
+                    fetchNextPage={fetchNextPage}
+                    hasSignalSources={hasSignalSources}
+                    searchQuery={searchQuery}
+                    hasActiveFilters={hasActiveFilters}
+                    selectedReportIds={selectedReportIds}
+                    onReportClick={handleReportClick}
+                    onToggleReportSelection={toggleReportSelection}
+                  />
+                )}
               </Flex>
             </ScrollArea>
 

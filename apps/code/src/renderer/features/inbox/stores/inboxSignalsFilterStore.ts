@@ -12,6 +12,8 @@ type SignalSortField = Extract<
 
 type SignalSortDirection = "asc" | "desc";
 
+export type InboxViewMode = "list" | "board";
+
 export type SourceProduct =
   | "session_replay"
   | "error_tracking"
@@ -42,6 +44,8 @@ interface InboxSignalsFilterState {
   suggestedReviewerFilter: string[];
   /** Tracks whether we've seeded the reviewer filter with the current user once. Persisted so the seed only runs on first inbox visit. */
   hasInitializedSuggestedReviewerFilter: boolean;
+  /** How the inbox list is rendered: a flat list or a kanban board grouped by status. */
+  viewMode: InboxViewMode;
 }
 
 interface InboxSignalsFilterActions {
@@ -60,6 +64,7 @@ interface InboxSignalsFilterActions {
   seedSuggestedReviewerFilterWithCurrentUser: (currentUserUuid: string) => void;
   /** Reset all filters when a deep link arrives so the linked report isn't hidden. */
   resetFilters: () => void;
+  setViewMode: (viewMode: InboxViewMode) => void;
 }
 
 type InboxSignalsFilterStore = InboxSignalsFilterState &
@@ -75,6 +80,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
       hasInitializedSuggestedReviewerFilter: false,
+      viewMode: "list",
       setSort: (sortField, sortDirection) => set({ sortField, sortDirection }),
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
@@ -124,6 +130,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
           sourceProductFilter: [],
           suggestedReviewerFilter: [],
         }),
+      setViewMode: (viewMode) => set({ viewMode }),
     }),
     {
       name: "inbox-signals-filter-storage",
@@ -135,6 +142,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         suggestedReviewerFilter: state.suggestedReviewerFilter,
         hasInitializedSuggestedReviewerFilter:
           state.hasInitializedSuggestedReviewerFilter,
+        viewMode: state.viewMode,
       }),
     },
   ),

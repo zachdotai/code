@@ -1,13 +1,18 @@
 import { Button, type ButtonProps } from "@components/ui/Button";
 import { Tooltip as ActionTooltip } from "@components/ui/Tooltip";
 import { useInboxBulkActions } from "@features/inbox/hooks/useInboxBulkActions";
-import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
+import {
+  type InboxViewMode,
+  useInboxSignalsFilterStore,
+} from "@features/inbox/stores/inboxSignalsFilterStore";
 import { INBOX_REFETCH_INTERVAL_MS } from "@features/inbox/utils/inboxConstants";
 import {
   ArrowClockwiseIcon,
   DotsThree,
   EyeSlashIcon,
   GearSixIcon,
+  KanbanIcon,
+  ListBulletsIcon,
   MagnifyingGlass,
   PauseIcon,
   ThumbsDownIcon,
@@ -35,6 +40,57 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { FilterSortMenu } from "./FilterSortMenu";
 import { SuggestedReviewerFilterMenu } from "./SuggestedReviewerFilterMenu";
+
+function InboxViewModeToggle() {
+  const viewMode = useInboxSignalsFilterStore((s) => s.viewMode);
+  const setViewMode = useInboxSignalsFilterStore((s) => s.setViewMode);
+
+  const options: {
+    value: InboxViewMode;
+    label: string;
+    icon: ReactNode;
+  }[] = [
+    {
+      value: "list",
+      label: "View as list",
+      icon: <ListBulletsIcon size={14} />,
+    },
+    {
+      value: "board",
+      label: "View as board",
+      icon: <KanbanIcon size={14} />,
+    },
+  ];
+
+  return (
+    <Flex
+      align="center"
+      gap="0"
+      className="overflow-hidden rounded-sm border border-(--gray-5)"
+    >
+      {options.map((option) => {
+        const isActive = viewMode === option.value;
+        return (
+          <Tooltip key={option.value} content={option.label}>
+            <button
+              type="button"
+              aria-label={option.label}
+              aria-pressed={isActive}
+              onClick={() => setViewMode(option.value)}
+              className={`flex h-6 w-6 items-center justify-center transition-colors ${
+                isActive
+                  ? "bg-gray-3 text-gray-12"
+                  : "text-gray-10 hover:bg-gray-3 hover:text-gray-12"
+              }`}
+            >
+              {option.icon}
+            </button>
+          </Tooltip>
+        );
+      })}
+    </Flex>
+  );
+}
 
 interface SignalsToolbarProps {
   totalCount: number;
@@ -532,6 +588,7 @@ export function SignalsToolbar({
           </Tooltip>
           {!hideFilters && (
             <Flex align="center" gap="1" className="shrink-0">
+              <InboxViewModeToggle />
               <SuggestedReviewerFilterMenu />
               <FilterSortMenu />
             </Flex>
