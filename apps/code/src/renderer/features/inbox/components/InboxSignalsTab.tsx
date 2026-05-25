@@ -1,5 +1,6 @@
 import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useCurrentUser } from "@features/auth/hooks/authQueries";
+import { InboxBoardView } from "@features/inbox/components/board/InboxBoardView";
 import {
   SelectReportPane,
   SkeletonBackdrop,
@@ -55,7 +56,6 @@ import {
 import { MultiSelectStack } from "./detail/MultiSelectStack";
 import { ReportDetailPane } from "./detail/ReportDetailPane";
 import { GitHubConnectionBanner } from "./list/GitHubConnectionBanner";
-import { ReportBoardPane } from "./list/ReportBoardPane";
 import { ReportListPane } from "./list/ReportListPane";
 import { SignalsToolbar } from "./list/SignalsToolbar";
 
@@ -67,6 +67,7 @@ export function InboxSignalsTab() {
   const sortDirection = useInboxSignalsFilterStore((s) => s.sortDirection);
   const searchQuery = useInboxSignalsFilterStore((s) => s.searchQuery);
   const statusFilter = useInboxSignalsFilterStore((s) => s.statusFilter);
+  const viewMode = useInboxSignalsFilterStore((s) => s.viewMode);
   const sourceProductFilter = useInboxSignalsFilterStore(
     (s) => s.sourceProductFilter,
   );
@@ -76,7 +77,6 @@ export function InboxSignalsTab() {
   const seedSuggestedReviewerFilterWithCurrentUser = useInboxSignalsFilterStore(
     (s) => s.seedSuggestedReviewerFilterWithCurrentUser,
   );
-  const viewMode = useInboxSignalsFilterStore((s) => s.viewMode);
 
   // ── Current user (seeds reviewer filter on first inbox visit) ───────────
   const authClient = useOptionalAuthenticatedClient();
@@ -683,106 +683,158 @@ export function InboxSignalsTab() {
 
   // ── Render ──────────────────────────────────────────────────────────────
 
+  const detailPaneContent =
+    selectedReports.length > 1 ? (
+      <MultiSelectStack
+        reports={selectedReports}
+        onClearSelection={clearSelection}
+      />
+    ) : selectedReport ? (
+      <ReportDetailPane
+        report={selectedReport}
+        onClose={clearSelection}
+        onRequestDismissReport={openDismissDialogFromDetailPane}
+        suppressDisabledReason={inboxBulkSuppressDisabledReason(allReports, [
+          selectedReport.id,
+        ])}
+        isDismissMutationPending={dismissMutationPending}
+        onReportAction={tracker.signalAction}
+        onScroll={tracker.signalScroll}
+      />
+    ) : selectedDiscoveredTask ? (
+      <DiscoveredTaskDetailPane
+        task={selectedDiscoveredTask}
+        onClose={handleCloseDiscoveredTaskPane}
+      />
+    ) : (
+      <SelectReportPane />
+    );
+
+  const hasDetailSelection =
+    selectedReports.length > 1 ||
+    selectedReport != null ||
+    selectedDiscoveredTask != null;
+
+  const toolbar = (
+    <SignalsToolbar
+      totalCount={totalCount}
+      filteredCount={reports.length}
+      isSearchActive={!!searchQuery.trim()}
+      livePolling={inboxPollingActive}
+      isFetching={isFetching}
+      readyCount={readyCount}
+      processingCount={processingCount}
+      pipelinePausedUntil={signalProcessingState?.paused_until}
+      reports={reports}
+      effectiveBulkIds={selectedReportIds}
+      onToggleSelectAll={handleToggleSelectAll}
+      onConfigureSources={() => setSourcesDialogOpen(true)}
+      onOpenDismissDialog={openDismissDialogFromToolbar}
+      isDismissMutationPending={dismissMutationPending}
+      onReportAction={tracker.signalAction}
+    />
+  );
+
   return (
     <>
       {showTwoPaneLayout ? (
-        <Flex ref={containerRef} height="100%" className="min-h-0">
-          {/* ── Left pane: report list ───────────────────────────────── */}
-          <Box
-            className="relative h-full max-w-[60%] flex-none select-none overflow-hidden border-r border-r-(--gray-5)"
-            style={{
-              width: `${sidebarWidth}px`,
-            }}
-          >
-            <ScrollArea
-              type="auto"
-              className="scroll-area-constrain-width inbox-report-list-scroll h-full"
-            >
-              <Flex
-                ref={leftPaneRef}
-                direction="column"
-                tabIndex={0}
-                className="outline-none"
-                // Clicking a row/button/checkbox would normally move browser focus to that
-                // element, losing the container's focus and breaking arrow-key navigation.
-                // Intercept mousedown to redirect focus back to the container instead.
-                // Text fields are exempt so the search box can still receive focus normally.
-                onMouseDownCapture={(e) => {
-                  const target = e.target as HTMLElement;
-                  if (
-                    target.closest(
-                      "input, textarea, select, [contenteditable='true']",
-                    )
-                  ) {
-                    return;
-                  }
-                  if (target.closest("[data-report-id], button")) {
-                    focusListPane();
-                  }
-                }}
-                // Same redirect for focus arriving via keyboard (Tab) — if focus lands
-                // inside a row element rather than on the container itself, pull it back up.
-                onFocusCapture={(e) => {
-                  const target = e.target as HTMLElement;
-                  if (
-                    target.closest(
-                      "input, textarea, select, [contenteditable='true']",
-                    )
-                  ) {
-                    return;
-                  }
-                  if (
-                    target !== leftPaneRef.current &&
-                    target.closest("[data-report-id], button")
-                  ) {
-                    focusListPane();
-                  }
-                }}
-              >
-                <Box
-                  data-inbox-sticky-header
-                  className="sticky top-0 z-10 bg-(--color-background)"
-                >
-                  <SignalsToolbar
-                    totalCount={totalCount}
-                    filteredCount={reports.length}
-                    isSearchActive={!!searchQuery.trim()}
-                    livePolling={inboxPollingActive}
-                    isFetching={isFetching}
-                    readyCount={readyCount}
-                    processingCount={processingCount}
-                    pipelinePausedUntil={signalProcessingState?.paused_until}
-                    reports={reports}
-                    effectiveBulkIds={selectedReportIds}
-                    onToggleSelectAll={handleToggleSelectAll}
-                    onConfigureSources={() => setSourcesDialogOpen(true)}
-                    onOpenDismissDialog={openDismissDialogFromToolbar}
-                    isDismissMutationPending={dismissMutationPending}
-                    onReportAction={tracker.signalAction}
-                  />
-                </Box>
-                <RecommendedSetupTasks
-                  onSelectTask={handleSelectDiscoveredTask}
+        viewMode === "board" ? (
+          <Flex direction="column" height="100%" className="min-h-0">
+            <Box className="shrink-0 border-b border-b-(--gray-5) bg-(--color-background)">
+              {toolbar}
+            </Box>
+            <Flex className="min-h-0 flex-1">
+              <Box className="min-w-0 flex-1 overflow-hidden">
+                <InboxBoardView
+                  reports={reports}
+                  allReports={allReports}
+                  isLoading={isLoading}
+                  isFetching={isFetching}
+                  error={error}
+                  refetch={refetch}
+                  hasNextPage={hasNextPage}
+                  isFetchingNextPage={isFetchingNextPage}
+                  fetchNextPage={fetchNextPage}
+                  hasSignalSources={hasSignalSources}
+                  searchQuery={searchQuery}
+                  hasActiveFilters={hasActiveFilters}
+                  selectedReportIds={selectedReportIds}
+                  onReportClick={handleReportClick}
                 />
-                {viewMode === "board" ? (
-                  <ReportBoardPane
-                    reports={reports}
-                    allReports={allReports}
-                    isLoading={isLoading}
-                    isFetching={isFetching}
-                    error={error}
-                    refetch={refetch}
-                    hasNextPage={hasNextPage}
-                    isFetchingNextPage={isFetchingNextPage}
-                    fetchNextPage={fetchNextPage}
-                    hasSignalSources={hasSignalSources}
-                    searchQuery={searchQuery}
-                    hasActiveFilters={hasActiveFilters}
-                    selectedReportIds={selectedReportIds}
-                    onReportClick={handleReportClick}
-                    onToggleReportSelection={toggleReportSelection}
+              </Box>
+              {hasDetailSelection ? (
+                <Flex
+                  direction="column"
+                  className="@container relative h-full w-[480px] shrink-0 border-l border-l-(--gray-5)"
+                >
+                  {detailPaneContent}
+                </Flex>
+              ) : null}
+            </Flex>
+          </Flex>
+        ) : (
+          <Flex ref={containerRef} height="100%" className="min-h-0">
+            {/* ── Left pane: report list ───────────────────────────────── */}
+            <Box
+              className="relative h-full max-w-[60%] flex-none select-none overflow-hidden border-r border-r-(--gray-5)"
+              style={{
+                width: `${sidebarWidth}px`,
+              }}
+            >
+              <ScrollArea
+                type="auto"
+                className="scroll-area-constrain-width inbox-report-list-scroll h-full"
+              >
+                <Flex
+                  ref={leftPaneRef}
+                  direction="column"
+                  tabIndex={0}
+                  className="outline-none"
+                  // Clicking a row/button/checkbox would normally move browser focus to that
+                  // element, losing the container's focus and breaking arrow-key navigation.
+                  // Intercept mousedown to redirect focus back to the container instead.
+                  // Text fields are exempt so the search box can still receive focus normally.
+                  onMouseDownCapture={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (
+                      target.closest(
+                        "input, textarea, select, [contenteditable='true']",
+                      )
+                    ) {
+                      return;
+                    }
+                    if (target.closest("[data-report-id], button")) {
+                      focusListPane();
+                    }
+                  }}
+                  // Same redirect for focus arriving via keyboard (Tab) — if focus lands
+                  // inside a row element rather than on the container itself, pull it back up.
+                  onFocusCapture={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (
+                      target.closest(
+                        "input, textarea, select, [contenteditable='true']",
+                      )
+                    ) {
+                      return;
+                    }
+                    if (
+                      target !== leftPaneRef.current &&
+                      target.closest("[data-report-id], button")
+                    ) {
+                      focusListPane();
+                    }
+                  }}
+                >
+                  <Box
+                    data-inbox-sticky-header
+                    className="sticky top-0 z-10 bg-(--color-background)"
+                  >
+                    {toolbar}
+                  </Box>
+                  <RecommendedSetupTasks
+                    onSelectTask={handleSelectDiscoveredTask}
                   />
-                ) : (
                   <ReportListPane
                     reports={reports}
                     allReports={allReports}
@@ -800,55 +852,30 @@ export function InboxSignalsTab() {
                     onReportClick={handleReportClick}
                     onToggleReportSelection={toggleReportSelection}
                   />
-                )}
-              </Flex>
-            </ScrollArea>
+                </Flex>
+              </ScrollArea>
 
-            <GitHubConnectionBanner />
+              <GitHubConnectionBanner />
 
-            {/* Resize handle */}
-            <Box
-              onMouseDown={handleResizeMouseDown}
-              className="no-drag absolute top-0 right-0 bottom-0 w-[4px] cursor-col-resize bg-transparent"
-              style={{
-                zIndex: 100,
-              }}
-            />
-          </Box>
+              {/* Resize handle */}
+              <Box
+                onMouseDown={handleResizeMouseDown}
+                className="no-drag absolute top-0 right-0 bottom-0 w-[4px] cursor-col-resize bg-transparent"
+                style={{
+                  zIndex: 100,
+                }}
+              />
+            </Box>
 
-          {/* ── Right pane: detail ───────────────────────────────── */}
-          <Flex
-            direction="column"
-            className="@container relative h-full min-w-0 flex-1"
-          >
-            {selectedReports.length > 1 ? (
-              <MultiSelectStack
-                reports={selectedReports}
-                onClearSelection={clearSelection}
-              />
-            ) : selectedReport ? (
-              <ReportDetailPane
-                report={selectedReport}
-                onClose={clearSelection}
-                onRequestDismissReport={openDismissDialogFromDetailPane}
-                suppressDisabledReason={inboxBulkSuppressDisabledReason(
-                  allReports,
-                  [selectedReport.id],
-                )}
-                isDismissMutationPending={dismissMutationPending}
-                onReportAction={tracker.signalAction}
-                onScroll={tracker.signalScroll}
-              />
-            ) : selectedDiscoveredTask ? (
-              <DiscoveredTaskDetailPane
-                task={selectedDiscoveredTask}
-                onClose={handleCloseDiscoveredTaskPane}
-              />
-            ) : (
-              <SelectReportPane />
-            )}
+            {/* ── Right pane: detail ───────────────────────────────── */}
+            <Flex
+              direction="column"
+              className="@container relative h-full min-w-0 flex-1"
+            >
+              {detailPaneContent}
+            </Flex>
           </Flex>
-        </Flex>
+        )
       ) : (
         /* ── Full-width empty state with skeleton backdrop ──────── */
         <Box className="relative h-full">

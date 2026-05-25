@@ -44,7 +44,6 @@ interface InboxSignalsFilterState {
   suggestedReviewerFilter: string[];
   /** Tracks whether we've seeded the reviewer filter with the current user once. Persisted so the seed only runs on first inbox visit. */
   hasInitializedSuggestedReviewerFilter: boolean;
-  /** How the inbox list is rendered: a flat list or a kanban board grouped by status. */
   viewMode: InboxViewMode;
 }
 
@@ -64,7 +63,7 @@ interface InboxSignalsFilterActions {
   seedSuggestedReviewerFilterWithCurrentUser: (currentUserUuid: string) => void;
   /** Reset all filters when a deep link arrives so the linked report isn't hidden. */
   resetFilters: () => void;
-  setViewMode: (viewMode: InboxViewMode) => void;
+  setViewMode: (mode: InboxViewMode) => void;
 }
 
 type InboxSignalsFilterStore = InboxSignalsFilterState &

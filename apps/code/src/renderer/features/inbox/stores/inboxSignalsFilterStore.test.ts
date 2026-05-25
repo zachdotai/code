@@ -19,7 +19,6 @@ describe("inboxSignalsFilterStore", () => {
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
       hasInitializedSuggestedReviewerFilter: false,
-      viewMode: "list",
     });
   });
 
@@ -168,24 +167,6 @@ describe("inboxSignalsFilterStore", () => {
     const state = useInboxSignalsFilterStore.getState();
     expect(state.suggestedReviewerFilter).toEqual(["someone-else"]);
     expect(state.hasInitializedSuggestedReviewerFilter).toBe(true);
-  });
-
-  it("setViewMode switches between list and board", () => {
-    expect(useInboxSignalsFilterStore.getState().viewMode).toBe("list");
-
-    useInboxSignalsFilterStore.getState().setViewMode("board");
-    expect(useInboxSignalsFilterStore.getState().viewMode).toBe("board");
-
-    useInboxSignalsFilterStore.getState().setViewMode("list");
-    expect(useInboxSignalsFilterStore.getState().viewMode).toBe("list");
-  });
-
-  it("persists viewMode", () => {
-    useInboxSignalsFilterStore.getState().setViewMode("board");
-    const raw = localStorage.getItem("inbox-signals-filter-storage");
-    expect(raw).toBeTruthy();
-    const persisted = JSON.parse(raw as string);
-    expect(persisted.state.viewMode).toBe("board");
   });
 
   it("resetFilters preserves sort preferences", () => {
