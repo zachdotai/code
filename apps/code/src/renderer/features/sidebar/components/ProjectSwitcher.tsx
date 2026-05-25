@@ -54,12 +54,14 @@ import {
 import { Box } from "@radix-ui/themes";
 import { trpcClient } from "@renderer/trpc/client";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
+import { useNavigationStore } from "@stores/navigationStore";
 import { EXTERNAL_LINKS } from "@utils/links";
 import { isMac } from "@utils/platform";
 import { ChevronRightIcon } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 type ProjectInfo = { id: number; name: string };
+type OrgEntry = { id: string; name: string };
 type ProjectGroup = ReturnType<typeof useProjects>["groupedProjects"][number];
 
 export function ProjectSwitcher() {
@@ -76,9 +78,13 @@ export function ProjectSwitcher() {
   const logoutMutation = useLogoutMutation();
   const { groupedProjects, currentProject, currentProjectId } = useProjects();
 
-  const orgs = Object.entries(orgProjectsMap)
-    .map(([id, { orgName }]) => ({ id, name: orgName }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const orgs = useMemo<OrgEntry[]>(
+    () =>
+      Object.entries(orgProjectsMap)
+        .map(([id, { orgName }]) => ({ id, name: orgName }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [orgProjectsMap],
+  );
 
   const handleProjectSelect = (projectId: number) => {
     if (projectId !== currentProjectId) {
@@ -134,9 +140,14 @@ export function ProjectSwitcher() {
 
   const handleSwitchOrg = (orgId: string) => {
     setPopoverOpen(false);
-    if (orgId !== currentOrgId) {
-      switchOrgMutation.mutate(orgId);
+    if (orgId === currentOrgId || switchOrgMutation.isPending) {
+      return;
     }
+    switchOrgMutation.mutate(orgId, {
+      onSuccess: () => {
+        useNavigationStore.getState().navigateToTaskInput();
+      },
+    });
   };
 
   return (
