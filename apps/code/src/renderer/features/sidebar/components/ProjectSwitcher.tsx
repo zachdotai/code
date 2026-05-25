@@ -2,6 +2,7 @@ import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient"
 import {
   useLogoutMutation,
   useSelectProjectMutation,
+  useSwitchOrgMutation,
 } from "@features/auth/hooks/authMutations";
 import {
   useAuthStateValue,
@@ -12,6 +13,7 @@ import { useProjects } from "@features/projects/hooks/useProjects";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import {
   ArrowSquareOut,
+  Buildings,
   Check,
   DiscordLogo,
   FolderSimple,
@@ -65,11 +67,18 @@ export function ProjectSwitcher() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
+  const orgProjectsMap = useAuthStateValue((state) => state.orgProjectsMap);
+  const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
   const selectProjectMutation = useSelectProjectMutation();
+  const switchOrgMutation = useSwitchOrgMutation();
   const logoutMutation = useLogoutMutation();
   const { groupedProjects, currentProject, currentProjectId } = useProjects();
+
+  const orgs = Object.entries(orgProjectsMap)
+    .map(([id, { orgName }]) => ({ id, name: orgName }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const handleProjectSelect = (projectId: number) => {
     if (projectId !== currentProjectId) {
@@ -121,6 +130,13 @@ export function ProjectSwitcher() {
   const handleLogout = () => {
     setPopoverOpen(false);
     logoutMutation.mutate();
+  };
+
+  const handleSwitchOrg = (orgId: string) => {
+    setPopoverOpen(false);
+    if (orgId !== currentOrgId) {
+      switchOrgMutation.mutate(orgId);
+    }
   };
 
   return (
@@ -184,6 +200,28 @@ export function ProjectSwitcher() {
                 <FolderSimple size={14} className="text-gray-11" />
                 Change project
               </DropdownMenuItem>
+
+              {orgs.length > 1 && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Buildings size={14} className="text-gray-11" />
+                    Switch organization
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent side="right" sideOffset={4}>
+                    {orgs.map((org) => (
+                      <DropdownMenuItem
+                        key={org.id}
+                        onClick={() => handleSwitchOrg(org.id)}
+                      >
+                        <span className="flex-1">{org.name}</span>
+                        {org.id === currentOrgId && (
+                          <Check size={14} className="text-accent-11" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
 
               <DropdownMenuItem onClick={handleCreateProject}>
                 <Plus size={14} className="text-gray-11" />
