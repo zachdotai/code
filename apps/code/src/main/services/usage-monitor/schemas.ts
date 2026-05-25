@@ -1,3 +1,5 @@
+import type { UsageOutput } from "@main/services/llm-gateway/schemas";
+import { usageOutput } from "@main/services/llm-gateway/schemas";
 import { z } from "zod";
 
 export const USAGE_THRESHOLDS = [50, 75, 90, 100] as const;
@@ -19,10 +21,15 @@ export const thresholdCrossedEvent = z.object({
 
 export type ThresholdCrossedEvent = z.infer<typeof thresholdCrossedEvent>;
 
+export const usageSnapshotOutput = usageOutput.nullable();
+export type UsageSnapshot = UsageOutput | null;
+
 export const UsageMonitorEvent = {
   ThresholdCrossed: "threshold-crossed",
+  UsageUpdated: "usage-updated",
 } as const;
 
 export interface UsageMonitorEvents {
   [UsageMonitorEvent.ThresholdCrossed]: ThresholdCrossedEvent;
+  [UsageMonitorEvent.UsageUpdated]: UsageOutput;
 }

@@ -23,7 +23,7 @@ vi.mock("../../utils/logger.js", () => ({
   },
 }));
 
-import { LlmGatewayService } from "../llm-gateway/service";
+import type { LlmGatewayService } from "../llm-gateway/service";
 import { UsageMonitorService } from "./service";
 
 function makeUsage(overrides?: {
@@ -178,5 +178,42 @@ describe("UsageMonitorService", () => {
 
     await expect(service.pollOnce()).resolves.toBeNull();
     expect(events).toHaveLength(0);
+  });
+
+  it("emits UsageUpdated and caches the snapshot on every successful poll", async () => {
+    const updates: UsageOutput[] = [];
+    const gateway = mockGateway(makeUsage({ burstPercent: 20 }));
+    service = new UsageMonitorService(gateway);
+    service.on(UsageMonitorEvent.UsageUpdated, (u) => updates.push(u));
+
+    expect(service.getLatest()).toBeNull();
+    await service.pollOnce();
+    expect(updates).toHaveLength(1);
+    expect(service.getLatest()?.burst.used_percent).toBe(20);
+
+    await service.pollOnce();
+    expect(updates).toHaveLength(2);
+  });
+
+  it("does not emit UsageUpdated when the gateway throws", async () => {
+    const updates: UsageOutput[] = [];
+    const gateway = {
+      fetchUsage: vi.fn().mockRejectedValue(new Error("offline")),
+    } as unknown as LlmGatewayService;
+    service = new UsageMonitorService(gateway);
+    service.on(UsageMonitorEvent.UsageUpdated, (u) => updates.push(u));
+
+    await service.pollOnce();
+    expect(updates).toHaveLength(0);
+    expect(service.getLatest()).toBeNull();
+  });
+
+  it("refreshNow triggers a fresh poll and returns the snapshot", async () => {
+    const gateway = mockGateway(makeUsage({ burstPercent: 42 }));
+    service = new UsageMonitorService(gateway);
+
+    const result = await service.refreshNow();
+    expect(result?.burst.used_percent).toBe(42);
+    expect(service.getLatest()?.burst.used_percent).toBe(42);
   });
 });

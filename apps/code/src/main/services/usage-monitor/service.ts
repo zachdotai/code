@@ -25,6 +25,7 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
   // Snapshot of the most recent thresholdsSeen map so we hit electron-store
   // only when we actually persist a new threshold.
   private thresholdsSeen: Record<string, string>;
+  private latestUsage: UsageOutput | null = null;
 
   constructor(
     @inject(MAIN_TOKENS.LlmGatewayService)
@@ -32,6 +33,16 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
   ) {
     super();
     this.thresholdsSeen = { ...usageMonitorStore.get("thresholdsSeen", {}) };
+  }
+
+  /** Last successful usage snapshot; null until the first poll succeeds. */
+  getLatest(): UsageOutput | null {
+    return this.latestUsage;
+  }
+
+  /** Trigger an immediate refresh, returning the resulting snapshot. */
+  async refreshNow(): Promise<UsageOutput | null> {
+    return this.pollOnce();
   }
 
   @postConstruct()
@@ -54,7 +65,11 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
     this.isPolling = true;
     try {
       const usage = await this.fetchUsageQuietly();
-      if (usage) this.processUsage(usage);
+      if (usage) {
+        this.latestUsage = usage;
+        this.emit(UsageMonitorEvent.UsageUpdated, usage);
+        this.processUsage(usage);
+      }
       return usage;
     } finally {
       this.isPolling = false;

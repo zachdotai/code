@@ -3,6 +3,7 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import {
   UsageMonitorEvent,
   type UsageMonitorEvents,
+  usageSnapshotOutput,
 } from "../../services/usage-monitor/schemas";
 import type { UsageMonitorService } from "../../services/usage-monitor/service";
 import { publicProcedure, router } from "../trpc";
@@ -22,4 +23,14 @@ function subscribe<K extends keyof UsageMonitorEvents>(event: K) {
 
 export const usageMonitorRouter = router({
   onThresholdCrossed: subscribe(UsageMonitorEvent.ThresholdCrossed),
+  // Stream of full usage snapshots — replaces the renderer's 30s poll.
+  onUsageUpdated: subscribe(UsageMonitorEvent.UsageUpdated),
+  // Cached snapshot for the renderer to bootstrap before the first event
+  // arrives. Null until the first poll completes.
+  getLatest: publicProcedure
+    .output(usageSnapshotOutput)
+    .query(() => getService().getLatest()),
+  refresh: publicProcedure
+    .output(usageSnapshotOutput)
+    .mutation(() => getService().refreshNow()),
 });
