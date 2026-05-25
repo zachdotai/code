@@ -3,7 +3,11 @@ import { Command } from "commander";
 import { z } from "zod/v4";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
 import { AgentServer } from "./agent-server";
-import { claudeCodeConfigSchema, mcpServersSchema } from "./schemas";
+import {
+  addOnsConfigSchema,
+  claudeCodeConfigSchema,
+  mcpServersSchema,
+} from "./schemas";
 
 const envSchema = z.object({
   JWT_PUBLIC_KEY: z
@@ -105,6 +109,10 @@ program
     "--allowedDomains <domains>",
     "Comma-separated list of domains allowed for web tools (WebFetch, WebSearch)",
   )
+  .option(
+    "--addOns <json>",
+    "Add-on config as JSON object mapping add-on name → options (sourced from task.options.add_ons)",
+  )
   .action(async (options) => {
     const envResult = envSchema.safeParse(process.env);
 
@@ -130,6 +138,11 @@ program
       options.claudeCodeConfig,
       claudeCodeConfigSchema,
       "--claudeCodeConfig",
+    );
+    const addOns = parseJsonOption(
+      options.addOns,
+      addOnsConfigSchema,
+      "--addOns",
     );
 
     const allowedDomains = options.allowedDomains
@@ -175,6 +188,7 @@ program
       runtimeAdapter: env.POSTHOG_CODE_RUNTIME_ADAPTER,
       model: env.POSTHOG_CODE_MODEL,
       reasoningEffort: env.POSTHOG_CODE_REASONING_EFFORT,
+      addOns,
     });
 
     process.on("SIGINT", async () => {

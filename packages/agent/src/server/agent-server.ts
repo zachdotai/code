@@ -982,6 +982,7 @@ export class AgentServer {
         allowedDomains: this.config.allowedDomains,
         jsonSchema: preTask?.json_schema ?? null,
         permissionMode: initialPermissionMode,
+        ...(this.config.addOns && { addOns: this.config.addOns }),
         ...(this.config.claudeCode?.plugins?.length && {
           claudeCode: {
             options: {

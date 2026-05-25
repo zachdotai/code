@@ -28,6 +28,22 @@
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
     },
+    "./add-ons/types": {
+      "types": "./dist/add-ons/types.d.ts",
+      "import": "./dist/add-ons/types.js"
+    },
+    "./add-ons/registry": {
+      "types": "./dist/add-ons/registry.d.ts",
+      "import": "./dist/add-ons/registry.js"
+    },
+    "./add-ons/default-registry": {
+      "types": "./dist/add-ons/default-registry.d.ts",
+      "import": "./dist/add-ons/default-registry.js"
+    },
+    "./add-ons/rtk": {
+      "types": "./dist/add-ons/rtk.d.ts",
+      "import": "./dist/add-ons/rtk.js"
+    },
     "./adapters/claude/questions/utils": {
       "types": "./dist/adapters/claude/questions/utils.d.ts",
       "import": "./dist/adapters/claude/questions/utils.js"

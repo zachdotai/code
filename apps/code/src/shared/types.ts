@@ -34,6 +34,20 @@ interface UserBasic {
   is_email_verified?: boolean | null;
 }
 
+/**
+ * Per-task configuration stored on the Django `Task.options` JSONField.
+ * Open-ended so we can add new keys without OpenAPI churn; today only
+ * `add_ons` is consumed by the agent runtime.
+ *
+ * Server-side requires `options = models.JSONField(default=dict, blank=True)`
+ * on the Task model plus a matching serializer entry. Until that migration
+ * lands, this field will be absent on every Task returned by the API.
+ */
+export interface TaskOptions {
+  /** Keys are add-on names registered with `@posthog/agent`'s AddOnRegistry. */
+  add_ons?: Record<string, Record<string, unknown>>;
+}
+
 export interface Task {
   id: string;
   task_number: number | null;
@@ -51,6 +65,7 @@ export interface Task {
   json_schema?: Record<string, unknown> | null;
   signal_report?: string | null;
   internal?: boolean;
+  options?: TaskOptions;
   latest_run?: TaskRun;
 }
 

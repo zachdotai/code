@@ -4,12 +4,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type {
   CanUseTool,
+  HookCallback,
   McpServerConfig,
   Options,
   OutputFormat,
   SpawnedProcess,
   SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { AddOnContribution } from "../../../add-ons/types";
 import type { FileEnrichmentDeps } from "../../../enrichment/file-enricher";
 import { IS_ROOT } from "../../../utils/common";
 import type { Logger } from "../../../utils/logger";
@@ -56,6 +58,12 @@ export interface BuildOptionsParams {
   effort?: EffortLevel;
   enrichmentDeps?: FileEnrichmentDeps;
   enrichedReadCache?: EnrichedReadCache;
+  /**
+   * Pre-resolved contribution from the {@link AddOnRegistry}. Merged into
+   * `hooks`, `env`, and `systemPrompt` so add-ons can prepend Bash rewriters,
+   * inject env vars, and append system-prompt text.
+   */
+  addOnContribution?: AddOnContribution;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
 }
@@ -92,6 +100,26 @@ export function buildSystemPrompt(
   return defaultPrompt;
 }
 
+export function appendToSystemPrompt(
+  systemPrompt: Options["systemPrompt"],
+  extra: string | undefined,
+): Options["systemPrompt"] {
+  if (!extra) return systemPrompt;
+  if (typeof systemPrompt === "string") return systemPrompt + extra;
+  if (
+    typeof systemPrompt === "object" &&
+    systemPrompt !== null &&
+    "type" in systemPrompt &&
+    systemPrompt.type === "preset"
+  ) {
+    return {
+      ...systemPrompt,
+      append: (systemPrompt.append ?? "") + extra,
+    };
+  }
+  return systemPrompt;
+}
+
 function buildMcpServers(
   userServers: Record<string, McpServerConfig> | undefined,
   acpServers: Record<string, McpServerConfig>,
@@ -104,7 +132,9 @@ function buildMcpServers(
   };
 }
 
-function buildEnvironment(): Record<string, string> {
+function buildEnvironment(
+  addOnEnv?: Record<string, string>,
+): Record<string, string> {
   const bedrockFallbackHeader = "x-posthog-use-bedrock-fallback: true";
   const existingCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;
   const customHeaders = existingCustomHeaders
@@ -121,6 +151,9 @@ function buildEnvironment(): Record<string, string> {
     CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
     // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
+    // Add-on contributions win over our defaults so they can override e.g.
+    // ANTHROPIC_CUSTOM_HEADERS for proxy add-ons.
+    ...(addOnEnv ?? {}),
   };
 }
 
@@ -132,6 +165,8 @@ function buildHooks(
   enrichmentDeps: FileEnrichmentDeps | undefined,
   enrichedReadCache: EnrichedReadCache | undefined,
   registeredAgents: ReadonlySet<string>,
+  addOnPreToolUse: HookCallback[] | undefined,
+  addOnPostToolUse: HookCallback[] | undefined,
   cloudMode: boolean,
 ): Options["hooks"] {
   const postToolUseHooks = [createPostToolUseHook({ onModeChange })];
@@ -141,21 +176,34 @@ function buildHooks(
     );
   }
 
-  const preToolUseHooks = [
+  const builtInPreToolUseHooks = [
     createPreToolUseHook(settingsManager, logger),
     createSubagentRewriteHook(logger, registeredAgents),
   ];
   if (cloudMode) {
-    preToolUseHooks.push(createSignedCommitGuardHook(logger));
+    builtInPreToolUseHooks.push(createSignedCommitGuardHook(logger));
   }
+
+  // Add-on PreToolUse hooks run BEFORE the built-in permission gate so they
+  // can rewrite tool input (e.g. rtk wrapping a Bash command) and have those
+  // changes reflected in the permission-check pass and the signed-commit
+  // guard (when cloudMode is on).
+  const preToolUseGroups: NonNullable<Options["hooks"]>["PreToolUse"] = [
+    ...(userHooks?.PreToolUse || []),
+    ...(addOnPreToolUse?.length ? [{ hooks: addOnPreToolUse }] : []),
+    { hooks: builtInPreToolUseHooks },
+  ];
+
+  const postToolUseGroups: NonNullable<Options["hooks"]>["PostToolUse"] = [
+    ...(userHooks?.PostToolUse || []),
+    { hooks: postToolUseHooks },
+    ...(addOnPostToolUse?.length ? [{ hooks: addOnPostToolUse }] : []),
+  ];
 
   return {
     ...userHooks,
-    PostToolUse: [
-      ...(userHooks?.PostToolUse || []),
-      { hooks: postToolUseHooks },
-    ],
-    PreToolUse: [...(userHooks?.PreToolUse || []), { hooks: preToolUseHooks }],
+    PostToolUse: postToolUseGroups,
+    PreToolUse: preToolUseGroups,
   };
 }
 
@@ -324,10 +372,15 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
   const agents = buildAgents(params.userProvidedOptions?.agents);
   const registeredAgentNames = new Set(Object.keys(agents));
 
+  const resolvedSystemPrompt = appendToSystemPrompt(
+    params.systemPrompt ?? buildSystemPrompt(),
+    params.addOnContribution?.systemPromptAppend,
+  );
+
   const options: Options = {
     ...params.userProvidedOptions,
     betas: ["context-1m-2025-08-07"],
-    systemPrompt: params.systemPrompt ?? buildSystemPrompt(),
+    systemPrompt: resolvedSystemPrompt,
     settingSources: ["user", "project", "local"],
     stderr: (err) => params.logger.error(err),
     cwd: params.cwd,
@@ -347,7 +400,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.mcpServers,
       loadUserClaudeJsonMcpServers(params.cwd, params.logger),
     ),
-    env: buildEnvironment(),
+    env: buildEnvironment(params.addOnContribution?.env),
     hooks: buildHooks(
       params.userProvidedOptions?.hooks,
       params.onModeChange,
@@ -356,6 +409,8 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.enrichmentDeps,
       params.enrichedReadCache,
       registeredAgentNames,
+      params.addOnContribution?.preToolUse,
+      params.addOnContribution?.postToolUse,
       params.cloudMode ?? false,
     ),
     outputFormat: params.outputFormat,

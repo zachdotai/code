@@ -2,6 +2,7 @@ import type {
   GitHandoffCheckpoint,
   HandoffLocalGitState as GitHandoffLocalGitState,
 } from "@posthog/git/handoff";
+import type { AddOnConfig } from "./add-ons/types";
 
 /**
  * Stored custom notification following ACP extensibility model.
@@ -25,6 +26,20 @@ export interface StoredNotification {
  */
 export type StoredEntry = StoredNotification;
 
+/**
+ * Per-task configuration blob stored on the Django `Task.options` JSONField.
+ * Open-ended so we can add new keys without OpenAPI churn. Today only
+ * `add_ons` is consumed by the agent runtime.
+ *
+ * Server-side requires a `options = models.JSONField(default=dict, blank=True)`
+ * field on the Task model and a matching serializer entry. Until that migration
+ * lands, this field will be absent on every Task returned by the API.
+ */
+export interface TaskOptions {
+  /** Keys are add-on names; values are opaque option blobs validated per-add-on. */
+  add_ons?: AddOnConfig;
+}
+
 // PostHog Task model (matches PostHog Code's OpenAPI schema)
 export interface Task {
   id: string;
@@ -43,6 +58,7 @@ export interface Task {
   repository: string; // Format: "organization/repository" (e.g., "posthog/posthog-js")
   json_schema?: Record<string, unknown> | null; // JSON schema for task output validation
   internal?: boolean;
+  options?: TaskOptions;
   created_at: string;
   updated_at: string;
   created_by?: {

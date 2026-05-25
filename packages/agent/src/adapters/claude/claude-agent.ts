@@ -51,6 +51,7 @@ import {
   POSTHOG_METHODS,
   POSTHOG_NOTIFICATIONS,
 } from "../../acp-extensions";
+import { defaultAddOnRegistry } from "../../add-ons/default-registry";
 import {
   createEnrichment,
   type Enrichment,
@@ -1169,6 +1170,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         ? (meta.permissionMode as CodeExecutionMode)
         : "default";
 
+    const addOnContribution = await defaultAddOnRegistry.collect(meta?.addOns, {
+      cwd,
+      adapter: "claude",
+      logger: this.logger,
+    });
+
     const options = buildSessionOptions({
       cwd,
       mcpServers,
@@ -1176,6 +1183,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       canUseTool: this.createCanUseTool(sessionId, meta?.allowedDomains),
       logger: this.logger,
       systemPrompt,
+      addOnContribution,
       userProvidedOptions: meta?.claudeCode?.options,
       sessionId,
       isResume,

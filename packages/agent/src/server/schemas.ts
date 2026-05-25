@@ -29,6 +29,16 @@ export const mcpServersSchema = z.array(remoteMcpServerSchema);
 
 export type RemoteMcpServer = z.infer<typeof remoteMcpServerSchema>;
 
+/**
+ * Per-add-on options blob; opaque at the transport layer. Each add-on
+ * validates its own options via its `parseOptions` implementation at
+ * session start.
+ */
+export const addOnsConfigSchema = z.record(
+  z.string(),
+  z.record(z.string(), z.unknown()),
+);
+
 export const claudeCodeConfigSchema = z.object({
   systemPrompt: z
     .union([

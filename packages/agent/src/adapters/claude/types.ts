@@ -8,6 +8,7 @@ import type {
   Query,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { AddOnConfig } from "../../add-ons/types";
 import type { Pushable } from "../../utils/streams";
 import type { BaseSession } from "../base-acp-agent";
 import type { McpToolApprovals } from "./mcp/tool-metadata";
@@ -137,4 +138,11 @@ export type NewSessionMeta = {
     options?: Options;
     emitRawSDKMessages?: boolean | SDKMessageFilter[];
   };
+  /**
+   * Add-on configuration sourced from `task.options.add_ons`. Keys are
+   * add-on names registered in the default `AddOnRegistry`; values are
+   * opaque options blobs validated per-add-on at session start. Unknown
+   * or unsupported names are skipped with a warning.
+   */
+  addOns?: AddOnConfig;
 };

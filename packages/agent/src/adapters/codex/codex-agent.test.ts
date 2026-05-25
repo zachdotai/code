@@ -58,11 +58,20 @@ vi.mock("node:fs", async (importActual) => {
   return { ...actual, existsSync: vi.fn(actual.existsSync) };
 });
 
+const mockCollect = vi.fn();
+vi.mock("../../add-ons/default-registry", () => ({
+  defaultAddOnRegistry: {
+    collect: (...args: unknown[]) => mockCollect(...args),
+  },
+}));
+
 import { CodexAcpAgent } from "./codex-agent";
 
 describe("CodexAcpAgent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: no add-on contribution. Individual tests override.
+    mockCollect.mockResolvedValue({});
   });
 
   function createAgent(
@@ -558,5 +567,170 @@ describe("CodexAcpAgent", () => {
     // Broadcast must land before the prompt reaches codex-acp so the user
     // turn is persisted even if the underlying prompt fails.
     expect(callOrder).toEqual(["sessionUpdate", "sessionUpdate", "prompt"]);
+  });
+
+  describe("add-on contribution wiring", () => {
+    function stubNewSessionResponse(sessionId = "session-add-on") {
+      mockCodexConnection.newSession.mockResolvedValue({
+        sessionId,
+        modes: { currentModeId: "auto", availableModes: [] },
+        configOptions: [],
+      } satisfies Partial<NewSessionResponse>);
+    }
+
+    function stubLoadSessionResponse() {
+      mockCodexConnection.loadSession.mockResolvedValue({
+        modes: { currentModeId: "auto", availableModes: [] },
+        configOptions: [],
+      } satisfies Partial<LoadSessionResponse>);
+    }
+
+    it("forwards _meta.addOns to the registry on newSession", async () => {
+      const { agent } = createAgent();
+      stubNewSessionResponse();
+
+      await agent.newSession({
+        cwd: "/tmp/run",
+        _meta: { addOns: { "some-add-on": { x: 1 } } },
+      } as never);
+
+      expect(mockCollect).toHaveBeenCalledWith(
+        { "some-add-on": { x: 1 } },
+        expect.objectContaining({ adapter: "codex", cwd: "/tmp/run" }),
+      );
+    });
+
+    it("appends systemPromptAppend to _meta.systemPrompt on newSession", async () => {
+      const { agent } = createAgent();
+      stubNewSessionResponse();
+      mockCollect.mockResolvedValue({ systemPromptAppend: "_ADDON_TAIL" });
+
+      await agent.newSession({
+        cwd: process.cwd(),
+        _meta: {
+          systemPrompt: "BASE",
+          addOns: { anything: {} },
+        },
+      } as never);
+
+      expect(mockCodexConnection.newSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({
+            systemPrompt: "BASE_ADDON_TAIL",
+          }),
+        }),
+      );
+    });
+
+    it("creates _meta.systemPrompt from scratch when none was supplied", async () => {
+      const { agent } = createAgent();
+      stubNewSessionResponse();
+      mockCollect.mockResolvedValue({ systemPromptAppend: "FRESH" });
+
+      await agent.newSession({
+        cwd: process.cwd(),
+        _meta: { addOns: {} },
+      } as never);
+
+      expect(mockCodexConnection.newSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ systemPrompt: "FRESH" }),
+        }),
+      );
+    });
+
+    it("calls the registry from loadSession and applies the contribution", async () => {
+      const { agent } = createAgent();
+      stubLoadSessionResponse();
+      mockCollect.mockResolvedValue({ systemPromptAppend: "_LOAD" });
+
+      await agent.loadSession({
+        sessionId: "s1",
+        cwd: process.cwd(),
+        _meta: { systemPrompt: "PRE", addOns: {} },
+      } as never);
+
+      expect(mockCollect).toHaveBeenCalledTimes(1);
+      expect(mockCodexConnection.loadSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ systemPrompt: "PRE_LOAD" }),
+        }),
+      );
+    });
+
+    it("calls the registry from unstable_resumeSession and applies the contribution", async () => {
+      const { agent } = createAgent();
+      stubLoadSessionResponse(); // resume forwards to loadSession internally
+      mockCollect.mockResolvedValue({ systemPromptAppend: "_RESUME" });
+
+      await agent.unstable_resumeSession({
+        sessionId: "s1",
+        cwd: process.cwd(),
+        mcpServers: [],
+        _meta: { systemPrompt: "PRE", addOns: {} },
+      } as never);
+
+      expect(mockCollect).toHaveBeenCalledTimes(1);
+      expect(mockCodexConnection.loadSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ systemPrompt: "PRE_RESUME" }),
+        }),
+      );
+    });
+
+    it("calls the registry from unstable_forkSession and applies the contribution", async () => {
+      const { agent } = createAgent();
+      stubNewSessionResponse("forked"); // fork forwards to newSession internally
+      mockCollect.mockResolvedValue({ systemPromptAppend: "_FORK" });
+
+      await agent.unstable_forkSession({
+        cwd: process.cwd(),
+        mcpServers: [],
+        _meta: { systemPrompt: "PRE", addOns: {} },
+      } as never);
+
+      expect(mockCollect).toHaveBeenCalledTimes(1);
+      expect(mockCodexConnection.newSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ systemPrompt: "PRE_FORK" }),
+        }),
+      );
+    });
+
+    it("drops env contributions on Codex since the subprocess is already spawned", async () => {
+      const { agent } = createAgent();
+      stubNewSessionResponse();
+      mockCollect.mockResolvedValue({ env: { ANTHROPIC_KEY: "leaked" } });
+
+      await agent.newSession({
+        cwd: process.cwd(),
+        _meta: { addOns: {} },
+      } as never);
+
+      const forwardedMeta = (
+        mockCodexConnection.newSession.mock.calls[0][0] as { _meta?: unknown }
+      )._meta;
+      // env never bleeds into the forwarded request.
+      expect(forwardedMeta).not.toEqual(
+        expect.objectContaining({ env: expect.anything() }),
+      );
+    });
+
+    it("passes through unchanged when the contribution is empty", async () => {
+      const { agent } = createAgent();
+      stubNewSessionResponse();
+      mockCollect.mockResolvedValue({});
+
+      await agent.newSession({
+        cwd: process.cwd(),
+        _meta: { systemPrompt: "UNTOUCHED", addOns: {} },
+      } as never);
+
+      expect(mockCodexConnection.newSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ systemPrompt: "UNTOUCHED" }),
+        }),
+      );
+    });
   });
 });
