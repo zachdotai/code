@@ -1,4 +1,7 @@
-import type { GoalSpecDraft } from "@main/services/rts/schemas";
+import {
+  type GoalSpecDraft,
+  MAX_GOAL_DRAFT_TRANSCRIPT,
+} from "@main/services/rts/schemas";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearNestDraft,
@@ -79,7 +82,7 @@ describe("placeNestDialogReducer", () => {
     expect(next.goalPrompt).toBe("Improve checkout");
   });
 
-  it("toggles out of simple mode and suggests a name from the goalPrompt", () => {
+  it("switches back to goal-writing by seeding the rough goal from the prompt", () => {
     const start = placeNestDialogReducer(
       initialPlaceNestDialogState("simple"),
       {
@@ -90,7 +93,66 @@ describe("placeNestDialogReducer", () => {
     );
     const next = placeNestDialogReducer(start, { type: "toggleSimpleMode" });
     expect(next.simpleMode).toBe(false);
-    expect(next.name).toBe("Improve checkout conversion");
+    // With no draft to return to, the prompt becomes the rough goal and the
+    // hidden spec fields are cleared so nothing submittable lingers.
+    expect(next.initialGoal).toBe("Improve checkout conversion");
+    expect(next.goalPrompt).toBe("");
+    expect(next.name).toBe("");
+    expect(next.definitionOfDone).toBe("");
+  });
+
+  it("switches back to guided and keeps a proposed draft for review", () => {
+    const proposed = placeNestDialogReducer(
+      initialPlaceNestDialogState("guided"),
+      {
+        type: "draftProposed",
+        transcript: [{ role: "user", content: "hi" }],
+        draft,
+      },
+    );
+    const toSimple = placeNestDialogReducer(proposed, {
+      type: "toggleSimpleMode",
+    });
+    const backToGuided = placeNestDialogReducer(toSimple, {
+      type: "toggleSimpleMode",
+    });
+
+    expect(backToGuided.simpleMode).toBe(false);
+    expect(backToGuided.draft).toEqual(draft);
+    expect(backToGuided.goalPrompt).toBe(draft.goalPrompt);
+    expect(backToGuided.definitionOfDone).toBe(draft.definitionOfDone);
+  });
+
+  it("leaves no submittable guided spec after import -> simple -> guided", () => {
+    const imported = placeNestDialogReducer(
+      initialPlaceNestDialogState("guided"),
+      {
+        type: "specFileImported",
+        result: {
+          filePath: "/specs/spec.md",
+          fileName: "spec.md",
+          content: "# Title\n\nbody",
+          suggestedName: "Title",
+          definitionOfDone: "Ship it",
+        },
+      },
+    );
+    const toSimple = placeNestDialogReducer(imported, {
+      type: "toggleSimpleMode",
+    });
+    const backToGuided = placeNestDialogReducer(toSimple, {
+      type: "toggleSimpleMode",
+    });
+
+    // Guided again, but the imported spec is gone — no hidden name/DoD/prompt
+    // that could be created with a misleading "accepted goal draft" label.
+    expect(backToGuided.simpleMode).toBe(false);
+    expect(backToGuided.specImported).toBe(false);
+    expect(backToGuided.draft).toBeNull();
+    expect(backToGuided.goalPrompt).toBe("");
+    expect(backToGuided.definitionOfDone).toBe("");
+    expect(backToGuided.name).toBe("");
+    expect(backToGuided.initialGoal).toBe("# Title\n\nbody");
   });
 
   it("flips drafting on and stashes the attempt when a draft is requested", () => {
@@ -152,6 +214,132 @@ describe("placeNestDialogReducer", () => {
       "Proposed a spec: Improve checkout",
     );
     expect(next.transcript[1].content).not.toContain("## Summary");
+  });
+
+  it("loads an imported spec verbatim into the review fields", () => {
+    const start = placeNestDialogReducer(
+      initialPlaceNestDialogState("simple"),
+      {
+        type: "fieldChanged",
+        field: "goalPrompt",
+        value: "stale",
+      },
+    );
+    const next = placeNestDialogReducer(start, {
+      type: "specFileImported",
+      result: {
+        filePath: "/specs/argo-eks-upgrade-spec.md",
+        fileName: "argo-eks-upgrade-spec.md",
+        content: "# Argo EKS Upgrade\n\nFull spec body",
+        suggestedName: "Argo EKS Upgrade",
+        definitionOfDone: "Control plane on 1.30",
+      },
+    });
+
+    expect(next.specImported).toBe(true);
+    expect(next.simpleMode).toBe(false);
+    expect(next.goalPrompt).toBe("# Argo EKS Upgrade\n\nFull spec body");
+    expect(next.name).toBe("Argo EKS Upgrade");
+    expect(next.definitionOfDone).toBe("Control plane on 1.30");
+    expect(next.importedFileName).toBe("argo-eks-upgrade-spec.md");
+    expect(next.draft).toBeNull();
+    expect(next.transcript).toEqual([]);
+    expect(next.error).toBeNull();
+  });
+
+  it("clamps the transcript to the schema cap when appending", () => {
+    const longTranscript = Array.from(
+      { length: MAX_GOAL_DRAFT_TRANSCRIPT },
+      (_, i) => ({ role: "user" as const, content: `msg ${i}` }),
+    );
+    const next = placeNestDialogReducer(initialPlaceNestDialogState("guided"), {
+      type: "draftQuestionReceived",
+      transcript: longTranscript,
+      question: "one more?",
+    });
+
+    // Appending the assistant reply would make 33; it must stay at the cap and
+    // drop the oldest message.
+    expect(next.transcript).toHaveLength(MAX_GOAL_DRAFT_TRANSCRIPT);
+    expect(next.transcript[0].content).toBe("msg 1");
+    expect(next.transcript.at(-1)).toEqual({
+      role: "assistant",
+      kind: "question",
+      content: "one more?",
+    });
+  });
+
+  it("abandons the import when ejecting to the simple form", () => {
+    const imported = placeNestDialogReducer(
+      initialPlaceNestDialogState("guided"),
+      {
+        type: "specFileImported",
+        result: {
+          filePath: "/specs/spec.md",
+          fileName: "spec.md",
+          content: "# Title\n\nbody",
+          suggestedName: "Title",
+          definitionOfDone: null,
+        },
+      },
+    );
+    const ejected = placeNestDialogReducer(imported, {
+      type: "toggleSimpleMode",
+    });
+
+    expect(ejected.simpleMode).toBe(true);
+    expect(ejected.specImported).toBe(false);
+    expect(ejected.importedFileName).toBeNull();
+    // The spec body carries over as the freeform prompt.
+    expect(ejected.goalPrompt).toBe("# Title\n\nbody");
+  });
+
+  it("keeps an operator-typed name when importing a spec", () => {
+    const named = placeNestDialogReducer(
+      initialPlaceNestDialogState("guided"),
+      {
+        type: "fieldChanged",
+        field: "name",
+        value: "My nest",
+      },
+    );
+    const next = placeNestDialogReducer(named, {
+      type: "specFileImported",
+      result: {
+        filePath: "/specs/spec.md",
+        fileName: "spec.md",
+        content: "# Title\n\nbody",
+        suggestedName: "Title",
+        definitionOfDone: null,
+      },
+    });
+
+    expect(next.name).toBe("My nest");
+    // No DoD parsed from the file leaves the existing value (empty) for review.
+    expect(next.definitionOfDone).toBe("");
+  });
+
+  it("round-trips an imported spec through persistence", () => {
+    localStorage.clear();
+    const imported = placeNestDialogReducer(
+      initialPlaceNestDialogState("guided"),
+      {
+        type: "specFileImported",
+        result: {
+          filePath: "/specs/spec.md",
+          fileName: "spec.md",
+          content: "# Title\n\n".concat("x".repeat(20_000)),
+          suggestedName: "Title",
+          definitionOfDone: "done",
+        },
+      },
+    );
+
+    saveNestDraft(imported);
+    const restored = restoreNestDraft();
+    expect(restored?.specImported).toBe(true);
+    expect(restored?.importedFileName).toBe("spec.md");
+    expect(restored?.goalPrompt).toBe(imported.goalPrompt);
   });
 
   it("records draft failure and lets the user retry", () => {

@@ -76,6 +76,7 @@ import { NestChatService } from "../services/rts/nest-chat-service";
 import { NestService } from "../services/rts/nest-service";
 import { PrGraphService } from "../services/rts/pr-graph-service";
 import { SignalIngestionService } from "../services/rts/signal-ingestion-service";
+import { SpecImportService } from "../services/rts/spec-import-service";
 import { UsageAttributionService } from "../services/rts/usage-attribution-service";
 import { settingsStore } from "../services/settingsStore";
 import { ShellService } from "../services/shell/service";
@@ -186,5 +187,6 @@ container.bind(MAIN_TOKENS.HedgehogTickService).to(HedgehogTickService);
 container.bind(MAIN_TOKENS.FeedbackRoutingService).to(FeedbackRoutingService);
 container.bind(MAIN_TOKENS.SignalIngestionService).to(SignalIngestionService);
 container.bind(MAIN_TOKENS.UsageAttributionService).to(UsageAttributionService);
+container.bind(MAIN_TOKENS.SpecImportService).to(SpecImportService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

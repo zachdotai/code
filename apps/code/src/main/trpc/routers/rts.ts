@@ -32,6 +32,7 @@ import {
   hogletIngestedEventPayload,
   hogletWatchEvent,
   hogletWatchScope,
+  importedSpecFile,
   injectPromptEventPayload,
   linkPrDependencyInput,
   listFeedbackForNestInput,
@@ -74,6 +75,7 @@ import {
   SignalIngestionEvent,
   type SignalIngestionService,
 } from "../../services/rts/signal-ingestion-service";
+import type { SpecImportService } from "../../services/rts/spec-import-service";
 import { publicProcedure, router } from "../trpc";
 
 const getService = () => container.get<NestService>(MAIN_TOKENS.NestService);
@@ -81,6 +83,8 @@ const getNestChatService = () =>
   container.get<NestChatService>(MAIN_TOKENS.NestChatService);
 const getGoalSpecDraftService = () =>
   container.get<GoalSpecDraftService>(MAIN_TOKENS.GoalSpecDraftService);
+const getSpecImportService = () =>
+  container.get<SpecImportService>(MAIN_TOKENS.SpecImportService);
 const getHogletService = () =>
   container.get<HogletService>(MAIN_TOKENS.HogletService);
 const getHedgehogTickService = () =>
@@ -111,6 +115,12 @@ export const rtsRouter = router({
       .input(goalDraftRespondInput)
       .output(goalDraftResponse)
       .mutation(({ input }) => getGoalSpecDraftService().respond(input)),
+
+    // Opens a native picker so the operator can seed a nest from a spec file
+    // on their workstation. Returns null when the picker is dismissed.
+    importSpecFile: publicProcedure
+      .output(importedSpecFile.nullable())
+      .mutation(() => getSpecImportService().importSpecFile()),
   }),
   nests: router({
     list: publicProcedure

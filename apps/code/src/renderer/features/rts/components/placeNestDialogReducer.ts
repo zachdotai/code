@@ -3,10 +3,26 @@ import {
   type GoalSpecDraft,
   goalDraftTranscriptMessage,
   goalSpecDraft,
+  type ImportedSpecFile,
+  MAX_GOAL_DRAFT_TRANSCRIPT,
+  MAX_SPEC_FILE_BYTES,
 } from "@main/services/rts/schemas";
 import { z } from "zod";
 
 export type NestCreationMode = "guided" | "simple";
+
+/**
+ * Trims a transcript to the cap the draft/create endpoints accept. The dialog
+ * accumulates the full conversation, so we clamp before sending and on every
+ * append to keep storage and payloads within bounds.
+ */
+export function clampTranscript(
+  messages: GoalDraftTranscriptMessage[],
+): GoalDraftTranscriptMessage[] {
+  return messages.length > MAX_GOAL_DRAFT_TRANSCRIPT
+    ? messages.slice(-MAX_GOAL_DRAFT_TRANSCRIPT)
+    : messages;
+}
 
 interface DraftAttempt {
   transcript: GoalDraftTranscriptMessage[];
@@ -22,6 +38,10 @@ export interface PlaceNestDialogState {
   goalPrompt: string;
   definitionOfDone: string;
   simpleMode: boolean;
+  /** True once a spec file has been imported verbatim (skips the draft flow). */
+  specImported: boolean;
+  /** File name of the imported spec, for creation provenance. */
+  importedFileName: string | null;
   drafting: boolean;
   submitting: boolean;
   error: string | null;
@@ -55,6 +75,7 @@ export type PlaceNestDialogAction =
       transcript: GoalDraftTranscriptMessage[];
       draft: GoalSpecDraft;
     }
+  | { type: "specFileImported"; result: ImportedSpecFile }
   | { type: "draftFailed"; message: string }
   | { type: "submitRequested" }
   | { type: "submitFailed"; message: string };
@@ -71,6 +92,8 @@ export function initialPlaceNestDialogState(
     goalPrompt: "",
     definitionOfDone: "",
     simpleMode: mode === "simple",
+    specImported: false,
+    importedFileName: null,
     drafting: false,
     submitting: false,
     error: null,
@@ -92,27 +115,53 @@ export function placeNestDialogReducer(
           action.saved.simpleMode ? "simple" : "guided",
         ),
         ...action.saved,
+        specImported: action.saved.specImported ?? false,
+        importedFileName: action.saved.importedFileName ?? null,
       };
 
     case "fieldChanged":
       return { ...state, [action.field]: action.value };
 
     case "toggleSimpleMode": {
-      const goingToSimple = !state.simpleMode;
-      const fallbackGoal = state.goalPrompt.trim();
-      let name = state.name;
-      let goalPrompt = state.goalPrompt;
-      if (goingToSimple) {
+      if (!state.simpleMode) {
+        // Guided/import -> simple. The body carries over as a freeform prompt,
+        // but it's no longer an import: drop the provenance so it can't be
+        // created as "imported" without a DoD.
+        const fallbackGoal = state.goalPrompt.trim();
         const seed = fallbackGoal || state.initialGoal.trim();
-        if (!fallbackGoal && seed) goalPrompt = seed;
-      } else if (!state.name.trim() && fallbackGoal) {
-        name = suggestName(fallbackGoal);
+        return {
+          ...state,
+          simpleMode: true,
+          goalPrompt: fallbackGoal ? state.goalPrompt : seed,
+          specImported: false,
+          importedFileName: null,
+          error: null,
+          lastDraftAttempt: null,
+        };
       }
+
+      // Simple -> guided ("switch back to goal-writing flow"). If a proposed
+      // draft is still around, return to reviewing it unchanged.
+      if (state.draft) {
+        return {
+          ...state,
+          simpleMode: false,
+          error: null,
+          lastDraftAttempt: null,
+        };
+      }
+
+      // No draft to return to: restart drafting with the current text as the
+      // rough goal. This avoids leaving a populated-but-hidden guided spec
+      // (name/prompt/DoD with no draft) that could be created with misleading
+      // "accepted goal draft" provenance.
       return {
         ...state,
-        simpleMode: goingToSimple,
-        name,
-        goalPrompt,
+        simpleMode: false,
+        initialGoal: state.goalPrompt.trim() || state.initialGoal,
+        name: "",
+        goalPrompt: "",
+        definitionOfDone: "",
         error: null,
         lastDraftAttempt: null,
       };
@@ -135,10 +184,10 @@ export function placeNestDialogReducer(
         drafting: false,
         answer: "",
         lastDraftAttempt: null,
-        transcript: [
+        transcript: clampTranscript([
           ...action.transcript,
           { role: "assistant", kind: "question", content: action.question },
-        ],
+        ]),
       };
 
     case "draftProposed":
@@ -151,15 +200,33 @@ export function placeNestDialogReducer(
         name: action.draft.name,
         goalPrompt: action.draft.goalPrompt,
         definitionOfDone: action.draft.definitionOfDone,
-        transcript: [
+        transcript: clampTranscript([
           ...action.transcript,
           {
             role: "assistant",
             kind: "spec_proposal",
             content: formatDraftForTranscript(action.draft),
           },
-        ],
+        ]),
       };
+
+    case "specFileImported": {
+      const { result } = action;
+      return {
+        ...state,
+        simpleMode: false,
+        specImported: true,
+        importedFileName: result.fileName,
+        drafting: false,
+        error: null,
+        lastDraftAttempt: null,
+        draft: null,
+        transcript: [],
+        name: state.name.trim() || result.suggestedName,
+        goalPrompt: result.content,
+        definitionOfDone: result.definitionOfDone ?? state.definitionOfDone,
+      };
+    }
 
     case "draftFailed":
       return { ...state, drafting: false, error: action.message };
@@ -198,6 +265,18 @@ export function buildSimpleTranscript(input: {
   ];
 }
 
+/** Records import provenance so the created nest's audit trail is honest. */
+export function buildImportedTranscript(input: {
+  fileName: string | null;
+}): GoalDraftTranscriptMessage[] {
+  return [
+    {
+      role: "user",
+      content: `Imported spec file: ${input.fileName ?? "a local spec file"}`,
+    },
+  ];
+}
+
 const DRAFT_STORAGE_KEY = "rts-nest-draft";
 
 /**
@@ -208,12 +287,19 @@ const DRAFT_STORAGE_KEY = "rts-nest-draft";
 const persistedNestDraftSchema = z.object({
   initialGoal: z.string().max(8000),
   answer: z.string().max(8000),
-  transcript: z.array(goalDraftTranscriptMessage).max(32),
+  transcript: z
+    .array(goalDraftTranscriptMessage)
+    .max(MAX_GOAL_DRAFT_TRANSCRIPT),
   draft: goalSpecDraft.nullable(),
   name: z.string().max(240),
-  goalPrompt: z.string().max(8000),
-  definitionOfDone: z.string().max(8000),
+  // Imported spec files become the goalPrompt verbatim, and the definition of
+  // done can be a full section parsed out of one, so both must accept up to
+  // the import size cap — otherwise a file that imports fine fails to restore.
+  goalPrompt: z.string().max(MAX_SPEC_FILE_BYTES),
+  definitionOfDone: z.string().max(MAX_SPEC_FILE_BYTES),
   simpleMode: z.boolean(),
+  specImported: z.boolean().optional(),
+  importedFileName: z.string().max(1024).nullish(),
 });
 
 export interface PersistedNestDraft {
@@ -225,6 +311,8 @@ export interface PersistedNestDraft {
   goalPrompt: string;
   definitionOfDone: string;
   simpleMode: boolean;
+  specImported?: boolean;
+  importedFileName?: string | null;
 }
 
 export function saveNestDraft(state: PlaceNestDialogState): void {
@@ -237,6 +325,8 @@ export function saveNestDraft(state: PlaceNestDialogState): void {
     goalPrompt: state.goalPrompt,
     definitionOfDone: state.definitionOfDone,
     simpleMode: state.simpleMode,
+    specImported: state.specImported,
+    importedFileName: state.importedFileName,
   };
   localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(persisted));
 }

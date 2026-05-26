@@ -158,12 +158,41 @@ export const goalDraftMapContext = z.object({
 });
 export type GoalDraftMapContext = z.infer<typeof goalDraftMapContext>;
 
+/**
+ * Upper bound on transcript length accepted by the draft/create endpoints and
+ * enforced renderer-side (the dialog clamps to this before sending and storing,
+ * see placeNestDialogReducer). The drafting service only feeds the model the
+ * last 12 messages via slice(-12); this bound is purely defensive, so the
+ * renderer must clamp to exactly this value to avoid validation rejections.
+ */
+export const MAX_GOAL_DRAFT_TRANSCRIPT = 32;
+
+/**
+ * Upper bound on an imported spec file. Enforced as bytes in SpecImportService
+ * and reused (as a char ceiling — UTF-8 chars never outnumber bytes) by the
+ * dialog's draft-persistence schema, so a file that imports successfully also
+ * round-trips through localStorage.
+ */
+export const MAX_SPEC_FILE_BYTES = 512 * 1024;
+
 export const goalDraftRespondInput = z.object({
-  transcript: z.array(goalDraftTranscriptMessage).min(1).max(12),
+  transcript: z
+    .array(goalDraftTranscriptMessage)
+    .min(1)
+    .max(MAX_GOAL_DRAFT_TRANSCRIPT),
   currentDraft: goalSpecDraft.optional(),
   mapContext: goalDraftMapContext.optional(),
 });
 export type GoalDraftRespondInput = z.infer<typeof goalDraftRespondInput>;
+
+export const importedSpecFile = z.object({
+  filePath: z.string().min(1),
+  fileName: z.string().min(1),
+  content: z.string().min(1),
+  suggestedName: z.string().min(1).max(120),
+  definitionOfDone: z.string().min(1).nullable(),
+});
+export type ImportedSpecFile = z.infer<typeof importedSpecFile>;
 
 export const goalDraftResponse = z.discriminatedUnion("kind", [
   z.object({
@@ -183,8 +212,11 @@ export const createNestInput = z.object({
   definitionOfDone: z.string().min(1).nullable().optional(),
   mapX: z.number().int(),
   mapY: z.number().int(),
-  creationMode: z.enum(["guided", "simple"]).optional(),
-  creationTranscript: z.array(goalDraftTranscriptMessage).max(16).optional(),
+  creationMode: z.enum(["guided", "simple", "imported"]).optional(),
+  creationTranscript: z
+    .array(goalDraftTranscriptMessage)
+    .max(MAX_GOAL_DRAFT_TRANSCRIPT)
+    .optional(),
   creationBootstrap: goalSpecBootstrapContext.optional(),
 });
 export type CreateNestInput = z.infer<typeof createNestInput>;

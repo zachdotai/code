@@ -254,13 +254,16 @@ function buildFallbackTranscript(
   input: CreateNestInput,
 ): GoalDraftTranscriptMessage[] {
   const mode = input.creationMode ?? "guided";
+  const lead =
+    mode === "simple"
+      ? "Created through simple form."
+      : mode === "imported"
+        ? "Imported from a local spec file."
+        : "Created from accepted goal draft.";
   return [
     {
       role: "user",
-      content:
-        mode === "simple"
-          ? `Created through simple form.\n\nName: ${input.name}\n\nSpec: ${input.goalPrompt}`
-          : `Created from accepted goal draft.\n\nName: ${input.name}\n\nSpec: ${input.goalPrompt}`,
+      content: `${lead}\n\nName: ${input.name}\n\nSpec: ${input.goalPrompt}`,
     },
   ];
 }

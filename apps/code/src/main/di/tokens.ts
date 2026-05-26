@@ -98,4 +98,5 @@ export const MAIN_TOKENS = Object.freeze({
   CloudTaskClient: Symbol.for("Main.CloudTaskClient"),
   SignalIngestionService: Symbol.for("Main.SignalIngestionService"),
   UsageAttributionService: Symbol.for("Main.UsageAttributionService"),
+  SpecImportService: Symbol.for("Main.SpecImportService"),
 });

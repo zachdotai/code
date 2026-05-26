@@ -20,7 +20,9 @@ import { logger } from "@utils/logger";
 import type { ReactNode } from "react";
 import { useEffect, useReducer, useRef, useState } from "react";
 import {
+  buildImportedTranscript,
   buildSimpleTranscript,
+  clampTranscript,
   clearNestDraft,
   initialPlaceNestDialogState,
   type NestCreationMode,
@@ -81,6 +83,8 @@ export function PlaceNestDialog({
     goalPrompt,
     definitionOfDone,
     simpleMode,
+    specImported,
+    importedFileName,
     drafting,
     submitting,
     error,
@@ -99,11 +103,15 @@ export function PlaceNestDialog({
 
   useEffect(() => {
     if (!open) return;
-    const hasContent = transcript.length > 0 || initialGoal.trim().length > 0;
+    const hasContent =
+      transcript.length > 0 ||
+      initialGoal.trim().length > 0 ||
+      goalPrompt.trim().length > 0 ||
+      specImported;
     if (hasContent) {
       saveNestDraft(state);
     }
-  }, [open, state, initialGoal, transcript.length]);
+  }, [open, state, initialGoal, goalPrompt, transcript.length, specImported]);
 
   const roundedMapX = Math.round(mapX);
   const roundedMapY = Math.round(mapY);
@@ -118,14 +126,17 @@ export function PlaceNestDialog({
     nextTranscript: GoalDraftTranscriptMessage[],
     currentDraft?: GoalSpecDraft,
   ) => {
+    // Clamp to the cap the endpoint accepts before sending or storing; the
+    // reducer also clamps when it appends the assistant reply.
+    const sendTranscript = clampTranscript(nextTranscript);
     dispatch({
       type: "draftRequested",
-      transcript: nextTranscript,
+      transcript: sendTranscript,
       currentDraft,
     });
     try {
       const response = await trpcClient.rts.goalDraft.respond.mutate({
-        transcript: nextTranscript,
+        transcript: sendTranscript,
         currentDraft,
         mapContext: { mapX: roundedMapX, mapY: roundedMapY },
       });
@@ -133,7 +144,7 @@ export function PlaceNestDialog({
       if (response.kind === "ask_question") {
         dispatch({
           type: "draftQuestionReceived",
-          transcript: nextTranscript,
+          transcript: sendTranscript,
           question: response.question,
         });
         return;
@@ -141,7 +152,7 @@ export function PlaceNestDialog({
 
       dispatch({
         type: "draftProposed",
-        transcript: nextTranscript,
+        transcript: sendTranscript,
         draft: response.draft,
       });
     } catch (e) {
@@ -167,6 +178,21 @@ export function PlaceNestDialog({
     void requestDraft([{ role: "user", content }]);
   };
 
+  const handleImportSpec = async () => {
+    if (drafting || submitting) return;
+    try {
+      const result = await trpcClient.rts.goalDraft.importSpecFile.mutate();
+      if (!result) return; // Picker dismissed.
+      dispatch({ type: "specFileImported", result });
+    } catch (e) {
+      log.error("Failed to import spec file", { error: e });
+      dispatch({
+        type: "draftFailed",
+        message: e instanceof Error ? e.message : "Failed to import spec file",
+      });
+    }
+  };
+
   const handleAnswer = () => {
     const content = answer.trim();
     if (!content || drafting) return;
@@ -186,6 +212,8 @@ export function PlaceNestDialog({
     dispatch({ type: "submitRequested" });
     try {
       const trimmedGoalPrompt = goalPrompt.trim();
+      // Imported specs are kept verbatim; everything else is trimmed.
+      const effectiveGoalPrompt = specImported ? goalPrompt : trimmedGoalPrompt;
       const effectiveName = simpleMode
         ? suggestName(trimmedGoalPrompt)
         : name.trim();
@@ -195,17 +223,25 @@ export function PlaceNestDialog({
           ? draft.bootstrapContext
           : undefined;
 
+      const creationMode = specImported
+        ? "imported"
+        : simpleMode
+          ? "simple"
+          : "guided";
+
       const creationTranscript = simpleMode
         ? buildSimpleTranscript({ goalPrompt: trimmedGoalPrompt })
-        : transcript;
+        : specImported
+          ? buildImportedTranscript({ fileName: importedFileName })
+          : clampTranscript(transcript);
 
       const created = await trpcClient.rts.nests.create.mutate({
         name: effectiveName,
-        goalPrompt: trimmedGoalPrompt,
+        goalPrompt: effectiveGoalPrompt,
         definitionOfDone: simpleMode ? null : definitionOfDone.trim(),
         mapX: roundedMapX,
         mapY: roundedMapY,
-        creationMode: simpleMode ? "simple" : "guided",
+        creationMode,
         creationTranscript,
         creationBootstrap,
       });
@@ -262,6 +298,8 @@ export function PlaceNestDialog({
                 definitionOfDone={definitionOfDone}
                 drafting={drafting}
                 submitting={submitting}
+                specImported={specImported}
+                onImportSpec={handleImportSpec}
                 onInitialGoalChange={(value) =>
                   dispatch({
                     type: "fieldChanged",
@@ -302,7 +340,9 @@ export function PlaceNestDialog({
             >
               {simpleMode
                 ? "Switch back to goal-writing flow"
-                : "Eject to simple form"}
+                : specImported
+                  ? "Use as a simple prompt instead"
+                  : "Eject to simple form"}
             </button>
 
             {error && (
@@ -366,6 +406,8 @@ function GoalDraftFlow({
   definitionOfDone,
   drafting,
   submitting,
+  specImported,
+  onImportSpec,
   onInitialGoalChange,
   onAnswerChange,
   onStartDraft,
@@ -383,6 +425,8 @@ function GoalDraftFlow({
   definitionOfDone: string;
   drafting: boolean;
   submitting: boolean;
+  specImported: boolean;
+  onImportSpec: () => void;
   onInitialGoalChange: (value: string) => void;
   onAnswerChange: (value: string) => void;
   onStartDraft: () => void;
@@ -393,19 +437,26 @@ function GoalDraftFlow({
 }) {
   const t = useFunSpeak();
   const disabled = drafting || submitting;
+  const showSpecFields = draft !== null || specImported;
 
   return (
     <>
-      {draft && (
+      {showSpecFields && (
         <>
-          {draft.bootstrapContext && (
+          {draft?.bootstrapContext && (
             <BootstrapContextPanel context={draft.bootstrapContext} />
+          )}
+          {specImported && (
+            <ImportedSpecNotice
+              definitionOfDoneMissing={definitionOfDone.trim().length === 0}
+            />
           )}
           <SpecFields
             name={name}
             goalPrompt={goalPrompt}
             definitionOfDone={definitionOfDone}
             disabled={submitting}
+            specLabel={specImported ? "Spec (imported)" : "Spec"}
             onNameChange={onNameChange}
             onGoalPromptChange={onGoalPromptChange}
             onDefinitionOfDoneChange={onDefinitionOfDoneChange}
@@ -413,50 +464,91 @@ function GoalDraftFlow({
         </>
       )}
 
-      {transcript.length === 0 ? (
-        <div>
-          <Text
-            as="label"
-            htmlFor="nest-initial-goal"
-            size="2"
-            mb="1"
-            weight="medium"
-            className="block"
-          >
-            Rough goal
-          </Text>
-          <TextArea
-            id="nest-initial-goal"
-            placeholder="Improve checkout conversion"
-            value={initialGoal}
-            onChange={(e) => onInitialGoalChange(e.target.value)}
-            rows={4}
-            disabled={disabled}
-            autoFocus
-          />
-          <Flex mt="2" justify="end">
-            <Button
+      {!specImported &&
+        (transcript.length === 0 ? (
+          <div>
+            <Text
+              as="label"
+              htmlFor="nest-initial-goal"
               size="2"
-              variant="soft"
-              onClick={onStartDraft}
-              disabled={!initialGoal.trim() || disabled}
-              loading={drafting}
+              mb="1"
+              weight="medium"
+              className="block"
             >
-              {t("Start spec draft")}
-            </Button>
-          </Flex>
-        </div>
-      ) : (
-        <ConversationPanel
-          transcript={transcript}
-          answer={answer}
-          disabled={disabled}
-          drafting={drafting}
-          onAnswerChange={onAnswerChange}
-          onAnswer={onAnswer}
-        />
-      )}
+              Rough goal
+            </Text>
+            <TextArea
+              id="nest-initial-goal"
+              placeholder="Improve checkout conversion"
+              value={initialGoal}
+              onChange={(e) => onInitialGoalChange(e.target.value)}
+              rows={4}
+              disabled={disabled}
+              autoFocus
+            />
+            <Flex mt="2" justify="between" align="center">
+              <Button
+                size="2"
+                variant="ghost"
+                color="gray"
+                onClick={onImportSpec}
+                disabled={disabled}
+              >
+                {t("Import spec file…")}
+              </Button>
+              <Button
+                size="2"
+                variant="soft"
+                onClick={onStartDraft}
+                disabled={!initialGoal.trim() || disabled}
+                loading={drafting}
+              >
+                {t("Start spec draft")}
+              </Button>
+            </Flex>
+          </div>
+        ) : (
+          <ConversationPanel
+            transcript={transcript}
+            answer={answer}
+            disabled={disabled}
+            drafting={drafting}
+            onAnswerChange={onAnswerChange}
+            onAnswer={onAnswer}
+          />
+        ))}
     </>
+  );
+}
+
+function ImportedSpecNotice({
+  definitionOfDoneMissing,
+}: {
+  definitionOfDoneMissing: boolean;
+}) {
+  if (definitionOfDoneMissing) {
+    return (
+      <Callout.Root color="amber" size="1">
+        <Callout.Text>
+          Loaded your spec verbatim, but we couldn't find a definition of done
+          in it (we look for a "Definition of Done" or "Success Criteria"
+          heading). Add one in the field below before creating the nest.
+        </Callout.Text>
+      </Callout.Root>
+    );
+  }
+
+  return (
+    <div className="rounded-(--radius-2) border border-(--accent-5) bg-(--accent-2) px-3 py-2 text-(--accent-12)">
+      <Text size="1" weight="medium" className="block">
+        Imported spec
+      </Text>
+      <Text size="2" className="block">
+        Loaded verbatim from a file, and pulled the definition of done out of
+        it. Review the name, spec, and definition of done below, then create the
+        nest.
+      </Text>
+    </div>
   );
 }
 
@@ -603,6 +695,7 @@ function SpecFields({
   goalPrompt,
   definitionOfDone,
   disabled,
+  specLabel = "Spec",
   onNameChange,
   onGoalPromptChange,
   onDefinitionOfDoneChange,
@@ -611,6 +704,7 @@ function SpecFields({
   goalPrompt: string;
   definitionOfDone: string;
   disabled: boolean;
+  specLabel?: string;
   onNameChange: (value: string) => void;
   onGoalPromptChange: (value: string) => void;
   onDefinitionOfDoneChange: (value: string) => void;
@@ -627,7 +721,7 @@ function SpecFields({
         />
       </LabeledField>
 
-      <LabeledField label="Spec" htmlFor="nest-goal">
+      <LabeledField label={specLabel} htmlFor="nest-goal">
         <TextArea
           id="nest-goal"
           placeholder="Review or edit the generated feature spec."
