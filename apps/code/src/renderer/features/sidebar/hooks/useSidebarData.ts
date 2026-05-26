@@ -53,6 +53,7 @@ export interface SidebarData {
   isCommandCenterActive: boolean;
   isSkillsActive: boolean;
   isMcpServersActive: boolean;
+  activeExtensionSidebarId: string | null;
   isLoading: boolean;
   activeTaskId: string | null;
   pinnedTasks: TaskData[];
@@ -74,8 +75,10 @@ interface ViewState {
     | "command-center"
     | "skills"
     | "mcp-servers"
+    | "extension-view"
     | "setup";
   data?: Task;
+  extensionSidebarId?: string;
 }
 
 interface UseSidebarDataProps {
@@ -224,6 +227,10 @@ export function useSidebarData({
   const isCommandCenterActive = activeView.type === "command-center";
   const isSkillsActive = activeView.type === "skills";
   const isMcpServersActive = activeView.type === "mcp-servers";
+  const activeExtensionSidebarId =
+    activeView.type === "extension-view"
+      ? (activeView.extensionSidebarId ?? null)
+      : null;
 
   const activeTaskId =
     activeView.type === "task-detail" && activeView.data
@@ -354,6 +361,7 @@ export function useSidebarData({
     isCommandCenterActive,
     isSkillsActive,
     isMcpServersActive,
+    activeExtensionSidebarId,
     isLoading,
     activeTaskId,
     pinnedTasks,

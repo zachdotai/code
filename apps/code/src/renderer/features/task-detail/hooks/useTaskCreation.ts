@@ -1,5 +1,6 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { buildCloudTaskDescription } from "@features/editor/utils/cloud-prompt";
+import { useExtensionsStore } from "@features/extensions/stores/extensionsStore";
 import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
 import type { EditorHandle } from "@features/message-editor/types";
 import {
@@ -158,6 +159,34 @@ async function trackTaskCreated(
   }
 }
 
+async function tryExecuteInitialExtensionCommand(
+  text: string,
+  repoPath: string | null,
+): Promise<boolean> {
+  const match = text.match(/^\/(\S+)(?:\s+(.*))?$/);
+  if (!match) return false;
+
+  const extensionCommand = useExtensionsStore
+    .getState()
+    .commands.some((command) => command.name === match[1]);
+  if (!extensionCommand) return false;
+
+  try {
+    const result = await trpcClient.extensions.executeCommand.mutate({
+      name: match[1],
+      args: match[2],
+      repoPath,
+    });
+    if (result.message) toast.info(result.message);
+    return result.handled;
+  } catch (error) {
+    toast.error("Extension command failed", {
+      description: error instanceof Error ? error.message : String(error),
+    });
+    return true;
+  }
+}
+
 function getErrorTitle(failedStep: string): string {
   const titles: Record<string, string> = {
     repo_detection: "Failed to detect repository",
@@ -218,6 +247,18 @@ export function useTaskCreation({
 
       const content = contentOverride ?? editor.getContent();
       const plainPromptText = contentToPlainText(content).trim();
+      const extensionCommandHandled = await tryExecuteInitialExtensionCommand(
+        plainPromptText,
+        workspaceMode === "cloud"
+          ? (selectedRepository ?? null)
+          : selectedDirectory,
+      );
+      if (extensionCommandHandled) {
+        if (!contentOverride) editor.clear();
+        setIsCreatingTask(false);
+        return true;
+      }
+
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
         ? (globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`)

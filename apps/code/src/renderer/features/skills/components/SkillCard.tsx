@@ -1,4 +1,10 @@
-import { Folder, Package, Storefront, User } from "@phosphor-icons/react";
+import {
+  Folder,
+  Package,
+  PuzzlePiece,
+  Storefront,
+  User,
+} from "@phosphor-icons/react";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import type { SkillInfo, SkillSource } from "@shared/types/skills";
 
@@ -17,6 +23,11 @@ export const SOURCE_CONFIG: Record<
     icon: Storefront,
     label: "Marketplace",
     sectionTitle: "Marketplace",
+  },
+  extension: {
+    icon: PuzzlePiece,
+    label: "Extension",
+    sectionTitle: "Extensions",
   },
 };
 

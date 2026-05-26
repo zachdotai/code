@@ -21,7 +21,9 @@ export function SkillDetailPanel({ skill, onClose }: SkillDetailPanelProps) {
   const trpcReact = useTRPC();
   const config = SOURCE_CONFIG[skill.source];
 
-  const skillMdPath = `${skill.path}/SKILL.md`;
+  const skillMdPath = skill.path.match(/\.mdx?$/i)
+    ? skill.path
+    : `${skill.path}/SKILL.md`;
   const { data: fileContent, isLoading } = useQuery(
     trpcReact.fs.readAbsoluteFile.queryOptions(
       { filePath: skillMdPath },

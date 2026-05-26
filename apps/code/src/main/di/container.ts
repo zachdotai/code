@@ -37,6 +37,7 @@ import { ContextMenuService } from "../services/context-menu/service";
 import { DeepLinkService } from "../services/deep-link/service";
 import { EnrichmentService } from "../services/enrichment/service";
 import { EnvironmentService } from "../services/environment/service";
+import { ExtensionService } from "../services/extensions/service";
 import { ExternalAppsService } from "../services/external-apps/service";
 import { FileWatcherService } from "../services/file-watcher/service";
 import { FocusService } from "../services/focus/service";
@@ -119,6 +120,7 @@ container.bind(MAIN_TOKENS.ContextMenuService).to(ContextMenuService);
 container.bind(MAIN_TOKENS.DeepLinkService).to(DeepLinkService);
 container.bind(MAIN_TOKENS.EnrichmentService).to(EnrichmentService);
 container.bind(MAIN_TOKENS.EnvironmentService).to(EnvironmentService);
+container.bind(MAIN_TOKENS.ExtensionService).to(ExtensionService);
 container.bind(MAIN_TOKENS.ProvisioningService).to(ProvisioningService);
 
 container.bind(MAIN_TOKENS.ExternalAppsService).to(ExternalAppsService);

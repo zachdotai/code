@@ -1,5 +1,6 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
+import { useExtensionsStore } from "@features/extensions/stores/extensionsStore";
 import { useInboxReports } from "@features/inbox/hooks/useInboxReports";
 import { isReportUpForReview } from "@features/inbox/utils/filterReports";
 import {
@@ -14,6 +15,12 @@ import {
 import { useTasks, useUpdateTask } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
+import {
+  Browser,
+  PuzzlePiece,
+  Sparkle,
+  TerminalWindow,
+} from "@phosphor-icons/react";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import type { Schemas } from "@renderer/api/generated";
@@ -39,6 +46,19 @@ import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
 
+function getExtensionIcon(icon: string | undefined) {
+  switch (icon) {
+    case "browser":
+      return <Browser size={14} />;
+    case "sparkle":
+      return <Sparkle size={14} />;
+    case "terminal":
+      return <TerminalWindow size={14} />;
+    default:
+      return <PuzzlePiece size={14} />;
+  }
+}
+
 function SidebarMenuComponent() {
   const {
     view,
@@ -48,6 +68,7 @@ function SidebarMenuComponent() {
     navigateToCommandCenter,
     navigateToSkills,
     navigateToMcpServers,
+    navigateToExtensionView,
   } = useNavigationStore();
 
   // Must mirror useSidebarData's filters so taskMap covers every rendered
@@ -83,6 +104,8 @@ function SidebarMenuComponent() {
   for (const task of allTasks) {
     taskMap.set(task.id, task);
   }
+
+  const extensionSidebarItems = useExtensionsStore((s) => s.sidebar);
 
   const commandCenterCells = useCommandCenterStore((s) => s.cells);
   const assignTaskToCommandCenter = useCommandCenterStore((s) => s.assignTask);
@@ -128,6 +151,10 @@ function SidebarMenuComponent() {
 
   const handleMcpServersClick = () => {
     navigateToMcpServers();
+  };
+
+  const handleExtensionClick = (sidebarItemId: string) => {
+    navigateToExtensionView(sidebarItemId);
   };
 
   const openCommandMenu = useCommandMenuStore((s) => s.open);
@@ -431,6 +458,23 @@ function SidebarMenuComponent() {
               activeCount={commandCenterActiveCount}
             />
           </Box>
+
+          {extensionSidebarItems.length > 0 && (
+            <>
+              <Separator className="mx-2 my-2" />
+              {extensionSidebarItems.map((item) => (
+                <Box key={item.id}>
+                  <SidebarItem
+                    depth={0}
+                    icon={getExtensionIcon(item.icon)}
+                    label={item.title}
+                    isActive={sidebarData.activeExtensionSidebarId === item.id}
+                    onClick={() => handleExtensionClick(item.id)}
+                  />
+                </Box>
+              ))}
+            </>
+          )}
 
           <Separator className="mx-2 my-2" />
 

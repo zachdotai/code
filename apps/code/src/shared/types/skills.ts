@@ -1,4 +1,9 @@
-export type SkillSource = "bundled" | "user" | "repo" | "marketplace";
+export type SkillSource =
+  | "bundled"
+  | "user"
+  | "repo"
+  | "marketplace"
+  | "extension";
 
 export interface SkillInfo {
   name: string;

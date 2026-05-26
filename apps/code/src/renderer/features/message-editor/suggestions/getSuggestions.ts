@@ -1,4 +1,5 @@
 import type { AvailableCommand } from "@agentclientprotocol/sdk";
+import { useExtensionsStore } from "@features/extensions/stores/extensionsStore";
 import { CODE_COMMANDS } from "@features/message-editor/commands";
 import { getAvailableCommandsForTask } from "@features/sessions/stores/sessionStore";
 import {
@@ -21,7 +22,11 @@ import {
   githubPullRequestToMentionChip,
 } from "../utils/githubIssueChip";
 
-const COMMAND_FUSE_OPTIONS: IFuseOptions<AvailableCommand> = {
+interface CommandWithSource extends AvailableCommand {
+  sourceLabel: string;
+}
+
+const COMMAND_FUSE_OPTIONS: IFuseOptions<CommandWithSource> = {
   keys: [
     { name: "name", weight: 0.7 },
     { name: "description", weight: 0.3 },
@@ -31,9 +36,9 @@ const COMMAND_FUSE_OPTIONS: IFuseOptions<AvailableCommand> = {
 };
 
 function searchCommands(
-  commands: AvailableCommand[],
+  commands: CommandWithSource[],
   query: string,
-): AvailableCommand[] {
+): CommandWithSource[] {
   if (!query.trim()) {
     return commands;
   }
@@ -162,14 +167,41 @@ export function getCommandSuggestions(
   const agentCommands = taskId
     ? getAvailableCommandsForTask(taskId)
     : (store.commands[sessionId] ?? []);
-  const merged = [...CODE_COMMANDS, ...agentCommands];
-  const commands = [...new Map(merged.map((cmd) => [cmd.name, cmd])).values()];
+  const { commands: extensionCommands, prompts: extensionPrompts } =
+    useExtensionsStore.getState();
+  const merged: CommandWithSource[] = [
+    ...extensionCommands.map((cmd) => ({
+      ...cmd,
+      sourceLabel: "Extension command",
+    })),
+    ...CODE_COMMANDS.map((cmd) => ({
+      ...cmd,
+      sourceLabel: "Built-in command",
+    })),
+    ...extensionPrompts.map((cmd) => ({
+      ...cmd,
+      sourceLabel: "Prompt template",
+    })),
+    ...agentCommands.map((cmd) => ({
+      ...cmd,
+      sourceLabel: "Skill or session command",
+    })),
+  ];
+  const commands: CommandWithSource[] = [];
+  const seenNames = new Set<string>();
+  for (const command of merged) {
+    if (seenNames.has(command.name)) continue;
+    seenNames.add(command.name);
+    commands.push(command);
+  }
   const filtered = searchCommands(commands, query);
 
   return filtered.map((cmd) => ({
     id: cmd.name,
     label: cmd.name,
-    description: cmd.description,
+    description: cmd.description
+      ? `${cmd.sourceLabel} · ${cmd.description}`
+      : cmd.sourceLabel,
     command: cmd,
   }));
 }

@@ -21,7 +21,8 @@ type ViewType =
   | "archived"
   | "command-center"
   | "skills"
-  | "mcp-servers";
+  | "mcp-servers"
+  | "extension-view";
 
 export interface TaskInputReportAssociation {
   reportId: string;
@@ -49,6 +50,7 @@ interface ViewState {
   initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
   pendingTaskKey?: string;
+  extensionSidebarId?: string;
 }
 
 interface NavigationStore {
@@ -69,6 +71,7 @@ interface NavigationStore {
   navigateToCommandCenter: () => void;
   navigateToSkills: () => void;
   navigateToMcpServers: () => void;
+  navigateToExtensionView: (extensionSidebarId: string) => void;
   goBack: () => void;
   goForward: () => void;
   canGoBack: () => boolean;
@@ -107,6 +110,9 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
   }
   if (view1.type === "mcp-servers" && view2.type === "mcp-servers") {
     return true;
+  }
+  if (view1.type === "extension-view" && view2.type === "extension-view") {
+    return view1.extensionSidebarId === view2.extensionSidebarId;
   }
   return false;
 };
@@ -302,6 +308,10 @@ export const useNavigationStore = create<NavigationStore>()(
           navigate({ type: "mcp-servers" });
         },
 
+        navigateToExtensionView: (extensionSidebarId) => {
+          navigate({ type: "extension-view", extensionSidebarId });
+        },
+
         goBack: () => {
           const { history, historyIndex } = get();
           if (historyIndex > 0) {
@@ -358,6 +368,7 @@ export const useNavigationStore = create<NavigationStore>()(
                 type: state.view.type,
                 taskId: state.view.taskId,
                 folderId: state.view.folderId,
+                extensionSidebarId: state.view.extensionSidebarId,
               },
       }),
     },

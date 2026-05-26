@@ -7,6 +7,7 @@ import {
   readSkillMetadataFromDir,
 } from "../../services/agent/discover-plugins";
 import { listSkillsOutput } from "../../services/agent/skill-schemas";
+import type { ExtensionService } from "../../services/extensions/service";
 import type { FoldersService } from "../../services/folders/service";
 import type { PosthogPluginService } from "../../services/posthog-plugin/service";
 import { publicProcedure, router } from "../trpc";
@@ -16,6 +17,9 @@ const getPluginService = () =>
 
 const getFoldersService = () =>
   container.get<FoldersService>(MAIN_TOKENS.FoldersService);
+
+const getExtensionService = () =>
+  container.get<ExtensionService>(MAIN_TOKENS.ExtensionService);
 
 export const skillsRouter = router({
   list: publicProcedure.output(listSkillsOutput).query(async () => {
@@ -39,6 +43,7 @@ export const skillsRouter = router({
       ...marketplacePaths.map((p) =>
         readSkillMetadataFromDir(path.join(p, "skills"), "marketplace"),
       ),
+      getExtensionService().listSkills(),
     ]);
 
     return results.flat();

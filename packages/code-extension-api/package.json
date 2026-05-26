@@ -1,0 +1,26 @@
+{
+  "name": "@posthog/code-extension-api",
+  "version": "0.0.0",
+  "description": "Public API types and helpers for PostHog Code extensions",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "node ../../scripts/rimraf.mjs dist .turbo"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0"
+  },
+  "files": [
+    "dist/**/*",
+    "src/**/*"
+  ]
+}

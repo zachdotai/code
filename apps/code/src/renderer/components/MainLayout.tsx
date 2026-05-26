@@ -7,6 +7,7 @@ import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksVie
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
+import { ExtensionView } from "@features/extensions/components/ExtensionView";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
@@ -176,6 +177,10 @@ export function MainLayout() {
           {view.type === "skills" && <SkillsView />}
 
           {view.type === "mcp-servers" && <McpServersView />}
+
+          {view.type === "extension-view" && view.extensionSidebarId && (
+            <ExtensionView sidebarItemId={view.extensionSidebarId} />
+          )}
         </Box>
       </Flex>
 

@@ -526,12 +526,19 @@ export function TaskInput({
   // Populate command list for @ file mentions + / skills on mount
   useEffect(() => {
     let cancelled = false;
-    trpcClient.skills.list.query().then((skills) => {
+    Promise.all([
+      trpcClient.extensions.listCommands.query(),
+      trpcClient.extensions.listPrompts.query(),
+      trpcClient.skills.list.query(),
+    ]).then(([extensionCommands, extensionPrompts, skills]) => {
       if (cancelled) return;
-      useDraftStore.getState().actions.setCommands(
-        promptSessionId,
-        skills.map((s) => ({ name: s.name, description: s.description })),
-      );
+      useDraftStore
+        .getState()
+        .actions.setCommands(promptSessionId, [
+          ...extensionCommands,
+          ...extensionPrompts,
+          ...skills.map((s) => ({ name: s.name, description: s.description })),
+        ]);
     });
     return () => {
       cancelled = true;
@@ -563,7 +570,7 @@ export function TaskInput({
   );
   const hints = [
     "@ to add files",
-    "/ for skills",
+    "/ for commands and skills",
     hasHistory ? "\u2191\u2193 for history" : "",
   ]
     .filter(Boolean)

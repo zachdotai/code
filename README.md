@@ -90,6 +90,7 @@ posthog-code/
 | [docs/UPDATES.md](./docs/UPDATES.md) | Release versioning and git tagging |
 | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | Common issues and fixes |
 | [docs/DEEP-LINKS.md](./docs/DEEP-LINKS.md) | `posthog-code://` deep link schemes and parameters |
+| [docs/extensions.md](./docs/extensions.md) | Authoring, packaging, installing, and using PostHog Code extensions |
 
 ## Contributing
 

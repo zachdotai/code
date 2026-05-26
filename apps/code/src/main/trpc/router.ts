@@ -10,6 +10,7 @@ import { deepLinkRouter } from "./routers/deep-link";
 import { encryptionRouter } from "./routers/encryption";
 import { enrichmentRouter } from "./routers/enrichment";
 import { environmentRouter } from "./routers/environment";
+import { extensionsRouter } from "./routers/extensions";
 import { externalAppsRouter } from "./routers/external-apps";
 import { fileWatcherRouter } from "./routers/file-watcher";
 import { focusRouter } from "./routers/focus";
@@ -54,6 +55,7 @@ export const trpcRouter = router({
   environment: environmentRouter,
   encryption: encryptionRouter,
   externalApps: externalAppsRouter,
+  extensions: extensionsRouter,
   fileWatcher: fileWatcherRouter,
   focus: focusRouter,
   folders: foldersRouter,

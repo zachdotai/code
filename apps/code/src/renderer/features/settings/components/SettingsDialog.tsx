@@ -23,6 +23,7 @@ import {
   GithubLogo,
   Keyboard,
   Palette,
+  Plug,
   SignOut,
   SlackLogo,
   Terminal,
@@ -36,6 +37,7 @@ import { type ReactNode, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AdvancedSettings } from "./sections/AdvancedSettings";
 import { ClaudeCodeSettings } from "./sections/ClaudeCodeSettings";
+import { ExtensionsSettings } from "./sections/ExtensionsSettings";
 import { EnvironmentsSettings } from "./sections/environments/EnvironmentsSettings";
 import { GeneralSettings } from "./sections/GeneralSettings";
 import { GitHubSettings } from "./sections/GitHubSettings";
@@ -72,6 +74,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
     icon: <Palette size={16} />,
   },
   { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
+  { id: "extensions", label: "Extensions", icon: <Plug size={16} /> },
   { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
   { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
@@ -95,6 +98,7 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   "cloud-environments": "Environments",
   personalization: "Personalization",
   terminal: "Terminal",
+  extensions: "Extensions",
   "claude-code": "Claude Code",
   shortcuts: "Shortcuts",
   github: "GitHub",
@@ -114,6 +118,7 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   "cloud-environments": EnvironmentsSettings,
   personalization: PersonalizationSettings,
   terminal: TerminalSettings,
+  extensions: ExtensionsSettings,
   "claude-code": ClaudeCodeSettings,
   shortcuts: ShortcutsSettings,
   github: GitHubSettings,

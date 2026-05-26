@@ -9,6 +9,7 @@ export type SettingsCategory =
   | "cloud-environments"
   | "personalization"
   | "terminal"
+  | "extensions"
   | "claude-code"
   | "shortcuts"
   | "github"

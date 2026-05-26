@@ -145,6 +145,9 @@ function createMockDependencies() {
     posthogPluginService: {
       getPluginPath: vi.fn(() => "/mock/plugin"),
     },
+    extensionService: {
+      getAgentPluginPaths: vi.fn().mockResolvedValue([]),
+    },
     agentAuthAdapter: {
       ensureGatewayProxy: vi.fn().mockResolvedValue("http://127.0.0.1:9999"),
       configureProcessEnv: vi.fn().mockResolvedValue(undefined),
@@ -224,6 +227,7 @@ describe("AgentService", () => {
       deps.sleepService as never,
       deps.fsService as never,
       deps.posthogPluginService as never,
+      deps.extensionService as never,
       deps.agentAuthAdapter as never,
       deps.mcpAppsService as never,
       deps.powerManager as never,

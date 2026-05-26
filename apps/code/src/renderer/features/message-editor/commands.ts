@@ -1,4 +1,5 @@
 import type { AvailableCommand } from "@agentclientprotocol/sdk";
+import { useExtensionsStore } from "@features/extensions/stores/extensionsStore";
 import { useAddDirectoryDialogStore } from "@features/folder-picker/stores/addDirectoryDialogStore";
 import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS, type FeedbackType } from "@shared/types/analytics";
@@ -122,6 +123,31 @@ export async function tryExecuteCodeCommand(
 ): Promise<boolean> {
   const match = text.match(/^\/(\S+)(?:\s+(.*))?$/);
   if (!match) return false;
+
+  const extensionCommand = useExtensionsStore
+    .getState()
+    .commands.some((command) => command.name === match[1]);
+  if (extensionCommand) {
+    try {
+      const extensionResult = await trpcClient.extensions.executeCommand.mutate(
+        {
+          name: match[1],
+          args: match[2],
+          taskId: context.taskId,
+          repoPath: context.repoPath ?? null,
+        },
+      );
+      if (extensionResult.handled) {
+        if (extensionResult.message) toast.info(extensionResult.message);
+        return true;
+      }
+    } catch (error) {
+      toast.error("Extension command failed", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+      return true;
+    }
+  }
 
   const cmd = commandMap.get(match[1]);
   if (!cmd?.execute) return false;

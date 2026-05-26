@@ -51,6 +51,7 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import { isDevBuild } from "../../utils/env";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
+import type { ExtensionService } from "../extensions/service";
 import type { FsService } from "../fs/service";
 import type { McpAppsService } from "../mcp-apps/service";
 import type { PosthogPluginService } from "../posthog-plugin/service";
@@ -295,6 +296,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   private sleepService: SleepService;
   private fsService: FsService;
   private posthogPluginService: PosthogPluginService;
+  private extensionService: ExtensionService;
   private agentAuthAdapter: AgentAuthAdapter;
   private mcpAppsService: McpAppsService;
 
@@ -307,6 +309,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     fsService: FsService,
     @inject(MAIN_TOKENS.PosthogPluginService)
     posthogPluginService: PosthogPluginService,
+    @inject(MAIN_TOKENS.ExtensionService)
+    extensionService: ExtensionService,
     @inject(MAIN_TOKENS.AgentAuthAdapter)
     agentAuthAdapter: AgentAuthAdapter,
     @inject(MAIN_TOKENS.McpAppsService)
@@ -329,6 +333,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     this.sleepService = sleepService;
     this.fsService = fsService;
     this.posthogPluginService = posthogPluginService;
+    this.extensionService = extensionService;
     this.agentAuthAdapter = agentAuthAdapter;
     this.mcpAppsService = mcpAppsService;
 
@@ -728,12 +733,23 @@ When creating pull requests, add the following footer at the end of the PR descr
           error: err instanceof Error ? err.message : String(err),
         });
       }
+      let extensionPlugins: Awaited<
+        ReturnType<ExtensionService["getAgentPluginPaths"]>
+      > = [];
+      try {
+        extensionPlugins = await this.extensionService.getAgentPluginPaths();
+      } catch (err) {
+        log.warn("Failed to discover extension plugins", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       const plugins = [
         {
           type: "local" as const,
           path: this.posthogPluginService.getPluginPath(),
         },
         ...externalPlugins,
+        ...extensionPlugins,
       ];
       const claudeCodeOptions = buildClaudeCodeOptions({
         additionalDirectories,
