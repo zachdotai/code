@@ -28,6 +28,7 @@ import type { PosthogPluginService } from "./services/posthog-plugin/service";
 import type { SlackIntegrationService } from "./services/slack-integration/service";
 import type { SuspensionService } from "./services/suspension/service";
 import type { TaskLinkService } from "./services/task-link/service";
+import type { TrayService } from "./services/tray/service";
 import type { UpdatesService } from "./services/updates/service";
 import type { WorkspaceService } from "./services/workspace/service";
 import { ensureClaudeConfigDir } from "./utils/env";
@@ -169,6 +170,8 @@ async function initializeServices(): Promise<void> {
     MAIN_TOKENS.SuspensionService,
   );
   suspensionService.startInactivityChecker();
+
+  container.get<TrayService>(MAIN_TOKENS.TrayService).initialize();
 
   // Track app started event
   trackAppEvent(ANALYTICS_EVENTS.APP_STARTED);

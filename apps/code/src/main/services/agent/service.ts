@@ -426,6 +426,22 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     return false;
   }
 
+  public getRunningSessionCount(): number {
+    let count = 0;
+    for (const session of this.sessions.values()) {
+      if (session.promptPending || session.inFlightMcpToolCalls.size > 0) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private emitRunningCountChanged(): void {
+    this.emit(AgentServiceEvent.RunningCountChanged, {
+      count: this.getRunningSessionCount(),
+    });
+  }
+
   public recordActivity(taskRunId: string): void {
     if (!this.sessions.has(taskRunId)) return;
 
@@ -919,6 +935,7 @@ When creating pull requests, add the following footer at the end of the PR descr
     session.promptPending = true;
     this.recordActivity(sessionId);
     this.sleepService.acquire(sessionId);
+    this.emitRunningCountChanged();
 
     try {
       const result = await session.clientSideConnection.prompt({
@@ -934,6 +951,7 @@ When creating pull requests, add the following footer at the end of the PR descr
       session.lastActivityAt = Date.now();
       this.recordActivity(sessionId);
       this.sleepService.release(sessionId);
+      this.emitRunningCountChanged();
 
       if (!this.hasActiveSessions()) {
         this.emit(AgentServiceEvent.SessionsIdle, undefined);
@@ -1218,6 +1236,8 @@ For git operations while detached:
   private async cleanupSession(taskRunId: string): Promise<void> {
     const session = this.sessions.get(taskRunId);
     if (session) {
+      const wasRunning =
+        session.promptPending || session.inFlightMcpToolCalls.size > 0;
       this.cancelInFlightMcpToolCalls(session);
       this.sleepService.release(taskRunId);
       try {
@@ -1233,6 +1253,8 @@ For git operations while detached:
         clearTimeout(timeout.handle);
         this.idleTimeouts.delete(taskRunId);
       }
+
+      if (wasRunning) this.emitRunningCountChanged();
 
       // When no sessions remain, tear down MCP Apps connections and cached resources
       if (this.sessions.size === 0) {

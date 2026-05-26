@@ -204,7 +204,12 @@ export const AgentServiceEvent = {
   SessionIdleKilled: "session-idle-killed",
   AgentFileActivity: "agent-file-activity",
   LlmActivity: "llm-activity",
+  RunningCountChanged: "running-count-changed",
 } as const;
+
+export interface RunningCountChangedPayload {
+  count: number;
+}
 
 export interface AgentSessionEventPayload {
   taskRunId: string;
@@ -236,6 +241,7 @@ export interface AgentServiceEvents {
   [AgentServiceEvent.SessionIdleKilled]: SessionIdleKilledPayload;
   [AgentServiceEvent.AgentFileActivity]: AgentFileActivityPayload;
   [AgentServiceEvent.LlmActivity]: undefined;
+  [AgentServiceEvent.RunningCountChanged]: RunningCountChangedPayload;
 }
 
 // Permission response input for tRPC

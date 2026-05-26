@@ -21,6 +21,7 @@ export const MAIN_TOKENS = Object.freeze({
   ContextMenu: Symbol.for("Platform.ContextMenu"),
   BundledResources: Symbol.for("Platform.BundledResources"),
   ImageProcessor: Symbol.for("Platform.ImageProcessor"),
+  Tray: Symbol.for("Platform.Tray"),
 
   // Stores
   SettingsStore: Symbol.for("Main.SettingsStore"),
@@ -84,4 +85,5 @@ export const MAIN_TOKENS = Object.freeze({
   WorkspaceService: Symbol.for("Main.WorkspaceService"),
   EnrichmentService: Symbol.for("Main.EnrichmentService"),
   UsageMonitorService: Symbol.for("Main.UsageMonitorService"),
+  TrayService: Symbol.for("Main.TrayService"),
 });

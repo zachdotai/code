@@ -10,6 +10,7 @@ import { shutdownOtelTransport } from "../../utils/otel-log-transport";
 import { shutdownPostHog, trackAppEvent } from "../posthog-analytics";
 import type { ProcessTrackingService } from "../process-tracking/service";
 import type { SuspensionService } from "../suspension/service.js";
+import type { TrayService } from "../tray/service";
 import type { WatcherRegistryService } from "../watcher-registry/service";
 
 const log = logger.scope("app-lifecycle");
@@ -108,6 +109,13 @@ export class AppLifecycleService {
       suspensionService.stopInactivityChecker();
     } catch (error) {
       log.warn("Failed to stop inactivity checker during shutdown", error);
+    }
+
+    try {
+      const trayService = container.get<TrayService>(MAIN_TOKENS.TrayService);
+      trayService.dispose();
+    } catch (error) {
+      log.warn("Failed to dispose tray during shutdown", error);
     }
 
     try {

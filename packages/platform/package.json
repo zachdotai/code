@@ -63,6 +63,10 @@
     "./image-processor": {
       "types": "./dist/image-processor.d.ts",
       "import": "./dist/image-processor.js"
+    },
+    "./tray": {
+      "types": "./dist/tray.d.ts",
+      "import": "./dist/tray.js"
     }
   },
   "scripts": {

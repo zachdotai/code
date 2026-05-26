@@ -17,6 +17,7 @@ export default defineConfig({
     "src/context-menu.ts",
     "src/bundled-resources.ts",
     "src/image-processor.ts",
+    "src/tray.ts",
   ],
   format: ["esm"],
   dts: true,
