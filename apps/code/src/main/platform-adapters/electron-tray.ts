@@ -4,10 +4,10 @@ import type { ITray } from "@posthog/platform/tray";
 import { app, nativeImage, Tray } from "electron";
 import { injectable } from "inversify";
 
-// macOS menu bar icons display at ~22pt; Windows/Linux trays render at ~16px.
-// Source PNGs are 1024×1024 so they must be resized before handing to Tray,
-// otherwise the icon overflows the menu bar.
-const TRAY_ICON_SIZE = process.platform === "darwin" ? 22 : 16;
+// Electron expects tray icons at 16×16 (32×32 for retina). Source PNGs are
+// 1024×1024 so they must be resized before handing to Tray, otherwise the icon
+// overflows the menu bar.
+const TRAY_ICON_SIZE = 16;
 
 @injectable()
 export class ElectronTray implements ITray {
@@ -88,15 +88,11 @@ export class ElectronTray implements ITray {
   private loadImage(filePath: string): Electron.NativeImage {
     const cached = this.imageCache.get(filePath);
     if (cached) return cached;
+    // The brand icon is full-color and opaque, so leave templateImage off —
+    // marking it template would render the silhouette as a solid block.
     const resized = nativeImage
       .createFromPath(filePath)
-      .resize({ height: TRAY_ICON_SIZE });
-    if (process.platform === "darwin") {
-      // Template flag makes macOS render the icon as monochrome and adapt to
-      // light/dark menu bars. Falls back gracefully if a true template (single
-      // colour with alpha) asset is later supplied.
-      resized.setTemplateImage(true);
-    }
+      .resize({ height: TRAY_ICON_SIZE, quality: "best" });
     this.imageCache.set(filePath, resized);
     return resized;
   }
