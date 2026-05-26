@@ -23,17 +23,11 @@ describe("githubInstallationSettingsUrl", () => {
     ).toBe("https://github.com/settings/installations/42");
   });
 });
-
 describe("resolveGithubInstallationId", () => {
   it.each([
     [
       "prefers top-level installation_id over integration_id and config",
-      {
-        id: 99,
-        kind: "github",
-        installation_id: "a",
-        config: { installation_id: "c" },
-      },
+      { id: 99, kind: "github", installation_id: "a", config: { installation_id: "c" } },
       "a",
     ],
     [
@@ -46,9 +40,10 @@ describe("resolveGithubInstallationId", () => {
       { id: 1, kind: "github", config: { installation_id: "c" } },
       "c",
     ],
-  ] satisfies [string, Integration, string][])(
-    "%s",
-    (_label, input, expected) => {
+  ])("%s", (_label, input, expected) => {
+    expect(resolveGithubInstallationId(input as Parameters<typeof resolveGithubInstallationId>[0])).toBe(expected);
+  });
+});
       expect(resolveGithubInstallationId(input)).toBe(expected);
     },
   );
