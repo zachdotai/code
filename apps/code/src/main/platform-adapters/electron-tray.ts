@@ -4,10 +4,11 @@ import type { ITray } from "@posthog/platform/tray";
 import { app, nativeImage, Tray } from "electron";
 import { injectable } from "inversify";
 
-// Electron expects tray icons at 16×16 (32×32 for retina). Source PNGs are
-// 1024×1024 so they must be resized before handing to Tray, otherwise the icon
-// overflows the menu bar.
-const TRAY_ICON_SIZE = 16;
+// macOS renders tray icons in points, and Electron auto-discovers @2x/@3x
+// variants. The template PNGs are pre-rendered at 22/44/66 px, so on macOS we
+// don't resize. Windows/Linux trays render around 16px and use the colored
+// badge-N.png set, which are resized down from the 1024×1024 brand icon.
+const NON_MAC_TRAY_ICON_SIZE = 16;
 
 @injectable()
 export class ElectronTray implements ITray {
@@ -58,9 +59,17 @@ export class ElectronTray implements ITray {
   }
 
   private resolveBadgePath(count: number): string {
+    const dir = this.trayAssetDir();
+
+    if (process.platform === "darwin") {
+      // Monochrome silhouette that adapts to light/dark menu bar. The macOS
+      // count is rendered via setTitle, so a single template suffices.
+      const template = path.join(dir, "icon.template.png");
+      if (existsSync(template)) return template;
+    }
+
     const bucket =
       count <= 0 ? "0" : count >= 10 ? "9plus" : String(Math.floor(count));
-    const dir = this.trayAssetDir();
     const candidate = path.join(dir, `badge-${bucket}.png`);
     if (existsSync(candidate)) return candidate;
 
@@ -88,12 +97,18 @@ export class ElectronTray implements ITray {
   private loadImage(filePath: string): Electron.NativeImage {
     const cached = this.imageCache.get(filePath);
     if (cached) return cached;
-    // The brand icon is full-color and opaque, so leave templateImage off —
-    // marking it template would render the silhouette as a solid block.
-    const resized = nativeImage
-      .createFromPath(filePath)
-      .resize({ height: TRAY_ICON_SIZE, quality: "best" });
-    this.imageCache.set(filePath, resized);
-    return resized;
+
+    const isMacTemplate =
+      process.platform === "darwin" && filePath.endsWith(".template.png");
+    let image = nativeImage.createFromPath(filePath);
+    if (!isMacTemplate) {
+      image = image.resize({
+        height: NON_MAC_TRAY_ICON_SIZE,
+        quality: "best",
+      });
+    }
+    if (isMacTemplate) image.setTemplateImage(true);
+    this.imageCache.set(filePath, image);
+    return image;
   }
 }
