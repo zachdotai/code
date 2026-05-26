@@ -99,12 +99,11 @@ export const baseComponents: Components = {
         </GithubRefChip>
       );
     }
-    const isDeeplink = isPostHogCodeDeeplink(href);
     return (
       <a
         href={href}
         onClick={(event) => {
-          if (!isDeeplink || !href) return;
+          if (!href) return;
           event.preventDefault();
           void trpcClient.os.openExternal.mutate({ url: href });
         }}
