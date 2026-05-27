@@ -34,10 +34,13 @@ const APP_DATA_PATH = "/mock/appData";
 const ZIP_PATH = "/mock/package.zip";
 
 function createService(): ExtensionService {
-  return new ExtensionService({
-    appDataPath: APP_DATA_PATH,
-    logsPath: "/logs",
-  });
+  return new ExtensionService(
+    {
+      appDataPath: APP_DATA_PATH,
+      logsPath: "/logs",
+    },
+    { resolve: (relativePath) => `/mock/app/${relativePath}` },
+  );
 }
 
 function writeZip(entries: Record<string, string>): void {
@@ -127,6 +130,33 @@ describe("ExtensionService", () => {
         "/mock/appData/extensions/acme-demo-extension/plugin.json",
       ),
     ).toBe(true);
+  });
+
+  it("loads bundled extensions from app resources", async () => {
+    vol.mkdirSync("/mock/app/.vite/build/extensions/ralph-loop/prompts", {
+      recursive: true,
+    });
+    vol.writeFileSync(
+      "/mock/app/.vite/build/extensions/ralph-loop/package.json",
+      JSON.stringify({
+        name: "@posthog/ralph-loop",
+        posthogCode: { prompts: ["prompts/demo.md"] },
+      }),
+    );
+    vol.writeFileSync(
+      "/mock/app/.vite/build/extensions/ralph-loop/prompts/demo.md",
+      "---\nname: bundled-demo\ndescription: Bundled demo\n---\nDemo",
+    );
+    const service = createService();
+
+    await expect(service.listPrompts()).resolves.toEqual([
+      {
+        extensionId: "posthog-ralph-loop",
+        name: "bundled-demo",
+        description: "Bundled demo",
+        input: undefined,
+      },
+    ]);
   });
 
   it("materializes extension prompts and skills as Claude plugin paths", async () => {

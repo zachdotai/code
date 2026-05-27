@@ -75,6 +75,16 @@ export default function activate(posthogCode: PostHogCodeExtensionApi) {
     },
   })
 
+  posthogCode.registerTool("hello_tool", {
+    description: "Say hello from inside an agent session",
+    parameters: {
+      name: { type: "string", optional: true, description: "Name to greet" },
+    },
+    async handler(args, ctx) {
+      return { message: `Hello ${args.name || "world"} from ${ctx.extensionId}` }
+    },
+  })
+
   posthogCode.registerView("dashboard", {
     location: "sidebar",
     title: "Dashboard",
@@ -129,7 +139,17 @@ Supported command handler context is intentionally small for now:
 - `ctx.taskId`: present when the command runs inside an existing task.
 - `ctx.repoPath`: the active local repository path when known.
 
-Handlers can return a string or `{ "message": "..." }` to show a notification. Pi APIs such as `ctx.ui.notify`, `ctx.ui.select`, lifecycle events, session replacement helpers, custom tools, and input interception are not supported yet.
+Handlers can return a string or `{ "message": "..." }` to show a notification. They can also return `{ "prompt": "..." }` to ask PostHog Code to send generated prompt text to the current/new task instead of the slash command. This is intended for command-only flows like the bundled Ralph Loop extension.
+
+Pi APIs such as `ctx.ui.notify`, `ctx.ui.select`, lifecycle events, session replacement helpers, and input interception are not supported yet.
+
+### Agent tools
+
+Runtime extensions can register MCP-backed tools with `posthogCode.registerTool(...)`. These tools are available to the agent inside local sessions, not to the `/` picker.
+
+Supported tool parameter types are intentionally small for now: `string`, `number`, and `boolean`, each with optional `description` and `optional` fields. Tool handlers receive parsed arguments and the same small runtime context as commands (`extensionId`, `taskId`, `repoPath`, plus `toolName`).
+
+Tool handlers can return a string, `{ "message": "..." }`, or `{ "prompt": "..." }`. The result is returned to the agent as text. Extension authors use this native PostHog Code API; PostHog Code wires the tools into the active agent session.
 
 ### Prompt templates
 
@@ -159,6 +179,20 @@ Use `"skills": []` to explicitly expose no skills even if the package contains a
 3. New sidebar views appear immediately. Commands, prompt templates, and skills are available in the `/` picker. Prompt templates and skills are available to new local agent sessions.
 4. Use the trash button in **Settings → Extensions** to uninstall an extension.
 
-Installed extensions live under the app data directory in `extensions/`. Runtime Claude-compatible plugin shims are generated under `plugins/extensions/`.
+Installed extensions live under the app data directory in `extensions/`. Runtime Claude-compatible plugin shims are generated under `plugins/extensions/`. PostHog Code can also ship bundled extensions from `.vite/build/extensions`; these use the same runtime API and contribution model as installed zip extensions.
 
 Extensions are currently either installed or uninstalled; per-extension enable/disable is intentionally deferred until there is a broader sandboxing/signing/permission model.
+
+## Bundled Ralph Loop extension
+
+PostHog Code ships a command-and-agent-tool Ralph Loop extension. It has no sidebar UI. Use it from the `/` picker in a local repository:
+
+- `/ralph start <name> [task description]` starts a loop and sends the first iteration prompt.
+- `/ralph-done [name]` advances the active loop and sends the next iteration prompt.
+- `/ralph-status` lists loops in `.ralph/`.
+- `/ralph-stop [name]` pauses a loop.
+- `/ralph-resume <name>` resumes a paused loop.
+
+Loop state and task files are stored in `.ralph/` inside the active local repository. Cloud repositories are not supported yet because the extension needs local file-system access.
+
+The extension also registers `ralph_start` and `ralph_done` as agent tools, so once a loop prompt is sent the agent can advance the loop itself after updating the task file.

@@ -38,9 +38,29 @@ export function useSessionCallbacks({
 
   const handleSendPrompt = useCallback(
     async (text: string) => {
+      const sendPrompt = async (promptText: string) => {
+        try {
+          markAsViewed(taskId);
+          markActivity(taskId);
+          await getSessionService().sendPrompt(taskId, promptText);
+
+          const view = useNavigationStore.getState().view;
+          const isViewingTask =
+            view?.type === "task-detail" && view?.data?.id === taskId;
+          if (isViewingTask) {
+            markAsViewed(taskId);
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Failed to send message";
+          toast.error(message);
+          log.error("Failed to send prompt", error);
+        }
+      };
+
       const currentSession = sessionRef.current;
       const currentEvents = currentSession?.events ?? [];
-      const handled = await tryExecuteCodeCommand(text, {
+      const commandResult = await tryExecuteCodeCommand(text, {
         taskId,
         repoPath,
         session: currentSession
@@ -52,25 +72,12 @@ export function useSessionCallbacks({
           : null,
         taskRun: task.latest_run ?? null,
       });
-      if (handled) return;
-
-      try {
-        markAsViewed(taskId);
-        markActivity(taskId);
-        await getSessionService().sendPrompt(taskId, text);
-
-        const view = useNavigationStore.getState().view;
-        const isViewingTask =
-          view?.type === "task-detail" && view?.data?.id === taskId;
-        if (isViewingTask) {
-          markAsViewed(taskId);
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to send message";
-        toast.error(message);
-        log.error("Failed to send prompt", error);
+      if (commandResult.handled) {
+        if (commandResult.prompt) await sendPrompt(commandResult.prompt);
+        return;
       }
+
+      await sendPrompt(text);
     },
     [taskId, repoPath, markActivity, markAsViewed, task.latest_run],
   );

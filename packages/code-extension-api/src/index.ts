@@ -11,13 +11,18 @@ export type ExtensionCommandResult =
   | string
   | {
       message?: string;
+      /** Prompt text for PostHog Code to send to the agent instead of the slash command. */
+      prompt?: string;
     };
 
-export interface ExtensionCommandContext {
-  commandName: string;
+export interface ExtensionRuntimeContext {
   extensionId: string;
   taskId?: string;
   repoPath?: string | null;
+}
+
+export interface ExtensionCommandContext extends ExtensionRuntimeContext {
+  commandName: string;
 }
 
 export interface ExtensionCommandOptions {
@@ -28,6 +33,29 @@ export interface ExtensionCommandOptions {
     args: string | undefined,
     context: ExtensionCommandContext,
   ) => MaybePromise<ExtensionCommandResult>;
+}
+
+export type ExtensionToolParameterType = "string" | "number" | "boolean";
+
+export interface ExtensionToolParameter {
+  type: ExtensionToolParameterType;
+  description?: string;
+  optional?: boolean;
+}
+
+export type ExtensionToolResult = ExtensionCommandResult;
+
+export interface ExtensionToolContext extends ExtensionRuntimeContext {
+  toolName: string;
+}
+
+export interface ExtensionToolOptions {
+  description: string;
+  parameters?: Record<string, ExtensionToolParameter>;
+  handler: (
+    args: Record<string, unknown>,
+    context: ExtensionToolContext,
+  ) => MaybePromise<ExtensionToolResult>;
 }
 
 export type ExtensionViewLocation = "sidebar";
@@ -54,6 +82,7 @@ export interface ExtensionViewOptions {
 
 export interface PostHogCodeExtensionApi {
   registerCommand(name: string, options: ExtensionCommandOptions): Disposable;
+  registerTool(name: string, options: ExtensionToolOptions): Disposable;
   registerView(id: string, options: ExtensionViewOptions): Disposable;
 }
 

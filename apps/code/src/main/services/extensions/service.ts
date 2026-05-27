@@ -23,6 +23,8 @@ import {
 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { unzipAsync } from "@main/utils/extract-zip";
+import type { NativeAgentToolDefinition } from "@posthog/agent/types";
+import type { IBundledResources } from "@posthog/platform/bundled-resources";
 import type { IStoragePaths } from "@posthog/platform/storage-paths";
 import type {
   ExtensionChangedPayload,
@@ -30,6 +32,7 @@ import type {
   ExtensionInfo,
   ExtensionPromptContribution,
   ExtensionSidebarContribution,
+  ExtensionToolContribution,
 } from "@shared/types/extensions";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
@@ -105,21 +108,39 @@ interface ExecuteCommandInput {
 interface ExecuteCommandResult {
   handled: boolean;
   message?: string;
+  prompt?: string;
 }
+
+type ExtensionRuntimeContext = {
+  extensionId: string;
+  taskId?: string;
+  repoPath?: string | null;
+};
 
 type ExtensionCommandHandler = (
   args: string | undefined,
-  context: {
-    commandName: string;
-    extensionId: string;
-    taskId?: string;
-    repoPath?: string | null;
-  },
+  context: ExtensionRuntimeContext & { commandName: string },
+) => unknown | Promise<unknown>;
+
+type ExtensionToolHandler = (
+  args: Record<string, unknown>,
+  context: ExtensionRuntimeContext & { toolName: string },
 ) => unknown | Promise<unknown>;
 
 interface RegisteredExtensionCommand extends CommandManifestContribution {
   extensionId: string;
   handler: ExtensionCommandHandler;
+}
+
+interface ExtensionToolParameter {
+  type: "string" | "number" | "boolean";
+  description?: string;
+  optional?: boolean;
+}
+
+interface RegisteredExtensionTool extends ExtensionToolContribution {
+  handler: ExtensionToolHandler;
+  parameters?: Record<string, ExtensionToolParameter>;
 }
 
 interface RegisteredExtensionView {
@@ -134,6 +155,7 @@ interface RegisteredExtensionView {
 
 interface ExtensionRuntimeLoadResult {
   commands: RegisteredExtensionCommand[];
+  tools: RegisteredExtensionTool[];
   views: RegisteredExtensionView[];
   errors: string[];
 }
@@ -147,6 +169,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function asStringArray(value: unknown): string[] {
@@ -223,6 +249,32 @@ function normalizeViewId(viewId: string): string {
     throw new Error(`Invalid extension view id: ${viewId}`);
   }
   return normalized;
+}
+
+function normalizeToolParameters(
+  value: unknown,
+): Record<string, ExtensionToolParameter> | undefined {
+  const record = asRecord(value);
+  if (!record) return undefined;
+
+  const parameters: Record<string, ExtensionToolParameter> = {};
+  for (const [name, rawParameter] of Object.entries(record)) {
+    const parameter = asRecord(rawParameter);
+    if (!parameter) {
+      throw new Error(`Extension tool parameter ${name} must be an object`);
+    }
+    const type = parameter.type;
+    if (type !== "string" && type !== "number" && type !== "boolean") {
+      throw new Error(`Extension tool parameter ${name} has unsupported type`);
+    }
+    parameters[name] = {
+      type,
+      description: asString(parameter.description),
+      optional: asBoolean(parameter.optional),
+    };
+  }
+
+  return parameters;
 }
 
 function runtimePromptFileName(promptName: string, extension: string): string {
@@ -306,11 +358,26 @@ async function countSkillDirs(skillRoot: string): Promise<number> {
   return (await collectSkillContributions(skillRoot)).length;
 }
 
+function formatToolResult(result: unknown): string {
+  if (typeof result === "string") return result;
+
+  const record = asRecord(result);
+  const message = asString(record?.message);
+  const prompt = asString(record?.prompt);
+  if (message && prompt) return `${message}\n\n${prompt}`;
+  if (prompt) return prompt;
+  if (message) return message;
+  if (result === undefined) return "Done";
+  return JSON.stringify(result);
+}
+
 @injectable()
 export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> {
   constructor(
     @inject(MAIN_TOKENS.StoragePaths)
     private readonly storagePaths: IStoragePaths,
+    @inject(MAIN_TOKENS.BundledResources)
+    private readonly bundledResources: IBundledResources,
   ) {
     super();
   }
@@ -323,14 +390,15 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
     return join(this.storagePaths.appDataPath, "plugins", "extensions");
   }
 
+  private get bundledExtensionsDir(): string {
+    return this.bundledResources.resolve(".vite/build/extensions");
+  }
+
   async list(): Promise<ExtensionInfo[]> {
-    await mkdir(this.extensionsDir, { recursive: true });
-    const entries = await readdir(this.extensionsDir, { withFileTypes: true });
+    const manifests = await this.listManifests();
     const extensions: ExtensionInfo[] = [];
 
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-      const installPath = join(this.extensionsDir, entry.name);
+    for (const { installPath } of manifests) {
       try {
         extensions.push(await this.readInstalledExtension(installPath));
       } catch (error) {
@@ -375,10 +443,12 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
     }
 
     const record = asRecord(result);
-    return {
-      handled: true,
-      message: asString(record?.message),
-    };
+    const commandResult: ExecuteCommandResult = { handled: true };
+    const message = asString(record?.message);
+    const prompt = asString(record?.prompt);
+    if (message) commandResult.message = message;
+    if (prompt) commandResult.prompt = prompt;
+    return commandResult;
   }
 
   async listSidebar(): Promise<ExtensionSidebarContribution[]> {
@@ -444,6 +514,24 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
       force: true,
     });
     await this.emitChanged();
+  }
+
+  async getAgentTools(): Promise<NativeAgentToolDefinition[]> {
+    const tools = await this.loadExtensionTools();
+    return tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      handler: async (args, context) => {
+        const result = await tool.handler(args, {
+          toolName: tool.name,
+          extensionId: tool.extensionId,
+          taskId: context.taskId,
+          repoPath: context.cwd,
+        });
+        return formatToolResult(result);
+      },
+    }));
   }
 
   async getAgentPluginPaths(): Promise<{ type: "local"; path: string }[]> {
@@ -521,6 +609,7 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
         description: prompt.description,
         input: prompt.input,
       })),
+      tools: runtimeResult.tools.map(({ handler: _handler, ...tool }) => tool),
       sidebar: [...staticSidebar, ...runtimeSidebar],
       skillCount,
       loadErrors: runtimeResult.errors,
@@ -530,30 +619,35 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
   private async listManifests(): Promise<
     Array<{ installPath: string; manifest: ExtensionManifest }>
   > {
-    await mkdir(this.extensionsDir, { recursive: true });
-    const entries = await readdir(this.extensionsDir, { withFileTypes: true });
-    const manifests: Array<{
-      installPath: string;
-      manifest: ExtensionManifest;
-    }> = [];
+    const manifests = new Map<
+      string,
+      { installPath: string; manifest: ExtensionManifest }
+    >();
 
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-      const installPath = join(this.extensionsDir, entry.name);
-      try {
-        manifests.push({
-          installPath,
-          manifest: await this.readManifest(installPath),
-        });
-      } catch (error) {
-        log.warn("Skipping invalid extension manifest", {
-          installPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
+    const addManifestsFromDir = async (rootDir: string) => {
+      if (!existsSync(rootDir)) return;
+      const entries = await readdir(rootDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+        const installPath = join(rootDir, entry.name);
+        try {
+          const manifest = await this.readManifest(installPath);
+          manifests.set(manifest.id, { installPath, manifest });
+        } catch (error) {
+          log.warn("Skipping invalid extension manifest", {
+            installPath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
-    }
+    };
 
-    return manifests;
+    await addManifestsFromDir(this.bundledExtensionsDir);
+    await mkdir(this.extensionsDir, { recursive: true });
+    await addManifestsFromDir(this.extensionsDir);
+
+    return [...manifests.values()];
   }
 
   private async readManifest(packageRoot: string): Promise<ExtensionManifest> {
@@ -866,6 +960,27 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
     };
   }
 
+  private async loadExtensionTools(): Promise<RegisteredExtensionTool[]> {
+    const extensions = (await this.listManifests()).sort((a, b) =>
+      a.manifest.id.localeCompare(b.manifest.id),
+    );
+    const byName = new Map<string, RegisteredExtensionTool>();
+
+    for (const extension of extensions) {
+      const { tools } = await this.loadRuntimeContributionsForExtension(
+        extension.manifest,
+        extension.installPath,
+      );
+      for (const tool of tools) {
+        if (!byName.has(tool.name)) {
+          byName.set(tool.name, tool);
+        }
+      }
+    }
+
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   private async loadExtensionCommands(): Promise<RegisteredExtensionCommand[]> {
     const extensions = (await this.listManifests()).sort((a, b) =>
       a.manifest.id.localeCompare(b.manifest.id),
@@ -892,6 +1007,7 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
     installPath: string,
   ): Promise<ExtensionRuntimeLoadResult> {
     const commands = new Map<string, RegisteredExtensionCommand>();
+    const tools = new Map<string, RegisteredExtensionTool>();
     const views = new Map<string, RegisteredExtensionView>();
     const errors: string[] = [];
 
@@ -944,6 +1060,29 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
               handler: options.handler,
             };
             commands.set(command.name, command);
+            return { dispose: () => commands.delete(command.name) };
+          },
+          registerTool: (
+            name: string,
+            options: {
+              description?: string;
+              parameters?: unknown;
+              handler: ExtensionToolHandler;
+            },
+          ) => {
+            if (typeof options.handler !== "function") {
+              throw new Error(`Extension tool ${name} must provide a handler`);
+            }
+
+            const tool: RegisteredExtensionTool = {
+              extensionId: manifest.id,
+              name: normalizePromptName(name),
+              description: asString(options.description) ?? "",
+              parameters: normalizeToolParameters(options.parameters),
+              handler: options.handler,
+            };
+            tools.set(tool.name, tool);
+            return { dispose: () => tools.delete(tool.name) };
           },
           registerView: (
             id: string,
@@ -987,6 +1126,7 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
               entry,
               html,
             });
+            return { dispose: () => views.delete(normalizedId) };
           },
         });
       } catch (error) {
@@ -1002,6 +1142,7 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
 
     return {
       commands: [...commands.values()],
+      tools: [...tools.values()],
       views: [...views.values()],
       errors,
     };

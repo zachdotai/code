@@ -124,6 +124,7 @@ export class Agent {
       logger: this.logger,
       processCallbacks: options.processCallbacks,
       onStructuredOutput: options.onStructuredOutput,
+      nativeTools: options.nativeTools,
       allowedModelIds,
       posthogApiConfig: this.posthogApiConfig,
       enricherEnabled: this.enricherEnabled,

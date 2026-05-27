@@ -4,6 +4,7 @@ import type {
   ExtensionInfo,
   ExtensionPromptContribution,
   ExtensionSidebarContribution,
+  ExtensionToolContribution,
 } from "@shared/types/extensions";
 import { z } from "zod";
 
@@ -21,6 +22,13 @@ export const extensionPromptContributionSchema: z.ZodType<ExtensionPromptContrib
     name: z.string(),
     description: z.string(),
     input: z.object({ hint: z.string() }).optional(),
+  });
+
+export const extensionToolContributionSchema: z.ZodType<ExtensionToolContribution> =
+  z.object({
+    extensionId: z.string(),
+    name: z.string(),
+    description: z.string(),
   });
 
 export const extensionSidebarContributionSchema: z.ZodType<ExtensionSidebarContribution> =
@@ -43,6 +51,7 @@ export const extensionInfoSchema: z.ZodType<ExtensionInfo> = z.object({
   installPath: z.string(),
   commands: z.array(extensionCommandContributionSchema),
   prompts: z.array(extensionPromptContributionSchema),
+  tools: z.array(extensionToolContributionSchema).optional(),
   sidebar: z.array(extensionSidebarContributionSchema),
   skillCount: z.number(),
   loadErrors: z.array(z.string()),
@@ -80,6 +89,7 @@ export const executeExtensionCommandInput = z.object({
 export const executeExtensionCommandOutput = z.object({
   handled: z.boolean(),
   message: z.string().optional(),
+  prompt: z.string().optional(),
 });
 
 export const extensionChangedOutput: z.ZodType<ExtensionChangedPayload> =

@@ -12,6 +12,12 @@ export interface ExtensionPromptContribution {
   input?: { hint: string };
 }
 
+export interface ExtensionToolContribution {
+  extensionId: string;
+  name: string;
+  description: string;
+}
+
 export interface ExtensionSidebarContribution {
   extensionId: string;
   id: string;
@@ -31,6 +37,7 @@ export interface ExtensionInfo {
   installPath: string;
   commands: ExtensionCommandContribution[];
   prompts: ExtensionPromptContribution[];
+  tools?: ExtensionToolContribution[];
   sidebar: ExtensionSidebarContribution[];
   skillCount: number;
   loadErrors: string[];

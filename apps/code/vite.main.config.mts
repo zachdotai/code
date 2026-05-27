@@ -337,6 +337,27 @@ const PLUGIN_ALLOW_LIST = [
 
 let remoteSkillsFetched = false;
 
+function copyBundledExtensions(): Plugin {
+  const sourceDir = join(__dirname, "../../extensions");
+
+  return {
+    name: "copy-bundled-extensions",
+    buildStart() {
+      if (!existsSync(sourceDir)) return;
+      for (const file of getFilesRecursive(sourceDir)) {
+        this.addWatchFile(file);
+      }
+    },
+    async writeBundle() {
+      const destDir = join(__dirname, ".vite/build/extensions");
+      await rm(destDir, { recursive: true, force: true });
+      if (!existsSync(sourceDir)) return;
+      await mkdir(destDir, { recursive: true });
+      await cp(sourceDir, destDir, { recursive: true });
+    },
+  };
+}
+
 function copyPosthogPlugin(isDev: boolean): Plugin {
   const sourceDir = join(__dirname, "../../plugins/posthog");
   const localSkillsDir = join(sourceDir, "local-skills");
@@ -536,6 +557,7 @@ export default defineConfig(({ mode }) => {
       fixFilenameCircularRef(),
       copyClaudeExecutable(),
       copyPosthogPlugin(isDev),
+      copyBundledExtensions(),
       copyDrizzleMigrations(),
       copyCodexAcpBinaries(),
       copyEnricherGrammars(),

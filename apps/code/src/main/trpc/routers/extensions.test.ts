@@ -28,6 +28,7 @@ describe("extensionsRouter", () => {
     extensionServiceMock.executeCommand.mockResolvedValue({
       handled: true,
       message: "done",
+      prompt: "generated prompt",
     });
     const caller = extensionsRouter.createCaller({});
 
@@ -38,7 +39,11 @@ describe("extensionsRouter", () => {
         taskId: "task-1",
         repoPath: "/repo",
       }),
-    ).resolves.toEqual({ handled: true, message: "done" });
+    ).resolves.toEqual({
+      handled: true,
+      message: "done",
+      prompt: "generated prompt",
+    });
 
     expect(extensionServiceMock.executeCommand).toHaveBeenCalledWith({
       name: "hello",

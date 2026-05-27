@@ -117,12 +117,17 @@ export function getCodeCommand(name: string): CodeCommand | undefined {
   return commandMap.get(name);
 }
 
+export interface CodeCommandExecutionResult {
+  handled: boolean;
+  prompt?: string;
+}
+
 export async function tryExecuteCodeCommand(
   text: string,
   context: CommandContext,
-): Promise<boolean> {
+): Promise<CodeCommandExecutionResult> {
   const match = text.match(/^\/(\S+)(?:\s+(.*))?$/);
-  if (!match) return false;
+  if (!match) return { handled: false };
 
   const extensionCommand = useExtensionsStore
     .getState()
@@ -139,19 +144,19 @@ export async function tryExecuteCodeCommand(
       );
       if (extensionResult.handled) {
         if (extensionResult.message) toast.info(extensionResult.message);
-        return true;
+        return { handled: true, prompt: extensionResult.prompt };
       }
     } catch (error) {
       toast.error("Extension command failed", {
         description: error instanceof Error ? error.message : String(error),
       });
-      return true;
+      return { handled: true };
     }
   }
 
   const cmd = commandMap.get(match[1]);
-  if (!cmd?.execute) return false;
+  if (!cmd?.execute) return { handled: false };
 
   await cmd.execute(match[2], context);
-  return true;
+  return { handled: true };
 }

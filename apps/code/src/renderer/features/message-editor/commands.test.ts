@@ -78,8 +78,8 @@ describe("tryExecuteCodeCommand", () => {
       message: "Hello Max",
     });
 
-    await expect(tryExecuteCodeCommand("/hello Max", context)).resolves.toBe(
-      true,
+    await expect(tryExecuteCodeCommand("/hello Max", context)).resolves.toEqual(
+      { handled: true },
     );
 
     expect(executeCommandMock).toHaveBeenCalledWith({
@@ -92,10 +92,41 @@ describe("tryExecuteCodeCommand", () => {
     expect(trackMock).not.toHaveBeenCalled();
   });
 
+  it("returns generated prompts from extension commands", async () => {
+    useExtensionsStore.getState().actions.setExtensions([
+      {
+        id: "demo-extension",
+        name: "demo-extension",
+        displayName: "Demo Extension",
+        version: "1.0.0",
+        installPath: "/extensions/demo-extension",
+        commands: [
+          {
+            extensionId: "demo-extension",
+            name: "ralph-done",
+            description: "Advance Ralph loop",
+          },
+        ],
+        prompts: [],
+        sidebar: [],
+        skillCount: 0,
+        loadErrors: [],
+      },
+    ]);
+    executeCommandMock.mockResolvedValue({
+      handled: true,
+      prompt: "next iteration prompt",
+    });
+
+    await expect(
+      tryExecuteCodeCommand("/ralph-done", context),
+    ).resolves.toEqual({ handled: true, prompt: "next iteration prompt" });
+  });
+
   it("does not call extension command tRPC for unknown slash commands", async () => {
-    await expect(tryExecuteCodeCommand("/unknown", context)).resolves.toBe(
-      false,
-    );
+    await expect(tryExecuteCodeCommand("/unknown", context)).resolves.toEqual({
+      handled: false,
+    });
 
     expect(executeCommandMock).not.toHaveBeenCalled();
   });

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
@@ -41,7 +41,10 @@ async function writeZip(entries: Record<string, string>): Promise<void> {
 }
 
 function createService(): ExtensionService {
-  return new ExtensionService({ appDataPath, logsPath: join(tempDir, "logs") });
+  return new ExtensionService(
+    { appDataPath, logsPath: join(tempDir, "logs") },
+    { resolve: (relativePath) => join(tempDir, "app", relativePath) },
+  );
 }
 
 describe("ExtensionService runtime commands", () => {
@@ -53,6 +56,57 @@ describe("ExtensionService runtime commands", () => {
 
   afterEach(async () => {
     await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("loads bundled Ralph extension commands", async () => {
+    const bundledExtensionsDir = join(tempDir, "app/.vite/build/extensions");
+    await cp(
+      join(process.cwd(), "../../extensions/ralph-loop"),
+      join(bundledExtensionsDir, "ralph-loop"),
+      { recursive: true },
+    );
+    const repoPath = join(tempDir, "repo");
+    const service = createService();
+
+    await expect(service.listCommands()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          extensionId: "posthog-ralph-loop",
+          name: "ralph-start",
+          description: "Start a Ralph loop",
+        }),
+        expect.objectContaining({
+          extensionId: "posthog-ralph-loop",
+          name: "ralph-done",
+          description: "Advance the active Ralph loop",
+        }),
+      ]),
+    );
+
+    const startResult = await service.executeCommand({
+      name: "ralph-start",
+      args: "demo Test the Ralph extension --items-per-iteration 2",
+      repoPath,
+    });
+
+    expect(startResult.message).toBe("Started Ralph loop demo");
+    expect(startResult.prompt).toContain("RALPH LOOP: demo | Iteration 1/50");
+    await expect(
+      readFile(join(repoPath, ".ralph/demo.md"), "utf-8"),
+    ).resolves.toContain("Test the Ralph extension");
+
+    const tools = await service.getAgentTools();
+    expect(tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["ralph_start", "ralph_done"]),
+    );
+
+    const ralphDone = tools.find((tool) => tool.name === "ralph_done");
+    await expect(
+      ralphDone?.handler(
+        {},
+        { cwd: repoPath, taskId: "task-1", taskRunId: "run-1" },
+      ),
+    ).resolves.toContain("RALPH LOOP: demo | Iteration 2/50");
   });
 
   it("loads JavaScript extension runtimes and executes registered commands", async () => {
@@ -67,7 +121,10 @@ describe("ExtensionService runtime commands", () => {
             description: "Say hello",
             argumentHint: "name",
             handler(args, ctx) {
-              return { message: "Hello " + (args || "world") + " from " + ctx.extensionId + " in " + ctx.repoPath }
+              return {
+                message: "Hello " + (args || "world") + " from " + ctx.extensionId + " in " + ctx.repoPath,
+                prompt: "Generated prompt for " + (args || "world"),
+              }
             },
           })
           posthogCode.registerView("dashboard", {
@@ -121,6 +178,7 @@ describe("ExtensionService runtime commands", () => {
     ).resolves.toEqual({
       handled: true,
       message: "Hello Max from runtime-command-extension in /repo",
+      prompt: "Generated prompt for Max",
     });
   });
 });

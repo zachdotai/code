@@ -146,6 +146,7 @@ function createMockDependencies() {
       getPluginPath: vi.fn(() => "/mock/plugin"),
     },
     extensionService: {
+      getAgentTools: vi.fn().mockResolvedValue([]),
       getAgentPluginPaths: vi.fn().mockResolvedValue([]),
     },
     agentAuthAdapter: {

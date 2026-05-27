@@ -1,6 +1,10 @@
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import type { SessionLogWriter } from "../session-log-writer";
-import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../types";
+import type {
+  NativeAgentToolDefinition,
+  PostHogAPIConfig,
+  ProcessSpawnedCallback,
+} from "../types";
 import { Logger } from "../utils/logger";
 import {
   createBidirectionalStreams,
@@ -30,6 +34,8 @@ export type AcpConnectionConfig = {
   posthogApiConfig?: PostHogAPIConfig;
   /** Defaults to true when posthogApiConfig is set. Set to false to disable enrichment. */
   enricherEnabled?: boolean;
+  /** Host-side tools exposed to the agent. */
+  nativeTools?: NativeAgentToolDefinition[];
 };
 
 export type AcpConnection = {
@@ -114,6 +120,7 @@ function createClaudeConnection(config: AcpConnectionConfig): AcpConnection {
       ...config.processCallbacks,
       onStructuredOutput: config.onStructuredOutput,
       posthogApiConfig: resolveEnricherApiConfig(config),
+      nativeTools: config.nativeTools,
     });
     return agent;
   }, agentStream);

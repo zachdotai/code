@@ -159,17 +159,22 @@ async function trackTaskCreated(
   }
 }
 
+interface InitialExtensionCommandResult {
+  handled: boolean;
+  prompt?: string;
+}
+
 async function tryExecuteInitialExtensionCommand(
   text: string,
   repoPath: string | null,
-): Promise<boolean> {
+): Promise<InitialExtensionCommandResult> {
   const match = text.match(/^\/(\S+)(?:\s+(.*))?$/);
-  if (!match) return false;
+  if (!match) return { handled: false };
 
   const extensionCommand = useExtensionsStore
     .getState()
     .commands.some((command) => command.name === match[1]);
-  if (!extensionCommand) return false;
+  if (!extensionCommand) return { handled: false };
 
   try {
     const result = await trpcClient.extensions.executeCommand.mutate({
@@ -178,12 +183,12 @@ async function tryExecuteInitialExtensionCommand(
       repoPath,
     });
     if (result.message) toast.info(result.message);
-    return result.handled;
+    return { handled: result.handled, prompt: result.prompt };
   } catch (error) {
     toast.error("Extension command failed", {
       description: error instanceof Error ? error.message : String(error),
     });
-    return true;
+    return { handled: true };
   }
 }
 
@@ -245,18 +250,24 @@ export function useTaskCreation({
 
       setIsCreatingTask(true);
 
-      const content = contentOverride ?? editor.getContent();
-      const plainPromptText = contentToPlainText(content).trim();
-      const extensionCommandHandled = await tryExecuteInitialExtensionCommand(
+      let content = contentOverride ?? editor.getContent();
+      let plainPromptText = contentToPlainText(content).trim();
+      const extensionCommandResult = await tryExecuteInitialExtensionCommand(
         plainPromptText,
         workspaceMode === "cloud"
           ? (selectedRepository ?? null)
           : selectedDirectory,
       );
-      if (extensionCommandHandled) {
+      if (extensionCommandResult.handled && !extensionCommandResult.prompt) {
         if (!contentOverride) editor.clear();
         setIsCreatingTask(false);
         return true;
+      }
+      if (extensionCommandResult.prompt) {
+        content = {
+          segments: [{ type: "text", text: extensionCommandResult.prompt }],
+        };
+        plainPromptText = extensionCommandResult.prompt.trim();
       }
 
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;

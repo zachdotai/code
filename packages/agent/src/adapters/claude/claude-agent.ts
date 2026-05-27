@@ -56,7 +56,7 @@ import {
   type Enrichment,
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
-import type { PostHogAPIConfig } from "../../types";
+import type { NativeAgentToolDefinition, PostHogAPIConfig } from "../../types";
 import {
   isCloudRun,
   resolveGithubToken,
@@ -85,6 +85,7 @@ import {
 } from "./conversion/sdk-to-acp";
 import type { EnrichedReadCache } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
+import { createNativeToolsMcpServer } from "./mcp/native-tools";
 import {
   fetchMcpToolMetadata,
   getCachedMcpTools,
@@ -173,6 +174,7 @@ export interface ClaudeAcpAgentOptions {
   onMcpServersReady?: (serverNames: string[]) => void;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   posthogApiConfig?: PostHogAPIConfig;
+  nativeTools?: NativeAgentToolDefinition[];
 }
 
 export class ClaudeAcpAgent extends BaseAcpAgent {
@@ -1177,6 +1179,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.logger.warn(
         "Cloud run registered no local tools — missing GH_TOKEN/GITHUB_TOKEN? signed commits unavailable",
       );
+    }
+
+    const nativeToolsServer = createNativeToolsMcpServer(
+      this.options?.nativeTools,
+      { cwd, taskId, taskRunId: meta?.taskRunId },
+    );
+    if (nativeToolsServer) {
+      mcpServers.posthog_code_native_tools = nativeToolsServer;
     }
 
     const systemPrompt = buildSystemPrompt(meta?.systemPrompt);

@@ -643,6 +643,15 @@ When creating pull requests, add the following footer at the end of the PR descr
         additionalDirectories,
       );
 
+      let nativeTools: AgentTypes.NativeAgentToolDefinition[] = [];
+      try {
+        nativeTools = await this.extensionService.getAgentTools();
+      } catch (err) {
+        log.warn("Failed to discover extension agent tools", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       const acpConnection = await agent.run(taskId, taskRunId, {
         adapter,
         gatewayUrl: proxyUrl,
@@ -652,6 +661,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         instructions: adapter === "codex" ? systemPrompt.append : undefined,
         additionalDirectories:
           adapter === "codex" ? additionalDirectories : undefined,
+        nativeTools,
         onStructuredOutput: jsonSchema
           ? async (output) => {
               const posthogAPI = agent.getPosthogAPI();

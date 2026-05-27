@@ -105,6 +105,30 @@ export interface TaskRun {
   completed_at: string | null;
 }
 
+export type NativeAgentToolParameterType = "string" | "number" | "boolean";
+
+export interface NativeAgentToolParameter {
+  type: NativeAgentToolParameterType;
+  description?: string;
+  optional?: boolean;
+}
+
+export interface NativeAgentToolContext {
+  cwd: string;
+  taskId?: string;
+  taskRunId?: string;
+}
+
+export interface NativeAgentToolDefinition {
+  name: string;
+  description: string;
+  parameters?: Record<string, NativeAgentToolParameter>;
+  handler: (
+    args: Record<string, unknown>,
+    context: NativeAgentToolContext,
+  ) => string | Promise<string>;
+}
+
 export interface ProcessSpawnedCallback {
   onProcessSpawned?: (info: {
     pid: number;
@@ -127,6 +151,8 @@ export interface TaskExecutionOptions {
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   /** Additional directories the agent process can access beyond cwd. */
   additionalDirectories?: string[];
+  /** Host-side tools exposed to the agent without extension authors managing MCP. */
+  nativeTools?: NativeAgentToolDefinition[];
 }
 
 export type LogLevel = "debug" | "info" | "warn" | "error";

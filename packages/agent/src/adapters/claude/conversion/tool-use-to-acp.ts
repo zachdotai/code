@@ -32,6 +32,7 @@ function stripSystemReminders(value: string): string {
 
 import { resourceLink, text, toolContent } from "../../../utils/acp-content";
 import type { EnrichedReadCache } from "../hooks";
+import { NATIVE_TOOLS_SERVER_NAME } from "../mcp/native-tools";
 import { getMcpToolMetadata } from "../mcp/tool-metadata";
 
 type ToolInfo = Pick<ToolCall, "title" | "kind" | "content" | "locations">;
@@ -419,6 +420,8 @@ export function toolInfoFromToolUse(
     }
 
     default: {
+      const nativeToolInfo = nativeExtensionToolInfo(name);
+      if (nativeToolInfo) return nativeToolInfo;
       if (name?.startsWith("mcp__")) {
         return mcpToolInfo(name, input);
       }
@@ -429,6 +432,22 @@ export function toolInfoFromToolUse(
       };
     }
   }
+}
+
+function nativeExtensionToolInfo(name: string | undefined): ToolInfo | null {
+  if (!name) return null;
+
+  const mcpPrefix = `mcp__${NATIVE_TOOLS_SERVER_NAME}__`;
+  if (name.startsWith(mcpPrefix)) {
+    return { title: name.slice(mcpPrefix.length), kind: "other", content: [] };
+  }
+
+  const displayMatch = name.match(/^(.+) - (.+) \(MCP\)$/);
+  if (displayMatch?.[1] === NATIVE_TOOLS_SERVER_NAME) {
+    return { title: displayMatch[2], kind: "other", content: [] };
+  }
+
+  return null;
 }
 
 function mcpToolInfo(
