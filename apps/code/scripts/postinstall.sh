@@ -21,11 +21,19 @@ if [ ! -d "$ELECTRON_DIST" ] || [ -z "$(ls -A "$ELECTRON_DIST" 2>/dev/null)" ]; 
   node "$REPO_ROOT/node_modules/electron/install.js"
 fi
 
-echo "Rebuilding native modules for Electron..."
-
 cd "$REPO_ROOT"
-npx @electron/rebuild -f -m node_modules/node-pty
-npx @electron/rebuild -f -m node_modules/better-sqlite3 || true
+
+# Pure-Node contexts (unit tests in CI, certain dev tools) can opt out of the
+# Electron-ABI rebuild by setting SKIP_ELECTRON_REBUILD=1. With the rebuild
+# skipped, the prebuild-install binaries (built for the current Node ABI) stay
+# in place, which is what `vitest run` needs to load better-sqlite3.
+if [ "${SKIP_ELECTRON_REBUILD:-}" = "1" ]; then
+  echo "SKIP_ELECTRON_REBUILD=1 — leaving native modules at their Node ABI"
+else
+  echo "Rebuilding native modules for Electron..."
+  npx @electron/rebuild -f -m node_modules/node-pty
+  npx @electron/rebuild -f -m node_modules/better-sqlite3 || true
+fi
 
 echo "Patching Electron app name..."
 bash "$SCRIPTS_DIR/patch-electron-name.sh"

@@ -28,15 +28,13 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
+        # SKIP_ELECTRON_REBUILD tells apps/code/scripts/postinstall.sh to leave
+        # native modules at their Node ABI (the prebuild-install binaries).
+        # Otherwise @electron/rebuild forces them to Electron's NAN, which fails
+        # to load under pure Node — the runtime vitest uses for unit tests.
+        env:
+          SKIP_ELECTRON_REBUILD: "1"
         run: pnpm install --frozen-lockfile
-
-      - name: Rebuild better-sqlite3 for the runner's Node ABI
-        # better-sqlite3 builds against Electron's NAN by default; the unit
-        # test job runs against Node 22 (no Electron), which has a different
-        # NODE_MODULE_VERSION. Without this rebuild, the repository tests
-        # under apps/code/src/main/db/repositories/rts/ fail with
-        # ERR_DLOPEN_FAILED on a fresh install.
-        run: pnpm rebuild better-sqlite3
 
       - name: Build dependencies
         run: pnpm --filter @posthog/electron-trpc build
