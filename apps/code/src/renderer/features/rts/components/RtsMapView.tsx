@@ -12,6 +12,7 @@ import { playVoice } from "../audio/voice";
 import { BUILDER_NAME } from "../constants/map";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useCameraBookmarks } from "../hooks/useCameraBookmarks";
+import { useMoveMarker } from "../hooks/useMoveMarker";
 import { useRtsCommands } from "../hooks/useRtsCommands";
 import { useRtsDerivedState } from "../hooks/useRtsDerivedState";
 import { useRtsEscapeKey } from "../hooks/useRtsEscapeKey";
@@ -20,7 +21,6 @@ import { useRtsHotkeys } from "../hooks/useRtsHotkeys";
 import { useRtsMapInput } from "../hooks/useRtsMapInput";
 import { useRtsSelectionSync } from "../hooks/useRtsSelectionSync";
 import { useRtsSubscriptions } from "../hooks/useRtsSubscriptions";
-import { useMoveMarker } from "../hooks/useMoveMarker";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
 import {
   type HogletDragSource,
@@ -38,17 +38,14 @@ import { DyingHogletLayer } from "./DyingHogletLayer";
 import { DyingNestLayer } from "./DyingNestLayer";
 import { FinOpsPanel } from "./FinOpsPanel";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
-import { RtsFullscreenShell } from "./RtsFullscreenShell";
-import { RtsHotkeyHelper } from "./RtsHotkeyHelper";
-import {
-  RtsMapSurface,
-  type MapSurfaceHandle,
-} from "./RtsMapSurface";
 import { HogletDetailPanel } from "./HogletDetailPanel";
 import { MultiHogletDetailPanel } from "./MultiHogletDetailPanel";
 import { NestBroodCluster } from "./NestBroodCluster";
 import { NestDetailPanel } from "./NestDetailPanel";
 import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
+import { RtsFullscreenShell } from "./RtsFullscreenShell";
+import { RtsHotkeyHelper } from "./RtsHotkeyHelper";
+import { type MapSurfaceHandle, RtsMapSurface } from "./RtsMapSurface";
 import { SpawnHogletPanel } from "./SpawnHogletPanel";
 import { WildHogletFlock } from "./WildHogletFlock";
 

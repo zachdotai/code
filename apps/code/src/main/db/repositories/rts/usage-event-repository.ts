@@ -86,10 +86,7 @@ export class UsageEventRepository {
       .insert(rtsUsageEvents)
       .values(row)
       .onConflictDoNothing({
-        target: [
-          rtsUsageEvents.taskRunId,
-          rtsUsageEvents.turnIndex,
-        ],
+        target: [rtsUsageEvents.taskRunId, rtsUsageEvents.turnIndex],
       })
       .returning()
       .all();

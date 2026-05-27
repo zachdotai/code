@@ -15,14 +15,14 @@ vi.mock("../settingsStore", () => ({
   getWorktreeLocation: () => "/tmp/posthog-code-worktrees",
 }));
 
-import type { NestRepository } from "../../db/repositories/rts/nest-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
+import type { NestRepository } from "../../db/repositories/rts/nest-repository";
 import type { FoldersService } from "../folders/service";
 import type { GitService } from "../git/service";
 import type { CloudTaskClient } from "./cloud-task-client";
 import type { NestChatService } from "./nest-chat-service";
 import { NestService } from "./nest-service";
-import { RtsEvent, type Nest, type NestMessage } from "./schemas";
+import { type Nest, type NestMessage, RtsEvent } from "./schemas";
 
 type NestPatch = Parameters<NestRepository["update"]>[1];
 type CreateNestData = Parameters<NestRepository["create"]>[0];

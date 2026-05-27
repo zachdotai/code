@@ -53,11 +53,8 @@ export class FeedbackEventRepository {
 
   findByDedupeKey(key: DedupeKey): FeedbackEvent | null {
     return (
-      this.db
-        .select()
-        .from(rtsFeedbackEvents)
-        .where(byDedupeKey(key))
-        .get() ?? null
+      this.db.select().from(rtsFeedbackEvents).where(byDedupeKey(key)).get() ??
+      null
     );
   }
 

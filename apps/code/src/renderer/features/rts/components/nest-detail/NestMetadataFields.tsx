@@ -41,10 +41,7 @@ export function NestMetadataFields({
         />
       </LabeledField>
 
-      <LabeledField
-        label="Definition of done"
-        htmlFor="nest-detail-definition"
-      >
+      <LabeledField label="Definition of done" htmlFor="nest-detail-definition">
         <TextArea
           id="nest-detail-definition"
           value={definitionOfDone}

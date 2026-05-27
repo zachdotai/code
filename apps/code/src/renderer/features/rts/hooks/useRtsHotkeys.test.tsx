@@ -1,9 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import {
-  type RtsHotkeyCallbacks,
-  useRtsHotkeys,
-} from "./useRtsHotkeys";
+import { type RtsHotkeyCallbacks, useRtsHotkeys } from "./useRtsHotkeys";
 
 function makeCallbacks(): RtsHotkeyCallbacks {
   return {

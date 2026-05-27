@@ -128,7 +128,10 @@ export class AppLifecycleService {
         .get<FeedbackRoutingService>(MAIN_TOKENS.FeedbackRoutingService)
         .stop();
     } catch (error) {
-      log.warn("Failed to stop feedback routing service during shutdown", error);
+      log.warn(
+        "Failed to stop feedback routing service during shutdown",
+        error,
+      );
     }
     try {
       container.get<PrGraphService>(MAIN_TOKENS.PrGraphService).stop();

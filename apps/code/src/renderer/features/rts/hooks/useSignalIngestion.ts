@@ -39,21 +39,18 @@ export function useSignalIngestion(): void {
         log.error("Failed to start signal ingestion service", { error }),
       );
 
-    const sub = trpcClient.rts.signalIngestion.onIngested.subscribe(
-      undefined,
-      {
-        onData: (payload) => {
-          playVoice("system:signal_arrived");
-          track(ANALYTICS_EVENTS.RTS_HOGLET_INGESTED, {
-            source: "signal",
-          });
-          log.info("Signal-backed hoglet ingested", payload);
-        },
-        onError: (error) => {
-          log.warn("Signal ingestion event subscription error", { error });
-        },
+    const sub = trpcClient.rts.signalIngestion.onIngested.subscribe(undefined, {
+      onData: (payload) => {
+        playVoice("system:signal_arrived");
+        track(ANALYTICS_EVENTS.RTS_HOGLET_INGESTED, {
+          source: "signal",
+        });
+        log.info("Signal-backed hoglet ingested", payload);
       },
-    );
+      onError: (error) => {
+        log.warn("Signal ingestion event subscription error", { error });
+      },
+    });
     return () => sub.unsubscribe();
   }, []);
 }

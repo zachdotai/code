@@ -49,10 +49,7 @@ export class TickLogRepository {
       .select({ value: count() })
       .from(rtsTickLog)
       .where(
-        and(
-          eq(rtsTickLog.nestId, nestId),
-          gt(rtsTickLog.tickedAt, sinceIso),
-        ),
+        and(eq(rtsTickLog.nestId, nestId), gt(rtsTickLog.tickedAt, sinceIso)),
       )
       .get();
     return result?.value ?? 0;

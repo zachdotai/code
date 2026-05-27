@@ -117,9 +117,7 @@ export function useBuilderCoordinator({
   // the same instance across the cycle, so cleanup permanently flipped its
   // `disposed` flag and every subsequent `emit` short-circuited, silently
   // freezing the builder (no path snapshot ever reached React state).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: initialPos and
-  // buildAnimationMs are captured at first mount by design; changing them
-  // at runtime intentionally does not rebuild the machine.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: initialPos and buildAnimationMs are captured at first mount by design; changing them at runtime intentionally does not rebuild the machine.
   useEffect(() => {
     const machine = new BuilderStateMachine({
       initialPos,

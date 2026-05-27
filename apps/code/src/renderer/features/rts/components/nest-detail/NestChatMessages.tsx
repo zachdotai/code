@@ -1,7 +1,10 @@
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import { Flex, Text } from "@radix-ui/themes";
 import { type RefObject, useEffect, useRef } from "react";
-import { selectNestMessages, useNestChatStore } from "../../stores/nestChatStore";
+import {
+  selectNestMessages,
+  useNestChatStore,
+} from "../../stores/nestChatStore";
 import { NestChatMessage } from "./NestChatMessage";
 
 interface NestChatMessagesProps {

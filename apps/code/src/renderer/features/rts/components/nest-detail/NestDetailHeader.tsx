@@ -1,8 +1,8 @@
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import { ArrowsOutCardinal } from "@phosphor-icons/react";
 import { IconButton, Tooltip } from "@radix-ui/themes";
-import { CommandConsole } from "../CommandConsole";
 import { selectHedgehogState, useNestStore } from "../../stores/nestStore";
+import { CommandConsole } from "../CommandConsole";
 
 interface NestDetailHeaderProps {
   nestId: string;

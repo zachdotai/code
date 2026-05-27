@@ -95,9 +95,7 @@ function SidebarMenuComponent() {
   // Tasks whose hoglet is selected on the Rts map. These get the same
   // highlight as the currently navigated task so the player can see at a
   // glance which sidebar row corresponds to the unit they just picked.
-  const selectedHogletIds = useRtsSelectionStore(
-    (s) => s.selectedHogletIds,
-  );
+  const selectedHogletIds = useRtsSelectionStore((s) => s.selectedHogletIds);
   const hogletBuckets = useHogletStore((s) => s.byBucket);
   const highlightedTaskIds = useMemo(() => {
     if (selectedHogletIds.length === 0) return new Set<string>();

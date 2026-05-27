@@ -15,8 +15,7 @@ interface RtsSelectionActions {
   clear: () => void;
 }
 
-type RtsSelectionStore = RtsSelectionState &
-  RtsSelectionActions;
+type RtsSelectionStore = RtsSelectionState & RtsSelectionActions;
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
@@ -26,20 +25,16 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
   return true;
 }
 
-export const useRtsSelectionStore = create<RtsSelectionStore>()(
-  (set) => ({
-    selectedHogletIds: [],
-    setSelectedHogletIds: (ids) =>
-      set((state) =>
-        sameIds(state.selectedHogletIds, ids)
-          ? state
-          : { selectedHogletIds: ids },
-      ),
-    clear: () =>
-      set((state) =>
-        state.selectedHogletIds.length === 0
-          ? state
-          : { selectedHogletIds: [] },
-      ),
-  }),
-);
+export const useRtsSelectionStore = create<RtsSelectionStore>()((set) => ({
+  selectedHogletIds: [],
+  setSelectedHogletIds: (ids) =>
+    set((state) =>
+      sameIds(state.selectedHogletIds, ids)
+        ? state
+        : { selectedHogletIds: ids },
+    ),
+  clear: () =>
+    set((state) =>
+      state.selectedHogletIds.length === 0 ? state : { selectedHogletIds: [] },
+    ),
+}));

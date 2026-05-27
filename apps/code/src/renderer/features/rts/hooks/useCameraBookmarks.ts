@@ -1,9 +1,6 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
-import {
-  type BookmarkSlot,
-  useRtsViewStore,
-} from "../stores/rtsViewStore";
+import { type BookmarkSlot, useRtsViewStore } from "../stores/rtsViewStore";
 
 export interface UseCameraBookmarksOptions {
   /** Smooth-tween the surface to a saved view. Returning false means the

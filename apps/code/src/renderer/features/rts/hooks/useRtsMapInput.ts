@@ -3,8 +3,8 @@ import type { Nest } from "@main/services/rts/schemas";
 import { useCallback } from "react";
 import { playSfx } from "../audio/sfx";
 import { playVoice } from "../audio/voice";
-import type { MapBoxSelection } from "../components/RtsMapSurface";
 import type { NestCreationMode } from "../components/placeNestDialogReducer";
+import type { MapBoxSelection } from "../components/RtsMapSurface";
 import { BUILDER_NAME } from "../constants/map";
 import { moveNest } from "../service/nestMutations";
 import {

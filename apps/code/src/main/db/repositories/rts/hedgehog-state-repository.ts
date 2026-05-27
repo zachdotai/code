@@ -31,11 +31,8 @@ export class HedgehogStateRepository {
 
   findByNestId(nestId: string): HedgehogState | null {
     return (
-      this.db
-        .select()
-        .from(rtsHedgehogState)
-        .where(byNestId(nestId))
-        .get() ?? null
+      this.db.select().from(rtsHedgehogState).where(byNestId(nestId)).get() ??
+      null
     );
   }
 

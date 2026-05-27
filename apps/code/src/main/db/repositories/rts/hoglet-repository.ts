@@ -52,9 +52,7 @@ export class HogletRepository {
   }
 
   findById(id: string): Hoglet | null {
-    return (
-      this.db.select().from(rtsHoglets).where(byId(id)).get() ?? null
-    );
+    return this.db.select().from(rtsHoglets).where(byId(id)).get() ?? null;
   }
 
   findByTaskId(taskId: string): Hoglet | null {

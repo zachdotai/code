@@ -2,8 +2,8 @@ import { KeyHint } from "@components/ui/KeyHint";
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import { Archive, FloppyDisk } from "@phosphor-icons/react";
 import { Button } from "@radix-ui/themes";
-import { CommandConsole } from "../CommandConsole";
 import type { NestLifecycle } from "../../utils/nestLifecycle";
+import { CommandConsole } from "../CommandConsole";
 
 interface NestDetailFooterProps {
   lifecycle: NestLifecycle;

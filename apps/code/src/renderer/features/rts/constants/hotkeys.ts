@@ -224,18 +224,17 @@ export const RTS_HOTKEYS: RtsHotkey[] = [
   },
 ];
 
-export const RTS_CONTEXT_LABELS: Record<RtsHotkeyContext, string> =
-  {
-    camera: "Camera",
-    selection: "Selection",
-    builder: "Builder",
-    hedgehouse: "Hedgehouse",
-    hoglet: "Hoglet (selected)",
-    nest: "Nest (selected)",
-    audio: "Audio",
-    panels: "Panels",
-    dialog: "Dialogs",
-  };
+export const RTS_CONTEXT_LABELS: Record<RtsHotkeyContext, string> = {
+  camera: "Camera",
+  selection: "Selection",
+  builder: "Builder",
+  hedgehouse: "Hedgehouse",
+  hoglet: "Hoglet (selected)",
+  nest: "Nest (selected)",
+  audio: "Audio",
+  panels: "Panels",
+  dialog: "Dialogs",
+};
 
 export const RTS_CONTEXT_ORDER: RtsHotkeyContext[] = [
   "camera",

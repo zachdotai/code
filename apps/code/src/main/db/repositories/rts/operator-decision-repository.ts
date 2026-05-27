@@ -5,8 +5,7 @@ import { rtsOperatorDecisions } from "../../schema";
 import type { DatabaseService } from "../../service";
 
 export type OperatorDecision = typeof rtsOperatorDecisions.$inferSelect;
-export type NewOperatorDecision =
-  typeof rtsOperatorDecisions.$inferInsert;
+export type NewOperatorDecision = typeof rtsOperatorDecisions.$inferInsert;
 
 export type OperatorDecisionKind = "suppress_signal_report" | "revive_hoglet";
 

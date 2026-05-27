@@ -41,7 +41,8 @@ function activeHoglet() {
 
 describe("raiseHogletHandler", () => {
   it("creates and starts a fresh task run on a completed hoglet", async () => {
-    const { deps, cloudTasks, hogletService, writeNestMessage } = makeMockDeps();
+    const { deps, cloudTasks, hogletService, writeNestMessage } =
+      makeMockDeps();
     cloudTasks.createTaskRun.mockResolvedValue({
       id: "run-new",
       branch: "feature/x",

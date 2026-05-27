@@ -5,10 +5,7 @@ import { Badge, Flex, IconButton, Text } from "@radix-ui/themes";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import { useState } from "react";
-import {
-  selectEdgesForNest,
-  usePrGraphStore,
-} from "../../stores/prGraphStore";
+import { selectEdgesForNest, usePrGraphStore } from "../../stores/prGraphStore";
 
 const log = logger.scope("nest-detail-panel");
 

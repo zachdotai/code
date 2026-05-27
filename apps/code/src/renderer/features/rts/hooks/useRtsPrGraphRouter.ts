@@ -115,8 +115,7 @@ export function useRtsPrGraphRouter() {
     pendingDrainedRef.current = true;
     void (async () => {
       try {
-        const pending =
-          await trpcClient.rts.prGraph.getPendingRebases.query();
+        const pending = await trpcClient.rts.prGraph.getPendingRebases.query();
         for (const event of pending) {
           await handleRebase(event);
         }

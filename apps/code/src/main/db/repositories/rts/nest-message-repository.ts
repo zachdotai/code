@@ -145,9 +145,7 @@ export class NestMessageRepository {
   compactCompletedContext(nestId: string): CompactNestContextResult {
     const deletedDetailMessages = this.db
       .delete(rtsNestMessages)
-      .where(
-        and(byNestId(nestId), eq(rtsNestMessages.visibility, "detail")),
-      )
+      .where(and(byNestId(nestId), eq(rtsNestMessages.visibility, "detail")))
       .run().changes;
 
     const compactedContextMessages = this.db

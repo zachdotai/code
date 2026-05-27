@@ -8,11 +8,7 @@ vi.mock("@utils/electronStorage", () => ({
   },
 }));
 
-import {
-  RTS_ZOOM_MAX,
-  RTS_ZOOM_MIN,
-  useRtsViewStore,
-} from "./rtsViewStore";
+import { RTS_ZOOM_MAX, RTS_ZOOM_MIN, useRtsViewStore } from "./rtsViewStore";
 
 describe("rtsViewStore", () => {
   beforeEach(() => {

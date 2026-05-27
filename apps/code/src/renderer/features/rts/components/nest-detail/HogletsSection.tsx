@@ -1,11 +1,6 @@
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import type { Hoglet } from "@main/services/rts/schemas";
-import {
-  Crosshair,
-  SignOut,
-  Trash,
-  Warning,
-} from "@phosphor-icons/react";
+import { Crosshair, SignOut, Trash, Warning } from "@phosphor-icons/react";
 import {
   AlertDialog,
   Badge,

@@ -115,13 +115,9 @@ export function NestDetailPanel({
     metadata.definitionOfDone,
   ]);
   useHotkeys("a", () => void handleArchive(), [metadata.saving, archiving]);
-  useHotkeys(
-    "r",
-    () => {
-      if (onRelocate && !metadata.saving && !archiving) onRelocate();
-    },
-    [onRelocate, metadata.saving, archiving],
-  );
+  useHotkeys("r", () => {
+    if (onRelocate && !metadata.saving && !archiving) onRelocate();
+  }, [onRelocate, metadata.saving, archiving]);
 
   const fieldsDisabled = metadata.saving || archiving || !editable;
 

@@ -424,7 +424,8 @@ describe("placeNestDialogReducer", () => {
       );
 
       saveNestDraft(state);
-      const saved = restoreNestDraft()!;
+      const saved = restoreNestDraft();
+      if (!saved) throw new Error("expected saved draft");
       const restored = placeNestDialogReducer(
         initialPlaceNestDialogState("guided"),
         { type: "restoreDraft", saved },

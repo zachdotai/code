@@ -36,11 +36,11 @@ import {
   type BuilderSpriteHandle,
 } from "./BuilderSprite";
 import { HedgehouseSprite } from "./HedgehouseSprite";
-import { RtsMinimap } from "./RtsMinimap";
 import { MapBackdrop } from "./MapBackdrop";
 import { MoneyHogToolbarButton } from "./MoneyHogToolbarButton";
 import { NestConstructionSite } from "./NestConstructionSite";
 import { NestSprite } from "./NestSprite";
+import { RtsMinimap } from "./RtsMinimap";
 import { SfxControl } from "./SfxControl";
 
 const BUILD_ANIMATION_MS = RTS_CONFIG.animation.buildMs;
@@ -415,10 +415,7 @@ function RtsMapSurfaceImpl(
     event.preventDefault();
     const rect = outerRef.current?.getBoundingClientRect();
     const rawZoom = zoom * (1 - event.deltaY * ZOOM_WHEEL_STEP);
-    const nextZoom = Math.min(
-      RTS_ZOOM_MAX,
-      Math.max(RTS_ZOOM_MIN, rawZoom),
-    );
+    const nextZoom = Math.min(RTS_ZOOM_MAX, Math.max(RTS_ZOOM_MIN, rawZoom));
     if (!rect || nextZoom === zoom) {
       setZoom(nextZoom);
       return;
@@ -795,8 +792,7 @@ function RtsMapSurfaceImpl(
   );
 }
 
-export const RtsMapSurface = forwardRef<
-  MapSurfaceHandle,
-  RtsMapSurfaceProps
->(RtsMapSurfaceImpl);
+export const RtsMapSurface = forwardRef<MapSurfaceHandle, RtsMapSurfaceProps>(
+  RtsMapSurfaceImpl,
+);
 RtsMapSurface.displayName = "RtsMapSurface";

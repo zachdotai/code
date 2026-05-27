@@ -1,8 +1,8 @@
 import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
 import { normalizeRepoKey } from "../../../shared/utils/repo";
-import type { NestRepository } from "../../db/repositories/rts/nest-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
+import type { NestRepository } from "../../db/repositories/rts/nest-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
@@ -16,13 +16,13 @@ import {
   type CompactValidatedNestInput,
   type CreateNestInput,
   type HedgehogStateView,
-  RtsEvent,
-  type RtsEvents,
   type MarkValidatedInput,
   type Nest,
   type NestIdInput,
   type NestMessage,
   type NestWatchEvent,
+  RtsEvent,
+  type RtsEvents,
   type UpdateNestInput,
 } from "./schemas";
 import { stringifyError } from "./utils";
