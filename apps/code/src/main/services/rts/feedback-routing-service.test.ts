@@ -176,7 +176,20 @@ function createMockGitService(opts: {
           draft: false,
         },
     ),
-    getPrReviewComments: vi.fn(async () => opts.reviewComments ?? []),
+    // Wrap the flat Comment[] fixture into the PrReviewThread[] shape that
+    // GitService now returns (main updated this API). Tests pass comments
+    // flat for ergonomics; we synthesize a single thread per comment so the
+    // service's `for (const thread of threads) for (const comment of thread.comments)`
+    // iteration still sees each test comment exactly once.
+    getPrReviewComments: vi.fn(async () =>
+      (opts.reviewComments ?? []).map((comment, idx) => ({
+        nodeId: `thread-${idx}`,
+        isResolved: false,
+        rootId: (comment as { id: number }).id,
+        filePath: (comment as { path: string }).path,
+        comments: [comment],
+      })),
+    ),
     getPrCheckRuns: vi.fn(async () => opts.checkRuns ?? []),
   } as unknown as GitService;
 }
