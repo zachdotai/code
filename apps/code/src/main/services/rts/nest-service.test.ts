@@ -104,6 +104,7 @@ function createMockNestChatService() {
     recordBootstrapHandoffFailure: vi.fn(() => makeMessage()),
     recordValidationContext: vi.fn(() => makeMessage()),
     compactValidatedNest: vi.fn(() => makeMessage()),
+    recordReopenContext: vi.fn(() => [makeMessage()]),
     recordHedgehogMessage: vi.fn(() => makeMessage()),
   } as unknown as NestChatService & {
     recordCreationContext: ReturnType<typeof vi.fn>;
@@ -111,6 +112,7 @@ function createMockNestChatService() {
     recordBootstrapHandoffFailure: ReturnType<typeof vi.fn>;
     recordValidationContext: ReturnType<typeof vi.fn>;
     compactValidatedNest: ReturnType<typeof vi.fn>;
+    recordReopenContext: ReturnType<typeof vi.fn>;
     recordHedgehogMessage: ReturnType<typeof vi.fn>;
   };
 }
@@ -234,7 +236,7 @@ describe("NestService", () => {
     });
     expect(listener).toHaveBeenCalledWith({
       nestId: nest.id,
-      event: { kind: "status", nest },
+      event: { kind: "activated", nest },
     });
   });
 
@@ -556,7 +558,7 @@ describe("NestService", () => {
     );
     expect(listener).toHaveBeenCalledWith({
       nestId: nest.id,
-      event: { kind: "status", nest },
+      event: { kind: "activated", nest },
     });
   });
 
@@ -726,6 +728,55 @@ describe("NestService", () => {
     });
   });
 
+  it("reopens only validated nests, transitioning them back to active", async () => {
+    const active = await service.create({
+      name: "Active",
+      goalPrompt: "Still working",
+      mapX: 1,
+      mapY: 1,
+    });
+
+    expect(() => service.reopenValidatedNest({ id: active.id })).toThrowError(
+      "nest_must_be_validated_to_reopen",
+    );
+
+    const validated = service.markValidated({ id: active.id, summary: "Done" });
+    const listener = vi.fn();
+    service.on(RtsEvent.NestChanged, listener);
+
+    const reopened = service.reopenValidatedNest({
+      id: validated.id,
+      instructions: "Clean up the spec-notation references in the open PRs.",
+    });
+
+    expect(reopened.status).toBe("active");
+    expect(nestChat.recordReopenContext).toHaveBeenCalledWith(reopened, {
+      id: reopened.id,
+      instructions: "Clean up the spec-notation references in the open PRs.",
+    });
+    // An "activated" event (not a generic "status" change) is what flips the
+    // nest back to active and lets the tick scheduler force an immediate tick.
+    expect(listener).toHaveBeenLastCalledWith({
+      nestId: reopened.id,
+      event: { kind: "activated", nest: reopened },
+    });
+  });
+
+  it("rejects reopen on dormant nests", async () => {
+    const nest = await service.create({
+      name: "Already compacted",
+      goalPrompt: "Done",
+      mapX: 1,
+      mapY: 1,
+    });
+    const validated = service.markValidated({ id: nest.id, summary: "Done" });
+    service.compactValidatedNest({ id: validated.id });
+
+    expect(() => service.reopenValidatedNest({ id: nest.id })).toThrowError(
+      "nest_must_be_validated_to_reopen",
+    );
+  });
+
   it("throws when a nest lookup or mutation misses", () => {
     expect(() => service.get({ id: "missing" })).toThrowError(
       "Nest not found: missing",
@@ -743,6 +794,9 @@ describe("NestService", () => {
       service.markValidated({ id: "missing", summary: "Done" }),
     ).toThrowError("Nest not found: missing");
     expect(() => service.compactValidatedNest({ id: "missing" })).toThrowError(
+      "Nest not found: missing",
+    );
+    expect(() => service.reopenValidatedNest({ id: "missing" })).toThrowError(
       "Nest not found: missing",
     );
   });

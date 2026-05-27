@@ -1053,6 +1053,92 @@ describe("HedgehogTickService", () => {
     expect(mocks.llm.promptWithTools).toHaveBeenCalledTimes(1);
   });
 
+  it("bypasses the debounce window when a tick is forced", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "write_audit_entry",
+          input: { summary: "noop" },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.enqueueTick("nest-1", "first");
+    // A reopen landing inside the validation tick's debounce window must still
+    // re-engage immediately rather than waiting for the heartbeat.
+    await service.enqueueTick("nest-1", "nest_activated", { force: true });
+    expect(mocks.llm.promptWithTools).toHaveBeenCalledTimes(2);
+  });
+
+  it("forces a tick on activation events but debounces metadata status events", () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([]),
+    });
+    const service = buildService(mocks);
+    const enqueue = vi.spyOn(service, "enqueueTick").mockResolvedValue();
+    service.start();
+    try {
+      // create / unarchive / reopen emit "activated" → forced.
+      mocks.nestService.emit(RtsEvent.NestChanged, {
+        nestId: "nest-1",
+        event: { kind: "activated", nest: makeNest({ status: "active" }) },
+      });
+      // An ordinary metadata save on an already-active nest emits "status" →
+      // debounced, so repeated saves can't each spawn an immediate tick.
+      mocks.nestService.emit(RtsEvent.NestChanged, {
+        nestId: "nest-1",
+        event: { kind: "status", nest: makeNest({ status: "active" }) },
+      });
+
+      expect(enqueue).toHaveBeenCalledWith("nest-1", "nest_activated", {
+        force: true,
+      });
+      expect(enqueue).toHaveBeenCalledWith("nest-1", "nest_status_active");
+    } finally {
+      service.stop();
+      enqueue.mockRestore();
+    }
+  });
+
+  it("queues a forced activation that races an in-flight tick and drains it after", async () => {
+    const mocks = setupMocks({});
+    const resolvers: Array<() => void> = [];
+    (mocks.llm.promptWithTools as ReturnType<typeof vi.fn>).mockImplementation(
+      async () =>
+        await new Promise<PromptWithToolsOutput>((resolve) => {
+          resolvers.push(() => resolve(makePromptWithToolsResponse([])));
+        }),
+    );
+    const service = buildService(mocks);
+    service.start();
+    try {
+      // First tick is in flight — its promptWithTools call is left pending.
+      const first = service.enqueueTick("nest-1", "heartbeat");
+      await vi.waitFor(() => {
+        expect(mocks.llm.promptWithTools).toHaveBeenCalledTimes(1);
+      });
+
+      // A reopen lands mid-tick: the forced activation is queued, not dropped
+      // by the in-flight lock.
+      mocks.nestService.emit(RtsEvent.NestChanged, {
+        nestId: "nest-1",
+        event: { kind: "activated", nest: makeNest({ status: "active" }) },
+      });
+
+      // Releasing the first tick must drain the queued follow-up into a second
+      // tick rather than waiting for the next heartbeat.
+      resolvers[0]?.();
+      await first;
+      await vi.waitFor(() => {
+        expect(mocks.llm.promptWithTools).toHaveBeenCalledTimes(2);
+      });
+      resolvers[1]?.();
+    } finally {
+      service.stop();
+    }
+  });
+
   it("enqueues a tick when a hoglet output row is appended", async () => {
     const mocks = setupMocks({
       promptResponse: makePromptWithToolsResponse([]),

@@ -25,6 +25,7 @@ import { PrGraphSection } from "./nest-detail/PrGraphSection";
 import { useNestChat } from "./nest-detail/useNestChat";
 import { useNestMetadataEdit } from "./nest-detail/useNestMetadataEdit";
 import { ValidationBanner } from "./nest-detail/ValidationBanner";
+import { ReopenNestDialog } from "./ReopenNestDialog";
 
 const log = logger.scope("nest-detail-panel");
 
@@ -52,6 +53,7 @@ export function NestDetailPanel({
   const [archiving, setArchiving] = useState(false);
   const [validateDialogOpen, setValidateDialogOpen] = useState(false);
   const [compactDialogOpen, setCompactDialogOpen] = useState(false);
+  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
 
   const hoglets = useHogletStore(selectNestHoglets(nest.id));
   const taskSummaries = useHogletStore((s) => s.taskSummaries);
@@ -195,6 +197,7 @@ export function NestDetailPanel({
         onSave={() => void metadata.save()}
         onArchive={() => void handleArchive()}
         onOpenCompactDialog={() => setCompactDialogOpen(true)}
+        onOpenReopenDialog={() => setReopenDialogOpen(true)}
       />
 
       <MarkValidatedDialog
@@ -211,6 +214,12 @@ export function NestDetailPanel({
         onOpenChange={setCompactDialogOpen}
         nest={nest}
         onCompacted={(compacted) => useNestStore.getState().upsert(compacted)}
+      />
+      <ReopenNestDialog
+        open={reopenDialogOpen}
+        onOpenChange={setReopenDialogOpen}
+        nest={nest}
+        onReopened={(reopened) => useNestStore.getState().upsert(reopened)}
       />
     </CommandConsole>
   );

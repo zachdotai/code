@@ -262,6 +262,17 @@ export type CompactValidatedNestInput = z.infer<
   typeof compactValidatedNestInput
 >;
 
+/**
+ * Moves a validated nest back to `active` so the hedgehog resumes ticking and
+ * the operator can drive more work. Optional `instructions` are recorded as an
+ * operator chat command so the freshly-reopened tick acts on them instead of
+ * immediately re-validating an already-satisfied definition of done.
+ */
+export const reopenNestInput = nestIdInput.extend({
+  instructions: z.string().trim().min(1).max(4000).optional(),
+});
+export type ReopenNestInput = z.infer<typeof reopenNestInput>;
+
 export const recordBootstrapHandoffInput = z.object({
   nestId: z.string().min(1),
   taskId: z.string().min(1),
@@ -322,15 +333,22 @@ export const hedgehogStateView = z.object({
 export type HedgehogStateView = z.infer<typeof hedgehogStateView>;
 
 /**
- * Discriminated event yielded by `nests.watch(id)`. Status/validated/archived
- * come from `NestService` CRUD; `hedgehog_tick` comes from the tick service;
- * `message_appended` carries newly-written nest chat rows so the renderer
- * doesn't need a separate `nestChat.watch` subscription. `validated` fires
- * when the operator confirms goal completion; the subsequent compaction
- * (`validated` → `dormant`) emits another `status` event.
+ * Discriminated event yielded by `nests.watch(id)`. Status/activated/validated/
+ * archived come from `NestService` CRUD; `hedgehog_tick` comes from the tick
+ * service; `message_appended` carries newly-written nest chat rows so the
+ * renderer doesn't need a separate `nestChat.watch` subscription. `activated`
+ * fires on a real inactive→active transition (create / unarchive / reopen) and
+ * lets the tick scheduler force an immediate tick, whereas `status` is a
+ * generic data change (e.g. metadata save, or the `validated` → `dormant`
+ * compaction). `validated` fires when the operator confirms goal completion.
  */
 export const nestWatchEvent = z.discriminatedUnion("kind", [
+  // Generic data change (e.g. operator metadata save) on an existing nest.
   z.object({ kind: z.literal("status"), nest }),
+  // Real inactive→active transition: create / unarchive / reopen. Distinct
+  // from "status" so the tick scheduler can force an immediate tick on a
+  // genuine activation without doing so for ordinary metadata saves.
+  z.object({ kind: z.literal("activated"), nest }),
   z.object({ kind: z.literal("validated"), nest }),
   z.object({ kind: z.literal("archived"), nest }),
   z.object({ kind: z.literal("hedgehog_tick"), state: hedgehogStateView }),

@@ -10,9 +10,18 @@ import type {
   Nest,
   NestMessage,
   RecordBootstrapHandoffInput,
+  ReopenNestInput,
   SendNestMessageInput,
 } from "./schemas";
 import { SPEC_DRIVEN_DEVELOPMENT_METHOD } from "./spec-driven-development";
+
+/**
+ * Synthetic operator directive landed on an instruction-less reopen. Phrased as
+ * the operator so the hedgehog treats it as a command: hold, do not re-validate
+ * the already-met goal, and wait for the real follow-up.
+ */
+const REOPEN_HOLD_DIRECTIVE =
+  "I've reopened this nest. The goal was already validated, so do not re-validate it — hold and wait for my next instruction before taking any action.";
 
 @injectable()
 export class NestChatService {
@@ -143,6 +152,39 @@ export class NestChatService {
         compaction,
       }),
     });
+  }
+
+  /**
+   * Records the Validated → Active reopen. Writes an audit row marking the
+   * transition, then *always* lands an operator `user_message` so the reopened
+   * tick has an explicit operator command to act on. An operator message
+   * outranks the hedgehog's own plans, so this deterministically steers it away
+   * from re-validating a definition of done that is still met — rather than
+   * leaning on a soft audit nudge it is free to ignore. With no follow-up text
+   * we synthesize a hold directive instead.
+   */
+  recordReopenContext(nest: Nest, input: ReopenNestInput): NestMessage[] {
+    const auditMessage = this.messages.create({
+      nestId: nest.id,
+      kind: "audit",
+      body: formatReopenContext(Boolean(input.instructions)),
+      payloadJson: JSON.stringify({
+        type: "nest_reopened",
+        instructions: input.instructions ?? null,
+      }),
+    });
+
+    const operatorMessage = this.messages.create({
+      nestId: nest.id,
+      kind: "user_message",
+      visibility: "summary",
+      body: input.instructions ?? REOPEN_HOLD_DIRECTIVE,
+      payloadJson: JSON.stringify({
+        source: "reopen_nest",
+        synthetic: !input.instructions,
+      }),
+    });
+    return [auditMessage, operatorMessage];
   }
 
   /**
@@ -385,6 +427,16 @@ function formatValidationContext(input: MarkValidatedInput): string {
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function formatReopenContext(hasInstructions: boolean): string {
+  return [
+    "Nest reopened",
+    "The operator moved this nest from validated back to active to continue work. The definition of done may already be satisfied — do not re-validate on reflex.",
+    hasInstructions
+      ? "Act on the operator's follow-up instructions below before considering validation again."
+      : "The operator will follow up with instructions; hold until they do.",
+  ].join("\n\n");
 }
 
 function formatCompactValidatedNest(

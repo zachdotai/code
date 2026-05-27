@@ -21,6 +21,7 @@ import {
   type NestIdInput,
   type NestMessage,
   type NestWatchEvent,
+  type ReopenNestInput,
   RtsEvent,
   type RtsEvents,
   type UpdateNestInput,
@@ -127,7 +128,7 @@ export class NestService extends TypedEventEmitter<RtsEvents> {
       this.emitMessageAppended(handoffMessage);
     }
     log.info("Nest created", { id: created.id, name: created.name });
-    this.emitChange(created, { kind: "status", nest: created });
+    this.emitChange(created, { kind: "activated", nest: created });
     return created;
   }
 
@@ -206,13 +207,42 @@ export class NestService extends TypedEventEmitter<RtsEvents> {
     return compacted;
   }
 
+  /**
+   * Validated → Active. Reopens a validated nest so the hedgehog resumes
+   * ticking (the heartbeat only schedules `active` nests, and the emitted
+   * `activated` event forces an immediate tick). Operator follow-up
+   * instructions ride along as a `user_message` so the reopened tick acts on
+   * them rather than re-validating a definition of done that is still met.
+   */
+  reopenValidatedNest(input: ReopenNestInput): Nest {
+    const nest = this.nests.findById(input.id);
+    if (!nest) {
+      throw new Error(`Nest not found: ${input.id}`);
+    }
+    if (nest.status !== "validated") {
+      throw new Error("nest_must_be_validated_to_reopen");
+    }
+
+    const reopened = this.nests.update(input.id, { status: "active" });
+    if (!reopened) {
+      throw new Error(`Nest not found: ${input.id}`);
+    }
+    const reopenMessages = this.nestChat.recordReopenContext(reopened, input);
+    for (const message of reopenMessages) {
+      this.emitMessageAppended(message);
+    }
+    log.info("Validated nest reopened", { id: reopened.id });
+    this.emitChange(reopened, { kind: "activated", nest: reopened });
+    return reopened;
+  }
+
   unarchive(input: NestIdInput): Nest {
     const restored = this.nests.unarchive(input.id);
     if (!restored) {
       throw new Error(`Nest not found: ${input.id}`);
     }
     log.info("Nest unarchived", { id: restored.id });
-    this.emitChange(restored, { kind: "status", nest: restored });
+    this.emitChange(restored, { kind: "activated", nest: restored });
     return restored;
   }
 

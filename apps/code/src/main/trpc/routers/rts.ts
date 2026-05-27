@@ -62,6 +62,7 @@ import {
   recordRoutedFeedbackInput,
   recordSignalBackedHogletInput,
   releaseHogletInput,
+  reopenNestInput,
   retireHogletByTaskIdInput,
   retireHogletInput,
   reviveHogletInput,
@@ -156,6 +157,11 @@ export const rtsRouter = router({
       .input(compactValidatedNestInput)
       .output(nest)
       .mutation(({ input }) => getService().compactValidatedNest(input)),
+
+    reopen: publicProcedure
+      .input(reopenNestInput)
+      .output(nest)
+      .mutation(({ input }) => getService().reopenValidatedNest(input)),
 
     unarchive: publicProcedure
       .input(nestIdInput)

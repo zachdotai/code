@@ -54,8 +54,8 @@ export function ValidationBanner({
             </Text>
           </Flex>
           <Text size="2" color="gray">
-            Goal confirmed. Compact the nest when you no longer need the full
-            chat trail.
+            Goal confirmed. Reopen the nest to hand the hedgehog more work, or
+            compact it when you no longer need the full chat trail.
           </Text>
         </Flex>
       </div>

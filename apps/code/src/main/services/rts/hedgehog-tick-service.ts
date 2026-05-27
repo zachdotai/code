@@ -108,6 +108,13 @@ export class HedgehogTickService {
   private readonly inFlight = new Set<string>();
   private readonly lastEnqueuedAt = new Map<string, number>();
   private readonly tickAbortControllers = new Map<string, AbortController>();
+  /**
+   * Forced ticks (nest activation) that arrived while a tick was already in
+   * flight for that nest. Drained once the running tick exits so a fast reopen
+   * mid-tick still re-engages immediately. Keyed by nestId → at most one
+   * follow-up per nest; the latest reason wins.
+   */
+  private readonly pendingForcedTick = new Map<string, string>();
   private heartbeatHandle: ReturnType<typeof setInterval> | null = null;
   private readonly onNestChanged = (data: NestChangedEvent): void => {
     this.handleNestEvent(data);
@@ -195,6 +202,7 @@ export class HedgehogTickService {
     }
     this.tickAbortControllers.clear();
     this.inFlight.clear();
+    this.pendingForcedTick.clear();
     log.info("HedgehogTickService stopped");
   }
 
@@ -202,15 +210,26 @@ export class HedgehogTickService {
    * Schedule a tick for `nestId`. Debounces within `MIN_TICK_INTERVAL_MS`,
    * no-ops if a tick is already in flight. Returns the (fire-and-forget)
    * promise for tests and callers that want to await completion.
+   *
+   * `force` bypasses the debounce window for deliberate, infrequent lifecycle
+   * transitions (a nest going `active`) so re-engagement is immediate even when
+   * a tick was just enqueued — e.g. reopening a nest seconds after the tick
+   * that validated it. The in-flight lock is still honored so a nest never
+   * runs two concurrent ticks; a forced tick that loses that race is queued as
+   * a single follow-up and drained when the running tick exits.
    */
-  enqueueTick(nestId: string, reason: string): Promise<void> {
+  enqueueTick(
+    nestId: string,
+    reason: string,
+    options?: { force?: boolean },
+  ): Promise<void> {
     if (!this.started) {
       // Allow direct calls from tests without start().
       log.debug("enqueueTick before start()", { nestId, reason });
     }
     const now = Date.now();
     const last = this.lastEnqueuedAt.get(nestId) ?? 0;
-    if (now - last < MIN_TICK_INTERVAL_MS) {
+    if (!options?.force && now - last < MIN_TICK_INTERVAL_MS) {
       log.debug("tick debounced", {
         nestId,
         reason,
@@ -219,7 +238,19 @@ export class HedgehogTickService {
       return Promise.resolve();
     }
     if (this.inFlight.has(nestId)) {
-      log.debug("tick already in flight", { nestId, reason });
+      if (options?.force) {
+        // A forced activation (reopen / create / unarchive) racing a finishing
+        // tick must not be silently dropped — queue exactly one follow-up to
+        // fire after the current tick exits, so re-engagement doesn't wait for
+        // the next heartbeat. runTick drains this in its finally block.
+        this.pendingForcedTick.set(nestId, reason);
+        log.debug("forced tick queued behind in-flight tick", {
+          nestId,
+          reason,
+        });
+      } else {
+        log.debug("tick already in flight", { nestId, reason });
+      }
       return Promise.resolve();
     }
     this.lastEnqueuedAt.set(nestId, now);
@@ -239,8 +270,16 @@ export class HedgehogTickService {
       }
       return;
     }
+    if (event.kind === "activated") {
+      // Real inactive→active transition (create / unarchive / reopen). Force
+      // past the debounce so a reopen that lands inside the validation tick's
+      // window re-engages now rather than waiting for the heartbeat.
+      void this.enqueueTick(data.nestId, "nest_activated", { force: true });
+      return;
+    }
     if (event.kind === "status" && event.nest.status === "active") {
-      // Newly created/unarchived → kick off an initial tick.
+      // Data change (e.g. operator metadata save) on an already-active nest.
+      // Debounced — repeated saves must not each spawn an immediate tick.
       void this.enqueueTick(data.nestId, "nest_status_active");
     }
   }
@@ -285,6 +324,14 @@ export class HedgehogTickService {
         this.tickAbortControllers.delete(nestId);
       }
       this.inFlight.delete(nestId);
+      // Drain a forced activation that raced this tick. Always clear the entry;
+      // only re-enqueue while running (stop() clears it, so a teardown abort
+      // can't resurrect a tick on a stopped service).
+      const pendingReason = this.pendingForcedTick.get(nestId);
+      this.pendingForcedTick.delete(nestId);
+      if (this.started && pendingReason !== undefined) {
+        void this.enqueueTick(nestId, pendingReason, { force: true });
+      }
     }
   }
 

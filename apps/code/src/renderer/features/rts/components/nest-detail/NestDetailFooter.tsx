@@ -1,6 +1,10 @@
 import { KeyHint } from "@components/ui/KeyHint";
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
-import { Archive, FloppyDisk } from "@phosphor-icons/react";
+import {
+  Archive,
+  ArrowCounterClockwise,
+  FloppyDisk,
+} from "@phosphor-icons/react";
 import { Button } from "@radix-ui/themes";
 import type { NestLifecycle } from "../../utils/nestLifecycle";
 import { CommandConsole } from "../CommandConsole";
@@ -14,6 +18,7 @@ interface NestDetailFooterProps {
   onSave: () => void;
   onArchive: () => void;
   onOpenCompactDialog: () => void;
+  onOpenReopenDialog: () => void;
 }
 
 export function NestDetailFooter({
@@ -25,6 +30,7 @@ export function NestDetailFooter({
   onSave,
   onArchive,
   onOpenCompactDialog,
+  onOpenReopenDialog,
 }: NestDetailFooterProps) {
   const t = useFunSpeak();
   return (
@@ -40,6 +46,18 @@ export function NestDetailFooter({
           <FloppyDisk size={14} />
           {t("Save")}
           <KeyHint className="ml-1">S</KeyHint>
+        </Button>
+      )}
+      {lifecycle === "validated" && (
+        <Button
+          color="amber"
+          variant="soft"
+          onClick={onOpenReopenDialog}
+          disabled={saving || archiving}
+          size="2"
+        >
+          <ArrowCounterClockwise size={14} />
+          Reopen nest
         </Button>
       )}
       {lifecycle === "validated" && (

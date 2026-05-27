@@ -25,10 +25,11 @@ export const defaultNestSubscriptionDeps: NestSubscriptionDeps = {
 
 /**
  * Subscribes to a single nest's watch stream. The watch channel multiplexes
- * five event kinds — status/validated/archived (nest CRUD), hedgehog_tick
- * (sprite glow state), and message_appended (live chat append). Both `status`
- * and `validated` upsert the nest row so the renderer sees the new status
- * (validated/dormant/etc.) without re-fetching.
+ * six event kinds — status/activated/validated/archived (nest CRUD),
+ * hedgehog_tick (sprite glow state), and message_appended (live chat append).
+ * `status`, `activated`, and `validated` all upsert the nest row so the
+ * renderer sees the new status (active/validated/dormant/etc.) without
+ * re-fetching; only the main-process tick scheduler distinguishes them.
  */
 function watchNest(id: string, deps: NestSubscriptionDeps): WatchHandle {
   return deps.remote.watch(id, {
@@ -38,6 +39,7 @@ function watchNest(id: string, deps: NestSubscriptionDeps): WatchHandle {
           deps.nests.remove(event.nest.id);
           return;
         case "status":
+        case "activated":
         case "validated":
           deps.nests.upsert(event.nest);
           return;

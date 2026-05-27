@@ -255,6 +255,53 @@ describe("NestChatService", () => {
     expect(validation?.payloadJson).toContain('"type":"nest_validated"');
   });
 
+  it("records reopen as an audit row plus an operator command when instructions are given", () => {
+    const nest = makeNest({ status: "active" });
+
+    const messages = service.recordReopenContext(nest, {
+      id: nest.id,
+      instructions: "Clean up the spec-notation references in the open PRs.",
+    });
+
+    expect(messages.map((message) => message.kind)).toEqual([
+      "audit",
+      "user_message",
+    ]);
+    const [audit, command] = messages;
+    expect(audit.body).toContain("Nest reopened");
+    expect(audit.body).toContain("do not re-validate on reflex");
+    expect(audit.body).toContain("Act on the operator's follow-up");
+    expect(audit.payloadJson).toContain('"type":"nest_reopened"');
+    // The follow-up rides as a real operator message so the reopened tick
+    // treats it as a command that outranks the hedgehog's own plans.
+    expect(command.kind).toBe("user_message");
+    expect(command.visibility).toBe("summary");
+    expect(command.body).toBe(
+      "Clean up the spec-notation references in the open PRs.",
+    );
+    expect(command.payloadJson).toContain('"synthetic":false');
+  });
+
+  it("synthesizes an operator hold directive when reopened with no instructions", () => {
+    const nest = makeNest({ status: "active" });
+
+    const messages = service.recordReopenContext(nest, { id: nest.id });
+
+    expect(messages.map((message) => message.kind)).toEqual([
+      "audit",
+      "user_message",
+    ]);
+    const [audit, command] = messages;
+    expect(audit.body).toContain("hold until they do");
+    expect(audit.payloadJson).toContain('"instructions":null');
+    // Determinism: a real operator command (not just the soft audit) tells the
+    // hedgehog to hold rather than re-validate the already-met goal on reflex.
+    expect(command.kind).toBe("user_message");
+    expect(command.body).toContain("do not re-validate");
+    expect(command.body).toContain("hold");
+    expect(command.payloadJson).toContain('"synthetic":true');
+  });
+
   it("records hoglet message idempotently per turn", () => {
     const first = service.recordHogletMessage({
       nestId: "nest-1",
