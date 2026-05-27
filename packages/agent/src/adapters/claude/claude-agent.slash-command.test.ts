@@ -71,93 +71,83 @@ function installFakeSession(agent: Agent, sessionId: string): MockQuery {
   return query;
 }
 
-describe("ClaudeAcpAgent.prompt — unsupported slash command", () => {
+function findUnsupportedChunkText(
+  calls: ClientMocks["sessionUpdate"]["mock"]["calls"],
+): string | undefined {
+  const match = calls.find(([call]) => {
+    const update = (
+      call as {
+        update?: { sessionUpdate?: string; content?: { text?: string } };
+      }
+    ).update;
+    return (
+      update?.sessionUpdate === "agent_message_chunk" &&
+      update?.content?.text?.toLowerCase().includes("unsupported")
+    );
+  });
+  return (match?.[0] as { update: { content: { text: string } } } | undefined)
+    ?.update.content.text;
+}
+
+describe("ClaudeAcpAgent.prompt — early idle handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("emits a clear error and ends the turn when SDK silently consumes an unsupported slash command", async () => {
+  const cases = [
+    {
+      label: "unsupported slash command surfaces error and ends turn",
+      sessionId: "s-slash",
+      prompt: "/plugin install slack",
+      expectsUnsupportedChunk: true,
+      commandInMessage: "/plugin",
+    },
+    {
+      label: "non-slash prompt with early idle is silently skipped",
+      sessionId: "s-regular",
+      prompt: "hello",
+      expectsUnsupportedChunk: false,
+      commandInMessage: null,
+    },
+  ] as const;
+
+  it.each(cases)("$label", async (tc) => {
     const { agent, client } = makeAgent();
-    const query = installFakeSession(agent, "s-slash");
+    const query = installFakeSession(agent, tc.sessionId);
 
     const promptPromise = agent.prompt({
-      sessionId: "s-slash",
-      prompt: [{ type: "text", text: "/plugin install slack" }],
+      sessionId: tc.sessionId,
+      prompt: [{ type: "text", text: tc.prompt }],
     });
 
     // Let the prompt loop start awaiting the first SDK message.
     await new Promise((resolve) => setImmediate(resolve));
 
-    // Simulate the SDK going idle without echoing the user message back
-    // (the failure mode reported in #2158).
-    const idleMessage: SDKMessage = {
-      type: "system",
-      subtype: "session_state_changed",
-      state: "idle",
-    } as unknown as SDKMessage;
-    query._mockHelpers.sendMessage(idleMessage);
-    query._mockHelpers.complete();
-
-    const result = await promptPromise;
-
-    expect(result.stopReason).toBe("end_turn");
-
-    const errorChunk = client.sessionUpdate.mock.calls.find(
-      ([call]) =>
-        (call as { update?: { sessionUpdate?: string } }).update
-          ?.sessionUpdate === "agent_message_chunk",
-    );
-    expect(errorChunk).toBeDefined();
-    const errorText =
-      (
-        errorChunk?.[0] as {
-          update: { content: { text: string } };
-        }
-      ).update.content.text ?? "";
-    expect(errorText).toContain("/plugin");
-    expect(errorText.toLowerCase()).toContain("unsupported");
-  });
-
-  it("still skips a pre-prompt idle for non-slash-command prompts", async () => {
-    const { agent, client } = makeAgent();
-    const query = installFakeSession(agent, "s-regular");
-
-    const promptPromise = agent.prompt({
-      sessionId: "s-regular",
-      prompt: [{ type: "text", text: "hello" }],
-    });
-
-    await new Promise((resolve) => setImmediate(resolve));
-
-    // First an unrelated idle (e.g. from a background task) before the prompt
-    // is replayed — should be skipped, not surfaced as an error.
     query._mockHelpers.sendMessage({
       type: "system",
       subtype: "session_state_changed",
       state: "idle",
     } as unknown as SDKMessage);
-
-    // Then the SDK is done with no further output. The existing loop exits via
-    // the "Session did not end in result" path.
     query._mockHelpers.complete();
 
-    await expect(promptPromise).rejects.toThrow(
-      /Session did not end in result/,
-    );
+    if (tc.expectsUnsupportedChunk) {
+      const result = await promptPromise;
+      expect(result.stopReason).toBe("end_turn");
 
-    // Most importantly: no agent_message_chunk with an "unsupported" error
-    // was emitted for the regular prompt.
-    const errorChunk = client.sessionUpdate.mock.calls.find(([call]) => {
-      const update = (
-        call as {
-          update?: { sessionUpdate?: string; content?: { text?: string } };
-        }
-      ).update;
-      return (
-        update?.sessionUpdate === "agent_message_chunk" &&
-        update?.content?.text?.toLowerCase().includes("unsupported")
+      const text = findUnsupportedChunkText(client.sessionUpdate.mock.calls);
+      expect(text).toBeDefined();
+      if (tc.commandInMessage) {
+        expect(text).toContain(tc.commandInMessage);
+      }
+    } else {
+      // No unsupported chunk; loop falls through to the existing
+      // "Session did not end in result" failure path.
+      await expect(promptPromise).rejects.toThrow(
+        /Session did not end in result/,
       );
-    });
-    expect(errorChunk).toBeUndefined();
+      expect(
+        findUnsupportedChunkText(client.sessionUpdate.mock.calls),
+      ).toBeUndefined();
+    }
   });
 });

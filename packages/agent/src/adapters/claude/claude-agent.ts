@@ -500,7 +500,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 // and produced no output (e.g. /plugin in a non-interactive
                 // context). Without this branch we would loop forever waiting
                 // for an echo that never comes; surface a clear error instead.
-                if (commandMatch && !isLocalOnlyCommand) {
+                if (commandMatch) {
                   const cmd = commandMatch[1];
                   this.logger.warn(
                     "Slash command produced no output; treating as unsupported",
