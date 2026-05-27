@@ -1,0 +1,14 @@
+{
+  "name": "@posthog/ralph-loop",
+  "displayName": "Ralph Loop",
+  "version": "0.1.0",
+  "description": "Command-only Ralph loops for paced iterative development.",
+  "posthogCode": {
+    "extensions": [
+      "extensions/index.cjs"
+    ],
+    "skills": [
+      "skills"
+    ]
+  }
+}
