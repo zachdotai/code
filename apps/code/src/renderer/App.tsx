@@ -12,6 +12,8 @@ import {
 } from "@features/auth/hooks/authQueries";
 import { useAuthSession } from "@features/auth/hooks/useAuthSession";
 import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
+import { registerBillingSubscriptions } from "@features/billing/subscriptions";
+import { AddDirectoryDialog } from "@features/folder-picker/components/AddDirectoryDialog";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
@@ -25,7 +27,7 @@ import { isNotAuthenticatedError } from "@shared/errors";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { initializePostHog, track } from "@utils/analytics";
+import { initializePostHog, registerAppVersion, track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { AnimatePresence, motion } from "framer-motion";
@@ -41,18 +43,21 @@ function App() {
   const hasCompletedOnboarding = useOnboardingStore(
     (state) => state.hasCompletedOnboarding,
   );
-  const selectedDirectory = useOnboardingStore(
-    (state) => state.selectedDirectory,
-  );
   const isAuthenticated = authState.status === "authenticated";
   const hasCodeAccess = authState.hasCodeAccess;
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const [showTransition, setShowTransition] = useState(false);
   const wasInMainApp = useRef(isAuthenticated && hasCompletedOnboarding);
 
-  // Initialize PostHog analytics
+  // Initialize PostHog analytics and register the app version super property.
   useEffect(() => {
     initializePostHog();
+    trpcClient.os.getAppVersion
+      .query()
+      .then(registerAppVersion)
+      .catch((error) => {
+        log.warn("Failed to register app version super property", { error });
+      });
   }, []);
 
   // Initialize connectivity monitoring
@@ -64,6 +69,11 @@ function App() {
       disposeStore();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    return registerBillingSubscriptions();
+  }, [isAuthenticated]);
 
   // Initialize update store
   useEffect(() => {
@@ -207,6 +217,14 @@ function App() {
     wasInMainApp.current = isInMainApp;
   }, [isAuthenticated, hasCompletedOnboarding, isDarkMode]);
 
+  const wasShowingAiGateRef = useRef(false);
+  useEffect(() => {
+    if (wasShowingAiGateRef.current && !needsAiApproval && currentOrg != null) {
+      track(ANALYTICS_EVENTS.AI_CONSENT_APPROVED);
+    }
+    wasShowingAiGateRef.current = needsAiApproval;
+  }, [needsAiApproval, currentOrg]);
+
   const handleTransitionComplete = () => {
     setShowTransition(false);
   };
@@ -223,11 +241,8 @@ function App() {
   }
 
   // Rendering: onboarding (includes auth + invite code gate) → main app
-  // We also route to onboarding when no directory is selected — without one, the
-  // main app has nothing meaningful to show (the dev "Skip setup" button can
-  // produce this state by flipping hasCompletedOnboarding without picking a directory).
   const renderContent = () => {
-    if (!hasCompletedOnboarding || !selectedDirectory) {
+    if (!hasCompletedOnboarding) {
       return (
         <motion.div key="onboarding" initial={{ opacity: 1 }}>
           <OnboardingFlow />
@@ -306,6 +321,7 @@ function App() {
         onComplete={handleTransitionComplete}
       />
       <ScopeReauthPrompt />
+      <AddDirectoryDialog />
       <Toaster position="bottom-right" />
     </ErrorBoundary>
   );

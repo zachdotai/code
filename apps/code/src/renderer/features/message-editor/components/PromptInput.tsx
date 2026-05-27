@@ -55,7 +55,7 @@ export interface PromptInputProps {
   onFocus?: () => void;
   onBlur?: () => void;
   // manual submit override (for flows like new-task that submit outside the editor hook)
-  onSubmitClick?: () => void;
+  onSubmitClick?: () => unknown;
   submitTooltipOverride?: string;
   editorHeight?: "default" | "large";
   tourTarget?: string;
@@ -115,6 +115,8 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       getContent,
       setContent,
       insertChip,
+      removeChipById,
+      replaceChipAttrs,
       attachments,
       addAttachment,
       removeAttachment,
@@ -153,6 +155,8 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getText,
         setContent,
         insertChip,
+        removeChipById,
+        replaceChipAttrs,
         addAttachment,
         removeAttachment,
       }),
@@ -165,6 +169,8 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getText,
         setContent,
         insertChip,
+        removeChipById,
+        replaceChipAttrs,
         addAttachment,
         removeAttachment,
       ],
@@ -305,9 +311,11 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
             <AttachmentMenu
               disabled={disabled}
               repoPath={repoPath}
+              taskId={taskId}
               onAddAttachment={addAttachment}
               onAttachFiles={onAttachFiles}
               onInsertChip={insertChip}
+              onRemoveChip={removeChipById}
             />
             {modeOption && onModeChange && (
               <ModeSelector

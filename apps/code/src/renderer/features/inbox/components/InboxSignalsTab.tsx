@@ -1,9 +1,11 @@
+import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
+import { useCurrentUser } from "@features/auth/hooks/authQueries";
 import {
   SelectReportPane,
   SkeletonBackdrop,
   WarmingUpPane,
-  WelcomePane,
 } from "@features/inbox/components/InboxEmptyStates";
+import { InboxSetupPane } from "@features/inbox/components/InboxSetupPane";
 import { InboxSourcesDialog } from "@features/inbox/components/InboxSourcesDialog";
 import {
   inboxBulkSnoozeDisabledReason,
@@ -11,11 +13,13 @@ import {
   useInboxBulkActions,
 } from "@features/inbox/hooks/useInboxBulkActions";
 import { useInboxDeepLinkListSync } from "@features/inbox/hooks/useInboxDeepLinkListSync";
+import { useInboxEngagementTracker } from "@features/inbox/hooks/useInboxEngagementTracker";
 import {
   useInboxAvailableSuggestedReviewers,
   useInboxReportsInfinite,
   useInboxSignalProcessingState,
 } from "@features/inbox/hooks/useInboxReports";
+import { useSeedSuggestedReviewerFilter } from "@features/inbox/hooks/useSeedSuggestedReviewerFilter";
 import { useSignalSourceConfigs } from "@features/inbox/hooks/useSignalSourceConfigs";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
@@ -29,9 +33,11 @@ import {
   isReportUpForReview,
 } from "@features/inbox/utils/filterReports";
 import { INBOX_REFETCH_INTERVAL_MS } from "@features/inbox/utils/inboxConstants";
+import { setPendingInboxOpenMethod } from "@features/inbox/utils/pendingInboxOpenMethod";
 import { DiscoveredTaskDetailPane } from "@features/setup/components/DiscoveredTaskDetailPane";
 import { RecommendedSetupTasks } from "@features/setup/components/RecommendedSetupTasks";
 import { useSetupStore } from "@features/setup/stores/setupStore";
+import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import {
   useIntegrations,
   useRepositoryIntegration,
@@ -39,8 +45,10 @@ import {
 import { Box, Flex, ScrollArea } from "@radix-ui/themes";
 import { isDismissalReasonSnooze } from "@shared/dismissalReasons";
 import type { SignalReport, SignalReportsQueryParams } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
+import { track } from "@utils/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DismissReportDialog,
@@ -66,6 +74,22 @@ export function InboxSignalsTab() {
   const suggestedReviewerFilter = useInboxSignalsFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
+  // ── Current user (seeds reviewer filter on first inbox visit) ───────────
+  const authClient = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({
+    client: authClient,
+    enabled: !!authClient,
+  });
+  // Gates the seed below: backend filters reports by GitHub login, not UUID.
+  const { data: githubLogin } = useAuthenticatedQuery(
+    ["github_login"],
+    (client) => client.getGithubLogin(),
+    { staleTime: 5 * 60 * 1000 },
+  );
+  useSeedSuggestedReviewerFilter({
+    currentUserUuid: currentUser?.uuid,
+    githubLogin,
+  });
 
   // ── GitHub integration ───────────────────────────────────────────────
   const { hasGithubIntegration } = useRepositoryIntegration();
@@ -220,6 +244,9 @@ export function InboxSignalsTab() {
   const clearSelection = useInboxReportSelectionStore((s) => s.clearSelection);
 
   const [dismissReport, setDismissReport] = useState<SignalReport | null>(null);
+  const [dismissDialogSurface, setDismissDialogSurface] = useState<
+    "toolbar" | "detail_pane"
+  >("detail_pane");
 
   const dismissTargetId = dismissReport?.id ?? null;
   const dismissBulkActions = useInboxBulkActions(allReports, dismissTargetId);
@@ -228,30 +255,94 @@ export function InboxSignalsTab() {
     if (!open) setDismissReport(null);
   }, []);
 
-  const handleDismissConfirm = useCallback(
-    async (result: DismissReportDialogResult) => {
-      if (dismissTargetId == null) return;
-      const ok = isDismissalReasonSnooze(result.reason)
-        ? await dismissBulkActions.snoozeSelected()
-        : await dismissBulkActions.suppressSelected(result);
-      if (ok) {
-        setDismissReport(null);
-      }
-    },
-    [dismissBulkActions, dismissTargetId],
-  );
-
   const { selectedReport } = useInboxDeepLinkListSync({
     reports,
     inboxPollingActive,
   });
 
+  const tracker = useInboxEngagementTracker({
+    currentReportId:
+      selectedReportIds.length === 1 ? selectedReportIds[0] : null,
+    currentReport: selectedReport,
+    reports,
+    isInboxView,
+  });
+
+  const handleDismissConfirm = useCallback(
+    async (result: DismissReportDialogResult) => {
+      if (dismissTargetId == null) return;
+      // Snapshot the visible list + report shape before the mutation — by the time it
+      // resolves the inbox query has been invalidated and the report we just dismissed
+      // is gone, so an after-the-fact lookup would record rank: -1 + a smaller list_size.
+      const preMutationRank = reports.findIndex(
+        (r) => r.id === dismissTargetId,
+      );
+      const preMutationListSize = reports.length;
+      const target = allReports.find((r) => r.id === dismissTargetId);
+      const ageMs = target
+        ? Date.now() - new Date(target.created_at).getTime()
+        : Number.NaN;
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
+
+      const isSnooze = isDismissalReasonSnooze(result.reason);
+      const ok = isSnooze
+        ? await dismissBulkActions.snoozeSelected()
+        : await dismissBulkActions.suppressSelected(result);
+      if (ok) {
+        tracker.signalAction({
+          report_id: dismissTargetId,
+          report_title: target?.title ?? null,
+          report_age_hours: reportAgeHours,
+          action_type: isSnooze ? "snooze" : "dismiss",
+          surface: dismissDialogSurface,
+          is_bulk: false,
+          bulk_size: 1,
+          rank: preMutationRank,
+          list_size: preMutationListSize,
+          // Snapshot priority/actionability from the pre-mutation target —
+          // by the time this fires the report has been removed from `reports`.
+          priority: target?.priority ?? null,
+          actionability: target?.actionability ?? null,
+          ...(isSnooze
+            ? {}
+            : {
+                dismissal_reason: result.reason,
+                ...(result.note.trim()
+                  ? { dismissal_note: result.note.slice(0, 1000) }
+                  : {}),
+              }),
+        });
+        setDismissReport(null);
+      }
+    },
+    [
+      dismissBulkActions,
+      dismissTargetId,
+      dismissDialogSurface,
+      tracker,
+      allReports,
+      reports,
+    ],
+  );
+
   const openDismissDialogFromToolbar = useCallback(() => {
     if (selectedReportIds.length !== 1) return;
     const id = selectedReportIds[0];
     const report = allReports.find((r) => r.id === id);
-    if (report) setDismissReport(report);
+    if (report) {
+      setDismissDialogSurface("toolbar");
+      setDismissReport(report);
+    }
   }, [selectedReportIds, allReports]);
+
+  const openDismissDialogFromDetailPane = useCallback(() => {
+    if (selectedReport) {
+      setDismissDialogSurface("detail_pane");
+      setDismissReport(selectedReport);
+    }
+  }, [selectedReport]);
 
   const dismissMutationPending =
     dismissReport != null &&
@@ -277,24 +368,21 @@ export function InboxSignalsTab() {
       // detail pane can swap to the report.
       useSetupStore.getState().selectDiscoveredTask(null);
       if (event.shiftKey) {
+        setPendingInboxOpenMethod("click_shift");
         selectRange(
           reportId,
           reportsRef.current.map((r) => r.id),
         );
       } else if (event.metaKey) {
+        setPendingInboxOpenMethod("click_cmd");
         toggleReportSelection(reportId);
-      } else if (
-        selectedReportIdsRef.current.length === 1 &&
-        selectedReportIdsRef.current[0] === reportId
-      ) {
-        // Plain click on the only selected report — deselect it
-        clearSelection();
       } else {
-        // Plain click — select only this report
+        // Plain click — select only this report (no-op if already the sole selection)
+        setPendingInboxOpenMethod("click");
         setSelectedReportIds([reportId]);
       }
     },
-    [selectRange, toggleReportSelection, setSelectedReportIds, clearSelection],
+    [selectRange, toggleReportSelection, setSelectedReportIds],
   );
 
   // Select-all checkbox
@@ -387,11 +475,37 @@ export function InboxSignalsTab() {
     sourceProductFilter.length > 0 ||
     suggestedReviewerFilter.length > 0 ||
     statusFilter.length < 5;
+
+  // Sticky for the visit: once entered, only "Proceed to Inbox" or unmount exits.
+  // Gated on prerequisites loading so we don't latch users who already have a
+  // configured inbox.
+  const [hasEnteredOnboarding, setHasEnteredOnboarding] = useState(false);
+  const [userExitedOnboarding, setUserExitedOnboarding] = useState(false);
+  useEffect(() => {
+    if (
+      inboxSourcesPrerequisitesLoaded &&
+      !isLoading &&
+      error == null &&
+      !hasReports &&
+      !hasSignalSources
+    ) {
+      setHasEnteredOnboarding(true);
+    }
+  }, [
+    inboxSourcesPrerequisitesLoaded,
+    isLoading,
+    error,
+    hasReports,
+    hasSignalSources,
+  ]);
+
+  const showInboxOnboarding = hasEnteredOnboarding && !userExitedOnboarding;
   const shouldShowTwoPane =
-    hasReports ||
-    !!searchQuery.trim() ||
-    hasActiveFilters ||
-    hasDiscoveredTasks;
+    !showInboxOnboarding &&
+    (hasReports ||
+      !!searchQuery.trim() ||
+      hasActiveFilters ||
+      hasDiscoveredTasks);
 
   // Sticky: once we enter two-pane mode, stay there even if a refetch
   // momentarily empties the list (e.g. when sort order changes).
@@ -400,6 +514,81 @@ export function InboxSignalsTab() {
     hasMountedTwoPaneRef.current = true;
   }
   const showTwoPaneLayout = hasMountedTwoPaneRef.current;
+
+  // ── Inbox viewed analytics — fire once per visit when data settles ─────
+  const inboxViewedFiredRef = useRef(false);
+  useEffect(() => {
+    if (!isInboxView) {
+      inboxViewedFiredRef.current = false;
+      return;
+    }
+    if (isLoading) return;
+    if (inboxViewedFiredRef.current) return;
+    inboxViewedFiredRef.current = true;
+    const priorityCounts = {
+      P0: 0,
+      P1: 0,
+      P2: 0,
+      P3: 0,
+      P4: 0,
+      unknown: 0,
+    };
+    const actionabilityCounts = {
+      immediately_actionable: 0,
+      requires_human_input: 0,
+      not_actionable: 0,
+      unknown: 0,
+    };
+    for (const r of reports) {
+      const p = r.priority;
+      if (p === "P0" || p === "P1" || p === "P2" || p === "P3" || p === "P4") {
+        priorityCounts[p] += 1;
+      } else {
+        priorityCounts.unknown += 1;
+      }
+      const a = r.actionability;
+      if (
+        a === "immediately_actionable" ||
+        a === "requires_human_input" ||
+        a === "not_actionable"
+      ) {
+        actionabilityCounts[a] += 1;
+      } else {
+        actionabilityCounts.unknown += 1;
+      }
+    }
+    track(ANALYTICS_EVENTS.INBOX_VIEWED, {
+      report_count: reports.length,
+      total_count: totalCount,
+      ready_count: readyCount,
+      has_active_filters: hasActiveFilters,
+      source_product_filter: sourceProductFilter,
+      status_filter_count: statusFilter.length,
+      is_empty: totalCount === 0,
+      is_gated_due_to_scale: false,
+      priority_p0_count: priorityCounts.P0,
+      priority_p1_count: priorityCounts.P1,
+      priority_p2_count: priorityCounts.P2,
+      priority_p3_count: priorityCounts.P3,
+      priority_p4_count: priorityCounts.P4,
+      priority_unknown_count: priorityCounts.unknown,
+      actionability_immediately_actionable_count:
+        actionabilityCounts.immediately_actionable,
+      actionability_requires_human_input_count:
+        actionabilityCounts.requires_human_input,
+      actionability_not_actionable_count: actionabilityCounts.not_actionable,
+      actionability_unknown_count: actionabilityCounts.unknown,
+    });
+  }, [
+    isInboxView,
+    isLoading,
+    reports,
+    totalCount,
+    readyCount,
+    hasActiveFilters,
+    sourceProductFilter,
+    statusFilter.length,
+  ]);
 
   // ── Arrow-key navigation between reports ──────────────────────────────
   const leftPaneRef = useRef<HTMLDivElement>(null);
@@ -450,6 +639,7 @@ export function InboxSignalsTab() {
         // so reversing direction correctly contracts the selection.
         const anchor =
           useInboxReportSelectionStore.getState().lastClickedId ?? nextId;
+        setPendingInboxOpenMethod("keyboard");
         selectExactRange(
           anchor,
           nextId,
@@ -457,6 +647,7 @@ export function InboxSignalsTab() {
         );
         keyboardCursorIdRef.current = nextId;
       } else {
+        setPendingInboxOpenMethod("keyboard");
         setSelectedReportIds([nextId]);
         keyboardCursorIdRef.current = nextId;
       }
@@ -521,7 +712,19 @@ export function InboxSignalsTab() {
 
   return (
     <>
-      {showTwoPaneLayout ? (
+      {showInboxOnboarding ? (
+        // Inline setup pane for users with no sources configured.
+        // The toolbar (report counter, search, bulk actions) is suppressed
+        // entirely — none of it is meaningful before any source is configured.
+        // Sticky within the visit: stays until the user clicks "Proceed to
+        // Inbox" inside the pane or navigates away.
+        <ScrollArea className="h-full">
+          <InboxSetupPane
+            hasSignalSources={hasSignalSources}
+            onProceedToInbox={() => setUserExitedOnboarding(true)}
+          />
+        </ScrollArea>
+      ) : showTwoPaneLayout ? (
         <Flex ref={containerRef} height="100%" className="min-h-0">
           {/* ── Left pane: report list ───────────────────────────────── */}
           <Box
@@ -594,6 +797,7 @@ export function InboxSignalsTab() {
                     onConfigureSources={() => setSourcesDialogOpen(true)}
                     onOpenDismissDialog={openDismissDialogFromToolbar}
                     isDismissMutationPending={dismissMutationPending}
+                    onReportAction={tracker.signalAction}
                   />
                 </Box>
                 <RecommendedSetupTasks
@@ -645,12 +849,14 @@ export function InboxSignalsTab() {
               <ReportDetailPane
                 report={selectedReport}
                 onClose={clearSelection}
-                onRequestDismissReport={() => setDismissReport(selectedReport)}
+                onRequestDismissReport={openDismissDialogFromDetailPane}
                 suppressDisabledReason={inboxBulkSuppressDisabledReason(
                   allReports,
                   [selectedReport.id],
                 )}
                 isDismissMutationPending={dismissMutationPending}
+                onReportAction={tracker.signalAction}
+                onScroll={tracker.signalScroll}
               />
             ) : selectedDiscoveredTask ? (
               <DiscoveredTaskDetailPane
@@ -663,7 +869,7 @@ export function InboxSignalsTab() {
           </Flex>
         </Flex>
       ) : (
-        /* ── Full-width empty state with skeleton backdrop ──────── */
+        // Full-width warming-up state with skeleton backdrop
         <Box className="relative h-full">
           <Flex direction="column">
             <SignalsToolbar
@@ -685,14 +891,10 @@ export function InboxSignalsTab() {
             className="pointer-events-none absolute inset-0 flex items-center justify-center"
           >
             <Box className="pointer-events-auto">
-              {!hasSignalSources || !hasGithubIntegration ? (
-                <WelcomePane onEnableInbox={() => setSourcesDialogOpen(true)} />
-              ) : (
-                <WarmingUpPane
-                  onConfigureSources={() => setSourcesDialogOpen(true)}
-                  enabledProducts={enabledProducts}
-                />
-              )}
+              <WarmingUpPane
+                onConfigureSources={() => setSourcesDialogOpen(true)}
+                enabledProducts={enabledProducts}
+              />
             </Box>
           </Box>
         </Box>

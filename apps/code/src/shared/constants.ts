@@ -2,6 +2,8 @@ export const BILLING_FLAG = "posthog-code-billing";
 export const INBOX_GATED_DUE_TO_SCALE_FLAG = "inbox-gated-due-to-scale";
 export const RTS_FLAG = "rts-enabled";
 export const RTS_FINOPS_FLAG = "rts-finops-enabled";
+export const EXPERIMENT_SUGGESTIONS_FLAG =
+  "posthog-code-experiment-suggestions";
 
 // Base URL for RTS-mode static assets (voice mp3s, bgm). Served from a
 // Cloudflare R2 bucket (`ph-code-rts`) behind `code-rts.posthog.com`.

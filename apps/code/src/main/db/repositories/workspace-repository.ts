@@ -1,6 +1,7 @@
 import { eq, isNotNull } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
+import { normalizeDirectoryPath } from "../../utils/normalize-path";
 import { workspaces } from "../schema";
 import type { DatabaseService } from "../service";
 
@@ -21,6 +22,7 @@ export interface IWorkspaceRepository {
   findAllPinned(): Workspace[];
   findAll(): Workspace[];
   create(data: CreateWorkspaceData): Workspace;
+  createCloudMany(taskIds: string[]): void;
   deleteByTaskId(taskId: string): void;
   deleteById(id: string): void;
   updatePinnedAt(taskId: string, pinnedAt: string | null): void;
@@ -33,7 +35,22 @@ export interface IWorkspaceRepository {
     mode: WorkspaceMode,
     repositoryId: string | null,
   ): void;
+  getAdditionalDirectories(taskId: string): string[];
+  addAdditionalDirectory(taskId: string, path: string): void;
+  removeAdditionalDirectory(taskId: string, path: string): void;
   deleteAll(): void;
+}
+
+export function parseDirectories(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((v): v is string => typeof v === "string")
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 const byId = (id: string) => eq(workspaces.id, id);
@@ -98,6 +115,20 @@ export class WorkspaceRepository implements IWorkspaceRepository {
     return created;
   }
 
+  createCloudMany(taskIds: string[]): void {
+    if (taskIds.length === 0) return;
+    const timestamp = now();
+    const rows: NewWorkspace[] = taskIds.map((taskId) => ({
+      id: crypto.randomUUID(),
+      taskId,
+      repositoryId: null,
+      mode: "cloud",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }));
+    this.db.insert(workspaces).values(rows).run();
+  }
+
   deleteByTaskId(taskId: string): void {
     this.db.delete(workspaces).where(byTaskId(taskId)).run();
   }
@@ -156,6 +187,40 @@ export class WorkspaceRepository implements IWorkspaceRepository {
       .set({ mode, repositoryId, updatedAt: now() })
       .where(byTaskId(taskId))
       .run();
+  }
+
+  getAdditionalDirectories(taskId: string): string[] {
+    const workspace = this.findByTaskId(taskId);
+    return parseDirectories(workspace?.additionalDirectories);
+  }
+
+  private updateDirectories(
+    taskId: string,
+    update: (current: string[]) => string[] | null,
+  ): void {
+    const next = update(this.getAdditionalDirectories(taskId));
+    if (next === null) return;
+    this.db
+      .update(workspaces)
+      .set({ additionalDirectories: JSON.stringify(next), updatedAt: now() })
+      .where(byTaskId(taskId))
+      .run();
+  }
+
+  addAdditionalDirectory(taskId: string, path: string): void {
+    const normalized = normalizeDirectoryPath(path);
+    this.updateDirectories(taskId, (current) =>
+      current.includes(normalized) ? null : [...current, normalized],
+    );
+  }
+
+  removeAdditionalDirectory(taskId: string, path: string): void {
+    const normalized = normalizeDirectoryPath(path);
+    this.updateDirectories(taskId, (current) =>
+      current.includes(normalized)
+        ? current.filter((p) => p !== normalized)
+        : null,
+    );
   }
 
   deleteAll(): void {

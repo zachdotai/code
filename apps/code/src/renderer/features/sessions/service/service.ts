@@ -9,6 +9,7 @@ import {
 } from "@features/auth/hooks/authClient";
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
 import { useUsageLimitStore } from "@features/billing/stores/usageLimitStore";
+import { useAddDirectoryDialogStore } from "@features/folder-picker/stores/addDirectoryDialogStore";
 import { useSessionAdapterStore } from "@features/sessions/stores/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
@@ -81,6 +82,7 @@ import {
   uploadRunAttachments,
   uploadTaskStagedAttachments,
 } from "../utils/cloudArtifacts";
+import { CloudRunIdleTracker } from "./cloudRunIdleTracker";
 
 const log = logger.scope("session-service");
 const LOCAL_SESSION_RECONNECT_ATTEMPTS = 3;
@@ -180,7 +182,7 @@ function buildCloudDefaultConfigOptions(
   ];
 }
 
-function isCloudTurnCompleteEvent(event: AcpMessage): boolean {
+function isTurnCompleteEvent(event: AcpMessage): boolean {
   const msg = event.message;
   return (
     "method" in msg &&
@@ -203,8 +205,21 @@ interface CloudLogGapReconcileRequest {
   logUrl?: string;
 }
 
+interface ParsedSessionLogs {
+  rawEntries: StoredLogEntry[];
+  totalLineCount: number;
+  parseFailureCount: number;
+  sessionId?: string;
+  adapter?: Adapter;
+}
+
 interface CloudLogGapReconcileState {
   pendingRequest?: CloudLogGapReconcileRequest;
+}
+
+interface CloudLogReconcileDeficiency {
+  expectedCount: number;
+  observedLineCount: number;
 }
 
 export interface ConnectParams {
@@ -215,6 +230,29 @@ export interface ConnectParams {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+}
+
+const FOLDER_TAG_REGEX = /<folder\s+path="([^"]+)"\s*\/>/g;
+
+function isAbsoluteFolderPath(p: string): boolean {
+  return p.startsWith("/") || p.startsWith("~") || /^[A-Za-z]:[\\/]/.test(p);
+}
+
+function promptReferencesAbsoluteFolder(
+  prompt: string | ContentBlock[],
+): boolean {
+  const text =
+    typeof prompt === "string"
+      ? prompt
+      : prompt
+          .map((block) =>
+            "text" in block && typeof block.text === "string" ? block.text : "",
+          )
+          .join("");
+  for (const match of text.matchAll(FOLDER_TAG_REGEX)) {
+    if (isAbsoluteFolderPath(match[1])) return true;
+  }
+  return false;
 }
 
 // --- Singleton Service Instance ---
@@ -247,6 +285,9 @@ export class SessionService {
   private localRecoveryAttempts = new Map<string, Promise<boolean>>();
   /** Re-entrance guard for cloud queue dispatch (per taskId). */
   private dispatchingCloudQueues = new Set<string>();
+  /** Coalesces deferred cloud queue flush timers (per taskId). */
+  private scheduledCloudQueueFlushes = new Set<string>();
+  private cloudRunIdleTracker = new CloudRunIdleTracker();
   private nextCloudTaskWatchToken = 0;
   private subscriptions = new Map<
     string,
@@ -268,6 +309,11 @@ export class SessionService {
     }
   >();
   private cloudLogGapReconciles = new Map<string, CloudLogGapReconcileState>();
+  /** Last observed reconcile deficit per taskRunId — see reconcileCloudLogGapOnce. */
+  private cloudLogReconcileDeficiency = new Map<
+    string,
+    CloudLogReconcileDeficiency
+  >();
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
@@ -549,6 +595,8 @@ export class SessionService {
     const resolvedAdapter = adapter ?? storedAdapter;
     const persistedConfigOptions = getPersistedConfigOptions(taskRunId);
 
+    const previous = sessionStoreSetters.getSessions()[taskRunId];
+
     const session = this.createBaseSession(taskRunId, taskId, taskTitle);
     session.events = events;
     if (logUrl) {
@@ -560,6 +608,14 @@ export class SessionService {
     if (resolvedAdapter) {
       session.adapter = resolvedAdapter;
       useSessionAdapterStore.getState().setAdapter(taskRunId, resolvedAdapter);
+    }
+
+    if (previous) {
+      session.optimisticItems = previous.optimisticItems;
+      session.messageQueue = previous.messageQueue;
+      session.isPromptPending = previous.isPromptPending;
+      session.promptStartedAt = previous.promptStartedAt;
+      session.pausedDurationMs = previous.pausedDurationMs;
     }
 
     sessionStoreSetters.setSession(session);
@@ -693,6 +749,8 @@ export class SessionService {
 
     this.unsubscribeFromChannel(taskRunId);
     sessionStoreSetters.removeSession(taskRunId);
+    this.cloudRunIdleTracker.delete(taskRunId);
+    this.cloudLogReconcileDeficiency.delete(taskRunId);
     if (session) {
       this.localRepoPaths.delete(session.taskId);
       this.localRecoveryAttempts.delete(session.taskId);
@@ -1072,7 +1130,10 @@ export class SessionService {
     this.localRecoveryAttempts.clear();
     this.cloudPermissionRequestIds.clear();
     this.cloudLogGapReconciles.clear();
+    this.cloudLogReconcileDeficiency.clear();
     this.dispatchingCloudQueues.clear();
+    this.scheduledCloudQueueFlushes.clear();
+    this.cloudRunIdleTracker.clear();
     this.idleKilledSubscription?.unsubscribe();
     this.idleKilledSubscription = null;
   }
@@ -1080,6 +1141,7 @@ export class SessionService {
   private updatePromptStateFromEvents(
     taskRunId: string,
     events: AcpMessage[],
+    { isLive = false }: { isLive?: boolean } = {},
   ): void {
     for (const acpMsg of events) {
       const msg = acpMsg.message;
@@ -1090,6 +1152,15 @@ export class SessionService {
           pausedDurationMs: 0,
           currentPromptId: msg.id,
         });
+        const promptSession = sessionStoreSetters.getSessions()[taskRunId];
+        if (promptSession?.isCloud) {
+          this.cloudRunIdleTracker.markBusy(promptSession);
+          if (promptSession.agentIdleForRunId) {
+            sessionStoreSetters.updateSession(taskRunId, {
+              agentIdleForRunId: undefined,
+            });
+          }
+        }
       }
       if (
         "id" in msg &&
@@ -1111,12 +1182,29 @@ export class SessionService {
           currentPromptId: null,
         });
       }
-      if (isCloudTurnCompleteEvent(acpMsg)) {
-        sessionStoreSetters.updateSession(taskRunId, {
-          isPromptPending: false,
-          promptStartedAt: null,
-          currentPromptId: null,
-        });
+      if (isTurnCompleteEvent(acpMsg)) {
+        // Local sessions use the JSON-RPC response as the canonical turn-done
+        // signal; clearing currentPromptId here would race the id-match guard
+        // above. Cloud sessions never see that response.
+        const session = this.getSessionByRunId(taskRunId);
+        if (session?.isCloud) {
+          sessionStoreSetters.updateSession(taskRunId, {
+            isPromptPending: false,
+            promptStartedAt: null,
+            currentPromptId: null,
+          });
+          if (isLive) {
+            // Queued messages will start a new turn — suppress the "done" notification in that case.
+            if (session.messageQueue.length === 0) {
+              notifyPromptComplete(
+                session.taskTitle,
+                "end_turn",
+                session.taskId,
+              );
+            }
+            taskViewedApi.markActivity(session.taskId);
+          }
+        }
       }
       // Lifecycle handshake from the agent — flip status to "connected"
       // so the UI can release the queue-while-not-ready guard. This is
@@ -1158,22 +1246,22 @@ export class SessionService {
         const session = sessionStoreSetters.getSessions()[taskRunId];
         if (session?.isCloud) {
           // Backward compat: treat turn_complete as an implicit run_started
-          // for agents that predate the run_started notification.
+          // for agents that predate the run_started notification. The turn
+          // finished, so the agent is idle for this run, lets a later
+          // transport drop recover readiness.
+          const updates: Partial<AgentSession> = {};
           if (session.status !== "connected") {
-            sessionStoreSetters.updateSession(taskRunId, {
-              status: "connected",
-            });
+            updates.status = "connected";
           }
+          if (session.agentIdleForRunId !== taskRunId) {
+            updates.agentIdleForRunId = taskRunId;
+          }
+          if (Object.keys(updates).length > 0) {
+            sessionStoreSetters.updateSession(taskRunId, updates);
+          }
+          this.cloudRunIdleTracker.markIdle(session);
           if (session.messageQueue.length > 0) {
-            const taskId = session.taskId;
-            setTimeout(() => {
-              this.sendQueuedCloudMessages(taskId).catch((err) =>
-                log.error("turn_complete-driven cloud queue flush failed", {
-                  taskId,
-                  error: err,
-                }),
-              );
-            }, 0);
+            this.scheduleCloudQueueFlush(session.taskId, "turn_complete");
           }
         }
       }
@@ -1201,7 +1289,7 @@ export class SessionService {
     } else {
       sessionStoreSetters.appendEvents(taskRunId, [acpMsg]);
     }
-    this.updatePromptStateFromEvents(taskRunId, [acpMsg]);
+    this.updatePromptStateFromEvents(taskRunId, [acpMsg], { isLive: true });
 
     const msg = acpMsg.message;
 
@@ -1425,8 +1513,17 @@ export class SessionService {
       );
     }
 
-    const session = sessionStoreSetters.getSessionByTaskId(taskId);
+    let session = sessionStoreSetters.getSessionByTaskId(taskId);
     if (!session) throw new Error("No active session for task");
+
+    // The /add-dir dialog mutates the per-task additional-directories list and
+    // we re-read it during respawn below. Sending while it's open would race
+    // and respawn with the pre-decision set, so block here.
+    if (useAddDirectoryDialogStore.getState().open) {
+      throw new Error(
+        "Confirm the folder access dialog before sending your message.",
+      );
+    }
 
     if (session.isCloud) {
       return this.sendCloudPrompt(session, prompt);
@@ -1474,7 +1571,39 @@ export class SessionService {
       prompt_length_chars: promptText.length,
     });
 
-    return this.sendLocalPrompt(session, blocks, promptText);
+    // Show the user's message in the chat immediately, before any respawn
+    this.applyOptimisticPrompt(session.taskRunId, blocks, promptText);
+
+    if (promptReferencesAbsoluteFolder(prompt)) {
+      const repoPath = this.localRepoPaths.get(taskId);
+      if (repoPath) {
+        try {
+          await this.reconnectInPlace(taskId, repoPath);
+        } catch (err) {
+          log.error("Respawn failed; aborting prompt send", { taskId, err });
+          sessionStoreSetters.clearOptimisticItems(session.taskRunId);
+          sessionStoreSetters.updateSession(session.taskRunId, {
+            isPromptPending: false,
+            promptStartedAt: null,
+          });
+          toast.error("Couldn't grant the new folder access", {
+            description:
+              "The session needs to restart to pick up the added folder. Try sending again, or remove the folder reference.",
+          });
+          throw err instanceof Error
+            ? err
+            : new Error("Failed to apply additional directories");
+        }
+        const refreshed = sessionStoreSetters.getSessionByTaskId(taskId);
+        if (refreshed) {
+          session = refreshed;
+        }
+      }
+    }
+
+    return this.sendLocalPrompt(session, blocks, promptText, {
+      optimisticApplied: true,
+    });
   }
 
   /**
@@ -1533,12 +1662,12 @@ export class SessionService {
     }
   }
 
-  private async sendLocalPrompt(
-    session: AgentSession,
+  private applyOptimisticPrompt(
+    taskRunId: string,
     blocks: ContentBlock[],
     promptText: string,
-  ): Promise<{ stopReason: string }> {
-    sessionStoreSetters.updateSession(session.taskRunId, {
+  ): void {
+    sessionStoreSetters.updateSession(taskRunId, {
       isPromptPending: true,
       promptStartedAt: Date.now(),
       pausedDurationMs: 0,
@@ -1546,16 +1675,27 @@ export class SessionService {
 
     const skillButtonId = extractSkillButtonId(blocks);
     if (skillButtonId) {
-      sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
+      sessionStoreSetters.appendOptimisticItem(taskRunId, {
         type: "skill_button_action",
         buttonId: skillButtonId,
       });
     } else {
-      sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
+      sessionStoreSetters.appendOptimisticItem(taskRunId, {
         type: "user_message",
         content: promptText,
         timestamp: Date.now(),
       });
+    }
+  }
+
+  private async sendLocalPrompt(
+    session: AgentSession,
+    blocks: ContentBlock[],
+    promptText: string,
+    options: { optimisticApplied?: boolean } = {},
+  ): Promise<{ stopReason: string }> {
+    if (!options.optimisticApplied) {
+      this.applyOptimisticPrompt(session.taskRunId, blocks, promptText);
     }
 
     try {
@@ -1682,9 +1822,6 @@ export class SessionService {
 
     if (session.cloudStatus !== "in_progress") {
       sessionStoreSetters.enqueueMessage(session.taskId, transport.promptText);
-      sessionStoreSetters.updateSession(session.taskRunId, {
-        isPromptPending: true,
-      });
       log.info("Cloud message queued (sandbox not ready)", {
         taskId: session.taskId,
         cloudStatus: session.cloudStatus,
@@ -1714,6 +1851,19 @@ export class SessionService {
         sessionStatus: session.status,
         queueLength: session.messageQueue.length + 1,
       });
+      // The watcher may have exhausted its reconnect budget and been left in a
+      // failed state — without an SSE stream, no `turn_complete` will arrive
+      // to drain the queue. Kick a retry so the stream comes back online; the
+      // queued message dispatches naturally once `run_started`/`turn_complete`
+      // is observed.
+      if (session.status === "disconnected" || session.status === "error") {
+        this.retryCloudTaskWatch(session.taskId).catch((err) => {
+          log.warn("Auto-retry of cloud task watch from queue gate failed", {
+            taskId: session.taskId,
+            error: String(err),
+          });
+        });
+      }
       return { stopReason: "queued" };
     }
 
@@ -1763,11 +1913,18 @@ export class SessionService {
       params.artifact_ids = artifactIds;
     }
 
+    const currentSessionBeforeSend =
+      this.getSessionByRunId(session.taskRunId) ?? session;
+    const idleEvidenceBeforeSend = this.cloudRunIdleTracker.capture(
+      currentSessionBeforeSend,
+    );
     sessionStoreSetters.updateSession(session.taskRunId, {
       isPromptPending: true,
       promptStartedAt: Date.now(),
       pausedDurationMs: 0,
+      agentIdleForRunId: undefined,
     });
+    this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
     sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
       type: "user_message",
       content: transport.promptText,
@@ -1810,6 +1967,29 @@ export class SessionService {
         promptStartedAt: null,
       });
       sessionStoreSetters.clearTailOptimisticItems(session.taskRunId);
+      const currentSessionAfterFailure = this.getSessionByRunId(
+        session.taskRunId,
+      );
+      if (currentSessionAfterFailure) {
+        const restoreResult = this.cloudRunIdleTracker.restoreAfterFailedSend(
+          idleEvidenceBeforeSend,
+          currentSessionAfterFailure,
+        );
+        if (restoreResult) {
+          log.warn("Restored idle evidence after failed cloud send", {
+            taskId: session.taskId,
+            taskRunId: session.taskRunId,
+          });
+          if (
+            currentSessionAfterFailure.agentIdleForRunId !==
+            restoreResult.agentIdleForRunId
+          ) {
+            sessionStoreSetters.updateSession(session.taskRunId, {
+              agentIdleForRunId: restoreResult.agentIdleForRunId,
+            });
+          }
+        }
+      }
       throw error;
     }
   }
@@ -2763,7 +2943,10 @@ export class SessionService {
     taskDescription?: string,
   ): void {
     void (async () => {
-      const { rawEntries } = await this.fetchSessionLogs(logUrl, taskRunId);
+      const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
+        logUrl,
+        taskRunId,
+      );
 
       const session = sessionStoreSetters.getSessionByTaskId(taskId);
       if (!session || session.taskRunId !== taskRunId) {
@@ -2805,7 +2988,7 @@ export class SessionService {
         events,
         isCloud: true,
         logUrl: logUrl ?? session.logUrl,
-        processedLineCount: rawEntries.length,
+        processedLineCount: totalLineCount,
       });
       // Without this the "Galumphing…" indicator stays hidden when the hydrated
       // baseline already contains an in-flight session/prompt — the live delta
@@ -2840,6 +3023,7 @@ export class SessionService {
 
     watcher.subscription.unsubscribe();
     this.cloudTaskWatchers.delete(taskId);
+    this.cloudLogReconcileDeficiency.delete(watcher.runId);
   }
 
   async preflightToLocal(taskId: string, repoPath: string) {
@@ -3148,6 +3332,39 @@ export class SessionService {
       });
       throw error;
     }
+
+    // The main-process retry of an already-bootstrapped
+    // watcher only reconnects SSE (`start=latest`) and emits no fresh
+    // status/snapshot for an idle run, so the update-driven trigger in
+    // `handleCloudTaskUpdate` would never fire, the queued message would
+    // stay stuck. Attempt the same guarded recovery here once the reconnect
+    // request has been accepted. No-ops unless a queue is stranded on an
+    // idle, provably-alive run.
+    this.tryRecoverIdleCloudQueue(session.taskRunId);
+  }
+
+  /**
+   * Retries every cloud session whose stream is in the `error` state, i.e. the
+   * main process exhausted its SSE reconnect budget and surfaced the manual
+   * Retry button. Invoked on window focus so users coming back to the app
+   * after a Django deploy, laptop sleep, or network blip don't have to click
+   * Retry themselves.
+   */
+  public retryUnhealthyCloudSessions(): void {
+    const sessions = sessionStoreSetters.getSessions();
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud) continue;
+      if (session.status !== "error") continue;
+      log.info("Auto-retrying errored cloud session on focus", {
+        taskId: session.taskId,
+      });
+      this.retryCloudTaskWatch(session.taskId).catch((error) => {
+        log.warn("Auto-retry of errored cloud session failed", {
+          taskId: session.taskId,
+          error,
+        });
+      });
+    }
   }
 
   public updateSessionTaskTitle(taskId: string, taskTitle: string): void {
@@ -3157,6 +3374,107 @@ export class SessionService {
     if (session.taskTitle === taskTitle) return;
 
     sessionStoreSetters.updateSession(session.taskRunId, { taskTitle });
+  }
+
+  /**
+   * Drain the cloud queue, the deferral breaks out of
+   * the synchronous store-update frame so the dispatcher reads committed
+   * state; `sendQueuedCloudMessages` is reentrancy-guarded so stacked
+   * schedules from multiple triggers collapse to one.
+   */
+  private scheduleCloudQueueFlush(taskId: string, reason: string): void {
+    if (
+      this.scheduledCloudQueueFlushes.has(taskId) ||
+      this.dispatchingCloudQueues.has(taskId)
+    ) {
+      return;
+    }
+
+    this.scheduledCloudQueueFlushes.add(taskId);
+    setTimeout(() => {
+      this.scheduledCloudQueueFlushes.delete(taskId);
+      this.sendQueuedCloudMessages(taskId).catch((err) =>
+        log.error("cloud queue flush failed", { taskId, reason, error: err }),
+      );
+    }, 0);
+  }
+
+  /**
+   * Guarded recovery for a queued cloud message stranded by a transport
+   * drop on an idle, already-bootstrapped run.
+   *
+   * `run_started` is normally the canonical "agent is ready" trigger and
+   * would race with `sendInitialTaskMessage` while still booting, so the
+   * safe default remains "drain only once status is connected". But an
+   * idle run stays `in_progress` on the server while emitting NO fresh
+   * `run_started`/`turn_complete` (those only fire on boot or a new turn).
+   * If an SSE transport drop or the `retryCloudTaskWatch` it triggers
+   * flipped the session to disconnected/error AFTER the agent already
+   * booted for this exact run, nothing flips it back to "connected" and
+   * the queued message is stranded forever. When the run is provably
+   * alive (`cloudStatus === "in_progress"`) and the agent provably idle
+   * for THIS run (`isAgentIdleForRun`), recover readiness and drain.
+   */
+  private tryRecoverIdleCloudQueue(taskRunId: string): void {
+    const session = sessionStoreSetters.getSessions()[taskRunId];
+    if (!session?.isCloud || session.messageQueue.length === 0) {
+      return;
+    }
+    if (session.cloudStatus !== "in_progress") {
+      return;
+    }
+    if (
+      this.scheduledCloudQueueFlushes.has(session.taskId) ||
+      this.dispatchingCloudQueues.has(session.taskId)
+    ) {
+      return;
+    }
+
+    const recoverableAfterTransportDrop =
+      (session.status === "disconnected" || session.status === "error") &&
+      !session.isPromptPending;
+
+    if (session.status !== "connected" && !recoverableAfterTransportDrop) {
+      return;
+    }
+
+    // A local prompt in flight means a queued follow-up would double-send.
+    // The idle scan below is still the real safety check after reconnect.
+    if (session.isPromptPending) {
+      return;
+    }
+
+    // The agent must be provably idle for this run, the
+    // connected path included. `status: "connected"` alone is NOT proof of
+    // idleness: the `_posthog/run_started` handler flips status to
+    // "connected" before the initial/resume turn even starts, so a
+    // connected-but-not-idle session is mid-boot. Draining now would race
+    // with `sendInitialTaskMessage`/`sendResumeMessage` and one prompt
+    // would be cancelled. Only `_posthog/turn_complete` makes the agent
+    // idle for the run.
+    const idleResult = this.cloudRunIdleTracker.evaluateIdle(session);
+    if (!idleResult.idle) {
+      return;
+    }
+    if (idleResult.shouldCacheToStore) {
+      sessionStoreSetters.updateSession(taskRunId, {
+        agentIdleForRunId: taskRunId,
+      });
+    }
+
+    if (recoverableAfterTransportDrop) {
+      sessionStoreSetters.updateSession(taskRunId, {
+        status: "connected",
+        errorTitle: undefined,
+        errorMessage: undefined,
+      });
+      log.info("Recovered cloud session readiness after transport drop", {
+        taskId: session.taskId,
+        previousStatus: session.status,
+      });
+    }
+
+    this.scheduleCloudQueueFlush(session.taskId, "idle-run-recovery");
   }
 
   private handleCloudTaskUpdate(
@@ -3219,7 +3537,9 @@ export class SessionService {
           sessionStoreSetters.clearTailOptimisticItems(taskRunId);
         }
         sessionStoreSetters.appendEvents(taskRunId, newEvents, expectedCount);
-        this.updatePromptStateFromEvents(taskRunId, newEvents);
+        this.updatePromptStateFromEvents(taskRunId, newEvents, {
+          isLive: true,
+        });
       } else {
         this.reconcileCloudLogGap({
           taskId: update.taskId,
@@ -3250,10 +3570,9 @@ export class SessionService {
         branch: update.branch,
       });
 
-      // No cloudStatus="in_progress" auto-flush here. `run_started` from
-      // the agent-server is the canonical "agent is ready" trigger and
-      // handles both initial boot and post-restart recovery; firing
-      // earlier would race with `sendInitialTaskMessage`.
+      if (update.status === "in_progress") {
+        this.tryRecoverIdleCloudQueue(taskRunId);
+      }
 
       if (isTerminalStatus(update.status)) {
         // Clean up any pending resume messages that couldn't be sent
@@ -3363,16 +3682,14 @@ export class SessionService {
     };
   }
 
-  private parseLogContent(content: string): {
-    rawEntries: StoredLogEntry[];
-    sessionId?: string;
-    adapter?: Adapter;
-  } {
+  private parseLogContent(content: string): ParsedSessionLogs {
     const rawEntries: StoredLogEntry[] = [];
     let sessionId: string | undefined;
     let adapter: Adapter | undefined;
+    let parseFailureCount = 0;
+    const lines = content.trim().split("\n");
 
-    for (const line of content.trim().split("\n")) {
+    for (const line of lines) {
       try {
         const stored = JSON.parse(line) as StoredLogEntry;
         rawEntries.push(stored);
@@ -3391,30 +3708,32 @@ export class SessionService {
           if (params?.adapter) adapter = params.adapter;
         }
       } catch {
+        parseFailureCount += 1;
         log.warn("Failed to parse log entry", { line });
       }
     }
 
-    return { rawEntries, sessionId, adapter };
+    return {
+      rawEntries,
+      totalLineCount: lines.length,
+      parseFailureCount,
+      sessionId,
+      adapter,
+    };
   }
 
   private async fetchSessionLogs(
     logUrl: string | undefined,
     taskRunId?: string,
     options: { minEntryCount?: number } = {},
-  ): Promise<{
-    rawEntries: StoredLogEntry[];
-    sessionId?: string;
-    adapter?: Adapter;
-  }> {
-    if (!logUrl && !taskRunId) return { rawEntries: [] };
-    let localResult:
-      | {
-          rawEntries: StoredLogEntry[];
-          sessionId?: string;
-          adapter?: Adapter;
-        }
-      | undefined;
+  ): Promise<ParsedSessionLogs> {
+    const empty: ParsedSessionLogs = {
+      rawEntries: [],
+      totalLineCount: 0,
+      parseFailureCount: 0,
+    };
+    if (!logUrl && !taskRunId) return empty;
+    let localResult: ParsedSessionLogs | undefined;
 
     if (taskRunId) {
       try {
@@ -3425,7 +3744,7 @@ export class SessionService {
           localResult = this.parseLogContent(localContent);
           if (
             !options.minEntryCount ||
-            localResult.rawEntries.length >= options.minEntryCount
+            localResult.totalLineCount >= options.minEntryCount
           ) {
             return localResult;
           }
@@ -3437,11 +3756,11 @@ export class SessionService {
       }
     }
 
-    if (!logUrl) return localResult ?? { rawEntries: [] };
+    if (!logUrl) return localResult ?? empty;
 
     try {
       const content = await trpcClient.logs.fetchS3Logs.query({ logUrl });
-      if (!content?.trim()) return localResult ?? { rawEntries: [] };
+      if (!content?.trim()) return localResult ?? empty;
 
       const result = this.parseLogContent(content);
 
@@ -3462,7 +3781,7 @@ export class SessionService {
 
       return result;
     } catch {
-      return localResult ?? { rawEntries: [] };
+      return localResult ?? empty;
     }
   }
 
@@ -3532,9 +3851,10 @@ export class SessionService {
     newEntries,
     logUrl,
   }: CloudLogGapReconcileRequest): Promise<void> {
-    const { rawEntries } = await this.fetchSessionLogs(logUrl, taskRunId, {
-      minEntryCount: expectedCount,
-    });
+    const { rawEntries, totalLineCount, parseFailureCount } =
+      await this.fetchSessionLogs(logUrl, taskRunId, {
+        minEntryCount: expectedCount,
+      });
     const session = sessionStoreSetters.getSessions()[taskRunId];
     if (!session || session.taskId !== taskId) {
       return;
@@ -3542,34 +3862,69 @@ export class SessionService {
 
     const latestCount = session.processedLineCount ?? 0;
     if (latestCount >= expectedCount) {
+      this.cloudLogReconcileDeficiency.delete(taskRunId);
       return;
     }
 
-    if (rawEntries.length >= expectedCount) {
+    if (totalLineCount >= expectedCount) {
       const events = convertStoredEntriesToEvents(rawEntries);
       if (hasSessionPromptEvent(events)) {
         sessionStoreSetters.clearTailOptimisticItems(taskRunId);
       }
+      this.cloudRunIdleTracker.delete(taskRunId);
+      this.cloudLogReconcileDeficiency.delete(taskRunId);
       sessionStoreSetters.updateSession(taskRunId, {
         events,
         isCloud: true,
         logUrl: logUrl ?? session.logUrl,
-        processedLineCount: rawEntries.length,
+        processedLineCount: totalLineCount,
       });
       this.updatePromptStateFromEvents(taskRunId, events);
       return;
     }
 
-    // The fetched logs lag behind expectedCount and `newEntries` is the latest
-    // tail slice of the snapshot — appending it here would create duplicates
-    // and gaps in `session.events` (and bump processedLineCount past entries
-    // we don't actually have). Skip; the next snapshot/log update will retry
-    // once the source has caught up.
+    // Break the reconcile loop on proven corruption (parseFailureCount > 0)
+    // or on a stable repeat of the same deficit. Otherwise wait — likely lag.
+    const previous = this.cloudLogReconcileDeficiency.get(taskRunId);
+    const sameDeficiencyAsBefore =
+      previous?.expectedCount === expectedCount &&
+      previous?.observedLineCount === totalLineCount;
+
+    if (parseFailureCount > 0 || sameDeficiencyAsBefore) {
+      log.warn("Cloud task log gap unrecoverable; committing best-effort", {
+        taskRunId,
+        expectedCount,
+        observedLineCount: totalLineCount,
+        parseFailureCount,
+        fetchedEntries: rawEntries.length,
+        reason: parseFailureCount > 0 ? "parse-failure" : "stable-deficit",
+      });
+      const events = convertStoredEntriesToEvents(rawEntries);
+      if (hasSessionPromptEvent(events)) {
+        sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+      }
+      this.cloudRunIdleTracker.delete(taskRunId);
+      this.cloudLogReconcileDeficiency.delete(taskRunId);
+      sessionStoreSetters.updateSession(taskRunId, {
+        events,
+        isCloud: true,
+        logUrl: logUrl ?? session.logUrl,
+        processedLineCount: expectedCount,
+      });
+      this.updatePromptStateFromEvents(taskRunId, events);
+      return;
+    }
+
+    this.cloudLogReconcileDeficiency.set(taskRunId, {
+      expectedCount,
+      observedLineCount: totalLineCount,
+    });
     log.warn("Cloud task log count inconsistency", {
       taskRunId,
       currentCount,
       expectedCount,
       fetchedCount: rawEntries.length,
+      parseFailureCount,
       entriesReceived: newEntries.length,
     });
   }

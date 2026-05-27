@@ -5,8 +5,14 @@ import type {
   Evaluation,
   SignalSourceConfig,
 } from "@renderer/api/posthogClient";
+import type {
+  SignalReportPriority,
+  SignalUserAutonomyConfig,
+} from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { useQueryClient } from "@tanstack/react-query";
+import { track } from "@utils/analytics";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useEvaluations } from "./useEvaluations";
@@ -27,6 +33,7 @@ const SOURCE_TYPE_MAP: Record<
   linear: "issue",
   zendesk: "ticket",
   conversations: "ticket",
+  pganalyze: "issue",
 };
 
 const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
@@ -42,6 +49,7 @@ const SOURCE_LABELS: Record<keyof SignalSourceValues, string> = {
   linear: "Linear Issues",
   zendesk: "Zendesk Tickets",
   conversations: "PostHog Support",
+  pganalyze: "pganalyze",
 };
 
 const DATA_WAREHOUSE_SOURCES: Record<
@@ -51,6 +59,7 @@ const DATA_WAREHOUSE_SOURCES: Record<
   github: { dwSourceType: "Github", requiredTable: "issues" },
   linear: { dwSourceType: "Linear", requiredTable: "issues" },
   zendesk: { dwSourceType: "Zendesk", requiredTable: "tickets" },
+  pganalyze: { dwSourceType: "PgAnalyze", requiredTable: "issues" },
 };
 
 const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
@@ -60,6 +69,7 @@ const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
   "linear",
   "zendesk",
   "conversations",
+  "pganalyze",
 ];
 
 function computeValues(
@@ -72,6 +82,7 @@ function computeValues(
     linear: false,
     zendesk: false,
     conversations: false,
+    pganalyze: false,
   };
   if (!configs?.length) return result;
   for (const product of ALL_SOURCE_PRODUCTS) {
@@ -103,7 +114,8 @@ export function useSignalSourceManager() {
     useExternalDataSources();
   const { data: evaluations } = useEvaluations();
   const { data: teamConfig } = useSignalTeamConfig();
-  const { data: userAutonomyConfig } = useSignalUserAutonomyConfig();
+  const { data: userAutonomyConfig, isLoading: userAutonomyConfigLoading } =
+    useSignalUserAutonomyConfig();
 
   // Optimistic overrides keyed by source product — only sources actively being
   // toggled get an entry, so unrelated sources never see a prop change.
@@ -113,7 +125,7 @@ export function useSignalSourceManager() {
   const pendingRef = useRef(new Set<keyof SignalSourceValues>());
 
   const [setupSource, setSetupSource] = useState<
-    "github" | "linear" | "zendesk" | null
+    "github" | "linear" | "zendesk" | "pganalyze" | null
   >(null);
   const [loadingSources, setLoadingSources] = useState<
     Partial<Record<keyof SignalSourceValues, boolean>>
@@ -159,7 +171,8 @@ export function useSignalSourceManager() {
       if (
         product === "github" ||
         product === "linear" ||
-        product === "zendesk"
+        product === "zendesk" ||
+        product === "pganalyze"
       ) {
         const hasExternalSource = !!findExternalSource(product);
         const isEnabled = serverValues[product];
@@ -267,7 +280,12 @@ export function useSignalSourceManager() {
   );
 
   const handleSetup = useCallback((source: keyof SignalSourceValues) => {
-    if (source === "github" || source === "linear" || source === "zendesk") {
+    if (
+      source === "github" ||
+      source === "linear" ||
+      source === "zendesk" ||
+      source === "pganalyze"
+    ) {
       setSetupSource(source);
     }
   }, []);
@@ -295,7 +313,9 @@ export function useSignalSourceManager() {
       if (enabled && product in DATA_WAREHOUSE_SOURCES) {
         const hasExternalSource = !!findExternalSource(product);
         if (!hasExternalSource) {
-          setSetupSource(product as "github" | "linear" | "zendesk");
+          setSetupSource(
+            product as "github" | "linear" | "zendesk" | "pganalyze",
+          );
           return;
         }
 
@@ -313,6 +333,9 @@ export function useSignalSourceManager() {
 
       const label = SOURCE_LABELS[product];
 
+      const hadExistingConfig = configs?.some(
+        (c) => c.source_product === product,
+      );
       try {
         if (product === "error_tracking") {
           for (const sourceType of ERROR_TRACKING_SOURCE_TYPES) {
@@ -352,6 +375,14 @@ export function useSignalSourceManager() {
               enabled: true,
             });
           }
+        }
+
+        if (enabled) {
+          track(ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED, {
+            source_product: product,
+            is_first_connection: !hadExistingConfig,
+            via_setup_wizard: false,
+          });
         }
 
         await invalidateAfterToggle();
@@ -398,6 +429,11 @@ export function useSignalSourceManager() {
             enabled: true,
           });
         }
+        track(ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED, {
+          source_product: completedSource,
+          is_first_connection: !existing,
+          via_setup_wizard: true,
+        });
       } catch {
         toast.error(
           "Data source connected, but failed to enable signal source. Try toggling it on.",
@@ -466,6 +502,80 @@ export function useSignalSourceManager() {
     [client, queryClient],
   );
 
+  const handleUpdateSlackNotifications = useCallback(
+    async (updates: {
+      integrationId?: number | null;
+      channel?: string | null;
+      minPriority?: string | null;
+    }) => {
+      if (!client) return;
+      // Translate frontend camelCase to the API's snake_case body. Only include
+      // keys the caller passed in, so other settings (e.g. autostart_priority)
+      // are not wiped.
+      const body: Record<string, number | string | null> = {};
+      if ("integrationId" in updates) {
+        body.slack_notification_integration_id = updates.integrationId ?? null;
+      }
+      if ("channel" in updates) {
+        body.slack_notification_channel = updates.channel ?? null;
+      }
+      if ("minPriority" in updates) {
+        body.slack_notification_min_priority = updates.minPriority ?? null;
+      }
+
+      const queryKey = ["signals", "user-autonomy-config"];
+      const previous =
+        queryClient.getQueryData<SignalUserAutonomyConfig | null>(queryKey);
+
+      // Optimistic update: reflect the user's choice in the UI before the
+      // server responds. Build the next snapshot from the previous one so
+      // unrelated fields (autostart_priority, etc.) are preserved.
+      const optimisticNext: SignalUserAutonomyConfig = {
+        ...(previous ??
+          ({ autostart_priority: null } as SignalUserAutonomyConfig)),
+        ...("integrationId" in updates
+          ? { slack_notification_integration_id: updates.integrationId ?? null }
+          : {}),
+        ...("channel" in updates
+          ? { slack_notification_channel: updates.channel ?? null }
+          : {}),
+        ...("minPriority" in updates
+          ? {
+              slack_notification_min_priority:
+                (updates.minPriority as
+                  | SignalReportPriority
+                  | null
+                  | undefined) ?? null,
+            }
+          : {}),
+      };
+      queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+        queryKey,
+        optimisticNext,
+      );
+
+      try {
+        const fresh = await client.updateSignalUserAutonomyConfig(body);
+        queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+          queryKey,
+          fresh,
+        );
+      } catch (error: unknown) {
+        // Roll back to whatever was in the cache before this attempt.
+        queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+          queryKey,
+          previous ?? null,
+        );
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to update Slack notification setting";
+        toast.error(message);
+      }
+    },
+    [client, queryClient],
+  );
+
   return {
     displayValues,
     sourceStates,
@@ -482,6 +592,8 @@ export function useSignalSourceManager() {
     teamConfig,
     handleUpdateAutostartPriority,
     userAutonomyConfig,
+    userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
+    handleUpdateSlackNotifications,
   };
 }

@@ -204,6 +204,7 @@ export const AgentServiceEvent = {
   SessionIdleKilled: "session-idle-killed",
   AgentFileActivity: "agent-file-activity",
   UsageUpdate: "usage-update",
+  LlmActivity: "llm-activity",
 } as const;
 
 export interface AgentSessionEventPayload {
@@ -248,6 +249,7 @@ export interface AgentServiceEvents {
   [AgentServiceEvent.SessionIdleKilled]: SessionIdleKilledPayload;
   [AgentServiceEvent.AgentFileActivity]: AgentFileActivityPayload;
   [AgentServiceEvent.UsageUpdate]: UsageUpdatePayload;
+  [AgentServiceEvent.LlmActivity]: undefined;
 }
 
 // Permission response input for tRPC

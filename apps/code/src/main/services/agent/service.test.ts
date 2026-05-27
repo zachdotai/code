@@ -121,7 +121,7 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 // --- Import after mocks ---
-import { AgentService } from "./service";
+import { AgentService, buildAutoApproveOutcome } from "./service";
 
 // --- Test helpers ---
 
@@ -190,6 +190,16 @@ function createMockDependencies() {
       appDataPath: "/mock/userData",
       logsPath: "/mock/logs",
     },
+    defaultAdditionalDirectoryRepository: {
+      list: vi.fn(() => [] as string[]),
+      add: vi.fn(),
+      remove: vi.fn(),
+    },
+    workspaceRepository: {
+      getAdditionalDirectories: vi.fn(() => [] as string[]),
+      addAdditionalDirectory: vi.fn(),
+      removeAdditionalDirectory: vi.fn(),
+    },
   };
 }
 
@@ -220,6 +230,8 @@ describe("AgentService", () => {
       deps.bundledResources as never,
       deps.appMeta as never,
       deps.storagePaths as never,
+      deps.defaultAdditionalDirectoryRepository as never,
+      deps.workspaceRepository as never,
     );
   });
 
@@ -228,6 +240,19 @@ describe("AgentService", () => {
   });
 
   describe("MCP servers", () => {
+    it("marks desktop sessions as local even though they have a taskRunId", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+      });
+
+      expect(mockNewSession).toHaveBeenCalledTimes(1);
+      expect(mockNewSession.mock.calls[0][0]._meta).toMatchObject({
+        taskRunId: "run-1",
+        environment: "local",
+      });
+    });
+
     it("passes MCP servers to newSession for codex adapter", async () => {
       await service.startSession({
         ...baseSessionParams,
@@ -459,5 +484,38 @@ describe("AgentService", () => {
         expect.anything(),
       );
     });
+  });
+});
+
+describe("buildAutoApproveOutcome", () => {
+  it("prefers an allow_once option", () => {
+    expect(
+      buildAutoApproveOutcome([
+        { optionId: "reject", kind: "reject_once", name: "Reject" },
+        { optionId: "allow", kind: "allow_once", name: "Allow" },
+      ]),
+    ).toEqual({ outcome: "selected", optionId: "allow" });
+  });
+
+  it("prefers an allow_always option", () => {
+    expect(
+      buildAutoApproveOutcome([
+        { optionId: "reject", kind: "reject_once", name: "Reject" },
+        { optionId: "allow_always", kind: "allow_always", name: "Always" },
+      ]),
+    ).toEqual({ outcome: "selected", optionId: "allow_always" });
+  });
+
+  it("falls back to the first option when no allow option exists", () => {
+    expect(
+      buildAutoApproveOutcome([
+        { optionId: "first", kind: "reject_once", name: "First" },
+        { optionId: "second", kind: "reject_always", name: "Second" },
+      ]),
+    ).toEqual({ outcome: "selected", optionId: "first" });
+  });
+
+  it("returns a cancelled outcome when options is empty", () => {
+    expect(buildAutoApproveOutcome([])).toEqual({ outcome: "cancelled" });
   });
 });

@@ -5,6 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
+import { DEFAULT_TERMINAL_FONT_FAMILY } from "../utils/resolveTerminalFontFamily";
 
 const log = logger.scope("terminal-manager");
 
@@ -74,20 +75,22 @@ type Listener<T extends EventType> = (payload: EventPayloadMap[T]) => void;
 function getTerminalTheme(isDarkMode: boolean) {
   return isDarkMode
     ? {
-        background: "transparent",
+        background: "#131316",
         foreground: "#e6e6e6",
         cursor: "#f8be2a",
         cursorAccent: "#131316",
         selectionBackground: "rgba(248, 190, 42, 0.25)",
+        selectionInactiveBackground: "rgba(248, 190, 42, 0.12)",
         selectionForeground: "#e6e6e6",
       }
     : {
-        background: "transparent",
-        foreground: "#0d0d0d",
+        background: "#f2f3ee",
+        foreground: "#3a4036",
         cursor: "#f54d00",
         cursorAccent: "#f2f3ee",
-        selectionBackground: "rgba(245, 77, 0, 0.95)",
-        selectionForeground: "#0d0d0d",
+        selectionBackground: "#fbd0b8",
+        selectionInactiveBackground: "#f3e2d6",
+        selectionForeground: "#3a4036",
       };
 }
 
@@ -140,6 +143,7 @@ class TerminalManagerImpl {
   private instances = new Map<string, TerminalInstance>();
   private listeners = new Map<EventType, Set<Listener<EventType>>>();
   private isDarkMode = true;
+  private fontFamily: string = DEFAULT_TERMINAL_FONT_FAMILY;
 
   has(sessionId: string): boolean {
     return this.instances.has(sessionId);
@@ -161,7 +165,7 @@ class TerminalManagerImpl {
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 12,
-      fontFamily: "monospace",
+      fontFamily: this.fontFamily,
       theme: getTerminalTheme(this.isDarkMode),
       cursorStyle: "block",
       cursorWidth: 8,
@@ -435,6 +439,26 @@ class TerminalManagerImpl {
 
     for (const instance of this.instances.values()) {
       instance.term.options.theme = theme;
+    }
+  }
+
+  setFontFamily(fontFamily: string): void {
+    if (this.fontFamily === fontFamily) {
+      return;
+    }
+
+    this.fontFamily = fontFamily;
+
+    for (const instance of this.instances.values()) {
+      instance.term.options.fontFamily = fontFamily;
+      // Parked terminals live in a 0x0 container, so fit would compute garbage.
+      // attach() refits on reattachment, so skipping here is safe.
+      if (!instance.attachedElement) continue;
+      try {
+        instance.fitAddon.fit();
+      } catch (error) {
+        log.error("Failed to refit after font change:", error);
+      }
     }
   }
 

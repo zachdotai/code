@@ -557,7 +557,6 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
               onChange={setWorkspaceMode}
               selectedCloudEnvironmentId={selectedCloudEnvId}
               onCloudEnvironmentChange={setSelectedCloudEnvId}
-              cloudAvailable={cloudAvailable}
               size="1"
               disabled={isCreatingTask}
             />
@@ -601,7 +600,6 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
                   value={selectedDirectory}
                   onChange={setSelectedDirectory}
                   placeholder="Select repository..."
-                  size="1"
                   anchor={buttonGroupRef}
                 />
               )}

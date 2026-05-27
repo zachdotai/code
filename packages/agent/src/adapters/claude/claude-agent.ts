@@ -57,10 +57,25 @@ import {
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
 import type { PostHogAPIConfig } from "../../types";
-import { unreachable, withTimeout } from "../../utils/common";
+import {
+  isCloudRun,
+  resolveGithubToken,
+  unreachable,
+  withTimeout,
+} from "../../utils/common";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
+import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
+import { resolveTaskId } from "../session-meta";
+import {
+  buildBreakdown,
+  emptyBaseline,
+  estimateMcpTokens,
+  estimateRulesTokens,
+  estimateSkillsTokens,
+  estimateSystemPrompt,
+} from "./context-breakdown";
 import { promptToClaude } from "./conversion/acp-to-sdk";
 import {
   handleResultMessage,
@@ -69,8 +84,10 @@ import {
   handleUserAssistantMessage,
 } from "./conversion/sdk-to-acp";
 import type { EnrichedReadCache } from "./hooks";
+import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
   fetchMcpToolMetadata,
+  getCachedMcpTools,
   getConnectedMcpServerNames,
   setMcpToolApprovalStates,
 } from "./mcp/tool-metadata";
@@ -109,6 +126,22 @@ import type {
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
+
+// Best-effort: silent on ENOENT, logs other errors so permission failures
+// aren't masked.
+function readClaudeMdQuietly(cwd: string, logger: Logger): string | undefined {
+  try {
+    return fs.readFileSync(path.join(cwd, "CLAUDE.md"), "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      logger.warn("Failed to read CLAUDE.md for context breakdown", {
+        cwd,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return undefined;
+  }
+}
 
 function sanitizeTitle(text: string): string {
   const sanitized = text
@@ -463,6 +496,28 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               (message as Record<string, unknown>).state === "idle"
             ) {
               if (!promptReplayed) {
+                // The SDK consumed a slash command we do not handle locally
+                // and produced no output (e.g. /plugin in a non-interactive
+                // context). Without this branch we would loop forever waiting
+                // for an echo that never comes; surface a clear error instead.
+                if (commandMatch) {
+                  const cmd = commandMatch[1];
+                  this.logger.warn(
+                    "Slash command produced no output; treating as unsupported",
+                    { sessionId: params.sessionId, command: cmd },
+                  );
+                  await this.client.sessionUpdate({
+                    sessionId: params.sessionId,
+                    update: {
+                      sessionUpdate: "agent_message_chunk",
+                      content: {
+                        type: "text",
+                        text: `Unsupported slash command: \`${cmd}\`. PostHog Code does not implement this command.`,
+                      },
+                    },
+                  });
+                  return { stopReason: "end_turn" };
+                }
                 this.logger.debug("Skipping idle state before prompt replay", {
                   sessionId: params.sessionId,
                 });
@@ -554,6 +609,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             const usageModel =
               modelKeys[0] ?? this.session.modelId ?? "unknown";
 
+            // `result.usage` is cumulative across the agentic loop; the
+            // outermost-model stream snapshot is what's actually resident.
+            const breakdownInputTokens =
+              lastStreamUsage.input_tokens +
+              lastStreamUsage.cache_read_input_tokens +
+              lastStreamUsage.cache_creation_input_tokens;
+
             await this.client.extNotification(
               POSTHOG_NOTIFICATIONS.USAGE_UPDATE,
               {
@@ -568,6 +630,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                   cachedWriteTokens: message.usage.cache_creation_input_tokens,
                 },
                 cost: message.total_cost_usd,
+                breakdown: buildBreakdown(
+                  this.session.contextBreakdownBaseline ?? emptyBaseline(),
+                  breakdownInputTokens,
+                ),
               },
             );
 
@@ -1100,7 +1166,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const isResume = !!resume;
 
     const meta = params._meta as NewSessionMeta | undefined;
-    const taskId = meta?.persistence?.taskId;
+    const taskId = resolveTaskId(meta);
+    // Gate signed-commit wiring on cloud-run detection so the desktop (which
+    // signs via CommitSaga) is untouched.
+    const cloudRun = isCloudRun(meta);
     const effort = meta?.claudeCode?.options?.effort as EffortLevel | undefined;
 
     // We want to create a new session id unless it is resume,
@@ -1124,6 +1193,24 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const mcpServers = supportsMcpInjection(earlyModelId)
       ? parseMcpServers(params)
       : {};
+
+    // Register the in-process general local-tools MCP server. Tools self-gate
+    // via the registry (e.g. signed-commit is cloud-only and needs a GH token),
+    // so adding a tool needs no change here. In cloud runs `git commit`/`git
+    // push` are blocked by the PreToolUse guard (and the sandbox git shim), so
+    // the agent commits via the signed-commit tool instead.
+    const localToolsServer = createLocalToolsMcpServer(
+      { cwd, token: resolveGithubToken(), taskId },
+      meta,
+    );
+    if (localToolsServer) {
+      mcpServers[LOCAL_TOOLS_MCP_NAME] = localToolsServer;
+    } else if (cloudRun) {
+      this.logger.warn(
+        "Cloud run registered no local tools — missing GH_TOKEN/GITHUB_TOKEN? signed commits unavailable",
+      );
+    }
+
     const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
 
     if (meta?.mcpToolApprovals) {
@@ -1173,6 +1260,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       effort,
       enrichmentDeps: this.enrichment?.deps,
       enrichedReadCache: this.enrichedReadCache,
+      cloudMode: cloudRun,
     });
 
     // Use the same abort controller that buildSessionOptions gave to the query
@@ -1201,6 +1289,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       pendingMessages: new Map(),
       nextPendingOrder: 0,
       emitRawSDKMessages: meta?.claudeCode?.emitRawSDKMessages ?? false,
+      contextBreakdownBaseline: {
+        ...emptyBaseline(),
+        systemPrompt: estimateSystemPrompt(systemPrompt),
+        rules: estimateRulesTokens(readClaudeMdQuietly(cwd, this.logger)),
+      },
 
       // Custom properties
       cwd,
@@ -1527,13 +1620,30 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
   private async sendAvailableCommandsUpdate(): Promise<void> {
     const commands = await this.session.query.supportedCommands();
+    const available = getAvailableSlashCommands(commands);
     await this.client.sessionUpdate({
       sessionId: this.sessionId,
       update: {
         sessionUpdate: "available_commands_update",
-        availableCommands: getAvailableSlashCommands(commands),
+        availableCommands: available,
       },
     });
+    this.updateBreakdownCategory("skills", estimateSkillsTokens(available));
+  }
+
+  /** Update one category of the context-breakdown baseline so the next
+   *  `_posthog/usage_update` carries fresher numbers. No-op when the baseline
+   *  hasn't been initialized yet (e.g. in a unit-test session). */
+  private updateBreakdownCategory(
+    key: keyof NonNullable<Session["contextBreakdownBaseline"]>,
+    tokens: number,
+  ): void {
+    if (!this.session?.contextBreakdownBaseline) return;
+    if (this.session.contextBreakdownBaseline[key] === tokens) return;
+    this.session.contextBreakdownBaseline = {
+      ...this.session.contextBreakdownBaseline,
+      [key]: tokens,
+    };
   }
 
   private async replaySessionHistory(sessionId: string): Promise<void> {
@@ -1590,6 +1700,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.sendAvailableCommandsUpdate(),
       ),
       fetchMcpToolMetadata(q, this.logger).then(() => {
+        this.updateBreakdownCategory(
+          "mcp",
+          estimateMcpTokens(getCachedMcpTools()),
+        );
         const serverNames = getConnectedMcpServerNames();
         if (serverNames.length > 0) {
           this.options?.onMcpServersReady?.(serverNames);

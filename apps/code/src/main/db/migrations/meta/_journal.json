@@ -47,8 +47,15 @@
     {
       "idx": 6,
       "version": "6",
+      "when": 1777639303535,
+      "tag": "0006_youthful_warstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
       "when": 1779374911425,
-      "tag": "0006_rts_schema",
+      "tag": "0007_rts_schema",
       "breakpoints": true
     }
   ]

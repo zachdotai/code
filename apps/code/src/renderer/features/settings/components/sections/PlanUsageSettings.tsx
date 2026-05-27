@@ -1,7 +1,10 @@
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import { TokenSpendAnalysisBanner } from "@features/billing/components/TokenSpendAnalysisBanner";
 import { useUsage } from "@features/billing/hooks/useUsage";
 import { useSeatStore } from "@features/billing/stores/seatStore";
+import { formatResetTime } from "@features/billing/utils";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSeat } from "@hooks/useSeat";
 import type { UsageBucket } from "@main/services/llm-gateway/schemas";
 import {
@@ -28,6 +31,8 @@ import { useEffect, useState } from "react";
 
 const log = logger.scope("plan-usage");
 
+const SPEND_ANALYSIS_FLAG = "posthog-code-spend-analysis";
+
 async function openBillingPage(orgId: string | null): Promise<void> {
   if (orgId) {
     try {
@@ -41,17 +46,6 @@ async function openBillingPage(orgId: string | null): Promise<void> {
   }
   const url = getBillingUrl();
   if (url) window.open(url, "_blank");
-}
-
-function formatResetTime(seconds: number): string {
-  if (seconds < 3600) return "less than 1 hour";
-  if (seconds < 86400) {
-    const hours = Math.ceil(seconds / 3600);
-    return hours === 1 ? "1 hour" : `${hours} hours`;
-  }
-  const days = Math.ceil(seconds / 86400);
-  if (days === 1) return "1 day";
-  return `${days} days`;
 }
 
 export function PlanUsageSettings() {
@@ -75,6 +69,8 @@ export function PlanUsageSettings() {
     ? (getPostHogUrl(redirectUrl, cloudRegion) ?? billingUrl)
     : null;
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  const spendAnalysisEnabled =
+    useFeatureFlag(SPEND_ANALYSIS_FLAG) || import.meta.env.DEV;
 
   const isAlpha = orgSeat?.plan_key === PLAN_PRO_ALPHA;
   const {
@@ -164,6 +160,8 @@ export function PlanUsageSettings() {
           </Callout.Text>
         </Callout.Root>
       )}
+
+      {spendAnalysisEnabled && <TokenSpendAnalysisBanner />}
 
       {hasBetterPlanElsewhere && seat?.organization_name && (
         <Callout.Root color="blue" size="1">
@@ -442,9 +440,7 @@ function UsageMeter({ label, bucket, color }: UsageMeterProps) {
         color={color === "red" ? "red" : undefined}
       />
       <Text className="text-(--gray-9) text-[13px]">
-        {bucket.exceeded
-          ? "Limit exceeded"
-          : `Resets in ${formatResetTime(bucket.resets_in_seconds)}`}
+        {bucket.exceeded ? "Limit exceeded" : formatResetTime(bucket.reset_at)}
       </Text>
     </Flex>
   );

@@ -7,15 +7,17 @@ React Native mobile app built with Expo and expo-router.
 From the **repository root**:
 
 ```bash
-# Install dependencies
-pnpm mobile:install
+# Install dependencies (workspaces are wired up, so the root install covers mobile)
+pnpm install
 
 # Build and run on iOS simulator
-pnpm mobile:run:ios
+pnpm --filter @posthog/mobile ios
 
 # Start the development server (after initial build)
-pnpm mobile:start
+pnpm --filter @posthog/mobile start
 ```
+
+> First-time iOS setup also requires the **watchOS SDK** to be installed in Xcode — see [Prerequisites](#prerequisites).
 
 ## Tech Stack
 
@@ -100,50 +102,55 @@ src/
 - Node.js 22+
 - pnpm 10.23.0
 - Xcode (for iOS development)
+- **watchOS SDK** (iOS builds embed the Apple Watch companion; without this SDK installed, `expo run:ios` fails with `watchOS X.X must be installed in order to run the scheme`)
+  - Install via `xcodebuild -downloadPlatform watchOS`, or in Xcode → **Settings → Components → Platforms** → download the latest watchOS
 - Android Studio (for Android development)
-- EAS CLI: `npm install -g eas-cli`
+- EAS CLI is optional — all `eas` commands below are invoked via `npx eas`. Install globally with `npm install -g eas-cli` only if you prefer the bare command.
 
 ## Commands
 
 ### From Repository Root
 
+All commands use `pnpm --filter @posthog/mobile <script>` to target this workspace package. (`-F` is a shorter alias for `--filter`.)
+
 **Development server:**
 ```bash
-pnpm mobile:start              # Start Expo dev server
-pnpm mobile:start:clear        # Start with cleared Metro cache
+pnpm --filter @posthog/mobile start          # Start Expo dev server
+pnpm --filter @posthog/mobile start:clear    # Start with cleared Metro cache
 ```
 
 **Build and run:**
 ```bash
-pnpm mobile:run:ios            # iOS simulator
-pnpm mobile:run:ios:device     # iOS device (requires Apple Developer account)
-pnpm mobile:run:android        # Android emulator/device
+pnpm --filter @posthog/mobile ios            # iOS simulator
+pnpm --filter @posthog/mobile ios:device     # iOS device (requires Apple Developer account)
+pnpm --filter @posthog/mobile android        # Android emulator/device
 ```
 
 **Native code generation:**
 ```bash
-pnpm mobile:prebuild           # Generate ios/ and android/ folders
-pnpm mobile:prebuild:clean     # Delete and regenerate (when adding native deps)
+pnpm --filter @posthog/mobile prebuild         # Generate ios/ and android/ folders
+pnpm --filter @posthog/mobile prebuild:clean   # Delete and regenerate (when adding native deps)
 ```
 
 **EAS builds:**
 ```bash
-pnpm mobile:build:dev          # Development build (iOS, cloud)
-pnpm mobile:build:dev:local    # Development build (iOS, local)
-pnpm mobile:build:preview      # Preview build (iOS)
-pnpm mobile:build:production   # Production build (iOS)
+pnpm --filter @posthog/mobile build:dev          # Development build (iOS, cloud)
+pnpm --filter @posthog/mobile build:dev:local    # Development build (iOS, local)
+pnpm --filter @posthog/mobile build:preview      # Preview build (iOS)
+pnpm --filter @posthog/mobile build:production   # Production build (iOS)
 ```
 
 **TestFlight:**
 ```bash
-pnpm mobile:testflight         # Submit to TestFlight
+pnpm --filter @posthog/mobile testflight     # Submit to TestFlight
 ```
 
 **Utilities:**
 ```bash
-pnpm mobile:install            # Install mobile dependencies
-pnpm mobile:lint               # Run Biome check
-pnpm mobile:format             # Run Biome format
+pnpm install                                  # Installs all workspaces, including mobile
+pnpm --filter @posthog/mobile lint            # Run Biome check
+pnpm --filter @posthog/mobile lint:fix        # Run Biome check with auto-fix
+pnpm --filter @posthog/mobile format          # Run Biome format
 ```
 
 ### From apps/mobile/ Directory
@@ -152,33 +159,31 @@ pnpm mobile:format             # Run Biome format
 cd apps/mobile
 
 # Development server
-npx expo start
-npx expo start --clear
+pnpm start                  # alias for: expo start
+pnpm start:clear            # alias for: expo start --clear
 
 # Build and run
-npx expo run:ios
-npx expo run:ios --device
-npx expo run:android
-npx expo run:android --device
+pnpm ios                    # alias for: expo run:ios
+pnpm ios:device             # alias for: expo run:ios --device
+pnpm android                # alias for: expo run:android
 
 # Generate native code
-npx expo prebuild
-npx expo prebuild --clean
+pnpm prebuild               # alias for: expo prebuild
+pnpm prebuild:clean         # alias for: expo prebuild --clean
 
-# EAS builds (iOS)
-npx eas build --profile development --platform ios
-npx eas build --profile development --platform ios --local
-npx eas build --profile preview --platform ios
-npx eas build --profile production --platform ios
+# EAS builds (iOS) — pnpm aliases exist for these
+pnpm build:dev              # eas build --profile development --platform ios
+pnpm build:dev:local        # eas build --profile development --platform ios --local
+pnpm build:preview          # eas build --profile preview --platform ios
+pnpm build:production       # eas build --profile production --platform ios
 
-# EAS builds (Android)
+# EAS builds (Android) — no aliases, invoke directly
 npx eas build --profile development --platform android
 npx eas build --profile preview --platform android
 npx eas build --profile production --platform android
 
 # TestFlight
-npx testflight
-npx eas submit --platform ios
+pnpm testflight             # alias for: eas submit --platform ios
 
 # Linting
 pnpm lint
@@ -202,6 +207,56 @@ pnpm format
 - You've made manual changes to native files that you want to discard
 
 The `--clean` flag removes existing `ios/` and `android/` directories before regenerating.
+
+## Apple Watch companion
+
+> The iOS app embeds the watchOS companion as part of its build, so **the watchOS SDK must be installed in Xcode** even if you're only running on an iPhone simulator. Without it, `expo run:ios` fails before compilation with `watchOS X.X must be installed in order to run the scheme`. Install via `xcodebuild -downloadPlatform watchOS` or Xcode → **Settings → Components → Platforms**. This is a one-time setup.
+
+The watchOS companion is a native SwiftUI target generated during Expo prebuild by the local config plugin at `plugins/withWatchApp.js`.
+
+Canonical native source lives outside generated iOS output:
+
+- `native/watch/` — SwiftUI watch app source, Info.plists, and entitlements
+- `native/ios/` — iPhone WatchConnectivity bridge
+
+Generated output lives under `ios/`, including `ios/watch/`, `ios/PostHogCode/WatchTaskControlModule.*`, and `PostHogCode.xcodeproj/project.pbxproj`.
+
+### Watch architecture
+
+- iPhone remains the authenticated relay for the paired watch.
+- Mobile derives compact task snapshots from task/session state and sends them through WatchConnectivity.
+- Desktop-started local tasks work through the shared PostHog task run log/status backend, then iPhone relays to the watch.
+- Watch actions send compact commands back to iPhone, which routes them through existing mobile commands (`permission_response`, `cancel`, retry/resume, and handoff URLs).
+- Direct watch-to-Mac WatchConnectivity is not supported by Apple; Mac handoff uses `posthog-code://task/{taskId}/run/{taskRunId}`.
+
+### Rebuilding native watch targets
+
+```bash
+cd apps/mobile
+pnpm prebuild
+# or, when regenerating native projects:
+pnpm prebuild:clean
+```
+
+The `./plugins/withWatchApp` plugin copies native sources from `native/`, recreates the watch app/extension targets, and embeds them in the iOS app. If generated iOS files or Xcode targets drift, update `native/` and rerun prebuild instead of editing generated project files manually.
+
+### Running in simulators
+
+1. Open `ios/PostHogCode.xcworkspace` in Xcode.
+2. Select the iOS app scheme with a paired iPhone + Apple Watch simulator destination.
+3. Build/run the iOS app; Xcode should install the embedded watch app.
+4. Sign in on iPhone and open or start a PostHog Code task.
+5. Open the watch app and verify the mission overview, checklist, timeline, approvals, and blocker cards.
+
+### Verification checklist
+
+- Cloud task from phone/mac updates progress on watch.
+- Desktop/local task shows a `Local` badge and receives progress through persisted task run logs.
+- Approval card actions reach the existing permission response path.
+- Stop maps to the existing cancel command; retry maps to resume/retry from iPhone.
+- Open on iPhone uses `posthog://task/{taskId}`; Open on Mac uses `posthog-code://task/{taskId}/run/{taskRunId}`.
+- Haptics fire once for approval needed, completion, failure/stale blockers, and action acceptance — not on every polling update.
+- Intermittent connectivity shows cached mission state rather than raw errors/logs.
 
 ## Build Profiles
 

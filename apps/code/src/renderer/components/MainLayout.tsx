@@ -4,7 +4,6 @@ import { KeyboardShortcutsSheet } from "@components/KeyboardShortcutsSheet";
 import { SpaceSwitcher } from "@components/SpaceSwitcher";
 import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksView";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
-import { useUsageLimitDetection } from "@features/billing/hooks/useUsageLimitDetection";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
 import { InboxView } from "@features/inbox/components/InboxView";
@@ -17,18 +16,16 @@ import { useRtsPromptRouter } from "@features/rts/hooks/useRtsPromptRouter";
 import { useRtsViewStore } from "@features/rts/stores/rtsViewStore";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
-import { SetupView } from "@features/setup/components/SetupView";
+import { useSetupDiscovery } from "@features/setup/hooks/useSetupDiscovery";
 import { MainSidebar } from "@features/sidebar/components/MainSidebar";
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
 import { SkillsView } from "@features/skills/components/SkillsView";
 import { TaskDetail } from "@features/task-detail/components/TaskDetail";
 import { TaskInput } from "@features/task-detail/components/TaskInput";
+import { TaskPendingView } from "@features/task-detail/components/TaskPendingView";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
-import { useTourStore } from "@features/tour/stores/tourStore";
-import { createFirstTaskTour } from "@features/tour/tours/createFirstTaskTour";
 import {
   useWorkspaces,
   workspaceApi,
@@ -44,6 +41,7 @@ import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef } from "react";
+import { useNewTaskDeepLink } from "../hooks/useNewTaskDeepLink";
 import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
 import { GlobalEventHandlers } from "./GlobalEventHandlers";
 
@@ -82,17 +80,13 @@ export function MainLayout() {
   const activeTaskId =
     view.type === "task-detail" && view.data ? view.data.id : null;
 
-  const startTour = useTourStore((s) => s.startTour);
-  const isFirstTaskTourDone = useTourStore((s) =>
-    s.completedTourIds.includes(createFirstTaskTour.id),
-  );
-
-  useUsageLimitDetection(billingEnabled);
   useIntegrations();
   useTaskDeepLink();
   useInboxDeepLink();
   useRtsPromptRouter();
   useRtsPrGraphRouter();
+  useSetupDiscovery();
+  useNewTaskDeepLink();
 
   useEffect(() => {
     if (tasks) {
@@ -104,37 +98,30 @@ export function MainLayout() {
     if (!syncCloudTasksEnabled) return;
     if (!tasks || !workspaces || !workspacesFetched) return;
     const missing = tasks.filter(
-      (t) => !workspaces[t.id] && !reconcilingTaskIds.current.has(t.id),
+      (t) =>
+        t.latest_run?.environment === "cloud" &&
+        !workspaces[t.id] &&
+        !reconcilingTaskIds.current.has(t.id),
     );
     if (missing.length === 0) return;
-    for (const t of missing) reconcilingTaskIds.current.add(t.id);
-    void Promise.allSettled(
-      missing.map((t) =>
-        workspaceApi.create({
-          taskId: t.id,
-          mainRepoPath: "",
-          folderId: "",
-          folderPath: "",
-          mode: "cloud",
-        }),
-      ),
-    ).then((results) => {
-      let anySucceeded = false;
-      for (const [i, r] of results.entries()) {
-        const id = missing[i].id;
-        reconcilingTaskIds.current.delete(id);
-        if (r.status === "rejected") {
-          log.warn(`Failed to reconcile workspace for task ${id}`, r.reason);
-        } else {
-          anySucceeded = true;
+    const missingIds = missing.map((t) => t.id);
+    for (const id of missingIds) reconcilingTaskIds.current.add(id);
+    // Single batched IPC instead of one mutation per task — with many cloud
+    // tasks the per-task pattern saturates the main thread at boot.
+    workspaceApi
+      .reconcileCloudWorkspaces(missingIds)
+      .then((result) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        if (result.created.length > 0) {
+          void queryClient.invalidateQueries(
+            trpcReact.workspace.getAll.pathFilter(),
+          );
         }
-      }
-      if (anySucceeded) {
-        void queryClient.invalidateQueries(
-          trpcReact.workspace.getAll.pathFilter(),
-        );
-      }
-    });
+      })
+      .catch((err) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        log.warn("Failed to reconcile cloud workspaces", err);
+      });
   }, [
     syncCloudTasksEnabled,
     tasks,
@@ -149,14 +136,6 @@ export function MainLayout() {
       navigateToTaskInput();
     }
   }, [view, navigateToTaskInput]);
-
-  const settingsOpen = useSettingsDialogStore((s) => s.isOpen);
-
-  useEffect(() => {
-    if (isFirstTaskTourDone || settingsOpen) return;
-    const timer = setTimeout(() => startTour(createFirstTaskTour.id), 600);
-    return () => clearTimeout(timer);
-  }, [isFirstTaskTourDone, settingsOpen, startTour]);
 
   const handleToggleCommandMenu = useCallback(() => {
     toggleCommandMenu();
@@ -183,6 +162,8 @@ export function MainLayout() {
               initialCloudRepository={
                 view.initialCloudRepository ?? taskInputCloudRepository
               }
+              initialModel={view.initialModel}
+              initialMode={view.initialMode}
               reportAssociation={
                 view.reportAssociation ?? taskInputReportAssociation
               }
@@ -191,6 +172,10 @@ export function MainLayout() {
 
           {view.type === "task-detail" && view.data && (
             <TaskDetail key={view.data.id} task={view.data} />
+          )}
+
+          {view.type === "task-pending" && view.pendingTaskKey && (
+            <TaskPendingView pendingTaskKey={view.pendingTaskKey} />
           )}
 
           {view.type === "folder-settings" && <FolderSettingsView />}
@@ -204,7 +189,6 @@ export function MainLayout() {
           {view.type === "skills" && <SkillsView />}
 
           {view.type === "mcp-servers" && <McpServersView />}
-          {view.type === "setup" && <SetupView />}
         </Box>
       </Flex>
 
@@ -213,7 +197,9 @@ export function MainLayout() {
           tasks={visualTaskOrder}
           activeTaskId={activeTaskId}
           allTasks={tasks ?? []}
-          isOnNewTask={view.type === "task-input"}
+          isOnNewTask={
+            view.type === "task-input" || view.type === "task-pending"
+          }
           onNavigateToTask={navigateToTask}
           onNewTask={navigateToTaskInput}
         />

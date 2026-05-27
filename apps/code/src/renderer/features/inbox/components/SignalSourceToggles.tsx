@@ -1,4 +1,5 @@
 import { Badge } from "@components/ui/Badge";
+import { PgAnalyzeIcon } from "@features/inbox/components/utils/PgAnalyzeIcon";
 import {
   ArrowSquareOutIcon,
   BrainIcon,
@@ -10,15 +11,8 @@ import {
   TicketIcon,
   VideoIcon,
 } from "@phosphor-icons/react";
-import {
-  Box,
-  Button,
-  Flex,
-  Spinner,
-  Switch,
-  Text,
-  Tooltip,
-} from "@radix-ui/themes";
+import { Button } from "@posthog/quill";
+import { Box, Flex, Spinner, Switch, Text, Tooltip } from "@radix-ui/themes";
 import type { SignalSourceConfig } from "@renderer/api/posthogClient";
 import { memo, useCallback } from "react";
 
@@ -29,6 +23,7 @@ export interface SignalSourceValues {
   linear: boolean;
   zendesk: boolean;
   conversations: boolean;
+  pganalyze: boolean;
 }
 
 interface SignalSourceToggleCardProps {
@@ -138,7 +133,9 @@ const SignalSourceToggleCard = memo(function SignalSourceToggleCard({
           <Spinner size="2" />
         ) : requiresSetup ? (
           <Button
-            size="1"
+            type="button"
+            variant="primary"
+            size="sm"
             onClick={(e) => {
               e.stopPropagation();
               onSetup?.();
@@ -213,7 +210,9 @@ export const EvaluationsSection = memo(function EvaluationsSection({
           </Flex>
         </Flex>
         <Button
-          size="1"
+          type="button"
+          variant="primary"
+          size="sm"
           onClick={(e) => {
             e.stopPropagation();
             window.open(evaluationsUrl, "_blank", "noopener");
@@ -295,9 +294,14 @@ export function SignalSourceToggles({
     (checked: boolean) => onToggle("conversations", checked),
     [onToggle],
   );
+  const togglePgAnalyze = useCallback(
+    (checked: boolean) => onToggle("pganalyze", checked),
+    [onToggle],
+  );
   const setupGithub = useCallback(() => onSetup?.("github"), [onSetup]);
   const setupLinear = useCallback(() => onSetup?.("linear"), [onSetup]);
   const setupZendesk = useCallback(() => onSetup?.("zendesk"), [onSetup]);
+  const setupPgAnalyze = useCallback(() => onSetup?.("pganalyze"), [onSetup]);
 
   return (
     <Flex gap="4">
@@ -395,6 +399,67 @@ export function SignalSourceToggles({
             loading={sourceStates?.zendesk?.loading}
             syncStatus={sourceStates?.zendesk?.syncStatus}
           />
+          <SignalSourceToggleCard
+            icon={<PgAnalyzeIcon size={20} />}
+            label="pganalyze"
+            description="Postgres performance findings, slow queries, and index recommendations"
+            checked={value.pganalyze}
+            onCheckedChange={togglePgAnalyze}
+            disabled={disabled}
+            requiresSetup={sourceStates?.pganalyze?.requiresSetup}
+            onSetup={setupPgAnalyze}
+            loading={sourceStates?.pganalyze?.loading}
+            syncStatus={sourceStates?.pganalyze?.syncStatus}
+          />
+        </Flex>
+      </Flex>
+    </Flex>
+  );
+}
+
+function SignalSourceToggleCardSkeleton() {
+  return (
+    <Box
+      p="3"
+      className="rounded-(--radius-3) border border-(--gray-4) bg-(--color-panel-solid)"
+    >
+      <Flex align="center" justify="between" gap="4">
+        <Flex align="center" gap="3" className="min-w-0 flex-1">
+          <Box className="size-[20px] shrink-0 animate-pulse rounded bg-gray-4" />
+          <Flex direction="column" gap="2" className="min-w-0 flex-1">
+            <Box className="h-[12px] w-[50%] animate-pulse rounded bg-gray-4" />
+            <Box className="h-[11px] w-[80%] animate-pulse rounded bg-gray-3" />
+          </Flex>
+        </Flex>
+        <Box className="h-[18px] w-[32px] shrink-0 animate-pulse rounded-full bg-gray-3" />
+      </Flex>
+    </Box>
+  );
+}
+
+export function SignalSourceTogglesSkeleton() {
+  return (
+    <Flex gap="4">
+      <Flex direction="column" gap="2" className="min-w-0 flex-1">
+        <Text className="font-medium text-(--gray-9) text-[13px]">
+          PostHog data
+        </Text>
+        <Flex direction="column" gap="3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static loading placeholders
+            <SignalSourceToggleCardSkeleton key={index} />
+          ))}
+        </Flex>
+      </Flex>
+      <Flex direction="column" gap="2" className="min-w-0 flex-1">
+        <Text className="font-medium text-(--gray-9) text-[13px]">
+          External connections
+        </Text>
+        <Flex direction="column" gap="3">
+          {Array.from({ length: 4 }).map((_, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static loading placeholders
+            <SignalSourceToggleCardSkeleton key={index} />
+          ))}
         </Flex>
       </Flex>
     </Flex>

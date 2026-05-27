@@ -53,6 +53,7 @@ export class LlmGatewayService {
       betas?: string[];
       effort?: LlmGatewayEffortLevel;
       signal?: AbortSignal;
+      timeoutMs?: number;
     } = {},
   ): Promise<PromptOutput> {
     const {
@@ -62,6 +63,7 @@ export class LlmGatewayService {
       betas,
       effort,
       signal,
+      timeoutMs = 60_000,
     } = options;
 
     const auth = await this.authService.getValidAccessToken();
@@ -101,16 +103,36 @@ export class LlmGatewayService {
       effort,
     });
 
-    const response = await this.authService.authenticatedFetch(
-      fetch,
-      messagesUrl,
-      {
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      timeoutController.abort();
+    }, timeoutMs);
+    const onCallerAbort = () => timeoutController.abort();
+    if (signal) {
+      if (signal.aborted) timeoutController.abort();
+      else signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+
+    let response: Response;
+    try {
+      response = await this.authService.authenticatedFetch(fetch, messagesUrl, {
         method: "POST",
         headers,
         body: JSON.stringify(requestBody),
-        signal,
-      },
-    );
+        signal: timeoutController.signal,
+      });
+    } catch (err) {
+      if (timeoutController.signal.aborted && !signal?.aborted) {
+        throw new LlmGatewayError(
+          `LLM gateway request timed out after ${timeoutMs}ms`,
+          "timeout",
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener("abort", onCallerAbort);
+    }
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -319,9 +341,18 @@ export class LlmGatewayService {
 
     log.debug("Fetching usage from gateway", { url: usageUrl });
 
-    const response = await this.authService.authenticatedFetch(fetch, usageUrl);
+    let response: Response;
+    try {
+      response = await this.authService.authenticatedFetch(fetch, usageUrl);
+    } catch (err) {
+      log.warn("Usage fetch network error", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
 
     if (!response.ok) {
+      log.warn("Usage fetch failed", { status: response.status });
       throw new LlmGatewayError(
         `Failed to fetch usage: HTTP ${response.status}`,
         "usage_error",

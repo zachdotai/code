@@ -30,6 +30,7 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import type { SignalReport } from "@shared/types";
+import type { InboxReportActionProperties } from "@shared/types/analytics";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { FilterSortMenu } from "./FilterSortMenu";
@@ -51,7 +52,7 @@ interface SignalsToolbarProps {
   effectiveBulkIds?: string[];
   /** Called when the select-all checkbox is toggled. Parent owns all state transitions. */
   onToggleSelectAll?: (checked: boolean) => void;
-  /** Called when the "Configure sources" button is clicked. */
+  /** Called when the "Configure inbox" button is clicked. */
   onConfigureSources?: () => void;
   /**
    * Opens the dismiss flow: exactly one report selected (snooze or permanent suppress, with a reason).
@@ -60,6 +61,18 @@ interface SignalsToolbarProps {
   onOpenDismissDialog?: () => void;
   /** True while the single-report dismiss dialog has a mutation in flight for this toolbar. */
   isDismissMutationPending?: boolean;
+  /** Optional analytics callback fired when a bulk action succeeds. */
+  onReportAction?: (
+    action: Omit<
+      InboxReportActionProperties,
+      "rank" | "list_size" | "priority" | "actionability"
+    > & {
+      rank?: number;
+      list_size?: number;
+      priority?: string | null;
+      actionability?: string | null;
+    },
+  ) => void;
 }
 
 function formatPauseRemaining(pausedUntil: string): string {
@@ -253,6 +266,7 @@ export function SignalsToolbar({
   onConfigureSources,
   onOpenDismissDialog,
   isDismissMutationPending = false,
+  onReportAction,
 }: SignalsToolbarProps) {
   const searchQuery = useInboxSignalsFilterStore((s) => s.searchQuery);
   const setSearchQuery = useInboxSignalsFilterStore((s) => s.setSearchQuery);
@@ -329,24 +343,109 @@ export function SignalsToolbar({
       ? "Permanently delete these reports and their signals?"
       : "Permanently delete this report and its signals?";
 
+  /**
+   * Snapshot of the visible list captured at action-confirm time, so analytics
+   * record rank/list_size/priority/actionability as the user saw them — not the
+   * post-mutation refetch (by then the affected reports are gone).
+   */
+  type ListSnapshotEntry = {
+    rank: number;
+    title: string | null;
+    createdAt: string | null;
+    priority: string | null;
+    actionability: string | null;
+  };
+  type ListSnapshot = {
+    byId: Map<string, ListSnapshotEntry>;
+    listSize: number;
+  };
+  const snapshotList = (): ListSnapshot => ({
+    byId: new Map(
+      reports.map(
+        (r, i) =>
+          [
+            r.id,
+            {
+              rank: i,
+              title: r.title,
+              createdAt: r.created_at,
+              priority: r.priority ?? null,
+              actionability: r.actionability ?? null,
+            } satisfies ListSnapshotEntry,
+          ] as const,
+      ),
+    ),
+    listSize: reports.length,
+  });
+
+  const fireBulkAction = (
+    actionType: InboxReportActionProperties["action_type"],
+    targetIds: string[],
+    snapshot: ListSnapshot,
+  ) => {
+    if (!onReportAction) return;
+    const isBulk = targetIds.length > 1;
+    for (const reportId of targetIds) {
+      const entry = snapshot.byId.get(reportId);
+      const createdAt = entry?.createdAt;
+      const ageMs = createdAt
+        ? Date.now() - new Date(createdAt).getTime()
+        : Number.NaN;
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
+      onReportAction({
+        report_id: reportId,
+        report_title: entry?.title ?? null,
+        report_age_hours: reportAgeHours,
+        action_type: actionType,
+        surface: "toolbar",
+        is_bulk: isBulk,
+        bulk_size: targetIds.length,
+        rank: entry?.rank ?? -1,
+        list_size: snapshot.listSize,
+        priority: entry?.priority ?? null,
+        actionability: entry?.actionability ?? null,
+      });
+    }
+  };
+
   const handleConfirmDelete = async () => {
+    const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await deleteSelected();
     if (ok) {
+      fireBulkAction("delete", targetIds, snapshot);
       setShowDeleteConfirm(false);
     }
   };
 
   const handleConfirmSnooze = async () => {
+    const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await snoozeSelected();
     if (ok) {
+      fireBulkAction("snooze", targetIds, snapshot);
       setShowSnoozeConfirm(false);
     }
   };
 
   const handleConfirmBulkSuppress = async () => {
+    const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await suppressSelected();
     if (ok) {
+      fireBulkAction("dismiss", targetIds, snapshot);
       setShowBulkSuppressConfirm(false);
+    }
+  };
+
+  const handleReingest = async () => {
+    const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
+    const ok = await reingestSelected();
+    if (ok) {
+      fireBulkAction("reingest", targetIds, snapshot);
     }
   };
 
@@ -406,7 +505,7 @@ export function SignalsToolbar({
               className="flex shrink-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[12px] text-gray-10 transition-colors hover:text-gray-12"
             >
               <GearSixIcon size={12} />
-              <span>Configure sources</span>
+              <span>Configure inbox</span>
             </button>
           ) : null}
         </Flex>
@@ -501,7 +600,7 @@ export function SignalsToolbar({
                   loading={isReingesting}
                   icon={<ArrowClockwiseIcon size={14} />}
                   label="Reingest"
-                  onSelect={() => void reingestSelected()}
+                  onSelect={() => void handleReingest()}
                 />
                 <BulkOverflowMenuItem
                   menuPrimary={deleteMenuPrimary}

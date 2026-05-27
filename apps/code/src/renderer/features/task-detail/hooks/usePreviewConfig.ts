@@ -6,6 +6,7 @@ import { trpcClient } from "@renderer/trpc/client";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flattenConfigValues } from "../utils/configOptions";
 
 const log = logger.scope("preview-config");
 
@@ -27,12 +28,43 @@ function getOptionByCategory(
   );
 }
 
-function flattenValues(
-  options: Array<{ value?: string; options?: Array<{ value: string }> }>,
-): string[] {
-  return options.flatMap((o) =>
-    o.options ? o.options.map((go) => go.value) : o.value ? [o.value] : [],
-  );
+const EFFORT_RANK: Record<string, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  xhigh: 3,
+  max: 4,
+};
+
+/**
+ * Clamp a desired effort to the nearest level the current model supports.
+ * Falls back to the highest supported level when the desired level has no
+ * known rank (e.g. unrecognized value from older settings).
+ */
+function clampEffortToAvailable(
+  desired: string,
+  available: string[],
+): string | null {
+  if (available.length === 0) return null;
+  if (available.includes(desired)) return desired;
+
+  const desiredRank = EFFORT_RANK[desired];
+  if (desiredRank === undefined) {
+    return available[available.length - 1];
+  }
+
+  const ranked = available
+    .map((value) => ({ value, rank: EFFORT_RANK[value] }))
+    .filter((entry): entry is { value: string; rank: number } =>
+      Number.isFinite(entry.rank),
+    );
+  if (ranked.length === 0) return available[0];
+
+  return ranked.reduce((closest, entry) =>
+    Math.abs(entry.rank - desiredRank) < Math.abs(closest.rank - desiredRank)
+      ? entry
+      : closest,
+  ).value;
 }
 
 /**
@@ -70,6 +102,7 @@ export function usePreviewConfig(
         const {
           defaultInitialTaskMode,
           lastUsedInitialTaskMode,
+          defaultReasoningEffort,
           lastUsedReasoningEffort,
         } = useSettingsStore.getState();
 
@@ -79,15 +112,9 @@ export function usePreviewConfig(
         // available modes.
         const modeOpt = options.find((o) => o.id === "mode");
         const serverDefault = modeOpt?.currentValue;
-        const availableValues: string[] =
-          modeOpt?.type === "select"
-            ? flattenValues(
-                modeOpt.options as Array<{
-                  value?: string;
-                  options?: Array<{ value: string }>;
-                }>,
-              )
-            : [];
+        const availableValues: string[] = modeOpt
+          ? flattenConfigValues(modeOpt)
+          : [];
 
         let initialMode: string;
         if (
@@ -115,19 +142,27 @@ export function usePreviewConfig(
           if (opt.category !== "thought_level" || opt.type !== "select") {
             return opt;
           }
-          const validValues = flattenValues(
-            opt.options as Array<{
-              value?: string;
-              options?: Array<{ value: string }>;
-            }>,
+          const validValues = flattenConfigValues(opt);
+          if (defaultReasoningEffort === "last_used") {
+            if (
+              lastUsedReasoningEffort &&
+              validValues.includes(lastUsedReasoningEffort)
+            ) {
+              return {
+                ...opt,
+                currentValue: lastUsedReasoningEffort,
+              } as SessionConfigOption;
+            }
+            return opt;
+          }
+          const clamped = clampEffortToAvailable(
+            defaultReasoningEffort,
+            validValues,
           );
-          if (
-            lastUsedReasoningEffort &&
-            validValues.includes(lastUsedReasoningEffort)
-          ) {
+          if (clamped) {
             return {
               ...opt,
-              currentValue: lastUsedReasoningEffort,
+              currentValue: clamped,
             } as SessionConfigOption;
           }
           return opt;
@@ -168,26 +203,34 @@ export function usePreviewConfig(
                 ? "reasoning_effort"
                 : "effort";
 
-          const { lastUsedReasoningEffort } = useSettingsStore.getState();
+          const { lastUsedReasoningEffort, defaultReasoningEffort } =
+            useSettingsStore.getState();
           const isValidEffort = (effort: unknown): effort is string =>
             typeof effort === "string" &&
             !!effortOpts?.some((e) => e.value === effort);
+          const resolveEffortFallback = (): string => {
+            if (
+              defaultReasoningEffort !== "last_used" &&
+              isValidEffort(defaultReasoningEffort)
+            ) {
+              return defaultReasoningEffort;
+            }
+            return isValidEffort(lastUsedReasoningEffort)
+              ? lastUsedReasoningEffort
+              : "high";
+          };
           if (effortOpts && existingIdx >= 0) {
             const currentEffort = updated[existingIdx].currentValue;
             const nextEffort = isValidEffort(currentEffort)
               ? currentEffort
-              : isValidEffort(lastUsedReasoningEffort)
-                ? lastUsedReasoningEffort
-                : "high";
+              : resolveEffortFallback();
             updated[existingIdx] = {
               ...updated[existingIdx],
               currentValue: nextEffort,
               options: effortOpts,
             } as SessionConfigOption;
           } else if (effortOpts && existingIdx === -1) {
-            const nextEffort = isValidEffort(lastUsedReasoningEffort)
-              ? lastUsedReasoningEffort
-              : "high";
+            const nextEffort = resolveEffortFallback();
             updated = [
               ...updated,
               {

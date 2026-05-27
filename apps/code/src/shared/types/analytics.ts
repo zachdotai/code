@@ -6,7 +6,7 @@ import type {
 } from "@features/message-editor/analytics";
 
 type ExecutionType = "cloud" | "local";
-type RepositoryProvider = "github" | "gitlab" | "local" | "none";
+export type RepositoryProvider = "github" | "gitlab" | "local" | "none";
 type TaskCreatedFrom = "cli" | "command-menu";
 type RepositorySelectSource = "task-creation" | "task-detail";
 type GitActionType =
@@ -39,7 +39,8 @@ export type CommandMenuAction =
   | "logout"
   | "toggle-theme"
   | "toggle-left-sidebar"
-  | "open-review-panel";
+  | "open-review-panel"
+  | "open-task";
 
 // Event property interfaces
 export interface TaskListViewProperties {
@@ -277,6 +278,37 @@ export interface BranchMismatchActionProperties {
   current_branch: string;
 }
 
+// Deep link events
+export interface DeepLinkNewTaskProperties {
+  has_prompt: boolean;
+  has_repo: boolean;
+  mode?: string;
+  model?: string;
+}
+
+export interface DeepLinkPlanProperties {
+  has_repo: boolean;
+  mode?: string;
+  model?: string;
+  plan_length_chars: number;
+}
+
+export interface DeepLinkIssueProperties {
+  owner: string;
+  repo: string;
+  issue_number: number;
+  mode?: string;
+  model?: string;
+}
+
+export interface DeepLinkIssueFailedProperties {
+  owner: string;
+  repo: string;
+  issue_number: number;
+  reason: "not_found" | "fetch_failed";
+  error_message?: string;
+}
+
 // Feedback events
 export interface TaskFeedbackProperties {
   task_id: string;
@@ -285,6 +317,75 @@ export interface TaskFeedbackProperties {
   event_count: number;
   feedback_type: FeedbackType;
   feedback_comment?: string;
+}
+
+// Onboarding events
+export type OnboardingStepId =
+  | "welcome"
+  | "project-select"
+  | "invite-code"
+  | "github"
+  | "install-cli";
+
+type OnboardingSkipReason = "tools_not_installed" | "dev_skip";
+
+export interface OnboardingStepViewedProperties {
+  step_id: OnboardingStepId;
+  step_index: number;
+  total_steps: number;
+}
+
+export interface OnboardingStepCompletedProperties {
+  step_id: OnboardingStepId;
+  step_index: number;
+  total_steps: number;
+  duration_seconds: number;
+}
+
+export interface OnboardingStepSkippedProperties {
+  step_id: OnboardingStepId;
+  step_index: number;
+  reason: OnboardingSkipReason;
+}
+
+export interface OnboardingSignInInitiatedProperties {
+  region: string;
+}
+
+export interface OnboardingProjectSelectedProperties {
+  had_multiple_orgs: boolean;
+  had_multiple_projects: boolean;
+}
+
+export interface OnboardingInviteCodeSubmittedProperties {
+  success: boolean;
+  error_type?: string;
+}
+
+export interface OnboardingFolderSelectedProperties {
+  has_git_remote: boolean;
+  repository_provider: RepositoryProvider;
+}
+
+export interface OnboardingCliCheckCompletedProperties {
+  git_installed: boolean;
+  gh_installed: boolean;
+  gh_authenticated: boolean;
+}
+
+export interface OnboardingCompletedProperties {
+  duration_seconds: number;
+  github_connected: boolean;
+  cli_skipped: boolean;
+}
+
+export interface OnboardingAbandonedProperties {
+  last_step_id: OnboardingStepId;
+  duration_seconds: number;
+}
+
+export interface AiConsentGateShownProperties {
+  is_org_admin: boolean;
 }
 
 // Setup / onboarding events
@@ -298,11 +399,8 @@ type SetupDiscoveredTaskCategory =
   | "error_tracking"
   | "event_tracking"
   | "funnel"
-  | "posthog_setup";
-
-export interface SetupViewedProperties {
-  discovery_status: "idle" | "running" | "done" | "error";
-}
+  | "posthog_setup"
+  | "experiment";
 
 export interface SetupDiscoveryStartedProperties {
   discovery_task_id: string;
@@ -338,10 +436,161 @@ export interface SetupTaskDismissedProperties {
   total_discovered: number;
 }
 
-export interface SetupSkippedProperties {
-  discovery_status: "idle" | "running" | "done" | "error";
-  had_discovered_tasks: boolean;
-  entry_point: "during_scan" | "after_done";
+// Inbox events
+export type InboxReportOpenMethod =
+  | "click"
+  | "click_cmd"
+  | "click_shift"
+  | "keyboard"
+  | "deeplink"
+  | "unknown";
+
+export type InboxReportCloseMethod =
+  | "next_report"
+  | "deselected"
+  | "navigated_away"
+  | "unmount";
+
+export type InboxReportActionType =
+  | "dismiss"
+  | "snooze"
+  | "delete"
+  | "reingest"
+  | "create_pr"
+  | "open_pr"
+  | "copy_link"
+  | "discuss"
+  | "expand_signal"
+  | "collapse_signal"
+  | "expand_signal_section"
+  | "view_signal_external"
+  | "expand_why"
+  | "click_suggested_reviewer"
+  | "expand_task_section"
+  | "play_session_recording";
+
+export type InboxReportActionSurface =
+  | "detail_pane"
+  | "toolbar"
+  | "keyboard"
+  | "list_row";
+
+export interface InboxViewedProperties {
+  report_count: number;
+  total_count: number;
+  ready_count: number;
+  has_active_filters: boolean;
+  source_product_filter: string[];
+  status_filter_count: number;
+  is_empty: boolean;
+  /** True when the inbox is scale-gated (GatedDueToScalePane shown, data not loaded). */
+  is_gated_due_to_scale: boolean;
+  /** Breakdown of the visible report_count by priority (P0–P4, or "unknown"). */
+  priority_p0_count: number;
+  priority_p1_count: number;
+  priority_p2_count: number;
+  priority_p3_count: number;
+  priority_p4_count: number;
+  priority_unknown_count: number;
+  /** Breakdown of the visible report_count by actionability. */
+  actionability_immediately_actionable_count: number;
+  actionability_requires_human_input_count: number;
+  actionability_not_actionable_count: number;
+  actionability_unknown_count: number;
+}
+
+export interface InboxReportOpenedProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  status: string | null;
+  priority: string | null;
+  actionability: string | null;
+  source_products: string[];
+  rank: number;
+  list_size: number;
+  open_method: InboxReportOpenMethod;
+  previous_report_id: string | null;
+}
+
+export interface InboxReportClosedProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
+  time_spent_ms: number;
+  scrolled: boolean;
+  close_method: InboxReportCloseMethod;
+}
+
+export interface InboxReportScrolledProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
+  rank: number;
+  list_size: number;
+  time_since_open_ms: number;
+}
+
+export interface SpendAnalysisTaskOpenedProperties {
+  /** Total LLM spend in USD across all products for the analysed window. */
+  total_cost_usd: number;
+  /** PostHog Code spend in USD for the analysed window (subset of total). */
+  scoped_cost_usd: number;
+  /** Number of `$ai_generation` events in the analysed window. */
+  scoped_event_count: number;
+  /** Length of the analysed window in days. */
+  window_days: number;
+  /** Number of tool rows the receiving agent will see (capped at 10 in the prompt). */
+  tool_row_count: number;
+  /** Number of model rows the receiving agent will see. */
+  model_row_count: number;
+}
+
+export interface InboxReportActionProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
+  action_type: InboxReportActionType;
+  surface: InboxReportActionSurface;
+  is_bulk: boolean;
+  bulk_size: number;
+  rank: number;
+  list_size: number;
+  dismissal_reason?: string;
+  dismissal_note?: string;
+  signal_id?: string;
+  signal_source_product?: string;
+  signal_source_type?: string;
+  signal_section?: "relevant_code" | "data_queried";
+  why_field?: "priority" | "actionability";
+  task_section?: "research" | "implementation";
+  // True when the user submitted Discuss with a first question via the popover.
+  has_question?: boolean;
+  // The first question text the user typed before hitting Discuss. Truncated to
+  // 500 chars to keep event payloads bounded.
+  question_text?: string;
+}
+
+export interface SignalSourceConnectedProperties {
+  source_product:
+    | "session_replay"
+    | "error_tracking"
+    | "github"
+    | "linear"
+    | "zendesk"
+    | "conversations"
+    | "pganalyze"
+    | "llm_analytics";
+  /** True when this is a brand-new createSignalSourceConfig, false for re-enable of an existing config. */
+  is_first_connection: boolean;
+  /** True when the connection went through the DataSourceSetup wizard (warehouse OAuth path). */
+  via_setup_wizard: boolean;
 }
 
 // Subscription / billing events
@@ -423,14 +672,34 @@ export const ANALYTICS_EVENTS = {
   // Tour events
   TOUR_EVENT: "Tour event",
 
+  // Onboarding events
+  ONBOARDING_STARTED: "Onboarding started",
+  ONBOARDING_STEP_VIEWED: "Onboarding step viewed",
+  ONBOARDING_STEP_COMPLETED: "Onboarding step completed",
+  ONBOARDING_STEP_SKIPPED: "Onboarding step skipped",
+  ONBOARDING_SIGN_IN_INITIATED: "Onboarding sign in initiated",
+  ONBOARDING_PROJECT_SELECTED: "Onboarding project selected",
+  ONBOARDING_INVITE_CODE_SUBMITTED: "Onboarding invite code submitted",
+  ONBOARDING_FOLDER_SELECTED: "Onboarding folder selected",
+  ONBOARDING_GITHUB_CONNECTED: "Onboarding github connected",
+  ONBOARDING_CLI_CHECK_COMPLETED: "Onboarding cli check completed",
+  ONBOARDING_COMPLETED: "Onboarding completed",
+  ONBOARDING_ABANDONED: "Onboarding abandoned",
+  AI_CONSENT_GATE_SHOWN: "Ai consent gate shown",
+  AI_CONSENT_APPROVED: "Ai consent approved",
+
   // Setup / onboarding events
-  SETUP_VIEWED: "Setup viewed",
   SETUP_DISCOVERY_STARTED: "Setup discovery started",
   SETUP_DISCOVERY_COMPLETED: "Setup discovery completed",
   SETUP_DISCOVERY_FAILED: "Setup discovery failed",
   SETUP_TASK_SELECTED: "Setup task selected",
   SETUP_TASK_DISMISSED: "Setup task dismissed",
-  SETUP_SKIPPED: "Setup skipped",
+
+  // Deep link events
+  DEEP_LINK_NEW_TASK: "Deep link new task",
+  DEEP_LINK_PLAN: "Deep link plan",
+  DEEP_LINK_ISSUE: "Deep link issue",
+  DEEP_LINK_ISSUE_FAILED: "Deep link issue failed",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -438,6 +707,15 @@ export const ANALYTICS_EVENTS = {
 
   // Inbox events
   INBOX_INTEREST_REGISTERED: "Inbox interest registered",
+  INBOX_VIEWED: "Inbox viewed",
+  INBOX_REPORT_OPENED: "Inbox report opened",
+  INBOX_REPORT_CLOSED: "Inbox report closed",
+  INBOX_REPORT_ACTION: "Inbox report action",
+  INBOX_REPORT_SCROLLED: "Inbox report scrolled",
+  SIGNAL_SOURCE_CONNECTED: "Signal source connected",
+
+  // Spend analysis events
+  SPEND_ANALYSIS_TASK_OPENED: "Spend analysis task opened",
 
   // Prompt history events
   PROMPT_HISTORY_OPENED: "Prompt history opened",
@@ -556,14 +834,34 @@ export type EventPropertyMap = {
   // Tour events
   [ANALYTICS_EVENTS.TOUR_EVENT]: TourEventProperties;
 
+  // Onboarding events
+  [ANALYTICS_EVENTS.ONBOARDING_STARTED]: never;
+  [ANALYTICS_EVENTS.ONBOARDING_STEP_VIEWED]: OnboardingStepViewedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED]: OnboardingStepCompletedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_STEP_SKIPPED]: OnboardingStepSkippedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_SIGN_IN_INITIATED]: OnboardingSignInInitiatedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_PROJECT_SELECTED]: OnboardingProjectSelectedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_INVITE_CODE_SUBMITTED]: OnboardingInviteCodeSubmittedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_FOLDER_SELECTED]: OnboardingFolderSelectedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECTED]: never;
+  [ANALYTICS_EVENTS.ONBOARDING_CLI_CHECK_COMPLETED]: OnboardingCliCheckCompletedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_COMPLETED]: OnboardingCompletedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_ABANDONED]: OnboardingAbandonedProperties;
+  [ANALYTICS_EVENTS.AI_CONSENT_GATE_SHOWN]: AiConsentGateShownProperties;
+  [ANALYTICS_EVENTS.AI_CONSENT_APPROVED]: never;
+
   // Setup / onboarding events
-  [ANALYTICS_EVENTS.SETUP_VIEWED]: SetupViewedProperties;
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED]: SetupDiscoveryStartedProperties;
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_COMPLETED]: SetupDiscoveryCompletedProperties;
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED]: SetupDiscoveryFailedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_SELECTED]: SetupTaskSelectedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_DISMISSED]: SetupTaskDismissedProperties;
-  [ANALYTICS_EVENTS.SETUP_SKIPPED]: SetupSkippedProperties;
+
+  // Deep link events
+  [ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK]: DeepLinkNewTaskProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_PLAN]: DeepLinkPlanProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_ISSUE]: DeepLinkIssueProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_ISSUE_FAILED]: DeepLinkIssueFailedProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;
@@ -571,6 +869,15 @@ export type EventPropertyMap = {
 
   // Inbox events
   [ANALYTICS_EVENTS.INBOX_INTEREST_REGISTERED]: never;
+  [ANALYTICS_EVENTS.INBOX_VIEWED]: InboxViewedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_OPENED]: InboxReportOpenedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
+  [ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED]: SignalSourceConnectedProperties;
+
+  // Spend analysis events
+  [ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED]: SpendAnalysisTaskOpenedProperties;
 
   // Prompt history events
   [ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED]: PromptHistoryOpenedProperties;

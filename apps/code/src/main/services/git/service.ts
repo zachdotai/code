@@ -19,6 +19,7 @@ import {
   getDiffHead,
   getDiffStats,
   getFileAtHead,
+  getGitBusyState,
   getLatestCommit,
   getRemoteUrl,
   getStagedDiff,
@@ -40,6 +41,7 @@ import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
+import type { AgentService } from "../agent/service";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { SidebarPrState } from "../workspace/schemas";
 import type { WorkspaceService } from "../workspace/service";
@@ -57,6 +59,7 @@ import type {
   GetPrTemplateOutput,
   GhAuthTokenOutput,
   GhStatusOutput,
+  GitBusyState,
   GitCommitInfo,
   GitFileStatus,
   GithubRef,
@@ -71,11 +74,13 @@ import type {
   PrDetailsByBranchOutput,
   PrDetailsByUrlOutput,
   PrReviewComment,
+  PrReviewThread,
   PrStatusOutput,
   PublishOutput,
   PullOutput,
   PushOutput,
   ReplyToPrCommentOutput,
+  ResolveReviewThreadOutput,
   SyncOutput,
   UpdatePrByUrlOutput,
 } from "./schemas";
@@ -136,8 +141,29 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     private readonly llmGateway: LlmGatewayService,
     @inject(MAIN_TOKENS.WorkspaceService)
     private readonly workspaceService: WorkspaceService,
+    @inject(MAIN_TOKENS.AgentService)
+    private readonly agentService: AgentService,
   ) {
     super();
+  }
+
+  /**
+   * Resolve env-var overrides set by the agent's SessionStart hooks for the
+   * given task. Used so UI-triggered git/gh operations (Commit, Create PR)
+   * see the same env (notably `SSH_AUTH_SOCK` re-pointed at Secretive) as
+   * the agent's bash tool. Returns `undefined` if there's nothing to apply.
+   */
+  private async getSessionEnv(
+    taskId: string | undefined,
+  ): Promise<Record<string, string> | undefined> {
+    if (!taskId) return undefined;
+    try {
+      const env = await this.agentService.getSessionEnvForTask(taskId);
+      return Object.keys(env).length > 0 ? env : undefined;
+    } catch (err) {
+      log.warn("Failed to load session env for task", { taskId, err });
+      return undefined;
+    }
   }
 
   private async getStateSnapshot(
@@ -275,16 +301,29 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     return getRemoteUrl(directoryPath);
   }
 
-  public async getCurrentBranch(directoryPath: string): Promise<string | null> {
-    return getCurrentBranch(directoryPath);
+  public async getCurrentBranch(
+    directoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    return getCurrentBranch(directoryPath, { abortSignal: signal });
   }
 
   public async getDefaultBranch(directoryPath: string): Promise<string> {
     return getDefaultBranch(directoryPath);
   }
 
-  public async getAllBranches(directoryPath: string): Promise<string[]> {
-    return getAllBranches(directoryPath);
+  public async getAllBranches(
+    directoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<string[]> {
+    return getAllBranches(directoryPath, { abortSignal: signal });
+  }
+
+  public async getGitBusyState(
+    directoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<GitBusyState> {
+    return getGitBusyState(directoryPath, { abortSignal: signal });
   }
 
   public async createBranch(
@@ -308,46 +347,81 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
   public async getChangedFilesHead(
     directoryPath: string,
+    signal?: AbortSignal,
   ): Promise<ChangedFile[]> {
     const files = await getChangedFilesDetailed(directoryPath, {
       excludePatterns: [".claude", "CLAUDE.local.md"],
+      abortSignal: signal,
     });
-    return files.map((f) => ({
-      path: f.path,
-      status: f.status,
-      originalPath: f.originalPath,
-      linesAdded: f.linesAdded,
-      linesRemoved: f.linesRemoved,
-      staged: f.staged,
-    }));
+    type HeadChangedFile = Omit<ChangedFile, "patch">;
+    const filteredFiles: Array<HeadChangedFile | null> = await Promise.all(
+      files.map(async (file) => {
+        if (file.status === "untracked") {
+          try {
+            const stats = await fs.promises.stat(
+              path.join(directoryPath, file.path),
+            );
+            if (!stats.isFile()) return null;
+          } catch {
+            return null;
+          }
+        }
+
+        return {
+          path: file.path,
+          status: file.status,
+          originalPath: file.originalPath,
+          linesAdded: file.linesAdded,
+          linesRemoved: file.linesRemoved,
+          staged: file.staged,
+        };
+      }),
+    );
+
+    return filteredFiles.filter(
+      (file): file is HeadChangedFile => file !== null,
+    );
   }
 
   public async getFileAtHead(
     directoryPath: string,
     filePath: string,
+    signal?: AbortSignal,
   ): Promise<string | null> {
-    return getFileAtHead(directoryPath, filePath);
+    return getFileAtHead(directoryPath, filePath, { abortSignal: signal });
   }
 
   public async getDiffHead(
     directoryPath: string,
     ignoreWhitespace?: boolean,
+    signal?: AbortSignal,
   ): Promise<string> {
-    return getDiffHead(directoryPath, { ignoreWhitespace });
+    return getDiffHead(directoryPath, {
+      ignoreWhitespace,
+      abortSignal: signal,
+    });
   }
 
   public async getDiffCached(
     directoryPath: string,
     ignoreWhitespace?: boolean,
+    signal?: AbortSignal,
   ): Promise<string> {
-    return getStagedDiff(directoryPath, { ignoreWhitespace });
+    return getStagedDiff(directoryPath, {
+      ignoreWhitespace,
+      abortSignal: signal,
+    });
   }
 
   public async getDiffUnstaged(
     directoryPath: string,
     ignoreWhitespace?: boolean,
+    signal?: AbortSignal,
   ): Promise<string> {
-    return getUnstagedDiff(directoryPath, { ignoreWhitespace });
+    return getUnstagedDiff(directoryPath, {
+      ignoreWhitespace,
+      abortSignal: signal,
+    });
   }
 
   public async stageFiles(
@@ -366,9 +440,13 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     return this.getStateSnapshot(directoryPath);
   }
 
-  public async getDiffStats(directoryPath: string): Promise<DiffStats> {
+  public async getDiffStats(
+    directoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<DiffStats> {
     const stats = await getDiffStats(directoryPath, {
       excludePatterns: [".claude", "CLAUDE.local.md"],
+      abortSignal: signal,
     });
     return {
       filesChanged: stats.filesChanged,
@@ -409,8 +487,11 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
   public async getLatestCommit(
     directoryPath: string,
+    signal?: AbortSignal,
   ): Promise<GitCommitInfo | null> {
-    const commit = await getLatestCommit(directoryPath);
+    const commit = await getLatestCommit(directoryPath, {
+      abortSignal: signal,
+    });
     if (!commit) return null;
     return {
       sha: commit.sha,
@@ -457,6 +538,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     branch?: string,
     setUpstream = false,
     signal?: AbortSignal,
+    env?: Record<string, string>,
   ): Promise<PushOutput> {
     const saga = new PushSaga();
     const result = await saga.run({
@@ -465,6 +547,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       branch: branch || undefined,
       setUpstream,
       signal,
+      env,
     });
     if (!result.success) {
       return { success: false, message: result.error };
@@ -514,6 +597,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     directoryPath: string,
     remote = "origin",
     signal?: AbortSignal,
+    env?: Record<string, string>,
   ): Promise<PublishOutput> {
     const currentBranch = await getCurrentBranch(directoryPath);
     if (!currentBranch) {
@@ -526,6 +610,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       currentBranch,
       true,
       signal,
+      env,
     );
     return {
       success: pushResult.success,
@@ -599,6 +684,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       });
     };
 
+    const sessionEnv = await this.getSessionEnv(input.taskId);
+
     const saga = new CreatePrSaga(
       {
         getCurrentBranch: (dir) => getCurrentBranch(dir),
@@ -607,14 +694,16 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
         getChangedFilesHead: (dir) => this.getChangedFilesHead(dir),
         generateCommitMessage: (dir) =>
           this.generateCommitMessage(dir, input.conversationContext),
-        commit: (dir, msg, opts) => this.commit(dir, msg, opts),
+        commit: (dir, msg, opts) =>
+          this.commit(dir, msg, { ...opts, envOverride: sessionEnv }),
         getSyncStatus: (dir) => this.getGitSyncStatus(dir),
-        push: (dir) => this.push(dir),
-        publish: (dir) => this.publish(dir),
+        push: (dir) =>
+          this.push(dir, "origin", undefined, false, undefined, sessionEnv),
+        publish: (dir) => this.publish(dir, "origin", undefined, sessionEnv),
         generatePrTitleAndBody: (dir) =>
           this.generatePrTitleAndBody(dir, input.conversationContext),
         createPr: (dir, title, body, draft) =>
-          this.createPrViaGh(dir, title, body, draft),
+          this.createPrViaGh(dir, title, body, draft, sessionEnv),
         onProgress: emitProgress,
       },
       log,
@@ -705,6 +794,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       allowEmpty?: boolean;
       stagedOnly?: boolean;
       taskId?: string;
+      /** Pre-resolved session env. Internal — used by createPr to avoid re-loading. */
+      envOverride?: Record<string, string>;
     },
   ): Promise<CommitOutput> {
     const fail = (msg: string): CommitOutput => ({
@@ -716,11 +807,15 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
     if (!message.trim()) return fail("Commit message is required");
 
+    const { envOverride, ...sagaOptions } = options ?? {};
+    const env = envOverride ?? (await this.getSessionEnv(options?.taskId));
+
     const saga = new CommitSaga();
     const result = await saga.run({
       baseDir: directoryPath,
       message: message.trim(),
-      ...options,
+      env,
+      ...sagaOptions,
     });
 
     if (!result.success) return fail(result.error);
@@ -931,6 +1026,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     title?: string,
     body?: string,
     draft?: boolean,
+    env?: Record<string, string>,
   ): Promise<{ success: boolean; message: string; prUrl: string | null }> {
     const prFooter =
       "\n\n---\n*Created with [PostHog Code](https://posthog.com/code?ref=pr)*";
@@ -944,7 +1040,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     }
     if (draft) args.push("--draft");
 
-    const result = await execGh(args, { cwd: directoryPath });
+    const result = await execGh(args, { cwd: directoryPath, env });
     if (result.exitCode !== 0) {
       return {
         success: false,
@@ -1165,30 +1261,164 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     }
   }
 
-  public async getPrReviewComments(prUrl: string): Promise<PrReviewComment[]> {
+  public async getPrReviewComments(prUrl: string): Promise<PrReviewThread[]> {
     const pr = parseGithubUrl(prUrl);
     if (pr?.kind !== "pr") return [];
 
     const { owner, repo, number } = pr;
 
-    try {
-      const result = await execGh([
-        "api",
-        `repos/${owner}/${repo}/pulls/${number}/comments`,
-        "--paginate",
-        "--slurp",
-      ]);
+    // Position fields (line, side, etc.) live on the thread, not on individual comments.
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                id
+                isResolved
+                isOutdated
+                path
+                diffSide
+                line
+                originalLine
+                startLine
+                startDiffSide
+                subjectType
+                comments(first: 100) {
+                  nodes {
+                    databaseId
+                    body
+                    path
+                    diffHunk
+                    replyTo { databaseId }
+                    author { login avatarUrl }
+                    createdAt
+                    updatedAt
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
 
-      if (result.exitCode !== 0) {
-        throw new Error(
-          `Failed to fetch PR review comments: ${result.stderr || result.error || "Unknown error"}`,
+    type ThreadNode = {
+      id: string;
+      isResolved: boolean;
+      isOutdated: boolean;
+      path: string;
+      diffSide: "LEFT" | "RIGHT";
+      line: number | null;
+      originalLine: number | null;
+      startLine: number | null;
+      startDiffSide: "LEFT" | "RIGHT" | null;
+      subjectType: "LINE" | "FILE" | null;
+      comments: {
+        nodes: Array<{
+          databaseId: number;
+          body: string;
+          path: string;
+          diffHunk: string;
+          replyTo: { databaseId: number } | null;
+          author: { login: string; avatarUrl: string };
+          createdAt: string;
+          updatedAt: string;
+        }>;
+      };
+    };
+
+    type PageResponse = {
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              pageInfo: { hasNextPage: boolean; endCursor: string | null };
+              nodes: ThreadNode[];
+            };
+          };
+        };
+      };
+      errors?: Array<{ message: string }>;
+    };
+
+    const MAX_THREAD_PAGES = 50; // 50 × 100 = 5 000 threads max
+
+    try {
+      const allNodes: ThreadNode[] = [];
+      let cursor: string | null = null;
+      let completed = false;
+
+      for (let page = 0; page < MAX_THREAD_PAGES; page++) {
+        const result = await execGh(["api", "graphql", "--input", "-"], {
+          input: JSON.stringify({
+            query,
+            variables: { owner, repo, number, cursor },
+          }),
+        });
+
+        if (result.exitCode !== 0) {
+          throw new Error(
+            `Failed to fetch PR review threads: ${result.stderr || result.error || "Unknown error"}`,
+          );
+        }
+
+        const data = JSON.parse(result.stdout) as PageResponse;
+        if (data.errors?.length) {
+          throw new Error(
+            `GraphQL error: ${data.errors.map((e) => e.message).join("; ")}`,
+          );
+        }
+        const reviewThreads = data.data.repository.pullRequest.reviewThreads;
+        allNodes.push(...reviewThreads.nodes);
+        if (!reviewThreads.pageInfo.hasNextPage) {
+          completed = true;
+          break;
+        }
+        cursor = reviewThreads.pageInfo.endCursor;
+      }
+
+      if (!completed) {
+        log.warn(
+          "getPrReviewComments hit MAX_THREAD_PAGES; returning partial results",
+          {
+            prUrl,
+            returned: allNodes.length,
+          },
         );
       }
 
-      const pages = JSON.parse(result.stdout) as PrReviewComment[][];
-      return pages.flat();
+      return allNodes.map((thread) => {
+        const comments: PrReviewComment[] = thread.comments.nodes.map((c) => ({
+          id: c.databaseId,
+          body: c.body,
+          path: c.path,
+          diff_hunk: c.diffHunk,
+          line: thread.line,
+          original_line: thread.originalLine,
+          side: thread.diffSide,
+          start_line: thread.startLine,
+          start_side: thread.startDiffSide,
+          in_reply_to_id: c.replyTo?.databaseId ?? null,
+          user: { login: c.author.login, avatar_url: c.author.avatarUrl },
+          created_at: c.createdAt,
+          updated_at: c.updatedAt,
+          subject_type: thread.subjectType
+            ? (thread.subjectType.toLowerCase() as "line" | "file")
+            : null,
+        }));
+
+        return {
+          nodeId: thread.id,
+          isResolved: thread.isResolved,
+          rootId: comments[0]?.id ?? 0,
+          filePath: thread.path,
+          comments,
+        };
+      });
     } catch (error) {
-      log.warn("Failed to fetch PR review comments", { prUrl, error });
+      log.warn("Failed to fetch PR review threads", { prUrl, error });
       throw error;
     }
   }
@@ -1258,6 +1488,60 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     } catch (error) {
       log.warn("Failed to fetch PR check runs", { prUrl, error });
       return [];
+    }
+  }
+
+  public async resolveReviewThread(
+    threadNodeId: string,
+    resolved: boolean,
+  ): Promise<ResolveReviewThreadOutput> {
+    const mutation = resolved
+      ? `mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }`
+      : `mutation($threadId: ID!) { unresolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }`;
+
+    try {
+      const result = await execGh(["api", "graphql", "--input", "-"], {
+        input: JSON.stringify({
+          query: mutation,
+          variables: { threadId: threadNodeId },
+        }),
+      });
+
+      if (result.exitCode !== 0) {
+        log.warn("Failed to resolve/unresolve review thread", {
+          threadNodeId,
+          resolved,
+          error: result.stderr || result.error,
+        });
+        return { success: false, isResolved: !resolved };
+      }
+
+      const data = JSON.parse(result.stdout) as {
+        data: {
+          resolveReviewThread?: { thread: { isResolved: boolean } };
+          unresolveReviewThread?: { thread: { isResolved: boolean } };
+        };
+        errors?: Array<{ message: string }>;
+      };
+      if (data.errors?.length) {
+        log.warn("Failed to resolve/unresolve review thread", {
+          threadNodeId,
+          resolved,
+          error: data.errors.map((e) => e.message).join("; "),
+        });
+        return { success: false, isResolved: !resolved };
+      }
+      const thread =
+        data.data.resolveReviewThread?.thread ??
+        data.data.unresolveReviewThread?.thread;
+
+      return { success: true, isResolved: thread?.isResolved ?? resolved };
+    } catch (error) {
+      log.warn("Failed to resolve/unresolve review thread", {
+        threadNodeId,
+        error,
+      });
+      return { success: false, isResolved: !resolved };
     }
   }
 

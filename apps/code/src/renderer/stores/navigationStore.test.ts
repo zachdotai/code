@@ -110,6 +110,22 @@ describe("navigationStore", () => {
       expect(getView().taskInputRequestId).toBeTruthy();
     });
 
+    it("mints a fresh taskInputRequestId on each navigation with transient state", () => {
+      getStore().navigateToTaskInput({
+        initialPrompt: "Discuss this",
+        reportAssociation: { reportId: "report-456", title: "Slow checkout" },
+      });
+      const firstRequestId = getView().taskInputRequestId;
+      expect(firstRequestId).toBeTruthy();
+
+      getStore().navigateToInbox();
+      getStore().navigateToTaskInput({
+        initialPrompt: "Discuss this",
+        reportAssociation: { reportId: "report-456", title: "Slow checkout" },
+      });
+      expect(getView().taskInputRequestId).not.toBe(firstRequestId);
+    });
+
     it("clears task input report association", () => {
       getStore().navigateToTaskInput({
         initialPrompt: "Fix this report",
@@ -182,6 +198,27 @@ describe("navigationStore", () => {
       expect(getView()).toMatchObject({
         type: "inbox",
       });
+    });
+
+    it("navigates to pending task with key", () => {
+      getStore().navigateToPendingTask("pending-key-123");
+      expect(getView()).toMatchObject({
+        type: "task-pending",
+        pendingTaskKey: "pending-key-123",
+      });
+    });
+
+    it("replaces task-pending in history when navigating to real task", async () => {
+      getStore().navigateToTaskInput();
+      getStore().navigateToPendingTask("pending-key-123");
+      const indexBeforeReal = getStore().history.length - 1;
+      expect(getStore().history[indexBeforeReal].type).toBe("task-pending");
+
+      await getStore().navigateToTask(mockTask);
+
+      const finalHistory = getStore().history;
+      expect(finalHistory[finalHistory.length - 1].type).toBe("task-detail");
+      expect(finalHistory.some((v) => v.type === "task-pending")).toBe(false);
     });
   });
 

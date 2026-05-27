@@ -1,3 +1,4 @@
+import { useAddDirectoryDialogStore } from "@features/folder-picker/stores/addDirectoryDialogStore";
 import {
   File,
   FolderSimple,
@@ -11,9 +12,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
+import { isRasterImageFile } from "@posthog/shared";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
-import { isImageFile } from "@shared/constants/image";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import {
@@ -31,9 +32,11 @@ import { IssuePicker } from "./IssuePicker";
 interface AttachmentMenuProps {
   disabled?: boolean;
   repoPath?: string | null;
+  taskId?: string | null;
   onAddAttachment: (attachment: FileAttachment) => void;
   onAttachFiles?: (files: File[]) => void;
   onInsertChip: (chip: MentionChip) => void;
+  onRemoveChip?: (chipId: string) => void;
   iconSize?: number;
   attachTooltip?: string;
 }
@@ -53,9 +56,11 @@ function getIssueDisabledReason(
 export function AttachmentMenu({
   disabled = false,
   repoPath,
+  taskId,
   onAddAttachment,
   onAttachFiles,
   onInsertChip,
+  onRemoveChip,
   iconSize = 14,
   attachTooltip = "Attach",
 }: AttachmentMenuProps) {
@@ -63,6 +68,7 @@ export function AttachmentMenu({
   const [issuePickerOpen, setIssuePickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const paperclipRef = useRef<HTMLButtonElement>(null);
+  const showAddDirectoryDialog = useAddDirectoryDialogStore((s) => s.show);
 
   const trpc = useTRPC();
   const { data: ghStatus } = useQuery(
@@ -117,13 +123,26 @@ export function AttachmentMenu({
     try {
       const results = await trpcClient.os.selectAttachments.query({ mode });
       for (const { path: filePath, kind } of results) {
-        if (kind === "file" && isImageFile(filePath)) {
+        if (kind === "file" && isRasterImageFile(filePath)) {
           try {
             const attachment = await persistImageFilePath(filePath);
             onAddAttachment(attachment);
           } catch {
             toast.error("Failed to attach image");
           }
+        } else if (kind === "directory" && taskId) {
+          const chipId = crypto.randomUUID();
+          onInsertChip({
+            type: "folder",
+            id: filePath,
+            label: deriveFileLabel(filePath),
+            chipId,
+          });
+          showAddDirectoryDialog({
+            taskId,
+            path: filePath,
+            onCancel: () => onRemoveChip?.(chipId),
+          });
         } else {
           onInsertChip({
             type: kind === "directory" ? "folder" : "file",

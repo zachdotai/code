@@ -147,6 +147,27 @@ export const getCurrentBranchOutput = z.string().nullable();
 export const getAllBranchesInput = directoryPathInput;
 export const getAllBranchesOutput = z.array(z.string());
 
+// getGitBusyState schemas
+export const gitBusyOperationSchema = z.enum([
+  "rebase",
+  "merge",
+  "cherry-pick",
+  "revert",
+]);
+
+export const gitBusyStateSchema = z.union([
+  z.object({ busy: z.literal(false) }),
+  z.object({
+    busy: z.literal(true),
+    operation: gitBusyOperationSchema,
+  }),
+]);
+
+export type { GitBusyOperation, GitBusyState } from "../../../shared/types";
+
+export const getGitBusyStateInput = directoryPathInput;
+export const getGitBusyStateOutput = gitBusyStateSchema;
+
 // createBranch schemas
 export const createBranchInput = z.object({
   directoryPath: z.string(),
@@ -390,10 +411,33 @@ export const prReviewCommentSchema = z.object({
 
 export type PrReviewComment = z.infer<typeof prReviewCommentSchema>;
 
+export const prReviewThreadSchema = z.object({
+  nodeId: z.string(),
+  isResolved: z.boolean(),
+  rootId: z.number(),
+  filePath: z.string(),
+  comments: z.array(prReviewCommentSchema),
+});
+export type PrReviewThread = z.infer<typeof prReviewThreadSchema>;
+
 export const getPrReviewCommentsInput = z.object({
   prUrl: z.string(),
 });
-export const getPrReviewCommentsOutput = z.array(prReviewCommentSchema);
+export const getPrReviewCommentsOutput = z.array(prReviewThreadSchema);
+
+// resolveReviewThread schemas
+export const resolveReviewThreadInput = z.object({
+  prUrl: z.string(),
+  threadNodeId: z.string(),
+  resolved: z.boolean(),
+});
+export const resolveReviewThreadOutput = z.object({
+  success: z.boolean(),
+  isResolved: z.boolean(),
+});
+export type ResolveReviewThreadOutput = z.infer<
+  typeof resolveReviewThreadOutput
+>;
 
 // getPrCheckRuns schemas
 export const prCheckRunStatusSchema = z.enum([

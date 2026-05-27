@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import os from "node:os";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
@@ -15,6 +15,7 @@ import type { AuthService } from "./services/auth/service";
 import type { ExternalAppsService } from "./services/external-apps/service";
 import type { GitHubIntegrationService } from "./services/github-integration/service";
 import type { InboxLinkService } from "./services/inbox-link/service";
+import type { NewTaskLinkService } from "./services/new-task-link/service";
 import type { NotificationService } from "./services/notification/service";
 import type { OAuthService } from "./services/oauth/service";
 import {
@@ -27,6 +28,7 @@ import type { PosthogPluginService } from "./services/posthog-plugin/service";
 import type { FeedbackRoutingService } from "./services/rts/feedback-routing-service";
 import type { HedgehogTickService } from "./services/rts/hedgehog-tick-service";
 import type { PrGraphService } from "./services/rts/pr-graph-service";
+import type { SlackIntegrationService } from "./services/slack-integration/service";
 import type { SuspensionService } from "./services/suspension/service";
 import type { TaskLinkService } from "./services/task-link/service";
 import type { UpdatesService } from "./services/updates/service";
@@ -37,6 +39,7 @@ import {
   getLogFilePath,
   readChromiumLogTail,
 } from "./utils/logger";
+import { isMacosPackagedUnsafeBundleLocation } from "./utils/macos-packaged-install-guard";
 import { createWindow } from "./window";
 
 // Single instance lock must be acquired FIRST before any other app setup
@@ -151,7 +154,9 @@ async function initializeServices(): Promise<void> {
   container.get<UpdatesService>(MAIN_TOKENS.UpdatesService);
   container.get<TaskLinkService>(MAIN_TOKENS.TaskLinkService);
   container.get<InboxLinkService>(MAIN_TOKENS.InboxLinkService);
+  container.get<NewTaskLinkService>(MAIN_TOKENS.NewTaskLinkService);
   container.get<GitHubIntegrationService>(MAIN_TOKENS.GitHubIntegrationService);
+  container.get<SlackIntegrationService>(MAIN_TOKENS.SlackIntegrationService);
   container.get<ExternalAppsService>(MAIN_TOKENS.ExternalAppsService);
   container.get<PosthogPluginService>(MAIN_TOKENS.PosthogPluginService);
 
@@ -205,6 +210,31 @@ registerDeepLinkHandlers();
 initializePostHog();
 
 app.whenReady().then(async () => {
+  if (
+    process.platform === "darwin" &&
+    app.isPackaged &&
+    isMacosPackagedUnsafeBundleLocation(app.getAppPath(), process.execPath)
+  ) {
+    const appPath = app.getAppPath();
+    const exePath = process.execPath;
+    const bundleRoot = exePath.replace(/\/Contents\/MacOS\/[^/]+$/, "");
+    log.warn(
+      "Refusing to start: packaged app is on App Translocation or a read-only non-root volume",
+      { appPath, exePath },
+    );
+    dialog.showMessageBoxSync({
+      type: "warning",
+      title: "Move PostHog Code to Applications",
+      message: `PostHog Code is running from a location with read-only access:\n\n${bundleRoot}`,
+      detail:
+        "After quitting, move PostHog Code to your Applications folder, then open it from there.",
+      buttons: ["Quit"],
+      defaultId: 0,
+    });
+    app.quit();
+    return;
+  }
+
   const commit = __BUILD_COMMIT__ ?? "dev";
   const buildDate = __BUILD_DATE__ ?? "dev";
   log.info(

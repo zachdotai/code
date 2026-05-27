@@ -6,6 +6,7 @@ import { useMeQuery } from "@hooks/useMeQuery";
 import {
   FunnelSimple as FunnelSimpleIcon,
   GitBranch,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import {
   Button,
@@ -21,6 +22,7 @@ import { Flex, Text } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { useWorkspace } from "@renderer/features/workspace/hooks/useWorkspace";
 import { normalizeRepoKey } from "@shared/utils/repo";
+import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
@@ -39,7 +41,8 @@ interface TaskListViewProps {
   activeTaskId: string | null;
   highlightedTaskIds: ReadonlySet<string>;
   editingTaskId: string | null;
-  onTaskClick: (taskId: string) => void;
+  selectedTaskIds: string[];
+  onTaskClick: (taskId: string, e: React.MouseEvent) => void;
   onTaskDoubleClick: (taskId: string) => void;
   onTaskContextMenu: (
     taskId: string,
@@ -74,6 +77,8 @@ function SectionLabel({
 function TaskRow({
   task,
   isActive,
+  isSelected,
+  hideHoverActions,
   isEditing,
   onClick,
   onDoubleClick,
@@ -87,8 +92,10 @@ function TaskRow({
 }: {
   task: TaskData;
   isActive: boolean;
+  isSelected: boolean;
+  hideHoverActions: boolean;
   isEditing: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
   onContextMenu: (e: React.MouseEvent, isPinned: boolean) => void;
   onArchive: () => void;
@@ -110,6 +117,8 @@ function TaskRow({
       taskId={task.id}
       label={task.title}
       isActive={isActive}
+      isSelected={isSelected}
+      hideHoverActions={hideHoverActions}
       isEditing={isEditing}
       workspaceMode={effectiveMode}
       worktreePath={workspace?.worktreePath ?? undefined}
@@ -119,6 +128,8 @@ function TaskRow({
       isPinned={task.isPinned}
       needsPermission={task.needsPermission}
       taskRunStatus={task.taskRunStatus}
+      originProduct={task.originProduct}
+      slackThreadUrl={task.slackThreadUrl}
       prState={prState}
       hasDiff={hasDiff}
       timestamp={timestamp}
@@ -130,6 +141,20 @@ function TaskRow({
       onEditSubmit={onEditSubmit}
       onEditCancel={onEditCancel}
     />
+  );
+}
+
+function TaskSearchButton() {
+  const openCommandMenu = useCommandMenuStore((state) => state.open);
+  return (
+    <Button
+      type="button"
+      aria-label="Search tasks"
+      size="icon-sm"
+      onClick={() => openCommandMenu()}
+    >
+      <MagnifyingGlass size={14} />
+    </Button>
   );
 }
 
@@ -235,6 +260,7 @@ export function TaskListView({
   activeTaskId,
   highlightedTaskIds,
   editingTaskId,
+  selectedTaskIds,
   onTaskClick,
   onTaskDoubleClick,
   onTaskContextMenu,
@@ -244,6 +270,11 @@ export function TaskListView({
   onTaskEditCancel,
   hasMore,
 }: TaskListViewProps) {
+  const selectedIdSet = useMemo(
+    () => new Set(selectedTaskIds),
+    [selectedTaskIds],
+  );
+  const hasMultiSelection = selectedTaskIds.length > 1;
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const collapsedSections = useSidebarStore((state) => state.collapsedSections);
@@ -257,7 +288,8 @@ export function TaskListView({
     (state) => state.navigateToTaskInput,
   );
   const isOnTaskInput = useNavigationStore(
-    (state) => state.view.type === "task-input",
+    (state) =>
+      state.view.type === "task-input" || state.view.type === "task-pending",
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset pagination when filters change
@@ -308,8 +340,10 @@ export function TaskListView({
               isActive={
                 activeTaskId === task.id || highlightedTaskIds.has(task.id)
               }
+              isSelected={selectedIdSet.has(task.id)}
+              hideHoverActions={hasMultiSelection}
               isEditing={editingTaskId === task.id}
-              onClick={() => onTaskClick(task.id)}
+              onClick={(e) => onTaskClick(task.id, e)}
               onDoubleClick={() => onTaskDoubleClick(task.id)}
               onContextMenu={(e, isPinned) =>
                 onTaskContextMenu(task.id, e, isPinned)
@@ -324,7 +358,15 @@ export function TaskListView({
         </>
       )}
 
-      <SectionLabel label="Tasks" endContent={<TaskFilterMenu />} />
+      <SectionLabel
+        label="Tasks"
+        endContent={
+          <span className="flex items-center">
+            <TaskSearchButton />
+            <TaskFilterMenu />
+          </span>
+        }
+      />
 
       {pinnedTasks.length === 0 &&
       flatTasks.length === 0 &&
@@ -414,8 +456,10 @@ export function TaskListView({
                           activeTaskId === task.id ||
                           highlightedTaskIds.has(task.id)
                         }
+                        isSelected={selectedIdSet.has(task.id)}
+                        hideHoverActions={hasMultiSelection}
                         isEditing={editingTaskId === task.id}
-                        onClick={() => onTaskClick(task.id)}
+                        onClick={(e) => onTaskClick(task.id, e)}
                         onDoubleClick={() => onTaskDoubleClick(task.id)}
                         onContextMenu={(e, isPinned) =>
                           onTaskContextMenu(task.id, e, isPinned)
@@ -448,8 +492,10 @@ export function TaskListView({
                   isActive={
                     activeTaskId === task.id || highlightedTaskIds.has(task.id)
                   }
+                  isSelected={selectedIdSet.has(task.id)}
+                  hideHoverActions={hasMultiSelection}
                   isEditing={editingTaskId === task.id}
-                  onClick={() => onTaskClick(task.id)}
+                  onClick={(e) => onTaskClick(task.id, e)}
                   onDoubleClick={() => onTaskDoubleClick(task.id)}
                   onContextMenu={(e, isPinned) =>
                     onTaskContextMenu(task.id, e, isPinned)

@@ -3,7 +3,9 @@ import { buildCloudTaskDescription } from "@features/editor/utils/cloud-prompt";
 import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
 import type { EditorHandle } from "@features/message-editor/types";
 import {
+  contentToPlainText,
   contentToXml,
+  type EditorContent,
   extractFilePaths,
 } from "@features/message-editor/utils/content";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
@@ -20,6 +22,7 @@ import type { ExecutionMode, Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { CloudRunSource, PrAuthorshipMode } from "@shared/types/cloud";
 import { useNavigationStore } from "@stores/navigationStore";
+import { pendingTaskPromptStoreApi } from "@stores/pendingTaskPromptStore";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useState } from "react";
@@ -51,7 +54,7 @@ interface UseTaskCreationOptions {
 interface UseTaskCreationReturn {
   isCreatingTask: boolean;
   canSubmit: boolean;
-  handleSubmit: () => void;
+  handleSubmit: (contentOverride?: EditorContent) => Promise<boolean>;
 }
 
 function prepareTaskInput(
@@ -195,8 +198,12 @@ export function useTaskCreation({
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
-  const { clearTaskInputReportAssociation, navigateToTask } =
-    useNavigationStore();
+  const {
+    clearTaskInputReportAssociation,
+    navigateToTask,
+    navigateToPendingTask,
+    navigateToTaskInput,
+  } = useNavigationStore();
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
@@ -205,108 +212,148 @@ export function useTaskCreation({
 
   const hasRequiredPath =
     workspaceMode === "cloud" ? !!selectedRepository : !!selectedDirectory;
-  const canSubmit =
-    !!editorRef.current &&
-    isAuthenticated &&
-    isOnline &&
-    hasRequiredPath &&
-    !isCreatingTask &&
-    !editorIsEmpty;
+  const canSubmitBase =
+    isAuthenticated && isOnline && hasRequiredPath && !isCreatingTask;
+  const canSubmit = !!editorRef.current && canSubmitBase && !editorIsEmpty;
 
-  const handleSubmit = useCallback(async () => {
-    const editor = editorRef.current;
-    if (!canSubmit || !editor) return;
+  const handleSubmit = useCallback(
+    async (contentOverride?: EditorContent): Promise<boolean> => {
+      const editor = editorRef.current;
+      if (!editor) return false;
+      const allowSubmit = contentOverride ? canSubmitBase : canSubmit;
+      if (!allowSubmit) return false;
 
-    setIsCreatingTask(true);
+      setIsCreatingTask(true);
 
-    try {
-      const content = editor.getContent();
+      const content = contentOverride ?? editor.getContent();
+      const plainPromptText = contentToPlainText(content).trim();
+      const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
+      const pendingTaskKey = shouldShowPendingView
+        ? (globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`)
+        : null;
 
-      const plainText = editor.getText()?.trim();
-      if (plainText) {
-        useTaskInputHistoryStore.getState().addPrompt(plainText);
-      }
-
-      const input = prepareTaskInput(content, {
-        selectedDirectory,
-        selectedRepository,
-        githubIntegrationId,
-        githubUserIntegrationId,
-        workspaceMode,
-        branch,
-        executionMode,
-        adapter,
-        model,
-        reasoningLevel,
-        environmentId,
-        sandboxEnvironmentId,
-        signalReportId,
-        cloudPrAuthorshipMode,
-        cloudRunSource,
-      });
-
-      if (executionMode) {
-        useSettingsStore.getState().setLastUsedInitialTaskMode(executionMode);
-      }
-
-      const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
-      const result = await taskService.createTask(input, (output) => {
-        invalidateTasks(output.task);
-        if (signalReportId) {
-          clearTaskInputReportAssociation();
-        }
-        if (onTaskCreated) {
-          onTaskCreated(output.task);
-        } else {
-          navigateToTask(output.task);
-        }
-        useTourStore.getState().completeTour(createFirstTaskTour.id);
-        editor.clear();
-      });
-
-      if (result.success) {
-        void trackTaskCreated(input, selectedDirectory);
-      }
-
-      if (!result.success) {
-        const title = getErrorTitle(result.failedStep);
-        toast.error(title, { description: result.error });
-        log.error("Task creation failed", {
-          failedStep: result.failedStep,
-          error: result.error,
+      if (pendingTaskKey) {
+        pendingTaskPromptStoreApi.set(pendingTaskKey, {
+          promptText: plainPromptText,
+          attachments: (content.attachments ?? []).map((a) => ({
+            id: a.id,
+            label: a.label,
+          })),
         });
+        navigateToPendingTask(pendingTaskKey);
+        if (!contentOverride) {
+          editor.clear();
+        }
       }
-    } catch (error) {
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error("Failed to create task", { description });
-      log.error("Unexpected error during task creation", { error });
-    } finally {
-      setIsCreatingTask(false);
-    }
-  }, [
-    canSubmit,
-    editorRef,
-    selectedDirectory,
-    selectedRepository,
-    githubIntegrationId,
-    githubUserIntegrationId,
-    workspaceMode,
-    branch,
-    executionMode,
-    adapter,
-    model,
-    reasoningLevel,
-    environmentId,
-    sandboxEnvironmentId,
-    signalReportId,
-    cloudPrAuthorshipMode,
-    cloudRunSource,
-    clearTaskInputReportAssociation,
-    invalidateTasks,
-    navigateToTask,
-    onTaskCreated,
-  ]);
+
+      try {
+        if (!contentOverride) {
+          const plainText = editor.getText()?.trim() ?? plainPromptText;
+          if (plainText) {
+            useTaskInputHistoryStore.getState().addPrompt(plainText);
+          }
+        }
+
+        const input = prepareTaskInput(content, {
+          selectedDirectory,
+          selectedRepository,
+          githubIntegrationId,
+          githubUserIntegrationId,
+          workspaceMode,
+          branch,
+          executionMode,
+          adapter,
+          model,
+          reasoningLevel,
+          environmentId,
+          sandboxEnvironmentId,
+          signalReportId,
+          cloudPrAuthorshipMode,
+          cloudRunSource,
+        });
+
+        if (executionMode) {
+          useSettingsStore.getState().setLastUsedInitialTaskMode(executionMode);
+        }
+
+        const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
+        const result = await taskService.createTask(input, (output) => {
+          invalidateTasks(output.task);
+          if (signalReportId) {
+            clearTaskInputReportAssociation();
+          }
+          if (pendingTaskKey) {
+            pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
+          }
+          if (onTaskCreated) {
+            onTaskCreated(output.task);
+          } else {
+            navigateToTask(output.task);
+          }
+          useTourStore.getState().completeTour(createFirstTaskTour.id);
+          if (!pendingTaskKey && !contentOverride) {
+            editor.clear();
+          }
+        });
+
+        if (result.success) {
+          void trackTaskCreated(input, selectedDirectory);
+        }
+
+        if (!result.success) {
+          const title = getErrorTitle(result.failedStep);
+          toast.error(title, { description: result.error });
+          log.error("Task creation failed", {
+            failedStep: result.failedStep,
+            error: result.error,
+          });
+          if (pendingTaskKey) {
+            pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            navigateToTaskInput({ initialPrompt: plainPromptText });
+          }
+        }
+        return result.success;
+      } catch (error) {
+        const description =
+          error instanceof Error ? error.message : "Unknown error";
+        toast.error("Failed to create task", { description });
+        log.error("Unexpected error during task creation", { error });
+        if (pendingTaskKey) {
+          pendingTaskPromptStoreApi.clear(pendingTaskKey);
+          navigateToTaskInput({ initialPrompt: plainPromptText });
+        }
+        return false;
+      } finally {
+        setIsCreatingTask(false);
+      }
+    },
+    [
+      canSubmit,
+      canSubmitBase,
+      editorRef,
+      selectedDirectory,
+      selectedRepository,
+      githubIntegrationId,
+      githubUserIntegrationId,
+      workspaceMode,
+      branch,
+      executionMode,
+      adapter,
+      model,
+      reasoningLevel,
+      environmentId,
+      sandboxEnvironmentId,
+      signalReportId,
+      cloudPrAuthorshipMode,
+      cloudRunSource,
+      clearTaskInputReportAssociation,
+      invalidateTasks,
+      navigateToTask,
+      navigateToPendingTask,
+      navigateToTaskInput,
+      onTaskCreated,
+    ],
+  );
 
   return {
     isCreatingTask,

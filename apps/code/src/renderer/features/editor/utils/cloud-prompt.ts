@@ -1,9 +1,18 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { CLOUD_PROMPT_PREFIX, serializeCloudPrompt } from "@posthog/shared";
+import {
+  CLOUD_PROMPT_PREFIX,
+  getImageMimeType,
+  isClaudeImageFile,
+  isRasterImageFile,
+  serializeCloudPrompt,
+} from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc/client";
-import { getImageMimeType, isImageFile } from "@shared/constants/image";
-import { getFileExtension, getFileName, isAbsolutePath } from "@utils/path";
-import { makeAttachmentUri } from "@utils/promptContent";
+import {
+  getFileExtension,
+  getFileName,
+  isAbsolutePath,
+  pathToFileUri,
+} from "@utils/path";
 import { unescapeXmlAttr } from "@utils/xml";
 
 const ABSOLUTE_FILE_TAG_REGEX = /<file\s+path="([^"]+)"\s*\/>/g;
@@ -57,30 +66,12 @@ const TEXT_FILENAMES = new Set([
   "README",
   "README.md",
 ]);
-const CLOUD_IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
-const TEXT_MIME_TYPES: Record<string, string> = {
-  json: "application/json",
-  md: "text/markdown",
-  svg: "image/svg+xml",
-  xml: "application/xml",
-};
-
-const MAX_EMBEDDED_TEXT_CHARS = 100_000;
 const MAX_EMBEDDED_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function isTextAttachment(filePath: string): boolean {
   const fileName = getFileName(filePath);
   const ext = getFileExtension(filePath);
   return TEXT_FILENAMES.has(fileName) || TEXT_EXTENSIONS.has(ext);
-}
-
-function getTextMimeType(filePath: string): string {
-  const ext = getFileExtension(filePath);
-  return TEXT_MIME_TYPES[ext] ?? "text/plain";
-}
-
-export function isSupportedCloudImageAttachment(filePath: string): boolean {
-  return CLOUD_IMAGE_EXTENSIONS.has(getFileExtension(filePath));
 }
 
 export function isSupportedCloudTextAttachment(filePath: string): boolean {
@@ -90,14 +81,6 @@ export function isSupportedCloudTextAttachment(filePath: string): boolean {
 function estimateBase64Bytes(base64: string): number {
   const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
   return Math.floor((base64.length * 3) / 4) - padding;
-}
-
-function truncateText(text: string): string {
-  if (text.length <= MAX_EMBEDDED_TEXT_CHARS) {
-    return text;
-  }
-
-  return `${text.slice(0, MAX_EMBEDDED_TEXT_CHARS)}\n\n[Attachment truncated to ${MAX_EMBEDDED_TEXT_CHARS.toLocaleString()} characters for this cloud prompt.]`;
 }
 
 function collectAbsoluteFileTagPaths(prompt: string): string[] {
@@ -144,12 +127,16 @@ export function getAbsoluteAttachmentPaths(
   prompt: string,
   filePaths: string[] = [],
 ): string[] {
+  const normalize = (p: string) => p.replaceAll("\\", "/");
   const folderPaths = collectFolderTagPaths(prompt);
+  const normalizedFolderPaths = new Set(Array.from(folderPaths, normalize));
   const absolutePaths = [
     ...collectAbsoluteFileTagPaths(prompt),
     ...filePaths.filter(isAbsolutePath),
   ];
-  return unique(absolutePaths).filter((p) => !folderPaths.has(p));
+  return unique(absolutePaths).filter(
+    (p) => !normalizedFolderPaths.has(normalize(p)),
+  );
 }
 
 export function buildCloudTaskDescription(
@@ -173,9 +160,9 @@ export function buildCloudTaskDescription(
 
 async function buildAttachmentBlock(filePath: string): Promise<ContentBlock> {
   const fileName = getFileName(filePath);
-  const uri = makeAttachmentUri(filePath);
+  const uri = pathToFileUri(filePath);
 
-  if (isSupportedCloudImageAttachment(fileName)) {
+  if (isClaudeImageFile(fileName)) {
     const base64 = await trpcClient.fs.readFileAsBase64.query({ filePath });
     if (!base64) {
       throw new Error(`Unable to read attached image ${fileName}`);
@@ -195,7 +182,7 @@ async function buildAttachmentBlock(filePath: string): Promise<ContentBlock> {
     };
   }
 
-  if (isImageFile(fileName)) {
+  if (isRasterImageFile(fileName)) {
     throw new Error(
       `Cloud image attachments currently support PNG, JPG, GIF, and WebP. Unsupported image: ${fileName}`,
     );
@@ -207,21 +194,15 @@ async function buildAttachmentBlock(filePath: string): Promise<ContentBlock> {
     );
   }
 
-  const text = await trpcClient.fs.readAbsoluteFile.query({ filePath });
-  if (text === null) {
-    throw new Error(`Unable to read attached file ${fileName}`);
-  }
-
+  // Path-only: workspace text via `resource_link`; images above still embed base64.
   return {
-    type: "resource",
-    resource: {
-      uri,
-      text: truncateText(text),
-      mimeType: getTextMimeType(fileName),
-    },
+    type: "resource_link",
+    uri,
+    name: fileName,
   };
 }
 
+/** Test/harness prompts: text → `resource_link` only (production cloud uses uploads + artifact_ids). */
 export async function buildCloudPromptBlocks(
   prompt: string,
   filePaths: string[] = [],

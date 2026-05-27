@@ -218,6 +218,12 @@ export type GitFileStatus =
   | "renamed"
   | "untracked";
 
+export type GitBusyOperation = "rebase" | "merge" | "cherry-pick" | "revert";
+
+export type GitBusyState =
+  | { busy: false }
+  | { busy: true; operation: GitBusyOperation };
+
 export interface ChangedFile {
   path: string;
   status: GitFileStatus;
@@ -527,6 +533,51 @@ export interface SignalTeamConfig {
 export interface SignalUserAutonomyConfig {
   id?: string;
   autostart_priority: SignalReportPriority | null;
+  /** ID of the team-scoped Slack `Integration` row used to deliver inbox-item notifications. */
+  slack_notification_integration_id?: number | null;
+  /** `channel_id|#channel-name` target — same convention used by Insight Alerts. */
+  slack_notification_channel?: string | null;
+  /** Minimum priority that triggers a notification (P0 highest). `null` = every priority. */
+  slack_notification_min_priority?: SignalReportPriority | null;
   created_at?: string;
   updated_at?: string;
 }
+
+export interface SlackChannelOption {
+  id: string;
+  name: string;
+  is_private: boolean;
+  is_member: boolean;
+  is_ext_shared: boolean;
+  is_private_without_access: boolean;
+}
+
+export interface SlackChannelsResponse {
+  channels: SlackChannelOption[];
+  lastRefreshedAt?: string;
+  has_more?: boolean;
+}
+
+export interface SlackChannelsQueryParams {
+  search?: string;
+  limit?: number;
+  offset?: number;
+  channelId?: string;
+}
+
+export interface NewTaskSharedParams {
+  repo?: string;
+  mode?: string;
+  model?: string;
+}
+
+export type NewTaskLinkPayload =
+  | ({ action: "new"; prompt?: string } & NewTaskSharedParams)
+  | ({ action: "plan"; plan: string } & NewTaskSharedParams)
+  | ({
+      action: "issue";
+      url: string;
+      owner: string;
+      issueRepo: string;
+      issueNumber: number;
+    } & NewTaskSharedParams);

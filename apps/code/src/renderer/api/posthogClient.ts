@@ -1,3 +1,4 @@
+import type { SpendAnalysisResponse } from "@features/billing/types/spend-analysis";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type { PermissionMode } from "@posthog/agent/execution-mode";
 import {
@@ -24,6 +25,8 @@ import type {
   SignalReportTaskRelationship,
   SignalTeamConfig,
   SignalUserAutonomyConfig,
+  SlackChannelsQueryParams,
+  SlackChannelsResponse,
   SuggestedReviewersArtefact,
   Task,
   TaskRun,
@@ -96,7 +99,8 @@ export interface SignalSourceConfig {
     | "linear"
     | "zendesk"
     | "conversations"
-    | "error_tracking";
+    | "error_tracking"
+    | "pganalyze";
   source_type:
     | "session_analysis_cluster"
     | "evaluation"
@@ -2250,9 +2254,14 @@ export class PostHogAPIClient {
     return (await response.json()) as SignalUserAutonomyConfig;
   }
 
-  async updateSignalUserAutonomyConfig(updates: {
-    autostart_priority: string | null;
-  }): Promise<SignalUserAutonomyConfig> {
+  async updateSignalUserAutonomyConfig(
+    updates: Partial<{
+      autostart_priority: string | null;
+      slack_notification_integration_id: number | null;
+      slack_notification_channel: string | null;
+      slack_notification_min_priority: string | null;
+    }>,
+  ): Promise<SignalUserAutonomyConfig> {
     const url = new URL(`${this.api.baseUrl}/api/users/@me/signal_autonomy/`);
     const path = "/api/users/@me/signal_autonomy/";
 
@@ -2271,6 +2280,41 @@ export class PostHogAPIClient {
       );
     }
     return (await response.json()) as SignalUserAutonomyConfig;
+  }
+
+  async getSlackChannelsForIntegration(
+    integrationId: number,
+    params?: SlackChannelsQueryParams,
+  ): Promise<SlackChannelsResponse> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/integrations/${integrationId}/channels/`,
+    );
+    const search = params?.search?.trim();
+    if (search) {
+      url.searchParams.set("search", search);
+    }
+    if (params?.limit != null) {
+      url.searchParams.set("limit", String(params.limit));
+    }
+    if (params?.offset != null) {
+      url.searchParams.set("offset", String(params.offset));
+    }
+    if (params?.channelId) {
+      url.searchParams.set("channel_id", params.channelId);
+    }
+    const path = `/api/environments/${teamId}/integrations/${integrationId}/channels/${url.search}`;
+
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Slack channels: ${response.statusText}`);
+    }
+    return (await response.json()) as SlackChannelsResponse;
   }
 
   async deleteSignalUserAutonomyConfig(): Promise<void> {
@@ -2850,5 +2894,36 @@ export class PostHogAPIClient {
     if (!response.ok) return null;
     const blob = await response.blob();
     return URL.createObjectURL(blob);
+  }
+
+  /**
+   * Fetch the requesting user's personal LLM spend analysis. `dateFrom` / `dateTo`
+   * accept absolute dates (`2026-04-23`) or relative strings (`-7d`, `-1m`), and
+   * default to the last 30 days. When `product` is set the tool / model / trace
+   * breakdowns are scoped to that `ai_product` (e.g. `posthog_code`); when omitted
+   * they aggregate across every product.
+   */
+  async getPersonalSpendAnalysis(
+    options: { dateFrom?: string; dateTo?: string; product?: string } = {},
+  ): Promise<SpendAnalysisResponse> {
+    const { dateFrom = "-30d", dateTo, product } = options;
+    const urlPath = `/api/llm_analytics/@me/spend/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    url.searchParams.set("date_from", dateFrom);
+    if (dateTo) {
+      url.searchParams.set("date_to", dateTo);
+    }
+    if (product) {
+      url.searchParams.set("product", product);
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch spend analysis: ${response.status}`);
+    }
+    return (await response.json()) as SpendAnalysisResponse;
   }
 }

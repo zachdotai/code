@@ -4,6 +4,7 @@ import {
   type AutoConvertLongText,
   type CompletionSound,
   type DefaultInitialTaskMode,
+  type DefaultReasoningEffort,
   type DiffOpenMode,
   type FunMode,
   type SendMessagesWith,
@@ -78,6 +79,7 @@ export function GeneralSettings() {
     completionVolume,
     autoConvertLongText,
     defaultInitialTaskMode,
+    defaultReasoningEffort,
     diffOpenMode,
     sendMessagesWith,
     hedgehogMode,
@@ -89,6 +91,7 @@ export function GeneralSettings() {
     setCompletionVolume,
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
+    setDefaultReasoningEffort,
     setDiffOpenMode,
     setSendMessagesWith,
     setHedgehogMode,
@@ -191,6 +194,18 @@ export function GeneralSettings() {
       setDefaultInitialTaskMode(value);
     },
     [defaultInitialTaskMode, setDefaultInitialTaskMode],
+  );
+
+  const handleDefaultReasoningEffortChange = useCallback(
+    (value: DefaultReasoningEffort) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "default_reasoning_effort",
+        new_value: value,
+        old_value: defaultReasoningEffort,
+      });
+      setDefaultReasoningEffort(value);
+    },
+    [defaultReasoningEffort, setDefaultReasoningEffort],
   );
 
   const handleSendMessagesWithChange = useCallback(
@@ -340,6 +355,7 @@ export function GeneralSettings() {
               <Select.Item value="danilo">I'm ready</Select.Item>
               <Select.Item value="revi">Cute noise</Select.Item>
               <Select.Item value="meep">Meep</Select.Item>
+              <Select.Item value="meep-smol">Meep (smol)</Select.Item>
               <Select.Item value="bubbles">Bubbles</Select.Item>
               <Select.Item value="drop">Drop</Select.Item>
               <Select.Item value="knock">Knock</Select.Item>
@@ -397,6 +413,29 @@ export function GeneralSettings() {
           <Select.Content>
             <Select.Item value="plan">Plan</Select.Item>
             <Select.Item value="last_used">Last used</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      <SettingRow
+        label="Default effort level"
+        description="Choose the default reasoning effort for new tasks, or remember your last-used level"
+      >
+        <Select.Root
+          value={defaultReasoningEffort}
+          onValueChange={(value) =>
+            handleDefaultReasoningEffortChange(value as DefaultReasoningEffort)
+          }
+          size="1"
+        >
+          <Select.Trigger className="min-w-[100px]" />
+          <Select.Content>
+            <Select.Item value="last_used">Last used</Select.Item>
+            <Select.Item value="low">Low</Select.Item>
+            <Select.Item value="medium">Medium</Select.Item>
+            <Select.Item value="high">High</Select.Item>
+            <Select.Item value="xhigh">Extra High</Select.Item>
+            <Select.Item value="max">Max</Select.Item>
           </Select.Content>
         </Select.Root>
       </SettingRow>

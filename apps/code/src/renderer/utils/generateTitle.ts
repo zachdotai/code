@@ -1,88 +1,49 @@
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
+import { xmlToContent } from "@features/message-editor/utils/content";
+import { isBinaryFile } from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
+import { getFileName } from "@utils/path";
 
 const log = logger.scope("title-generator");
 
-export const createFileTagRegex = () => /<file\s+path="([^"]+)"\s*\/>/g;
 const ATTACHED_FILES_REGEX = /^\[?Attached files:.*]?$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
-
-const BINARY_EXTENSIONS = new Set([
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "bmp",
-  "ico",
-  "svg",
-  "mp3",
-  "mp4",
-  "wav",
-  "avi",
-  "mov",
-  "mkv",
-  "pdf",
-  "zip",
-  "tar",
-  "gz",
-  "rar",
-  "7z",
-  "exe",
-  "dll",
-  "so",
-  "dylib",
-  "wasm",
-  "ttf",
-  "otf",
-  "woff",
-  "woff2",
-  "eot",
-]);
-
-function getExtension(filePath: string): string {
-  const dot = filePath.lastIndexOf(".");
-  return dot >= 0 ? filePath.slice(dot + 1).toLowerCase() : "";
-}
-
-function getFileName(filePath: string): string {
-  const slash = filePath.lastIndexOf("/");
-  return slash >= 0 ? filePath.slice(slash + 1) : filePath;
-}
 
 export async function enrichDescriptionWithFileContent(
   description: string,
   filePaths: string[] = [],
 ): Promise<string> {
-  const stripped = description
-    .replace(createFileTagRegex(), "")
+  const parsed = xmlToContent(description);
+  const stripped = parsed.segments
+    .flatMap((seg) => (seg.type === "text" ? [seg.text] : []))
+    .join("")
     .replace(ATTACHED_FILES_REGEX, "")
     .replace(/^\d+\.\s*$/gm, "")
     .trim();
 
   if (stripped.length > 0) return description;
 
-  const paths =
-    filePaths.length > 0
-      ? filePaths
-      : [...description.matchAll(createFileTagRegex())].map((m) => m[1]);
+  const chipFilePaths = parsed.segments.flatMap((seg) =>
+    seg.type === "chip" && seg.chip.type === "file" ? [seg.chip.id] : [],
+  );
+  const paths = filePaths.length > 0 ? filePaths : chipFilePaths;
 
   if (paths.length === 0) return description;
 
   const parts = await Promise.all(
     paths.map(async (filePath) => {
-      if (BINARY_EXTENSIONS.has(getExtension(filePath))) {
+      if (isBinaryFile(filePath)) {
         return `[Attached: ${getFileName(filePath)}]`;
       }
       try {
-        const content = await trpcClient.fs.readAbsoluteFile.query({
+        const fileContent = await trpcClient.fs.readAbsoluteFile.query({
           filePath,
         });
-        if (content) {
-          return content.length > PASTED_TEXT_SNIPPET_LIMIT
-            ? content.slice(0, PASTED_TEXT_SNIPPET_LIMIT)
-            : content;
+        if (fileContent) {
+          return fileContent.length > PASTED_TEXT_SNIPPET_LIMIT
+            ? fileContent.slice(0, PASTED_TEXT_SNIPPET_LIMIT)
+            : fileContent;
         }
         return `[Attached: ${getFileName(filePath)}]`;
       } catch {

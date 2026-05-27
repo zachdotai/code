@@ -480,9 +480,9 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     hoglet: { id: string; taskId: string; nestId: string | null },
     prUrl: string,
   ): Promise<void> {
-    let comments: Awaited<ReturnType<GitService["getPrReviewComments"]>>;
+    let threads: Awaited<ReturnType<GitService["getPrReviewComments"]>>;
     try {
-      comments = await this.git.getPrReviewComments(prUrl);
+      threads = await this.git.getPrReviewComments(prUrl);
     } catch (error) {
       log.debug("getPrReviewComments failed", {
         prUrl,
@@ -491,37 +491,39 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       return;
     }
 
-    for (const comment of comments) {
-      if (comment.line === null && comment.original_line === null) continue;
-      const line = comment.line ?? comment.original_line ?? 0;
-      const side: "old" | "new" = comment.side === "LEFT" ? "old" : "new";
-      const payloadRef = `pr-comment:${comment.id}`;
-      const payloadHash = sha256(`${comment.id}:${comment.body}`);
+    for (const thread of threads) {
+      for (const comment of thread.comments) {
+        if (comment.line === null && comment.original_line === null) continue;
+        const line = comment.line ?? comment.original_line ?? 0;
+        const side: "old" | "new" = comment.side === "LEFT" ? "old" : "new";
+        const payloadRef = `pr-comment:${comment.id}`;
+        const payloadHash = sha256(`${comment.id}:${comment.body}`);
 
-      const prompt = buildPrCommentPrompt(
-        comment.path,
-        line,
-        side,
-        comment.body,
-        comment.user.login,
-      );
-      const fallbackPrompt = buildFollowUpPrompt(
-        prUrl,
-        `review comment from @${comment.user.login} on ${comment.path}:${line}`,
-        comment.body,
-      );
+        const prompt = buildPrCommentPrompt(
+          comment.path,
+          line,
+          side,
+          comment.body,
+          comment.user.login,
+        );
+        const fallbackPrompt = buildFollowUpPrompt(
+          prUrl,
+          `review comment from @${comment.user.login} on ${comment.path}:${line}`,
+          comment.body,
+        );
 
-      this.tryEmitInject({
-        taskId: hoglet.taskId,
-        hogletId: hoglet.id,
-        nestId: hoglet.nestId,
-        source: "pr_review",
-        payloadRef,
-        payloadHash,
-        prompt,
-        prUrl,
-        fallbackPrompt,
-      });
+        this.tryEmitInject({
+          taskId: hoglet.taskId,
+          hogletId: hoglet.id,
+          nestId: hoglet.nestId,
+          source: "pr_review",
+          payloadRef,
+          payloadHash,
+          prompt,
+          prUrl,
+          fallbackPrompt,
+        });
+      }
     }
   }
 

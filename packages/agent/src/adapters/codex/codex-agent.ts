@@ -38,6 +38,7 @@ import {
   type SetSessionModeRequest,
   type SetSessionModeResponse,
 } from "@agentclientprotocol/sdk";
+import { ghTokenEnv } from "@posthog/git/signed-commit";
 import packageJson from "../../../package.json" with { type: "json" };
 import {
   isMethod,
@@ -56,17 +57,32 @@ import {
   type PermissionMode,
 } from "../../execution-mode";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../../types";
+import { isCloudRun, resolveGithubToken } from "../../utils/common";
 import { Logger } from "../../utils/logger";
 import {
   nodeReadableToWebReadable,
   nodeWritableToWebWritable,
 } from "../../utils/streams";
 import { BaseAcpAgent, type BaseSession } from "../base-acp-agent";
+import {
+  buildBreakdown,
+  type ContextBreakdownBaseline,
+  emptyBaseline,
+  estimateTokens,
+} from "../claude/context-breakdown";
+import { classifyAgentError } from "../error-classification";
+import {
+  enabledLocalTools,
+  LOCAL_TOOLS_MCP_NAME,
+  type LocalToolCtx,
+} from "../local-tools";
+import { resolveTaskId } from "../session-meta";
 import { createCodexClient } from "./codex-client";
 import { normalizeCodexConfigOptions } from "./models";
 import {
   type CodexSessionState,
   createSessionState,
+  resetSessionState,
   resetUsage,
 } from "./session-state";
 import { CodexSettingsManager } from "./settings";
@@ -88,6 +104,7 @@ export {
 interface NewSessionMeta {
   taskRunId?: string;
   taskId?: string;
+  environment?: "local" | "cloud";
   systemPrompt?: string;
   permissionMode?: string;
   model?: string;
@@ -138,6 +155,32 @@ function prependPrContext(params: PromptRequest): PromptRequest {
   };
 }
 
+function classifyPromptError(error: unknown): unknown {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const classification = classifyAgentError(message);
+  if (classification === "agent_error") {
+    return error;
+  }
+
+  return RequestError.internalError(
+    { classification, result: message },
+    message,
+  );
+}
+
+// codex-rs/protocol/src/protocol.rs BASELINE_TOKENS — the always-resident
+// floor (MCP schemas, skills, preset prompt) we can't attribute per-source.
+const CODEX_BASELINE_TOKENS = 12000;
+
+function buildCodexBaseline(
+  meta: NewSessionMeta | undefined,
+): ContextBreakdownBaseline {
+  const baseline = emptyBaseline();
+  baseline.systemPrompt =
+    CODEX_BASELINE_TOKENS + estimateTokens(meta?.systemPrompt);
+  return baseline;
+}
+
 const CODEX_NATIVE_MODE: Record<CodeExecutionMode, CodexNativeMode> = {
   auto: "auto",
   default: "auto",
@@ -179,8 +222,7 @@ const STRUCTURED_OUTPUT_INSTRUCTIONS = `\n\nWhen you have completed the task, ca
  * harness/bin.js, etc), `import.meta.dirname` sits at different depths. Walk
  * up until we find the script so each bundle locates the shared dist asset.
  */
-function resolveStructuredOutputMcpScript(): string {
-  const rel = "adapters/codex/structured-output-mcp-server.js";
+function resolveBundledMcpScript(rel: string): string {
   let dir = import.meta.dirname ?? __dirname;
   for (let i = 0; i < 5; i++) {
     const candidate = resolvePath(dir, rel);
@@ -195,7 +237,9 @@ function resolveStructuredOutputMcpScript(): string {
 function buildStructuredOutputMcpServer(
   jsonSchema: Record<string, unknown>,
 ): McpServerStdio {
-  const scriptPath = resolveStructuredOutputMcpScript();
+  const scriptPath = resolveBundledMcpScript(
+    "adapters/codex/structured-output-mcp-server.js",
+  );
   const schemaBase64 = Buffer.from(JSON.stringify(jsonSchema)).toString(
     "base64",
   );
@@ -204,6 +248,41 @@ function buildStructuredOutputMcpServer(
     command: process.execPath,
     args: [scriptPath],
     env: [{ name: "POSTHOG_OUTPUT_SCHEMA", value: schemaBase64 }],
+  };
+}
+
+/**
+ * Builds the stdio MCP server config exposing the enabled local tools. Context
+ * (cwd, taskId, token) and the enabled tool names are passed base64/CSV-encoded
+ * so the child registers the same tools the Claude adapter exposes in-process.
+ */
+function buildLocalToolsMcpServer(
+  ctx: LocalToolCtx,
+  enabledNames: string[],
+): McpServerStdio {
+  const scriptPath = resolveBundledMcpScript(
+    "adapters/codex/local-tools-mcp-server.js",
+  );
+  const ctxBase64 = Buffer.from(JSON.stringify(ctx)).toString("base64");
+  const env = [
+    { name: "POSTHOG_LOCAL_TOOLS_CTX", value: ctxBase64 },
+    { name: "POSTHOG_LOCAL_TOOLS_ENABLED", value: enabledNames.join(",") },
+  ];
+  if (ctx.token) {
+    // Token also on the child env so its own git remote ops (fetch/ls-remote)
+    // authenticate; the var names come from the single shared source.
+    env.push(
+      ...Object.entries(ghTokenEnv(ctx.token)).map(([name, value]) => ({
+        name,
+        value,
+      })),
+    );
+  }
+  return {
+    name: LOCAL_TOOLS_MCP_NAME,
+    command: process.execPath,
+    args: [scriptPath],
+    env,
   };
 }
 
@@ -324,22 +403,28 @@ export class CodexAcpAgent extends BaseAcpAgent {
     const meta = params._meta as NewSessionMeta | undefined;
     const requestedPermissionMode = toCodexPermissionMode(meta?.permissionMode);
 
-    const injectedParams = this.applyStructuredOutput(params, meta);
+    const injectedParams = this.applyLocalTools(
+      this.applyStructuredOutput(params, meta),
+      meta,
+    );
     const response = await this.codexConnection.newSession(injectedParams);
     response.configOptions = normalizeCodexConfigOptions(
       response.configOptions,
     );
 
-    // Initialize session state
-    this.sessionState = createSessionState(response.sessionId, params.cwd, {
+    // Initialize session state. Mutate in place — codex-client closure-
+    // captured this object in the constructor and writes contextUsed/
+    // accumulatedUsage to it on every upstream usage_update.
+    resetSessionState(this.sessionState, response.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
-      taskId: meta?.taskId ?? meta?.persistence?.taskId,
+      taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
       modelId: response.models?.currentModelId,
       permissionMode: requestedPermissionMode,
     });
     this.sessionId = response.sessionId;
     this.sessionState.configOptions = response.configOptions ?? [];
+    this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
     await this.applyInitialPermissionMode(
       response.sessionId,
@@ -366,7 +451,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;
-    const injectedParams = this.applyStructuredOutput(params, meta);
+    const injectedParams = this.applyLocalTools(
+      this.applyStructuredOutput(params, meta),
+      meta,
+    );
     const response = await this.codexConnection.loadSession(injectedParams);
     response.configOptions = normalizeCodexConfigOptions(
       response.configOptions,
@@ -380,14 +468,15 @@ export class CodexAcpAgent extends BaseAcpAgent {
     // notifications (TURN_COMPLETE, USAGE_UPDATE) after a reload. newSession
     // and unstable_resumeSession both do this; loadSession historically did
     // not, which silently broke task-completion tracking on re-attach.
-    this.sessionState = createSessionState(params.sessionId, params.cwd, {
+    resetSessionState(this.sessionState, params.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
-      taskId: meta?.taskId ?? meta?.persistence?.taskId,
+      taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
       permissionMode: currentPermissionMode,
     });
     this.sessionId = params.sessionId;
     this.sessionState.configOptions = response.configOptions ?? [];
+    this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
     if (meta?.taskRunId) {
       await this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {
@@ -404,13 +493,16 @@ export class CodexAcpAgent extends BaseAcpAgent {
     params: ResumeSessionRequest,
   ): Promise<ResumeSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;
-    const injectedParams = this.applyStructuredOutput(
-      {
-        sessionId: params.sessionId,
-        cwd: params.cwd,
-        mcpServers: params.mcpServers ?? [],
-        _meta: params._meta,
-      },
+    const injectedParams = this.applyLocalTools(
+      this.applyStructuredOutput(
+        {
+          sessionId: params.sessionId,
+          cwd: params.cwd,
+          mcpServers: params.mcpServers ?? [],
+          _meta: params._meta,
+        },
+        meta,
+      ),
       meta,
     );
 
@@ -423,14 +515,15 @@ export class CodexAcpAgent extends BaseAcpAgent {
       loadResponse.modes?.currentModeId,
       meta?.permissionMode,
     );
-    this.sessionState = createSessionState(params.sessionId, params.cwd, {
+    resetSessionState(this.sessionState, params.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
-      taskId: meta?.taskId ?? meta?.persistence?.taskId,
+      taskId: resolveTaskId(meta),
       modeId: loadResponse.modes?.currentModeId ?? "auto",
       permissionMode: currentPermissionMode,
     });
     this.sessionId = params.sessionId;
     this.sessionState.configOptions = loadResponse.configOptions ?? [];
+    this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
     if (meta?.taskRunId) {
       await this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {
@@ -451,12 +544,15 @@ export class CodexAcpAgent extends BaseAcpAgent {
     params: ForkSessionRequest,
   ): Promise<ForkSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;
-    const injectedParams = this.applyStructuredOutput(
-      {
-        cwd: params.cwd,
-        mcpServers: params.mcpServers ?? [],
-        _meta: params._meta,
-      },
+    const injectedParams = this.applyLocalTools(
+      this.applyStructuredOutput(
+        {
+          cwd: params.cwd,
+          mcpServers: params.mcpServers ?? [],
+          _meta: params._meta,
+        },
+        meta,
+      ),
       meta,
     );
 
@@ -467,14 +563,15 @@ export class CodexAcpAgent extends BaseAcpAgent {
     );
 
     const requestedPermissionMode = toCodexPermissionMode(meta?.permissionMode);
-    this.sessionState = createSessionState(newResponse.sessionId, params.cwd, {
+    resetSessionState(this.sessionState, newResponse.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
-      taskId: meta?.taskId ?? meta?.persistence?.taskId,
+      taskId: resolveTaskId(meta),
       modeId: newResponse.modes?.currentModeId ?? "auto",
       permissionMode: requestedPermissionMode,
     });
     this.sessionId = newResponse.sessionId;
     this.sessionState.configOptions = newResponse.configOptions ?? [];
+    this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
     await this.applyInitialPermissionMode(
       newResponse.sessionId,
@@ -514,6 +611,45 @@ export class CodexAcpAgent extends BaseAcpAgent {
         ...existingMeta,
         systemPrompt: existingSystemPrompt + STRUCTURED_OUTPUT_INSTRUCTIONS,
       },
+    };
+  }
+
+  /**
+   * Injects the stdio general local-tools MCP server. Tools self-gate via the
+   * registry (e.g. signed-commit is cloud-only and needs a GH token), so the
+   * server is only injected when at least one tool's gate passes. Their
+   * instructions already live in the shared cloud system prompt, so only the
+   * server needs injecting here.
+   */
+  private applyLocalTools<
+    T extends { cwd?: string; mcpServers?: McpServer[]; _meta?: unknown },
+  >(request: T, meta: NewSessionMeta | undefined): T {
+    const cwd = request.cwd;
+    if (!cwd) {
+      return request;
+    }
+    const ctx: LocalToolCtx = {
+      cwd,
+      token: resolveGithubToken(),
+      taskId: resolveTaskId(meta),
+    };
+    const tools = enabledLocalTools(ctx, meta);
+    if (tools.length === 0) {
+      if (isCloudRun(meta)) {
+        this.logger.warn(
+          "Cloud run registered no local tools — missing GH_TOKEN/GITHUB_TOKEN? signed commits unavailable",
+        );
+      }
+      return request;
+    }
+
+    const mcpServer = buildLocalToolsMcpServer(
+      ctx,
+      tools.map((t) => t.name),
+    );
+    return {
+      ...request,
+      mcpServers: [...(request.mcpServers ?? []), mcpServer],
     };
   }
 
@@ -577,6 +713,8 @@ export class CodexAcpAgent extends BaseAcpAgent {
     let response: PromptResponse;
     try {
       response = await this.codexConnection.prompt(prependPrContext(params));
+    } catch (error) {
+      throw classifyPromptError(error);
     } finally {
       this.session.promptRunning = false;
     }
@@ -616,6 +754,21 @@ export class CodexAcpAgent extends BaseAcpAgent {
           cost: null,
         });
       }
+    }
+
+    // Emit the per-source breakdown so the renderer's ContextBreakdownPopover
+    // has data to show. This fires regardless of `taskRunId` (local sessions
+    // need it too) and regardless of `response.usage` (codex-acp doesn't
+    // populate it — context size comes from upstream usage_update events,
+    // tracked on sessionState.contextUsed).
+    if (this.sessionState.contextUsed !== undefined) {
+      await this.client.extNotification(POSTHOG_NOTIFICATIONS.USAGE_UPDATE, {
+        sessionId: params.sessionId,
+        breakdown: buildBreakdown(
+          this.sessionState.contextBreakdownBaseline ?? emptyBaseline(),
+          this.sessionState.contextUsed,
+        ),
+      });
     }
 
     return response;

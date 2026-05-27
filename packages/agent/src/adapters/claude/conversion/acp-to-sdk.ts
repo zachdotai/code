@@ -3,8 +3,21 @@ import { fileURLToPath } from "node:url";
 import type { PromptRequest } from "@agentclientprotocol/sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
+import { isClaudeImageMimeType, isImageFile } from "@posthog/shared";
 
-type ImageMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+const PDF_EXTENSIONS = new Set(["pdf"]);
+
+// Video-only on purpose: audio formats get the default "large text" hint.
+// Do not replace with AUDIO_VIDEO_EXTENSIONS from @posthog/shared.
+const VIDEO_EXTENSIONS = new Set([
+  "mp4",
+  "mov",
+  "webm",
+  "mkv",
+  "avi",
+  "mpeg",
+  "mpg",
+]);
 
 function sdkText(value: string): ContentBlockParam {
   return { type: "text", text: value };
@@ -22,19 +35,40 @@ function formatUriAsLink(uri: string): string {
   }
 }
 
-function formatFileAttachment(uri: string): string {
+/** Chunking hints for Claude Code `Read` (`file_path`, optional `pages` / `offset` / `limit`). */
+export function readToolGuidanceForPath(filePath: string): string {
+  const ext = path.extname(filePath).slice(1).toLowerCase();
+  if (PDF_EXTENSIONS.has(ext)) {
+    return 'Optional `pages` string (e.g. "1-5") per Read call instead of loading the entire PDF.';
+  }
+  if (isImageFile(filePath) || VIDEO_EXTENSIONS.has(ext)) {
+    return "Binary file — use Read with `file_path`; prefer bounded reads where supported.";
+  }
+  return "Large text — use multiple Read calls with optional `offset` and `limit`.";
+}
+
+/** Path-only workspace attach text (never embed `resource.text` from disk). */
+export function workspacePromptFromFileUri(uri: string): string {
   try {
     const filePath = fileURLToPath(uri);
     const name = path.basename(filePath) || filePath;
     return [
-      "Attached file available in the workspace:",
-      `- name: ${name}`,
-      `- path: ${filePath}`,
-      "Use the available tools to inspect this file if needed.",
+      "Attached workspace file — use Read with required `file_path`:",
+      `- file_path: ${filePath}`,
+      `- name (context): ${name}`,
+      readToolGuidanceForPath(filePath),
     ].join("\n");
   } catch {
-    return `Attached file available at ${uri}`;
+    return [
+      "Attached file — decode path from URI, call Read with that path as `file_path`:",
+      uri,
+      'Chunk PDFs with `pages` (e.g. "1-5"); long text with `offset`/`limit`.',
+    ].join("\n");
   }
+}
+
+function isFileSchemeUri(uri: string | undefined | null): boolean {
+  return Boolean(uri?.startsWith("file://"));
 }
 
 function transformMcpCommand(text: string): string {
@@ -60,7 +94,7 @@ function processPromptChunk(
       content.push(
         sdkText(
           chunk.uri.startsWith("file://")
-            ? formatFileAttachment(chunk.uri)
+            ? workspacePromptFromFileUri(chunk.uri)
             : formatUriAsLink(chunk.uri),
         ),
       );
@@ -68,10 +102,16 @@ function processPromptChunk(
 
     case "resource":
       if ("text" in chunk.resource) {
-        content.push(sdkText(formatUriAsLink(chunk.resource.uri)));
+        const uri = chunk.resource.uri;
+        if (uri != null && isFileSchemeUri(uri)) {
+          content.push(sdkText(workspacePromptFromFileUri(uri)));
+          break;
+        }
+
+        content.push(sdkText(formatUriAsLink(uri ?? "")));
         context.push(
           sdkText(
-            `\n<context ref="${chunk.resource.uri}">\n${chunk.resource.text}\n</context>`,
+            `\n<context ref="${uri ?? ""}">\n${chunk.resource.text}\n</context>`,
           ),
         );
       }
@@ -79,19 +119,29 @@ function processPromptChunk(
 
     case "image":
       if (chunk.data) {
-        content.push({
-          type: "image",
-          source: {
-            type: "base64",
-            data: chunk.data,
-            media_type: chunk.mimeType as ImageMimeType,
-          },
-        });
+        if (isClaudeImageMimeType(chunk.mimeType)) {
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              data: chunk.data,
+              media_type: chunk.mimeType,
+            },
+          });
+        } else {
+          content.push(
+            sdkText(
+              `[Unsupported image MIME type: ${chunk.mimeType}. Supported: image/jpeg, image/png, image/gif, image/webp.]`,
+            ),
+          );
+        }
       } else if (chunk.uri?.startsWith("http")) {
         content.push({
           type: "image",
           source: { type: "url", url: chunk.uri },
         });
+      } else if (chunk.uri != null && isFileSchemeUri(chunk.uri)) {
+        content.push(sdkText(workspacePromptFromFileUri(chunk.uri)));
       }
       break;
 

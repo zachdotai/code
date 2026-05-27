@@ -1,7 +1,18 @@
 import { useMemo } from "react";
 import { Linking, ScrollView, Text, View } from "react-native";
+import { getCloudUrlFromRegion, useAuthStore } from "@/features/auth";
+import { UNIVERSAL_LINK_PREFIX } from "@/lib/deep-links";
+import { parseGithubIssueUrl } from "@/lib/githubIssueUrl";
+import { type ParsePostHogUrlOptions, parsePostHogUrl } from "@/lib/posthogUrl";
 import { getColorForClass, highlightCode } from "@/lib/syntax-highlight";
 import { useThemeColors } from "@/lib/theme";
+import { GithubRefChip } from "./GithubRefChip";
+import { MarkdownImage } from "./MarkdownImage";
+import { PostHogRefChip } from "./PostHogRefChip";
+
+const IMAGE_LINE_PATTERN = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
+const BARE_POSTHOG_REF_PATTERN =
+  /(https?:\/\/(?:app\.posthog\.com|(?:us|eu)\.posthog\.com|code\.posthog\.com|(?:www\.)?posthog\.com|localhost(?::\d+)?)\/[^\s<>()\]]+|\/(?:insights|project|organization|settings|feature_flags|experiments|dashboard|dashboards|replay|session_replay|recordings|error_tracking|task|inbox|automation)\b[^\s<>()\]]*)/g;
 
 interface MarkdownTextProps {
   content: string;
@@ -52,6 +63,7 @@ interface Block {
     | "list"
     | "table"
     | "blockquote"
+    | "image"
     | "hr";
   content: string;
   language?: string;
@@ -59,6 +71,8 @@ interface Block {
   items?: string[];
   ordered?: boolean;
   rows?: string[][];
+  url?: string;
+  alt?: string;
 }
 
 function parseBlocks(text: string): Block[] {
@@ -80,6 +94,19 @@ function parseBlocks(text: string): Block[] {
       }
       i++; // skip closing ```
       blocks.push({ type: "code", content: codeLines.join("\n"), language });
+      continue;
+    }
+
+    // Image on its own line: ![alt](url)
+    const imageMatch = line.match(IMAGE_LINE_PATTERN);
+    if (imageMatch) {
+      blocks.push({
+        type: "image",
+        content: "",
+        alt: imageMatch[1],
+        url: imageMatch[2],
+      });
+      i++;
       continue;
     }
 
@@ -173,6 +200,7 @@ function parseBlocks(text: string): Block[] {
       lines[i].trim() !== "" &&
       !lines[i].startsWith("```") &&
       !lines[i].match(/^#{1,6}\s/) &&
+      !IMAGE_LINE_PATTERN.test(lines[i]) &&
       !/^\s*[-*]\s/.test(lines[i]) &&
       !/^\s*\d+[.)]\s/.test(lines[i]) &&
       !/^>\s?/.test(lines[i]) &&
@@ -198,59 +226,56 @@ function openUrl(url: string) {
   Linking.openURL(url);
 }
 
-function renderInline(text: string): React.ReactNode[] {
+function splitTrailingPunctuation(text: string): {
+  reference: string;
+  trailing: string;
+} {
+  const reference = text.replace(/[.,!?;:]+$/u, "");
+  return {
+    reference,
+    trailing: text.slice(reference.length),
+  };
+}
+
+function renderPlainText(
+  text: string,
+  posthogUrlOptions: ParsePostHogUrlOptions,
+  keyBase: string,
+): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  // Links must come first to avoid bold/italic consuming text inside []
-  const pattern =
-    /(\[([^\]]+)\]\(([^)]+)\)|\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null = null;
 
+  BARE_POSTHOG_REF_PATTERN.lastIndex = 0;
+
   // biome-ignore lint/suspicious/noAssignInExpressions: regex exec loop
-  while ((match = pattern.exec(text)) !== null) {
+  while ((match = BARE_POSTHOG_REF_PATTERN.exec(text)) !== null) {
     if (match.index > lastIndex) {
       nodes.push(text.slice(lastIndex, match.index));
     }
 
-    if (match[2] && match[3]) {
-      // Link: [text](url)
-      const url = match[3];
+    const candidate = match[0];
+    const { reference, trailing } = splitTrailingPunctuation(candidate);
+    const posthogRef = parsePostHogUrl(reference, posthogUrlOptions);
+
+    if (posthogRef) {
       nodes.push(
-        <Text
-          key={match.index}
-          className="text-accent-11 underline"
-          onPress={() => openUrl(url)}
-        >
-          {match[2]}
-        </Text>,
+        <PostHogRefChip
+          key={`${keyBase}-${match.index}`}
+          href={posthogRef.normalizedUrl}
+          kind={posthogRef.kind}
+          label={posthogRef.defaultLabel}
+        />,
       );
-    } else if (match[4]) {
-      // Bold
-      nodes.push(
-        <Text key={match.index} className="font-bold">
-          {match[4]}
-        </Text>,
-      );
-    } else if (match[5]) {
-      // Italic
-      nodes.push(
-        <Text key={match.index} className="italic">
-          {match[5]}
-        </Text>,
-      );
-    } else if (match[6]) {
-      // Inline code
-      nodes.push(
-        <Text
-          key={match.index}
-          className="rounded bg-gray-4 px-1 font-mono text-[12px] text-accent-11"
-        >
-          {match[6]}
-        </Text>,
-      );
+
+      if (trailing) {
+        nodes.push(trailing);
+      }
+    } else {
+      nodes.push(candidate);
     }
 
-    lastIndex = match.index + match[0].length;
+    lastIndex = match.index + candidate.length;
   }
 
   if (lastIndex < text.length) {
@@ -260,8 +285,148 @@ function renderInline(text: string): React.ReactNode[] {
   return nodes.length > 0 ? nodes : [text];
 }
 
+function formatPostHogChipLabel(
+  posthogRef: ReturnType<typeof parsePostHogUrl>,
+  linkText: string,
+  url: string,
+): string {
+  if (!posthogRef) return linkText;
+  if (linkText === url) return posthogRef.defaultLabel;
+
+  const normalizedLinkText = linkText.trim();
+  if (!posthogRef.refId) return normalizedLinkText;
+  if (normalizedLinkText.endsWith(`(${posthogRef.refId})`)) {
+    return normalizedLinkText;
+  }
+
+  return `${normalizedLinkText} (${posthogRef.refId})`;
+}
+
+function renderInline(
+  text: string,
+  posthogUrlOptions: ParsePostHogUrlOptions,
+): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  // Links must come first to avoid bold/italic consuming text inside [].
+  // Order after links: strikethrough, bold, italic, inline code.
+  const pattern =
+    /(\[([^\]]+)\]\(([^)]+)\)|~~(.+?)~~|\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null = null;
+
+  // biome-ignore lint/suspicious/noAssignInExpressions: regex exec loop
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(
+        ...renderPlainText(
+          text.slice(lastIndex, match.index),
+          posthogUrlOptions,
+          `plain-${match.index}`,
+        ),
+      );
+    }
+
+    if (match[2] && match[3]) {
+      // Link: [text](url)
+      const linkText = match[2];
+      const url = match[3];
+      const githubRef = parseGithubIssueUrl(url);
+      if (githubRef) {
+        const isAutoLink = linkText === url;
+        const label = isAutoLink
+          ? `${githubRef.owner}/${githubRef.repo}#${githubRef.number}`
+          : linkText;
+        nodes.push(
+          <GithubRefChip
+            key={match.index}
+            href={githubRef.normalizedUrl}
+            kind={githubRef.kind}
+            label={label}
+          />,
+        );
+      } else {
+        const posthogRef = parsePostHogUrl(url, posthogUrlOptions);
+        if (posthogRef) {
+          nodes.push(
+            <PostHogRefChip
+              key={match.index}
+              href={posthogRef.normalizedUrl}
+              kind={posthogRef.kind}
+              label={formatPostHogChipLabel(posthogRef, linkText, url)}
+            />,
+          );
+        } else {
+          nodes.push(
+            <Text
+              key={match.index}
+              className="text-accent-11 underline"
+              onPress={() => openUrl(url)}
+            >
+              {linkText}
+              <Text className="text-accent-11">{" ↗"}</Text>
+            </Text>,
+          );
+        }
+      }
+    } else if (match[4]) {
+      // Strikethrough: ~~text~~
+      nodes.push(
+        <Text key={match.index} className="text-gray-9 line-through">
+          {match[4]}
+        </Text>,
+      );
+    } else if (match[5]) {
+      // Bold
+      nodes.push(
+        <Text key={match.index} className="font-bold text-accent-11">
+          {match[5]}
+        </Text>,
+      );
+    } else if (match[6]) {
+      // Italic
+      nodes.push(
+        <Text key={match.index} className="italic">
+          {match[6]}
+        </Text>,
+      );
+    } else if (match[7]) {
+      // Inline code
+      nodes.push(
+        <Text
+          key={match.index}
+          className="rounded bg-gray-4 px-1 font-mono text-[12px] text-accent-11"
+        >
+          {match[7]}
+        </Text>,
+      );
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(
+      ...renderPlainText(
+        text.slice(lastIndex),
+        posthogUrlOptions,
+        `plain-tail-${lastIndex}`,
+      ),
+    );
+  }
+
+  return nodes.length > 0 ? nodes : [text];
+}
+
 export function MarkdownText({ content }: MarkdownTextProps) {
   const blocks = parseBlocks(content);
+  const cloudRegion = useAuthStore((state) => state.cloudRegion);
+  const posthogUrlOptions = useMemo<ParsePostHogUrlOptions>(
+    () => ({
+      appBaseUrl: cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null,
+      codeBaseUrl: UNIVERSAL_LINK_PREFIX,
+    }),
+    [cloudRegion],
+  );
 
   return (
     <View style={{ gap: 8 }}>
@@ -304,7 +469,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
             return (
               <Text
                 key={key}
-                className={`font-bold text-gray-12 ${
+                className={`font-bold text-accent-11 ${
                   block.level === 1
                     ? "text-[16px]"
                     : block.level === 2
@@ -312,26 +477,50 @@ export function MarkdownText({ content }: MarkdownTextProps) {
                       : "text-[13px]"
                 }`}
               >
-                {renderInline(block.content)}
+                {renderInline(block.content, posthogUrlOptions)}
               </Text>
             );
 
           case "list":
             return (
               <View key={key} style={{ gap: 4 }}>
-                {block.items?.map((item, idx) => (
-                  <View
-                    key={`${key}-${idx}-${item}`}
-                    className="flex-row items-start pl-2"
-                  >
-                    <Text className="mr-2 text-[13px] text-gray-9">
-                      {block.ordered ? `${idx + 1}.` : "•"}
-                    </Text>
-                    <Text className="flex-1 text-[13px] text-gray-12 leading-5">
-                      {renderInline(item)}
-                    </Text>
-                  </View>
-                ))}
+                {block.items?.map((item, idx) => {
+                  const taskMatch = !block.ordered
+                    ? item.match(/^\[([ xX])\]\s+(.*)$/)
+                    : null;
+                  const isTask = taskMatch !== null;
+                  const isChecked = isTask && /[xX]/.test(taskMatch[1]);
+                  const itemText = isTask ? taskMatch[2] : item;
+                  return (
+                    <View
+                      key={`${key}-${idx}-${item}`}
+                      className="flex-row items-start pl-2"
+                    >
+                      {isTask ? (
+                        <Text
+                          className={`mr-2 font-mono text-[13px] ${
+                            isChecked ? "text-accent-11" : "text-gray-9"
+                          }`}
+                        >
+                          {isChecked ? "☑" : "☐"}
+                        </Text>
+                      ) : (
+                        <Text className="mr-2 text-[13px] text-gray-9">
+                          {block.ordered ? `${idx + 1}.` : "•"}
+                        </Text>
+                      )}
+                      <Text
+                        className={`flex-1 text-[13px] leading-5 ${
+                          isTask && isChecked
+                            ? "text-gray-10 line-through"
+                            : "text-gray-12"
+                        }`}
+                      >
+                        {renderInline(itemText, posthogUrlOptions)}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             );
 
@@ -364,7 +553,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
                             }
                           >
                             <Text className="font-bold text-[12px] text-gray-12">
-                              {renderInline(cell)}
+                              {renderInline(cell, posthogUrlOptions)}
                             </Text>
                           </View>
                         );
@@ -394,7 +583,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
                               }
                             >
                               <Text className="text-[12px] text-gray-12">
-                                {renderInline(cell)}
+                                {renderInline(cell, posthogUrlOptions)}
                               </Text>
                             </View>
                           );
@@ -409,12 +598,17 @@ export function MarkdownText({ content }: MarkdownTextProps) {
 
           case "blockquote":
             return (
-              <View key={key} className="border-gray-8 border-l-2 pl-3">
+              <View key={key} className="border-accent-6 border-l-2 pl-3">
                 <Text className="text-[13px] text-gray-11 italic leading-5">
-                  {renderInline(block.content)}
+                  {renderInline(block.content, posthogUrlOptions)}
                 </Text>
               </View>
             );
+
+          case "image":
+            return block.url ? (
+              <MarkdownImage key={key} url={block.url} alt={block.alt} />
+            ) : null;
 
           case "hr":
             return <View key={key} className="my-1 h-px bg-gray-6" />;
@@ -422,7 +616,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
           default:
             return (
               <Text key={key} className="text-[13px] text-gray-12 leading-5">
-                {renderInline(block.content)}
+                {renderInline(block.content, posthogUrlOptions)}
               </Text>
             );
         }

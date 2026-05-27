@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Build outputs
 dist/
@@ -35,12 +36,12 @@ Thumbs.db
 *.car
 
 # AI agents
-AGENTS.md
 MEMORY.md
 .claude-config/
 .agent-trigger
 .posthog-code/
 .claude/worktrees/
+.claude/settings.local.json
 
 # Testing
 playwright-results/
@@ -66,3 +67,6 @@ plugins/posthog/local-skills/
 # Symlinked copies of posthog, to make developing against those APIs easier
 posthog-sym
 .claude/stock-research/
+CLAUDE.local.md
+
+apps/mobile/ROADMAP.md
