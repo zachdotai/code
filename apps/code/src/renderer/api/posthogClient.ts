@@ -2,6 +2,11 @@ import type { SpendAnalysisResponse } from "@features/billing/types/spend-analys
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type { PermissionMode } from "@posthog/agent/execution-mode";
 import {
+  buildApiFetcher,
+  createApiClient,
+  type Schemas,
+} from "@posthog/api-client";
+import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
 } from "@shared/dismissalReasons";
@@ -36,8 +41,6 @@ import type { SeatData } from "@shared/types/seat";
 import { SEAT_PRODUCT_KEY } from "@shared/types/seat";
 import type { StoredLogEntry } from "@shared/types/session-events";
 import { logger } from "@utils/logger";
-import { buildApiFetcher } from "./fetcher";
-import { createApiClient, type Schemas } from "./generated";
 
 export class SeatSubscriptionRequiredError extends Error {
   redirectUrl: string;
@@ -573,6 +576,8 @@ export class PostHogAPIClient {
       buildApiFetcher({
         getAccessToken,
         refreshAccessToken,
+        appVersion:
+          typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "unknown",
       }),
       baseUrl,
     );

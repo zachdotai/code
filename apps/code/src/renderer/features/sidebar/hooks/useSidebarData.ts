@@ -8,7 +8,7 @@ import {
   useTasks,
 } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
-import type { Schemas } from "@renderer/api/generated";
+import type { Schemas } from "@posthog/api-client";
 import type { Task, TaskRunStatus } from "@shared/types";
 import { useEffect, useMemo, useRef } from "react";
 import { useSidebarStore } from "../stores/sidebarStore";

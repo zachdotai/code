@@ -5,7 +5,7 @@ import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { useMeQuery } from "@hooks/useMeQuery";
-import type { Schemas } from "@renderer/api/generated";
+import type { Schemas } from "@posthog/api-client";
 import { useFocusStore } from "@renderer/stores/focusStore";
 import { useNavigationStore } from "@renderer/stores/navigationStore";
 import { trpcClient } from "@renderer/trpc/client";

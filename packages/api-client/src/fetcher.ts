@@ -1,11 +1,16 @@
 import type { createApiClient } from "./generated";
 
-const USER_AGENT = `posthog/desktop.hog.dev; version: ${typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "unknown"}`;
-
-export const buildApiFetcher: (config: {
+export type ApiFetcherConfig = {
   getAccessToken: () => Promise<string>;
   refreshAccessToken: () => Promise<string>;
-}) => Parameters<typeof createApiClient>[0] = (config) => {
+  appVersion: string;
+};
+
+export const buildApiFetcher: (
+  config: ApiFetcherConfig,
+) => Parameters<typeof createApiClient>[0] = (config) => {
+  const userAgent = `posthog/desktop.hog.dev; version: ${config.appVersion}`;
+
   const makeRequest = async (
     input: Parameters<Parameters<typeof createApiClient>[0]["fetch"]>[0],
     token: string,
@@ -13,7 +18,7 @@ export const buildApiFetcher: (config: {
     const headers = new Headers();
     headers.set("Authorization", `Bearer ${token}`);
     headers.set("Content-Type", "application/json");
-    headers.set("User-Agent", USER_AGENT);
+    headers.set("User-Agent", userAgent);
 
     if (input.urlSearchParams) {
       input.url.search = input.urlSearchParams.toString();
@@ -56,7 +61,10 @@ export const buildApiFetcher: (config: {
     if (response.status === 401) return true;
     if (response.status !== 403) return false;
     try {
-      const body = await response.clone().json();
+      const body = (await response.clone().json()) as {
+        code?: string;
+        type?: string;
+      } | null;
       return (
         body?.code === "authentication_failed" ||
         body?.type === "authentication_error"

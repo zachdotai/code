@@ -1,4 +1,4 @@
-import type { Schemas } from "@renderer/api/generated";
+import type { Schemas } from "@posthog/api-client";
 import type { Task } from "@shared/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";

@@ -7,7 +7,7 @@ import {
   useSessionStore,
 } from "@features/sessions/stores/sessionStore";
 import { taskKeys } from "@features/tasks/hooks/taskKeys";
-import type { Schemas } from "@renderer/api/generated";
+import type { Schemas } from "@posthog/api-client";
 import type { Task } from "@shared/types";
 import {
   enrichDescriptionWithFileContent,

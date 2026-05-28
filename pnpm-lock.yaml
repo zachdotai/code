@@ -226,6 +226,9 @@ importers:
       '@posthog/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@posthog/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@posthog/electron-trpc':
         specifier: workspace:*
         version: link:../../packages/electron-trpc
@@ -876,23 +879,16 @@ importers:
         version: 2.1.9(@types/node@25.2.0)(jsdom@26.1.0)(lightningcss@1.32.0)(msw@2.12.8(@types/node@25.2.0)(typescript@5.9.3))(terser@5.46.0)
 
   packages/api-client:
-    dependencies:
-      '@posthog/core':
-        specifier: workspace:*
-        version: link:../core
     devDependencies:
       '@posthog/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/typescript
-      '@posthog/tsup-config':
-        specifier: workspace:*
-        version: link:../../tooling/tsup-config
-      tsup:
-        specifier: 'catalog:'
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@25.2.0)(jsdom@26.1.0)(lightningcss@1.32.0)(msw@2.12.8(@types/node@25.2.0)(typescript@5.9.3))(terser@5.46.0)
 
   packages/core:
     devDependencies:

@@ -37,7 +37,11 @@ describe("buildApiFetcher", () => {
     const refreshAccessToken = vi.fn().mockResolvedValue("new-token");
     mockFetch.mockResolvedValueOnce(ok());
 
-    const fetcher = buildApiFetcher({ getAccessToken, refreshAccessToken });
+    const fetcher = buildApiFetcher({
+      getAccessToken,
+      refreshAccessToken,
+      appVersion: "test",
+    });
     await fetcher.fetch(mockInput);
 
     expect(getAccessToken).toHaveBeenCalledTimes(1);
@@ -52,7 +56,11 @@ describe("buildApiFetcher", () => {
     const refreshAccessToken = vi.fn().mockResolvedValue("new-token");
     mockFetch.mockResolvedValueOnce(err(401)).mockResolvedValueOnce(ok());
 
-    const fetcher = buildApiFetcher({ getAccessToken, refreshAccessToken });
+    const fetcher = buildApiFetcher({
+      getAccessToken,
+      refreshAccessToken,
+      appVersion: "test",
+    });
     const response = await fetcher.fetch(mockInput);
 
     expect(response.ok).toBe(true);
@@ -68,7 +76,11 @@ describe("buildApiFetcher", () => {
     const refreshAccessToken = vi.fn().mockResolvedValue("new-token");
     mockFetch.mockResolvedValueOnce(err(403, { detail: "Permission denied." }));
 
-    const fetcher = buildApiFetcher({ getAccessToken, refreshAccessToken });
+    const fetcher = buildApiFetcher({
+      getAccessToken,
+      refreshAccessToken,
+      appVersion: "test",
+    });
 
     await expect(fetcher.fetch(mockInput)).rejects.toThrow("[403]");
     expect(getAccessToken).toHaveBeenCalledTimes(1);
@@ -88,7 +100,11 @@ describe("buildApiFetcher", () => {
       )
       .mockResolvedValueOnce(ok());
 
-    const fetcher = buildApiFetcher({ getAccessToken, refreshAccessToken });
+    const fetcher = buildApiFetcher({
+      getAccessToken,
+      refreshAccessToken,
+      appVersion: "test",
+    });
     const response = await fetcher.fetch(mockInput);
 
     expect(response.ok).toBe(true);
@@ -105,6 +121,7 @@ describe("buildApiFetcher", () => {
     const fetcher = buildApiFetcher({
       getAccessToken: vi.fn().mockResolvedValue("token"),
       refreshAccessToken,
+      appVersion: "test",
     });
 
     await expect(fetcher.fetch(mockInput)).rejects.toThrow("[400]");
@@ -116,7 +133,11 @@ describe("buildApiFetcher", () => {
     const refreshAccessToken = vi.fn().mockResolvedValue("token-2");
     mockFetch.mockResolvedValueOnce(err(401)).mockResolvedValueOnce(err(401));
 
-    const fetcher = buildApiFetcher({ getAccessToken, refreshAccessToken });
+    const fetcher = buildApiFetcher({
+      getAccessToken,
+      refreshAccessToken,
+      appVersion: "test",
+    });
 
     await expect(fetcher.fetch(mockInput)).rejects.toThrow("[401]");
   });
@@ -128,7 +149,11 @@ describe("buildApiFetcher", () => {
       .mockRejectedValueOnce(new Error("failed"));
     mockFetch.mockResolvedValueOnce(err(401));
 
-    const fetcher = buildApiFetcher({ getAccessToken, refreshAccessToken });
+    const fetcher = buildApiFetcher({
+      getAccessToken,
+      refreshAccessToken,
+      appVersion: "test",
+    });
 
     await expect(fetcher.fetch(mockInput)).rejects.toThrow("[401]");
   });
@@ -138,6 +163,7 @@ describe("buildApiFetcher", () => {
     const fetcher = buildApiFetcher({
       getAccessToken: vi.fn().mockResolvedValue("token"),
       refreshAccessToken: vi.fn().mockResolvedValue("new-token"),
+      appVersion: "test",
     });
 
     await expect(fetcher.fetch(mockInput)).rejects.toThrow(

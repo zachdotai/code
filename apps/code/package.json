@@ -131,6 +131,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@pierre/diffs": "^1.1.21",
     "@posthog/agent": "workspace:*",
+    "@posthog/api-client": "workspace:*",
     "@posthog/electron-trpc": "workspace:*",
     "@posthog/enricher": "workspace:*",
     "@posthog/git": "workspace:*",
