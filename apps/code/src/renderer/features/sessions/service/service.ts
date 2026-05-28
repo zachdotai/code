@@ -2104,9 +2104,6 @@ export class SessionService {
 
     const runtimeOptions = this.getCloudRuntimeOptions(session, previousRun);
 
-    const customInstructions =
-      useSettingsStore.getState().customInstructions?.trim() || undefined;
-
     // Create a new run WITH resume context — backend validates the previous run,
     // derives snapshot_external_id server-side, and passes everything as extra_state.
     // The agent will load conversation history and restore the sandbox snapshot.
@@ -2127,7 +2124,6 @@ export class SessionService {
           typeof previousState.signal_report_id === "string"
             ? previousState.signal_report_id
             : undefined,
-        customInstructions,
       },
     );
     const newRun = updatedTask.latest_run;
@@ -2135,21 +2131,23 @@ export class SessionService {
       throw new Error("Failed to create resume run");
     }
 
-    // Belt-and-suspenders: also PATCH the new run's state so the cloud agent
-    // server picks up the user's personalization on initial boot, even if the
-    // backend doesn't yet route `custom_instructions` from the request body
-    // onto the run state. Sandbox boot takes seconds; the PATCH is sub-second.
+    // Stash user personalization on the run state. Racy with sandbox boot but
+    // boot takes seconds and the PATCH is sub-second.
+    const customInstructions = useSettingsStore
+      .getState()
+      .customInstructions?.trim();
     if (customInstructions) {
-      try {
-        await authCredentials.client.updateTaskRun(session.taskId, newRun.id, {
+      await authCredentials.client
+        .updateTaskRun(session.taskId, newRun.id, {
           state: { custom_instructions: customInstructions },
-        });
-      } catch (err) {
-        log.warn(
-          "Failed to persist custom_instructions on resumed cloud task run state",
-          { taskId: session.taskId, runId: newRun.id, err },
+        })
+        .catch((err) =>
+          log.warn("Failed to persist custom_instructions", {
+            taskId: session.taskId,
+            runId: newRun.id,
+            err,
+          }),
         );
-      }
     }
 
     // Replace session with one for the new run, preserving conversation history.

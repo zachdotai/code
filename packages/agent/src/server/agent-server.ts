@@ -1569,36 +1569,18 @@ export class AgentServer {
     customInstructions?: string | null,
   ): string | { append: string } {
     const cloudAppend = this.buildCloudSystemPrompt(prUrl);
-    // Personalization the user typed in PostHog Code Settings. Wrapped in a
-    // delimiter tag block so user-supplied content can never break out and
-    // impersonate platform-level instructions above.
-    const userInstructionsAppend =
-      formatUserCustomInstructions(customInstructions);
+    const userInstructions = formatUserCustomInstructions(customInstructions);
     const userPrompt = this.config.claudeCode?.systemPrompt;
+    const join = (...parts: (string | null | undefined)[]) =>
+      parts.filter(Boolean).join("\n\n");
 
-    const segments = (parts: (string | null | undefined)[]) =>
-      parts
-        .filter((segment): segment is string => Boolean(segment))
-        .join("\n\n");
-
-    // String override: combine user prompt with cloud instructions
     if (typeof userPrompt === "string") {
-      return segments([userPrompt, cloudAppend, userInstructionsAppend]);
+      return join(userPrompt, cloudAppend, userInstructions);
     }
-
-    // Preset with append: merge user append with cloud instructions
     if (typeof userPrompt === "object") {
-      return {
-        append: segments([
-          userPrompt.append,
-          cloudAppend,
-          userInstructionsAppend,
-        ]),
-      };
+      return { append: join(userPrompt.append, cloudAppend, userInstructions) };
     }
-
-    // Default: just cloud instructions (+ user personalization, if any)
-    return { append: segments([cloudAppend, userInstructionsAppend]) };
+    return { append: join(cloudAppend, userInstructions) };
   }
 
   private buildCodexInstructions(

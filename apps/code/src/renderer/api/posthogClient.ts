@@ -175,12 +175,6 @@ interface CloudRunOptions {
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: PermissionMode;
-  /**
-   * Raw personalization text the user typed in Settings. Sent through to the
-   * cloud sandbox so the cloud agent system prompt honors the same user
-   * preferences as local runs. Persisted onto `task_run.state.custom_instructions`.
-   */
-  customInstructions?: string;
 }
 
 interface CreateTaskRunOptions extends CloudRunOptions {
@@ -258,12 +252,6 @@ function buildCloudRunRequestBody(
   }
   if (options?.initialPermissionMode) {
     body.initial_permission_mode = options.initialPermissionMode;
-  }
-  if (options?.customInstructions) {
-    const trimmed = options.customInstructions.trim();
-    if (trimmed) {
-      body.custom_instructions = trimmed;
-    }
   }
 
   return body;
