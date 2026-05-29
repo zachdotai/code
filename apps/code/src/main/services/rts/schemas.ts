@@ -481,7 +481,7 @@ export function parseNestChatCreationBootstrapPayload(
   return result.success ? result.data : null;
 }
 
-export const DEFAULT_HOGLET_MODEL = "claude-opus-4-7";
+export const DEFAULT_HOGLET_MODEL = "claude-opus-4-8";
 export const DEFAULT_CODEX_HOGLET_MODEL = "gpt-5.5";
 export const DEFAULT_HOGLET_RUNTIME_ADAPTER = "claude" as const;
 export const DEFAULT_HOGLET_ENVIRONMENT = "cloud" as const;

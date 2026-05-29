@@ -20,7 +20,7 @@ import {
 
 const log = logger.scope("goal-spec-draft-service");
 
-const GOAL_DRAFT_MODEL = "claude-opus-4-6";
+const GOAL_DRAFT_MODEL = "claude-opus-4-8";
 const GOAL_DRAFT_BETAS = ["context-1m-2025-08-07"];
 const GOAL_DRAFT_EFFORT = "max";
 const GOAL_DRAFT_MAX_TOKENS = 128_000;
