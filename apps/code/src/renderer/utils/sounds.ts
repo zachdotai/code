@@ -13,6 +13,16 @@ import slideUrl from "@renderer/assets/sounds/slide.mp3";
 import switchUrl from "@renderer/assets/sounds/switch.mp3";
 import wilhelmUrl from "@renderer/assets/sounds/wilhelm.mp3";
 
+export const WILHELM_SOUND_URL = wilhelmUrl;
+
+export function playSoundUrl(url: string, volume = 80): void {
+  const audio = new Audio(url);
+  audio.volume = Math.max(0, Math.min(100, volume)) / 100;
+  audio.play().catch(() => {
+    // Audio play can fail if user hasn't interacted with the page yet
+  });
+}
+
 const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
   guitar: guitarUrl,
   danilo: daniloUrl,

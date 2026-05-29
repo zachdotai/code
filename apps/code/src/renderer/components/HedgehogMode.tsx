@@ -5,9 +5,14 @@ import type {
   HedgeHogMode as HedgehogModeGame,
 } from "@posthog/hedgehog-mode";
 import { logger } from "@utils/logger";
+import { playSoundUrl, WILHELM_SOUND_URL } from "@utils/sounds";
 import { useEffect, useRef } from "react";
 
 const log = logger.scope("hedgehog-mode");
+
+// Above the autonomous jump velocity of 15, so jumps never trigger.
+const HARSH_THROW_Y_THRESHOLD = 25;
+const HARSH_THROW_SPEED_THRESHOLD = 25;
 
 export function HedgehogMode() {
   const hedgehogMode = useSettingsStore((s) => s.hedgehogMode);
@@ -29,6 +34,27 @@ export function HedgehogMode() {
     const actorOptions = hedgehogConfig?.actor_options as
       | HedgehogActorOptions
       | undefined;
+
+    const onPointerUp = () => {
+      // Defer one frame so Matter.js applies the post-release velocity.
+      requestAnimationFrame(() => {
+        if (cancelled || !gameRef.current) return;
+        for (const hedgehog of gameRef.current.getAllHedgehogs()) {
+          const v = hedgehog.rigidBody?.velocity;
+          if (!v) continue;
+          const speed = Math.hypot(v.x, v.y);
+          if (
+            v.y < -HARSH_THROW_Y_THRESHOLD &&
+            speed > HARSH_THROW_SPEED_THRESHOLD
+          ) {
+            const volume = useSettingsStore.getState().completionVolume;
+            playSoundUrl(WILHELM_SOUND_URL, volume);
+            break;
+          }
+        }
+      });
+    };
+    window.addEventListener("pointerup", onPointerUp);
 
     import("@posthog/hedgehog-mode")
       .then(async ({ HedgeHogMode }) => {
@@ -62,6 +88,7 @@ export function HedgehogMode() {
 
     return () => {
       cancelled = true;
+      window.removeEventListener("pointerup", onPointerUp);
     };
   }, [hedgehogMode, user?.hedgehog_config, setHedgehogMode]);
 
