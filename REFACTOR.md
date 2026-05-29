@@ -1,317 +1,1003 @@
-# REFACTOR.md — feature-by-feature migration guide
+# REFACTOR.md - VS Code-style migration guide
 
-This file is the **procedure** for porting an existing feature into the new package architecture. Read [AGENTS.md](./AGENTS.md) for the layering rules. Read this when you're about to move a feature across.
+This file is the procedure for moving `apps/code` toward a VS Code-like architecture:
+small host entrypoints, package-owned services, constructor injection, feature
+contributions, and host-specific service implementations registered at startup.
 
-[MIGRATION.md](./MIGRATION.md) is the running log of what landed and where — useful if you're tracking what's done vs. still to come.
+Read [AGENTS.md](./AGENTS.md) for the layering rules. This guide explains how to
+apply those rules during the package migration.
+
+[MIGRATION.md](./MIGRATION.md) is the running log of what landed, what still
+bridges old code, and what unblocks each bridge's removal.
+
+For long-running or parallel agent work, use the coordination files described in
+[Agent Harness](#agent-harness). They are the source of truth for what is
+claimed, what is passing, and what the next agent should do.
 
 ---
 
-## Target shape
+## Target Shape
 
-Three packages carry the work, organized by runtime. Each one is domain-folder-structured inside.
+Runtime code moves out of `apps/code` into packages. `apps/code` becomes the
+Electron host: process startup, windows, lifecycle, Electron adapters, and
+registration of desktop-specific services.
 
 ```
 packages/
-├── core/                # pure JS. All domain logic. Runs anywhere.
-│   ├── sessions/
-│   ├── workspace/
-│   ├── auth/
-│   ├── tasks/
-│   └── ...
-├── ui/                  # React DOM. Mirrors core's domain folders.
-│   ├── sessions/
-│   ├── workspace/
-│   ├── primitives/      # @posthog/quill wrappers, Button, Modal, Toast
-│   └── ...
-├── workspace-server/    # Node-only. Host syscalls. Organized by capability.
-│   ├── git/
-│   ├── fs/
-│   ├── pty/
-│   ├── process/
-│   ├── watcher/
-│   └── ...
-│
-├── platform/            # host-capability interfaces. Locked-down.
-├── shared/              # zero-dep primitives, Saga, types. Locked-down.
-├── workspace-client/    # TRPC client for workspace-server.
-└── api-client/          # HTTP client for Django.
+├── platform/            # service identifiers + host capability interfaces
+├── core/                # host-agnostic business services and orchestration
+├── ui/                  # React DOM workbench, feature views, UI services
+├── workspace-server/    # Node-only host syscall services and tRPC server
+├── workspace-client/    # typed client for workspace-server
+├── api-client/          # PostHog/Django HTTP client
+└── shared/              # zero-dep primitives, types, utilities
 
 apps/
-├── web/         # mounts packages/ui. Provides platform-web adapters.
-├── desktop/     # Electron shell. Spawns workspace-server. Provides Electron
-│                  platform-adapters. main = shell + adapters. NO business logic.
-└── mobile/      # React Native. Imports core/* only. Writes its own RN UI.
+├── code/                # current Electron desktop host
+├── web/                 # future web host
+└── mobile/              # React Native host; imports core/platform/shared
 ```
 
-Per-domain folder shape, by package:
+Real package paths live under `src/`:
 
 ```
-core/sessions/                ui/sessions/                  workspace-server/services/git/
-├── sessions.ts               ├── SessionList.tsx           ├── git.ts
-├── types.ts                  ├── SessionDetail.tsx         └── schemas.ts
-└── sessions.test.ts          ├── useSession.ts
-                              ├── store.ts        (Zustand)
-                              └── SessionList.test.tsx
+packages/core/src/sessions/
+├── sessions.ts
+├── sessions.module.ts
+├── schemas.ts
+└── sessions.test.ts
+
+packages/ui/src/features/sessions/
+├── SessionsView.tsx
+├── sessions.contribution.ts
+├── sessions.module.ts
+├── store.ts
+└── useSessions.ts
+
+packages/workspace-server/src/services/git/
+├── git.ts
+├── git.module.ts
+├── schemas.ts
+└── git.test.ts
+
+apps/code/src/renderer/
+├── desktop-services.ts
+├── desktop-contributions.ts
+└── main.tsx
 ```
 
-Naming:
-- The main file is named after its domain (`sessions.ts`, `file-watcher.ts`, `git.ts`) — not `service.ts`, not `index.ts`. "Service" is DI culture; in core there's no DI and the suffix is meaningless. The repeated folder/file name is intentional: `file-watcher/file-watcher.ts` reads cleaner than `file-watcher/service.ts` and makes grep-by-filename land on the right file.
-- `types.ts` — pure TS types, interfaces, enums, constants. No runtime cost. Use when the domain has internal-only types not crossing a tRPC boundary.
-- `schemas.ts` — Zod schemas + types inferred from them (`z.infer<typeof xSchema>`). Use when shapes cross a tRPC boundary (workspace-server procedures, anything validated at runtime). The schema is the source of truth; types are inferred from it, never declared separately.
-- A domain can have both `types.ts` and `schemas.ts` when it has internal types AND boundary-validated shapes. Most have one or the other.
-- Tests colocate next to the file under test (`sessions.test.ts`, `git.test.ts`).
-
-Flat. No `internal/` folder. Split into more files when a single file gets too long to read, grouped by concept.
-
-**What each package owns:**
-
-- **`core/<X>/`** — all business logic. Services, state machines, orchestration, retries, dedup, parsing, error normalization, typed events. Pure JS. Unit-testable with mocked clients.
-- **`ui/<X>/`** — React components, hooks that wrap core service calls (`useQuery` over `core.sessions.list()`), and **thin** Zustand stores for pure UI state (selection, open/closed, scroll position, subscription-fed caches). **No business logic**, no multi-step flows, no retries, no orchestration, no `let inFlight: Promise` style dedup. If you find yourself writing those in `ui/`, the code belongs in `core/`.
-- **`workspace-server/<cap>/`** — host syscall procedures (git CLI, fs read/write, spawn, watcher). Dumb. No decisions. Called by core through `workspace-client`.
-
-The desktop **main process is not the home of business logic anymore.** It does three things: spawn workspace-server, mount renderer, implement platform adapters.
-
-**Import rules** (biome `noRestrictedImports`):
-
-- `core/<X>/` may import other `core/<Y>/` (via their `index.ts`), `shared/`, `platform/`, `workspace-client`, `api-client`. **Never** `ui/*` or `workspace-server/*`.
-- `ui/<X>/` may import `core/*`, `ui/primitives/`, `shared/`. **Never** `workspace-server/*` or other `ui/<Y>/` internals.
-- `workspace-server/<cap>/` may import `shared/`, Node modules, and other `workspace-server/<cap2>/` via `index.ts`. **Never** `core/*` or `ui/*` — workspace-server is the host; it knows nothing about business domains. Domains live in `core/` and *call into* workspace-server through `workspace-client`.
-- `shared/` and `platform/` import nothing else internal.
+Use the bare layer names below (`core`, `ui`, `workspace-server`) as shorthand
+for those package paths.
 
 ---
 
-## Ground rules
+## Architecture Model
 
-- **Don't guess. Flag.** When you can't decide where a piece of code belongs, leave `// TODO(refactor): <question>` and move on. Wrong placement is worse than an open question.
-- **Preserve structure during the move.** Same function names, same parameter order, same control flow. The move should diff against the old file cleanly. *Refactoring the logic* happens after, not during.
-- **Don't invent new layouts.** Don't create new sibling packages, new abstractions, or new naming conventions mid-move. If the existing structure doesn't fit, raise it — don't bend the move around it.
-- **Delete, don't deprecate.** When code moves, the old file is removed in the same change. No shims, no re-exports, no "deprecated" comments.
-- **Banned imports in `packages/core`.** No `electron`, no `node:fs`, no `node:child_process`, no `node:net`, no `node:os`, no `node:path`. Pure JS only. Anything you'd reach for there is either a workspace-server procedure or a `@posthog/platform` interface.
-- **Don't bundle other work.** Wire-format changes, algorithm rewrites, new features, cosmetic renames — keep them out of the move. They double review surface and obscure what's actually being relocated.
-- **Not every feature needs a core module.** `core/` is for domain logic — state machines, retries, dedup, cross-feature coordination, business rules. Features that are pure data-piping (server → useQuery → component) skip `core/` entirely. Don't invent a core file for symmetry; let core stay empty for that feature.
-- **Source-smoothing belongs with the source, not in core.** Debouncing a noisy event stream, dedup, bulk-threshold throttling, filtering source-specific noise (irrelevant git dir events, etc.) — these are properties of the *event source*, not domain decisions. They live in the workspace-server procedure that owns the source, so every client gets the smoothed stream for free. Don't put them in core just because they look like "orchestration."
-- **Hooks are pure react-query idioms.** `useQuery`, `useMutation`, `useSubscription` over a tRPC procedure — that's the whole hook. No `useEffect` constructing services. No `for-await` over async iterables in a hook body. No imperative subscribe/unsubscribe ceremony with a wrappers map. If you find yourself reaching for those, the orchestration is in the wrong place — push it to wherever the tRPC procedure lives (typically workspace-server) and the hook collapses to 5 lines.
-- **`useState`, `useRef`, `useEffect` in a hook are usually a smell.** They mean the hook is holding application state or subscription bookkeeping that should live elsewhere — react-query's cache, a Zustand store, a workspace-server procedure, or just derivation from existing query data. The legitimate uses are narrow: `useRef` for DOM refs (focus, scroll, measurement), `useEffect` for synchronizing imperative browser APIs (event listeners on `window`, `ResizeObserver`, etc.). Anything else — caching a previous value, holding a subscription handle, stashing a callback ref to avoid re-renders, building a wrappers map — means the hook is doing work that belongs upstream.
-- **Try framework primitives before reaching for core.** Before extracting a forbidden pattern into a new core module, ask: does react-query / tRPC / Zustand already do this? `useMutation` dedups by mutation key. `useQuery` dedups by query key. `useSubscription` handles lifecycle. tRPC subscriptions invalidate caches. Most "I need a state machine for this" cases dissolve into a single mutation + its `onSuccess`. **Delete the forbidden pattern and use the framework primitive** is the first move. Only reach for a core module when you can't express the orchestration as a mutation/query/subscription — typically a Saga (multi-step with rollback), a long-running protocol (OAuth dance with redirects), or coordination that crosses multiple queries with invariants.
-- **Smallest change first.** Try deleting the offending code before introducing a new abstraction. Try moving side effects into an existing `onSuccess` before writing an event bus. Try inlining at the call site before extracting a helper. The refactor PR should land *less* code than it deletes whenever possible. If your change adds a net new package, a new singleton, or a new abstraction layer, justify the line count.
-- **Validate the app actually runs.** Typecheck and tests pass on incomplete work all the time. For any user-visible change, open the app and exercise the feature. For background changes, watch logs through one real usage cycle. CI green ≠ feature works.
-- **Some main services stay in main forever.** Single-instance lock, window manager, deep-link router, crash reporter, auto-updater, app-lifecycle, anything that *is* the Electron shell. Don't try to migrate these. Mark them explicitly as "host-only" in code comments or a service-categorization doc so nobody wastes time auditing them for a slice.
+The model is VS Code-style, implemented with InversifyJS:
 
-## Comment markers
+- Packages define service identifiers, interfaces, implementations, and
+  registration modules.
+- Host apps load package modules and bind host-specific implementations.
+- Consumers receive dependencies through constructors.
+- Feature startup happens through workbench contributions.
+- `container.get(...)` is allowed only at startup boundaries, tests, and
+  framework adapters. It is not allowed inside service methods or components as a
+  service locator.
 
-Use these consistently. Grep targets matter — follow-up passes hunt for each marker.
+There is no mega composition root that manually constructs every feature. The
+desktop entrypoint should import registration modules and start the workbench.
 
-- `// TODO(refactor): <reason>` — couldn't translate confidently. Flag and move on.
-- `// PERF(refactor): <what was lost>` — used to be in-process, now an RPC round-trip. Benchmark later.
-- `// PORT NOTE: <reshape>` — the shape changed beyond a 1:1 move (split into two functions, async boundary moved, etc.). For readers comparing old vs. new.
+```ts
+// apps/code/src/renderer/main.tsx
+import "./desktop-services";
+import "./desktop-contributions";
+
+await startWorkbench();
+```
+
+```ts
+// apps/code/src/renderer/desktop-services.ts
+import { container } from "@renderer/di/container";
+import { NOTIFICATIONS_SERVICE } from "@posthog/platform/notifications";
+import { TrpcNotificationsService } from "@renderer/platform-adapters/notifications";
+
+container
+  .bind(NOTIFICATIONS_SERVICE)
+  .to(TrpcNotificationsService)
+  .inSingletonScope();
+```
+
+```ts
+// apps/code/src/renderer/desktop-contributions.ts
+import { container } from "@renderer/di/container";
+import { sessionsUiModule } from "@posthog/ui/features/sessions/sessions.module";
+import { notificationsUiModule } from "@posthog/ui/features/notifications/notifications.module";
+
+container.load(sessionsUiModule, notificationsUiModule);
+```
+
+The entrypoint chooses the runtime. Packages own the feature wiring.
 
 ---
 
-## What moves where
+## Agent Harness
+
+This migration will be worked by many agents across many context windows. Treat
+the repo like a handoff between engineers on shifts: every agent must be able to
+arrive cold, understand what is already done, choose one slice, and leave the
+next agent a clean state.
+
+Set up three coordination artifacts before broad parallel work starts:
+
+- `REFACTOR_SLICES.json` - structured inventory of migration slices and their
+  acceptance checks.
+- `REFACTOR_PROGRESS.md` - append-only notes of what each agent changed,
+  validated, deferred, or broke.
+- `scripts/refactor-init.sh` - one command that installs/starts/checks enough of
+  the app for a fresh agent to verify the baseline before doing new work.
+
+The JSON file is the anti-premature-victory device. Every slice starts as not
+passing. Agents may claim a slice and later mark it passing only after the
+acceptance checks and smoke test have actually run.
+
+Example slice:
+
+```json
+{
+  "id": "notifications-renderer-platform",
+  "category": "renderer-platform-capability",
+  "priority": 40,
+  "status": "todo",
+  "claimedBy": null,
+  "paths": [
+    "apps/code/src/main/services/notification",
+    "apps/code/src/renderer/features/notifications",
+    "packages/platform/src/notifications.ts",
+    "packages/ui/src/features/notifications"
+  ],
+  "data": {
+    "model": "TaskNotification",
+    "sourceOfTruth": "TaskNotificationService decision inputs",
+    "derivedProjections": ["display title", "body text", "attention intent"]
+  },
+  "acceptance": [
+    "platform interface contains no Electron/macOS/Windows-specific terms",
+    "app adapter is a dumb tRPC/Electron wrapper",
+    "notification gating lives in package service",
+    "feature smoke test sends a prompt-complete notification"
+  ],
+  "passes": false
+}
+```
+
+Use these statuses:
+
+- `todo` - unclaimed.
+- `in_progress` - one agent owns it right now.
+- `blocked` - cannot proceed without a named dependency or decision.
+- `needs_validation` - code moved, but smoke test is not complete.
+- `passing` - acceptance checks are verified and `passes` is true.
+
+Agents may update `status`, `claimedBy`, `notes`, validation evidence, and
+`passes`. They must not delete slices or weaken acceptance criteria to make a
+slice pass. If the criteria are wrong, add a note and get the criteria corrected
+explicitly.
+
+### Agent Startup Protocol
+
+Every agent session starts the same way:
+
+1. Run `pwd`.
+2. Read `REFACTOR.md`, `MIGRATION.md`, `REFACTOR_PROGRESS.md`, and
+   `REFACTOR_SLICES.json`.
+3. Read recent git history: `git log --oneline -20`.
+4. Check the worktree: `git status --short`.
+5. Run `scripts/refactor-init.sh` if it exists.
+6. Verify the baseline smoke test before implementing a new slice. If the
+   baseline is broken, fix or record that first; do not pile a new migration on
+   top of an unknown failure.
+7. Claim exactly one `todo` slice by setting it to `in_progress` with your
+   agent/session id.
+
+### Agent Finish Protocol
+
+Every agent session ends by leaving the repo in a clean handoff state:
+
+1. Run focused tests/typecheck for the slice.
+2. Run the relevant smoke test as a user would, not just a unit-level substitute.
+3. Update `REFACTOR_SLICES.json`.
+   - Set `passes: true` only when acceptance checks actually passed.
+   - Use `needs_validation` if code is done but the feature was not exercised.
+   - Use `blocked` with a concrete reason if progress cannot continue.
+4. Append a short `REFACTOR_PROGRESS.md` entry: slice id, changed paths,
+   validation run, remaining bridges, and next suggested slice.
+5. Update `MIGRATION.md` for landed architectural movement.
+6. Leave no unrelated edits in files outside the claimed slice.
+7. Before committing, run `pnpm biome format --write .` and `pnpm typecheck`,
+   then stage the result. Biome owns formatting for every file including
+   `REFACTOR_SLICES.json` — commit the formatted version so CI does not bounce
+   it. Never bypass commit hooks with `--no-verify`.
+8. If the harness expects commits, commit the slice with a descriptive message
+   only after the worktree is coherent and validation is recorded.
+
+### Parallel Work Rules
+
+- One agent owns one slice. Do not work a broad foundational refactor unless it
+  is explicitly assigned.
+- Prefer separate git worktrees/branches per agent. Parallel edits to the same
+  package registration files, root DI files, or `REFACTOR_SLICES.json` will
+  conflict; keep those changes small and merge them deliberately.
+- Do not mark the whole migration complete because several slices are passing.
+  Completion means every slice in `REFACTOR_SLICES.json` is passing or explicitly
+  retired with a reason.
+- Do not start by making the architecture prettier. Pick the highest-priority
+  unclaimed slice and move it through the procedure.
+- If a slice reveals a missing prerequisite, create or update a prerequisite
+  slice instead of doing untracked background work.
+
+---
+
+## Service Rules
+
+### Data Is Destiny
+
+The data model is the contract that shapes the rest of the system. Treat model
+choices as architectural choices, not incidental TypeScript cleanup.
+
+Use these rules when moving or defining data:
+
+- Model the domain object, not the first scalar you happen to need. A
+  `Statistic` with `label`, `value`, and `lastUpdatedAt` will evolve better than
+  passing `number` through five layers.
+- Put runtime boundary shapes in Zod `schemas.ts`, infer TypeScript types from
+  those schemas, and make the schema the source of truth for tRPC/API boundaries.
+- Store truth once. If two stores, caches, services, or persisted records can
+  disagree, name which one owns the truth and make the other a projection.
+- Compute derived state. Counts, labels, filtered lists, permission display
+  state, and status summaries should be derived from the underlying facts unless
+  there is a measured reason to persist them.
+- Keep hidden operational fields in the model when they are part of correctness:
+  timestamps, version ids, source ids, sync cursors, provenance, and invalidation
+  markers often matter even when they never render.
+- Do not move a feature by copying its current state shape blindly. During the
+  audit, identify the model, the state, the owner of that state, and every
+  projection derived from it.
+
+Store truth once, then compute its consequences.
+
+### Service Identifiers
+
+Service identifiers live in the package that owns the contract.
+
+- Host capability contracts live in `packages/platform/src/<capability>.ts`.
+- Core domain contracts live in `packages/core/src/<feature>/<feature>.ts`
+  when other packages consume them.
+- UI-only contracts live in `packages/ui/src/features/<feature>/...` only when
+  they do not need to cross package boundaries.
+
+For existing platform capabilities, the interface files in `packages/platform`
+are already the right home. The migration is to add package-owned service
+identifiers beside those interfaces and gradually stop using app-local
+`MAIN_TOKENS.<Capability>` aliases. Do not create new platform identifiers in
+`apps/code/src/main/di/tokens.ts`.
+
+Use symbols as Inversify identifiers:
+
+```ts
+// packages/platform/src/notifications.ts
+export const NOTIFICATIONS_SERVICE = Symbol.for("posthog.notifications");
+
+export interface NotificationsService {
+  send(options: NotificationOptions): Promise<void>;
+}
+```
+
+Avoid global junk-drawer tokens. Prefer narrow feature or capability contracts.
+Keep platform interfaces platform-agnostic: model the capability the app needs,
+not the implementation detail a host happens to use. For example, expose
+`notifyAttentionNeeded()` instead of `bounceDock()`, and let the Electron adapter
+decide whether that means a dock bounce, taskbar flash, badge, sound, or no-op.
+
+Main-process migration shape:
+
+```ts
+// packages/platform/src/clipboard.ts
+export const CLIPBOARD_SERVICE = Symbol.for("posthog.platform.clipboard");
+
+export interface ClipboardService {
+  writeText(text: string): Promise<void>;
+}
+```
+
+```ts
+// apps/code/src/main/di/container.ts
+container.bind(CLIPBOARD_SERVICE).to(ElectronClipboard);
+
+// Temporary bridge while old consumers still inject MAIN_TOKENS.Clipboard.
+container.bind(MAIN_TOKENS.Clipboard).toService(CLIPBOARD_SERVICE);
+```
+
+```ts
+constructor(
+  @inject(CLIPBOARD_SERVICE)
+  private readonly clipboard: ClipboardService,
+) {}
+```
+
+Delete the `MAIN_TOKENS.*` bridge once all consumers inject the package-owned
+token.
+
+### Constructor Injection
+
+Services use constructor injection.
+
+```ts
+@injectable()
+export class TaskNotificationService {
+  constructor(
+    @inject(NOTIFICATIONS_SERVICE)
+    private readonly notifications: NotificationsService,
+    @inject(SETTINGS_SERVICE)
+    private readonly settings: SettingsService,
+  ) {}
+
+  async notifyPromptComplete(task: TaskSummary): Promise<void> {
+    const settings = await this.settings.getNotificationSettings();
+    if (!settings.promptComplete) {
+      return;
+    }
+
+    await this.notifications.send({
+      title: task.title,
+      body: "Prompt finished",
+    });
+  }
+}
+```
+
+Do not call `container.get(...)` inside service methods. That hides dependencies,
+creates runtime ordering bugs, and makes web/mobile hosts impossible to reason
+about.
+
+### Registration Modules
+
+Each package feature exports an Inversify `ContainerModule` for its services and
+contributions.
+
+```ts
+// packages/ui/src/features/notifications/notifications.module.ts
+export const notificationsUiModule = new ContainerModule(({ bind }) => {
+  bind(TaskNotificationService).toSelf().inSingletonScope();
+  bind(WORKBENCH_CONTRIBUTION)
+    .to(TaskNotificationContribution)
+    .inSingletonScope();
+});
+```
+
+Modules may bind their own package's services. Host apps bind host-specific
+implementations. A package module must never bind Electron implementations.
+
+### Contribution Startup
+
+Use contributions for startup side effects: subscriptions, route registration,
+menus, keyboard commands, status items, global UI services, and feature boot.
+
+```ts
+export interface WorkbenchContribution {
+  start(): void | Promise<void>;
+}
+
+export const WORKBENCH_CONTRIBUTION = Symbol.for("posthog.workbenchContribution");
+```
+
+At startup, the workbench resolves all `WORKBENCH_CONTRIBUTION` bindings and
+starts them.
+
+```ts
+export async function startWorkbench(): Promise<void> {
+  const contributions = container.getAll<WorkbenchContribution>(
+    WORKBENCH_CONTRIBUTION,
+  );
+
+  for (const contribution of contributions) {
+    await contribution.start();
+  }
+
+  renderApp();
+}
+```
+
+Contributions are the place for "wire once at app boot" behavior. Components do
+not start subscriptions ad hoc.
+
+---
+
+## Layer Ownership
+
+### `packages/platform`
+
+Owns host capability interfaces and service identifiers:
+
+- clipboard
+- dialog
+- notifications
+- secure storage
+- shell
+- file picker
+- app lifecycle hooks exposed to shared code
+- renderer-consumed host capabilities implemented through tRPC adapters
+
+`platform` imports no internal packages. It is contracts only.
+
+Platform contracts must describe host-neutral capabilities. They should not
+mention Electron, DOM, React Native, macOS, Windows, dock, taskbar, tray, or any
+other host-specific surface. Those terms belong in adapters. The shared contract
+should speak in product intent: notify, open external URL, pick file, write
+clipboard text, request attention, store secret.
+
+Existing `apps/code/src/main/platform-adapters/*` classes already implement many
+of these contracts. Keep them. The migration is not to rewrite adapters; it is to
+bind them to package-owned platform tokens and move consumers off app-local
+`MAIN_TOKENS` aliases. Renderer-consumed host capabilities follow the same
+pattern with renderer adapters that wrap `trpcClient`.
+
+### `packages/core`
+
+Owns host-agnostic business logic:
+
+- state machines
+- orchestration
+- retries
+- dedup
+- batching with business meaning
+- parsing and normalization
+- typed domain events
+- cross-feature business coordination
+
+Core services may depend on `platform`, `workspace-client`, `api-client`,
+`shared`, and other core services. They never import `ui`, `workspace-server`,
+Electron, or Node host syscalls.
+
+Core may use Inversify decorators and modules, but it must not import an app
+container. It exports services and modules; hosts load them.
+
+### `packages/workspace-server`
+
+Owns Node-only host syscalls and the tRPC server:
+
+- git CLI
+- fs reads/writes
+- process spawn
+- pty
+- watchers
+- shell execution
+- Node-native capabilities
+
+Workspace-server services are capability-oriented and dumb. They do host work,
+source smoothing, validation, and transport. They do not import `core` or `ui`.
+
+### `packages/ui`
+
+Owns React DOM workbench code:
+
+- feature views and components
+- TanStack Router route contributions
+- command/menu/status contributions
+- UI services
+- thin Zustand stores for UI state
+- hooks wrapping one query/mutation/subscription
+
+UI imports `core`, `platform`, `shared`, and `ui/primitives`. UI never imports
+`workspace-server` or app-specific code.
+
+Renderer stores remain thin: UI state, subscription-fed caches, and thin actions.
+No business clients, retries, orchestration, cross-store reach-ins, or module
+level promise dedup.
+
+### `apps/code`
+
+Owns Electron host code:
+
+- Electron main lifecycle
+- window manager
+- crash reporter
+- updater
+- deep links
+- single instance lock
+- Electron platform adapters
+- desktop tRPC adapters
+- desktop service registration files
+
+It can import package modules and bind concrete desktop implementations. It
+should not contain business logic after migration.
+
+---
+
+## Import Rules
+
+These should become `biome` restricted-import rules.
+
+- `platform` imports nothing internal.
+- `shared` imports nothing internal.
+- `workspace-server` may import `shared`, `platform` contracts when needed,
+  Node modules, and other workspace-server services by direct source path.
+- `core` may import `shared`, `platform`, `workspace-client`, `api-client`, and
+  other core services by direct source path.
+- `ui` may import `core`, `platform`, `shared`, `ui/primitives`, and other public
+  UI feature entry files. Avoid importing another feature's internals.
+- `apps/code` may import all packages and its own host adapters.
+
+No barrel files. Import direct source files or explicit package export paths.
+
+---
+
+## Naming
+
+- Main implementation file is named after the domain or capability:
+  `sessions.ts`, `file-watcher.ts`, `git.ts`.
+- Registration file is `<name>.module.ts`.
+- Contribution file is `<name>.contribution.ts`.
+- Runtime boundary schemas live in `schemas.ts`.
+- Type-only exports live in `types.ts`; runtime constants are allowed only when
+  deliberately shared.
+- Tests colocate as `.test.ts` / `.test.tsx`.
+
+No `service.ts` for new package code unless there is already a strong local
+pattern in that folder.
+
+---
+
+## What Moves Where
 
 | Today | New home |
 |---|---|
-| `apps/code/src/main/services/<X>/service.ts` — *business* orchestration: state machines, retries, OAuth flows, cross-feature coordination, business rules | `packages/core/<X>/<X>.ts` |
-| Same file — *source smoothing*: debounce, dedup, throttle, batch, source-noise filtering | `packages/workspace-server/services/<capability>/` — alongside whatever procedure produces the noisy events. Don't route through core. |
-| Same file — host syscalls (git CLI, fs, spawn, native modules) | `packages/workspace-server/services/<capability>/` (git → `git/`, fs → `fs/`, spawn → `process/`, etc.) |
-| `apps/code/src/main/trpc/routers/<X>.ts` | Strict one-liner procedures, registered alongside their service in `workspace-server/services/<X>/`. Orchestrating procedures **disappear** — core (or the workspace-server procedure itself) does that work. |
-| `apps/code/src/api/<X>` (Django) | `packages/api-client/<X>` |
-| `apps/code/src/renderer/features/<X>/` (UI) | `packages/ui/<X>/` |
-| `apps/code/src/renderer/stores/<X>.ts` (thin UI state) | `packages/ui/<X>/store.ts` (still Zustand, still thin) |
-| `apps/code/src/main/platform-adapters/<X>.ts` | `apps/desktop/platform-adapters/<X>.ts` |
-| Renderer-consumed host capability (auth, notifications, integrations — anything in main that the renderer needs to query/mutate via electron-trpc) | `packages/platform/src/<capability>.ts` interface + `apps/code/src/renderer/platform-adapters/<capability>.ts` adapter that wraps `trpcClient.X.*` |
+| `apps/code/src/main/services/<X>/service.ts` business orchestration | `packages/core/src/<X>/<X>.ts` |
+| `apps/code/src/main/services/<X>/service.ts` host syscalls | `packages/workspace-server/src/services/<cap>/<cap>.ts` |
+| Source smoothing for noisy host events | Same workspace-server service that owns the event source |
+| `apps/code/src/main/trpc/routers/<X>.ts` | `packages/workspace-server/src/services/<cap>/` one-line router/procedure over service methods |
+| `apps/code/src/api/<X>` | `packages/api-client/src/<X>` |
+| `apps/code/src/renderer/features/<X>/` | `packages/ui/src/features/<X>/` |
+| `apps/code/src/renderer/stores/<X>.ts` thin UI store | `packages/ui/src/features/<X>/store.ts` |
+| `apps/code/src/main/platform-adapters/<X>.ts` | stays in `apps/code`; Electron adapter |
+| renderer-consumed host capability | `platform` interface + app adapter + package service consuming the interface |
 
-If the migrated feature is pure data-piping (server → useQuery → component), there's no row to core — that's expected, not a missed step.
-
-**Platform adapters apply in both directions.** The existing 15 interfaces in `packages/platform/src/` are all main-process-consumed (main service calls `IClipboard.write`). The same pattern works for renderer-consumed capabilities: interface in `packages/platform/`, adapter in `apps/<host>/src/<process>/platform-adapters/`, ui/core consume via the interface. This is the path for features that live in main and need to be reachable from ui — there's no separate "electron-trpc-client" package needed; the adapter IS the bridge.
-
----
-
-## Per-feature procedure
-
-Do these in order. One feature at a time.
-
-1. **Audit.** Grep for the feature. List every file: main service, schemas, router, store, components, hooks, subscriptions, tests. **Also list fan-in**: which other main services consume this one's events or call its methods. The audit is for *you*, not a gate — most features in this codebase have fan-in, and that's not a reason to abandon the slice. See [Coexistence and bridges](#coexistence-and-bridges) for how to handle it.
-2. **Identify host calls.** Anything touching git CLI, fs, child-process spawn, native modules, OS APIs. Those become workspace-server procedures.
-3. **Sort the rest into one of three buckets:**
-   - **Source-smoothing** — debounce, dedup, throttle, batch, noise-filter events from a host source. Goes alongside the source's procedure in `workspace-server/services/<X>/`. Don't route through core.
-   - **Business orchestration** — state machines, retries, OAuth flows, cross-feature coordination, business rules, error normalization. Goes in `packages/core/<X>/`.
-   - **Neither** — pure data-piping from a server query to a component. There's no core module to write. Skip ahead to step 6.
-4. **Define the workspace-server procedures first.** Strict one-liners over service methods. Zod input + output, schemas in `workspace-server/services/<X>/schemas.ts`.
-5. **(If core applies)** Port business orchestration to `packages/core/<feature>/<feature>.ts`. Pure JS. Constructor injection of `workspace-client` / `api-client` — **no Inversify in core.** Unit test the pure parts directly (extract pure functions for debouncing, drainage, predicates) — don't try to test the async iterable wiring.
-6. **Wire the UI.** Hook in `packages/ui/features/<feature>/` is a thin `useQuery` / `useMutation` / `useSubscription` over the tRPC procedure. No `useEffect` / `useRef` / `useState` ceremony. If you reach for those, the orchestration is in the wrong place — push it upstream and try again.
-7. **Delete the old main service and router.** No shims, no re-exports — unless coexistence is genuinely needed for fan-in consumers ([Coexistence and bridges](#coexistence-and-bridges)).
-8. **Apply in-slice cleanups.** See below.
-9. **Add a MIGRATION.md entry.** What moved, what was cleaned, what was deliberately left, what the retirement condition is for any bridge.
+Moving an interface alone is not a port. The implementation moves, or the old
+code is clearly marked as a bridge with a retirement condition.
 
 ---
 
-## Canonical shape for features with real orchestration
+## Per-Feature Procedure
 
-When a feature genuinely needs core (multi-step Saga, OAuth dance, cross-query invariants — not just "we already had a forbidden pattern there"), use this shape. The **focus** port is the worked example.
+Work one feature or capability slice at a time.
 
-```
-packages/core/src/<feature>/<feature>.ts
-  └─ export interface <Feature>ControllerDeps { ... }   // narrow, feature-scoped
-  └─ export class <Feature>Controller {
-       constructor(private deps: <Feature>ControllerDeps, ...) {}
-       async enableX(input): Promise<XResult>          // methods DO things, RETURN results
-       async disableX(input): Promise<XResult>         // no internal state held about the domain
-     }
-
-apps/code/src/renderer/stores/<feature>Store.ts
-  └─ const controller = new <Feature>Controller({       // module-scope singleton, OK because stateless
-       methodA: (...) => trpcClient.X.a.mutate(...),    // each dep: one-line trpc wrap
-       methodB: (...) => trpcClient.X.b.query(...),
-       ...
-     }, logger);
-  └─ export const use<Feature>Store = create<...>()((set, get) => ({
-       session: null,                                    // pure UI state
-       isLoading: false,
-       enableX: async (input) => {
-         set({ isLoading: true });
-         const result = await controller.enableX(input);
-         set({ isLoading: false, session: result.success ? result.session : get().session });
-         return result;
-       },
-       // ... thin actions: call controller, set state from result
-     }));
-```
-
-**Why this shape:**
-
-- **Controller is stateless.** It orchestrates. Domain state lives where react can render it (store / react-query cache). The controller never holds `this.session` or `this.user` — those would be a second source of truth.
-- **Module-scope `new Controller(...)` is fine** because the controller is stateless and its deps are trpc-bound (which is also a singleton). The forbidden "store owning a singleton with state" pattern doesn't apply.
-- **Deps are feature-scoped, defined in core.** Not a global platform interface, not a re-export from the trpc client. ~20-30 narrow methods the controller actually uses. The renderer adapter is dumb one-line wraps over `trpcClient.X`.
-- **Store actions are call-controller-then-set.** No multi-step flow in the store. No `let inFlight` dedup. No cross-store reach-ins (those move to the controller, or to mutation `onSuccess` if simple).
-- **No event bus.** State changes via store updates after each action returns. React-query consumers react via cache invalidation (the store action can invalidate after success).
-
-**When this shape applies:**
-
-The feature has at least one of:
-- A Saga (multi-step with rollback) — e.g., focus enable: stash, checkout, save session, on failure unstash and restore
-- A long-running protocol — OAuth dance with redirects, multi-round handshake
-- An invariant that spans multiple queries — e.g., "if A is true, B must also be refreshed"
-- A state machine genuinely complex enough that expressing it as one mutation `onSuccess` is hostile
-
-If none of those apply — if the orchestration is "call endpoint, set state from result" — the feature **doesn't need core**. Use `useMutation`/`useQuery` directly. Don't invent a controller for symmetry.
-
-**When this shape does NOT apply:**
-
-- Pure data-piping (server query → useQuery → render). No core. The hook is 5 lines of `useQuery` over the tRPC procedure.
-- Source-smoothing (debounce, dedup of noisy events). Goes in the workspace-server procedure that owns the source, not in core.
-- Plain auth state that's already served by `trpc.X.getState`. React-query's cache IS the state. Don't shadow it with a stateful core class.
+1. **Claim one slice.** Pick one `todo` item from `REFACTOR_SLICES.json`, set it
+   to `in_progress`, and stay inside that slice's paths unless a prerequisite
+   must be recorded.
+2. **Audit.** List main services, routers, schemas, renderer stores, components,
+   hooks, subscriptions, tests, and fan-in consumers.
+3. **Map the data.** Name the model, the source of truth, persisted state,
+   in-memory state, subscription-fed caches, and derived projections. If state is
+   duplicated, decide which copy owns truth before moving it.
+4. **Identify host calls.** Git, fs, spawn, pty, Electron, OS APIs, native
+   modules, and watchers move to workspace-server or platform adapters.
+5. **Sort logic.**
+   - Host syscall or source smoothing: `workspace-server`.
+   - Business orchestration: `core`.
+   - UI state/rendering: `ui`.
+   - Host capability contract: `platform`.
+6. **Create or update service identifiers.** Put cross-package contracts in
+   `platform` or the owning package. For existing platform interfaces, add the
+   token beside the interface and bind the existing app adapter to it; keep
+   `MAIN_TOKENS.*` only as a temporary bridge for old consumers.
+7. **Move workspace-server capability first.** Add Zod input/output schemas.
+   Routers/procedures remain one-line forwards over service methods.
+8. **Move core orchestration if needed.** Use constructor injection. Add a module
+   binding the service. Unit test business behavior with mocked deps.
+9. **Move UI.** Components, hooks, stores, routes, and contributions move to
+   `packages/ui/src/features/<feature>/`. Register UI services/contributions in
+   `<feature>.module.ts`. Follow [Porting React UI](#porting-react-ui) for
+   component dependencies, route registration, stores, and tests.
+10. **Bind host implementations in `apps/code`.** Desktop adapters wrap Electron
+   or `trpcClient`. Bind them in desktop registration files.
+11. **Bridge only when fan-in requires it.** Keep old app services only as thin
+   delegation shims with `// PORT NOTE:` and a retirement condition.
+12. **Delete old code when the bridge is gone.**
+13. **Update `MIGRATION.md` and `REFACTOR_PROGRESS.md`.**
+14. **Validate.** Typecheck, tests, app launch, and a real feature smoke test.
+15. **Update `REFACTOR_SLICES.json`.** Mark `passing` / `passes: true` only when
+    validation and acceptance checks are complete.
 
 ---
 
-## Coexistence and bridges
+## Canonical Patterns
 
-This codebase is heavily inter-coupled — most main-process services consume events from, or call methods on, other main-process services. A pure "one feature, one slice, delete the old" port is the exception, not the rule. Expect coexistence; design for it.
+### Host Capability Consumed by UI
 
-**The default pattern: bridge the old module.** When you move a feature's guts into `packages/core/<X>/` + `packages/workspace-server/<cap>/` + `packages/ui/<X>/`, the old `apps/code/src/main/services/<X>/service.ts` doesn't have to die in the same change. Keep it as a thin shim that:
-
-- constructs the new core module (or the workspace-server-backed client) at boot,
-- forwards the events and methods its in-process consumers already depend on,
-- holds no logic of its own — just delegation.
-
-The shim is the seam. Other main services keep depending on it unchanged. As each of *those* services migrates later, they drop their dependency on the shim. When the last one is gone, delete the shim.
-
-Mark the shim file with a one-liner at the top: `// PORT NOTE: shim — delegates to <new path>. Delete when <list of remaining consumers> migrate.` That tells the next reader (or agent) exactly what's keeping it alive and what unblocks its removal.
-
-**Skip the shim when the new class is signature-compatible with the old DI binding.** If the new `core/<X>/service.ts` already exposes the same methods and event API the old service did, you don't need a shim at all — just late-bind the new class to the existing DI token at bootstrap. The pattern (taken from the file-watcher migration):
+Notifications are a good example: the UI decides when a task notification should
+be shown; the host knows how to show it.
 
 ```ts
-// In main bootstrap, after the new class's async prereqs are ready:
-const connection = await wsServer.start();
-const workspaceClient = createWorkspaceClient(connection);
+// packages/platform/src/notifications.ts
+export const NOTIFICATIONS_SERVICE = Symbol.for("posthog.notifications");
+
+export interface NotificationsService {
+  send(options: NotificationOptions): Promise<void>;
+}
+```
+
+```ts
+// apps/code/src/renderer/platform-adapters/notifications.ts
+@injectable()
+export class TrpcNotificationsService implements NotificationsService {
+  async send(options: NotificationOptions): Promise<void> {
+    await trpcClient.notification.send.mutate(options);
+  }
+}
+```
+
+```ts
+// packages/ui/src/features/notifications/notifications.ts
+@injectable()
+export class TaskNotificationService {
+  constructor(
+    @inject(NOTIFICATIONS_SERVICE)
+    private readonly notifications: NotificationsService,
+    @inject(SETTINGS_SERVICE)
+    private readonly settings: SettingsService,
+  ) {}
+
+  async notifyPromptComplete(task: TaskSummary): Promise<void> {
+    const settings = await this.settings.getNotificationSettings();
+    if (!settings.enabled) {
+      return;
+    }
+
+    await this.notifications.send({ title: task.title });
+  }
+}
+```
+
+```ts
+// packages/ui/src/features/notifications/notifications.module.ts
+export const notificationsUiModule = new ContainerModule(({ bind }) => {
+  bind(TaskNotificationService).toSelf().inSingletonScope();
+});
+```
+
+```ts
+// apps/code/src/renderer/desktop-services.ts
 container
-  .bind(MAIN_TOKENS.FileWatcherService)
-  .toConstantValue(new CoreFileWatcherService({ workspace: workspaceClient }));
-
-await initializeServices(); // existing consumers resolve here, unchanged
+  .bind(NOTIFICATIONS_SERVICE)
+  .to(TrpcNotificationsService)
+  .inSingletonScope();
 ```
 
-Remove the static `container.bind(...).to(OldClass)` from `container.ts`. Consumers keep `@inject(MAIN_TOKENS.X) private x: X` — only the *type import path* changes (from `../X/service` to `@posthog/core/X/service`). The DI token now points at the core class; no delegation layer, no event re-emission, no shim file to delete later.
+No package imports `trpcClient`. No app file owns notification business logic.
 
-This works when (a) the core class's public API is a strict superset of the old one, (b) there's a clean bootstrap point where the async prereqs are known to be ready, and (c) nothing tries to resolve the token earlier than that point. Verify (c) by grepping the token — `services/index.ts` side-effect imports, top-level `register*Handlers()` calls, etc. should not transitively `container.get` it before your bind runs.
+### Feature Startup Subscription
 
-**When the feature itself is too big to port in one slice** (the renderer-side `sessions` module is the canonical example — thousands of lines, owns state machines, holds subscriptions, reaches into other stores), carve it into smaller user-visible slices: "list sessions," "create session," "session detail view," "session permissions stream." Each slice is its own pass through the per-feature procedure, with its own MIGRATION.md entry. Pick read-only slices before mutations, mutations before subscriptions.
+Subscriptions are contributions, not component side effects.
 
-Rules that hold for both bridging and slicing:
+```ts
+@injectable()
+export class FileWatcherContribution implements WorkbenchContribution {
+  constructor(
+    @inject(FILE_WATCHER_SERVICE)
+    private readonly watcher: FileWatcherService,
+    @inject(FILE_WATCHER_STORE)
+    private readonly store: FileWatcherStore,
+  ) {}
 
-- **Don't add new code to the old module.** New logic goes in the new home. The old code is in maintenance mode for the duration.
-- **Don't import across the seam in the wrong direction.** New `core/` code never imports from the old `apps/code/...` module — the dependency goes old → new, not new → old. If `core/` needs a helper that still only lives in the old module, copy it (mark with `// PORT NOTE: duplicated from <old path>, removed when <slice> lands`).
-- **Track open coexistence in MIGRATION.md.** Each entry says what's still in the old location and what triggers its removal — fan-in waiting to migrate, shims keeping the boot path stable, helpers temporarily duplicated.
-- **Coexistence is the cost, not the goal.** Every shim and duplicate is a debt with a known retirement condition. If you find one without a retirement condition, that's the layering problem — name it.
-
-If you genuinely can't find any tractable slice (the feature is so entangled that even a shim doesn't isolate the new code), that's a layering problem, not a porting problem. Raise it before starting.
-
----
-
-## Resolving forbidden patterns
-
-When you encounter a forbidden pattern (see AGENTS.md) inside the code you're moving, fix it as part of the move. Don't extend the pattern, don't relocate it as-is. The technique for each:
-
-**Multi-step flow in a store.** (OAuth dance, token refresh, polling, `let inFlightX: Promise | null` dedup.) Extract the flow as a class method on a new core module. Inject `workspace-client` / `api-client` via constructor. The class owns the dedup promise, the retry loop, the state machine. The store keeps a single `status` field and a thin action that calls the method. Test the core class with mocked clients.
-
-**Cross-store reach-in.** (`useOtherStore.getState().something()` inside a store action.) Find the system event that triggered the reach-in. Make core emit a typed event for it. Each affected store subscribes via its feature's `subscriptions.ts` registrar and reacts independently. No store imports another.
-
-**Business client held in a store.** (`client: createClient(region, projectId)` field.) Construct the client in core, keyed by whatever id the store cared about. The store keeps the serializable id (`activeProjectId: string`). Components ask core for the client when they need it.
-
-**Store owning a subscription.** (`let globalSubscription = trpcClient.X.subscribe(...)` at module scope.) Move the subscribe call into the feature's `subscriptions.ts` registrar, wired once at app boot. The store exposes a setter the registrar calls with each event.
-
-**Store owning a domain timer.** (`window.setTimeout(() => removeClone(id), 3000)`.) The lifecycle belongs in core. Core schedules the cleanup and emits a `Removed` event when it fires. Store reacts to the event like any other.
-
-**Custom hook orchestrating multiple queries.** (Two `useQuery` calls + a `useMemo` merge.) Replace with one core function that does the merge and exposes a single shape. Component uses one `useQuery` (or a derived hook over the single core call).
-
-**Imperative `trpcClient` from a component.** (`useEffect(() => trpcClient.X.query().then(setState))`.) Replace with `useQuery`. If the component needs the result imperatively for a side effect, use `queryClient.fetchQuery` rather than reaching past the cache.
-
-**tRPC router bypassing its service to call a repository.** Move every repository call into a service method. Router calls service. Never router → repository.
-
-**tRPC router with inline business logic.** (Math, time arithmetic, conditional branching inside `.mutation`/`.query`.) Move the logic into a service method (workspace-server) or a core function. The router becomes a one-line forwarder.
-
-**tRPC router with no backing service.** Create the service. Router shrinks to one-liners over it. If the existing router is a junk drawer (`os.ts`), split it: workspace-server procedures for host syscalls, `@posthog/platform` interfaces for host capabilities.
-
-**`container.get(X)` inside a service method.** That's a circular-dep dodge. Either: (a) split the service — the part X needs probably belongs in a third module both depend on, or (b) invert the relationship via events — X emits, the dependent listens. Never paper over with `container.get`.
-
-**Renderer service fetching domain data or coordinating tRPC.** Move the whole module to `packages/core/<feature>/`. If parts of it are genuinely UI mechanics (drag-and-drop, focus rings), split those off into a thin renderer-side helper.
-
-**Platform adapter with business logic.** Strip the decisions out. Adapter does one syscall / one host-API call and returns. The decision lives in a service that depends on the adapter via its interface.
-
-**`import from "electron"` in service code.** Define the capability as an interface in `packages/platform` (`INotifier`, `IClipboard`, etc.). Service depends on the interface. Per-app adapter implements it.
-
-If you find debt that isn't a forbidden pattern and isn't a layering fix, **leave it.** Note it in MIGRATION.md and move on.
-
----
-
-## Recommended order
-
-1. **Read-only, no subscriptions** — done. diff-stats.
-2. **Read-only, subscription-based** — done. file-watcher proved the SSE streaming transport (workspace-client `splitLink` + `httpSubscriptionLink`, hono server accepting `?secret=` query). Source-smoothing lives in workspace-server, hook is pure `useSubscription`.
-3. **Write paths with Saga orchestration** — done. focus proved the [canonical core-bearing shape](#canonical-shape-for-features-with-real-orchestration): stateless `FocusController` in core with feature-scoped deps interface, thin store wraps `trpcClient.X.*` as deps adapter, store actions call controller and set state from result. This is the reference for any future feature that genuinely needs core.
-4. **Renderer-side platform adapter** — next. Auth or notifications. Establishes the pattern for the ~25 host-capability services to follow: `packages/platform/src/<cap>.ts` interface + `apps/code/src/renderer/platform-adapters/<cap>.ts` adapter wrapping `trpcClient.X.*` + ui consumes via context. Unlocks the bulk of the remaining main services.
-5. **Terminal / pty proxying.** Most ambitious. Tests the full pipeline including binary data.
-
-Patterns now baked into the ground rules from prior slices:
-- Source-smoothing belongs with the source (not core) — file-watcher.
-- Hooks are pure react-query idioms — file-watcher.
-- Stateless controller + thin store + dumb deps adapter for features that need core — focus.
-- Try framework primitives before reaching for core; most "I need a state machine" cases dissolve into `useMutation` + `onSuccess`.
-- Platform adapters apply in both directions; the existing 15 are main-consumed, the next ones are renderer-consumed.
-
-Apply these on every slice going forward.
-
----
-
-## MIGRATION.md format
-
-Add an entry as each feature lands. Ten lines max:
-
+  start(): void {
+    this.watcher.onDidChange((event) => {
+      this.store.applyChange(event);
+    });
+  }
+}
 ```
-## 2026-MM-DD — <feature>
 
-- Moved: `apps/code/src/main/services/<X>/` → `packages/<core|workspace-server>/<X>/`
-- Cleaned: <one line per layering fix>
-- Left as-is: <one line per deliberate skip>
-- New import path: `<new path>` (was `<old path>`)
+The contribution is registered once in the feature module. Components render the
+store. Components do not subscribe directly.
+
+### Feature With Core Orchestration
+
+Use core when there is real orchestration: Saga, rollback, long-running protocol,
+multi-step invariant, or retry/dedup with business meaning.
+
+```ts
+// packages/core/src/focus/focus.ts
+@injectable()
+export class FocusService {
+  constructor(
+    @inject(GIT_SERVICE)
+    private readonly git: GitService,
+    @inject(WORKSPACE_SERVICE)
+    private readonly workspace: WorkspaceService,
+  ) {}
+
+  async enableFocus(input: EnableFocusInput): Promise<EnableFocusResult> {
+    // multi-step business orchestration
+  }
+}
+```
+
+```ts
+// packages/core/src/focus/focus.module.ts
+export const focusCoreModule = new ContainerModule(({ bind }) => {
+  bind(FOCUS_SERVICE).to(FocusService).inSingletonScope();
+});
+```
+
+The UI store calls `FocusService.enableFocus` and updates UI state from the
+result. The store does not own the flow.
+
+### React Access to Services
+
+React components may use a small boundary hook to access services from the
+renderer container:
+
+```ts
+const focus = useService(FOCUS_SERVICE);
+```
+
+This hook is for component integration only. Do not use it as a replacement for
+constructor injection in services, stores, or contributions.
+
+For hooks wrapping server state, prefer TanStack Query:
+
+```ts
+export function useSessions() {
+  const sessions = useService(SESSIONS_SERVICE);
+
+  return useQuery({
+    queryKey: ["sessions"],
+    queryFn: () => sessions.list(),
+  });
+}
+```
+
+Hooks should wrap one query, mutation, or subscription. If a hook coordinates
+multiple async sources, move that coordination into a service.
+
+### Porting React UI
+
+Feature UI moves to `packages/ui/src/features/<feature>/`. The app host should
+mount and register UI; it should not own feature rendering logic.
+
+Move these together when they belong to the same feature:
+
+- route-level screens,
+- child components,
+- feature hooks,
+- thin feature stores,
+- route/menu/command/status contributions,
+- colocated tests,
+- small feature-local utilities.
+
+Reusable visual building blocks move to `packages/ui/src/primitives/` only when
+they are genuinely shared across features. Do not turn a one-feature component
+into a primitive just because it moved.
+
+Component rules:
+
+- Components never import `trpcClient`, Electron APIs, `apps/code`, or
+  workspace-server code.
+- Components use props for local parent-child data flow.
+- Components use `useService(TOKEN)` only at React boundaries to access injected
+  services.
+- Components use feature hooks for server state. A hook wraps one query,
+  mutation, or subscription.
+- Components use thin Zustand stores only for UI state: selected id, open panel,
+  scroll state, draft text, local view mode.
+- Components do not start global subscriptions. A contribution starts them once
+  and writes to a store/cache.
+- Components do not coordinate cross-feature behavior. Put that in a service or
+  contribution.
+
+Route registration belongs to the feature module/contribution. Do not keep a
+central app-local list of migrated feature routes. The host starts the workbench;
+feature modules contribute their routes.
+
+When a component imports old renderer-only paths:
+
+| Old dependency | Migration move |
+|---|---|
+| `@renderer/trpc/client` or direct `trpcClient` | Wrap in a service/hook backed by `useService` + TanStack Query |
+| `@stores/<x>` global store | Move thin UI state to `packages/ui/src/features/<feature>/store.ts`, or expose a temporary service bridge |
+| `@renderer/*` utility | Move to `packages/ui` if host-agnostic; keep in app and wrap behind `platform` if host-specific |
+| Electron/browser host API | Add or reuse a `platform` service and bind an app adapter |
+| another feature's internals | depend on that feature's public service/model, or create a shared model in `core`/`shared` |
+| multi-query derived view state | move merge/derivation to a service; hook exposes one query result |
+
+If a component depends on an unported store or utility, do not leave the
+component in `apps/code` by default. Either port the dependency in the same
+slice, or add a marked bridge with a retirement condition. The dependency
+direction is old app code -> new package code, never the reverse.
+
+UI tests should move with the component. Prefer testing the package component
+with fake services and explicit props. Use app/Electron tests only for host
+adapter behavior or full smoke coverage.
+
+---
+
+## Forbidden Patterns and Fixes
+
+### `container.get(...)` in Service Methods
+
+Wrong:
+
+```ts
+async run() {
+  const settings = container.get(SETTINGS_SERVICE);
+}
+```
+
+Fix: inject `SETTINGS_SERVICE` in the constructor.
+
+### Business Logic in Platform Adapters
+
+Adapters translate host calls. They do not decide.
+
+Wrong: notification adapter checks settings, truncates task names, and decides
+whether to play a sound.
+
+Fix: UI/core service makes the decision; adapter sends the notification.
+
+Wrong: platform interface exposes `bounceDock()` or `flashTaskbar()`.
+
+Fix: platform interface exposes `requestUserAttention()` or
+`notifyAttentionNeeded()`; each host adapter maps that intent to its local
+surface.
+
+### Store Owning Multi-Step Flow
+
+Wrong: Zustand action performs OAuth, retries, token refresh, and cross-store
+updates.
+
+Fix: service owns the flow. Store action calls one service method and sets UI
+state from the returned result.
+
+### Duplicated Truth
+
+Wrong: store persists both `sessions` and `sessionCount`, or separate stores keep
+their own writable copies of the same task status.
+
+Fix: one service/store owns the underlying facts. Counts, labels, status text,
+filtered lists, and display summaries are computed projections.
+
+### Cross-Store Reach-In
+
+Wrong:
+
+```ts
+useOtherStore.getState().clear();
+```
+
+Fix: a service or contribution emits/handles a typed event; each feature reacts
+through its own registered contribution.
+
+### Store Owning Subscriptions
+
+Wrong: module-level `let subscription`.
+
+Fix: a `WorkbenchContribution` starts the subscription once and writes events to
+the store.
+
+### Custom Hook Orchestrating Multiple Queries
+
+Wrong: two `useQuery` calls plus custom merge/retry/state machine.
+
+Fix: expose one service method/procedure returning the merged shape; hook wraps
+one query.
+
+### Renderer Service Fetching Domain Data
+
+Move domain fetching/orchestration to `core` or a UI service registered through
+Inversify. Renderer services are only for renderer-only mechanics like focus
+rings, drag-and-drop, measurement, and visual queues.
+
+### Electron Import in Shared Service Code
+
+Define a platform interface. Implement it in `apps/code`.
+
+---
+
+## Bridges and Coexistence
+
+This codebase is inter-coupled. Use bridges when fan-in makes direct deletion too
+expensive.
+
+A bridge may stay in `apps/code` only when it:
+
+- delegates to the new package service,
+- holds no business logic,
+- preserves an existing API for old consumers,
+- has a `// PORT NOTE:` listing remaining consumers and the retirement condition.
+
+Example:
+
+```ts
+// PORT NOTE: bridge to @posthog/core/focus. Delete when SessionsService and
+// TaskService consume FOCUS_SERVICE directly.
+@injectable()
+export class FocusServiceBridge {
+  constructor(
+    @inject(FOCUS_SERVICE)
+    private readonly focus: FocusService,
+  ) {}
+
+  enableFocus(input: EnableFocusInput) {
+    return this.focus.enableFocus(input);
+  }
+}
+```
+
+The dependency direction is old app code -> new package code. New package code
+must never import old app modules.
+
+Track every bridge in `MIGRATION.md`.
+
+---
+
+## Validation
+
+For every slice:
+
+- read the slice's acceptance criteria before changing code,
+- run the relevant typecheck,
+- run focused tests,
+- start the app when user-visible behavior changed,
+- smoke test the feature,
+- watch logs for one real usage cycle when the change affects background work.
+
+Typecheck and tests are necessary but not sufficient. The app must actually run.
+Do not set `passes: true` in `REFACTOR_SLICES.json` until the acceptance checks
+and smoke test have passed.
+
+---
+
+## Recommended Order
+
+0. Run an initializer pass: create `REFACTOR_SLICES.json`,
+   `REFACTOR_PROGRESS.md`, and `scripts/refactor-init.sh`; populate slices from
+   the current `apps/code` audit with all `passes` values false.
+1. Establish shared DI primitives: service identifiers, contribution token,
+   `useService`, and workbench startup that starts contributions.
+2. Move read-only data-piping UI features.
+3. Move source subscriptions into workspace-server services plus UI
+   contributions.
+4. Move write paths with Saga/core orchestration.
+5. Move renderer-consumed platform capabilities such as notifications, auth, and
+   integrations.
+6. Move large entangled surfaces last: sessions, terminal, pty.
+
+Keep each slice behavior-preserving unless the migration exposes a forbidden
+pattern that must be fixed to make the move valid.
+
+---
+
+## MIGRATION.md Format
+
+Keep entries short and operational:
+
+```md
+## 2026-MM-DD - <feature>
+
+- Moved: `<old path>` -> `<new path>`
+- Registered: `<module/token/contribution>`
+- Data: source of truth is `<owner>`; derived projections are `<list>`
+- Cleaned: <layering fix>
+- Bridge: `<path>` remains until <consumer/condition>
+- Validation: <commands/smoke test>
+```
+
+`REFACTOR_PROGRESS.md` is append-only and more tactical:
+
+```md
+## 2026-MM-DD HH:MM - <agent/session> - <slice id>
+
+- Changed: `<paths>`
+- Validated: `<commands and smoke test>`
+- Slice status: `<todo|in_progress|blocked|needs_validation|passing>`
+- Next: `<specific follow-up or next slice>`
 ```

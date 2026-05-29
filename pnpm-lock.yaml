@@ -1021,6 +1021,12 @@ importers:
       '@posthog/workspace-client':
         specifier: workspace:*
         version: link:../workspace-client
+      inversify:
+        specifier: 'catalog:'
+        version: 7.11.0(reflect-metadata@0.2.2)
+      reflect-metadata:
+        specifier: 'catalog:'
+        version: 0.2.2
     devDependencies:
       '@phosphor-icons/react':
         specifier: 'catalog:'

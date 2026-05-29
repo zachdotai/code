@@ -18,7 +18,9 @@
     "@posthog/api-client": "workspace:*",
     "@posthog/core": "workspace:*",
     "@posthog/platform": "workspace:*",
-    "@posthog/workspace-client": "workspace:*"
+    "@posthog/workspace-client": "workspace:*",
+    "inversify": "catalog:",
+    "reflect-metadata": "catalog:"
   },
   "peerDependencies": {
     "@phosphor-icons/react": "catalog:",

@@ -3,7 +3,12 @@ import "reflect-metadata";
 import "@stores/rendererWindowFocusStore";
 import { Providers } from "@components/Providers";
 import { preloadHighlighter } from "@pierre/diffs";
+import { ServiceProvider } from "@posthog/ui/workbench/service-context";
 import App from "@renderer/App";
+import { registerDesktopContributions } from "@renderer/desktop-contributions";
+import { container } from "@renderer/di/container";
+import "@renderer/desktop-services";
+import { startWorkbenchContributions } from "@posthog/ui/workbench/contribution";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./styles/globals.css";
@@ -59,13 +64,18 @@ document.title = import.meta.env.DEV
   ? "PostHog Code (Development)"
   : "PostHog Code";
 
+registerDesktopContributions();
+void startWorkbenchContributions(container);
+
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <Providers>
-      <App />
-    </Providers>
+    <ServiceProvider container={container}>
+      <Providers>
+        <App />
+      </Providers>
+    </ServiceProvider>
   </React.StrictMode>,
 );
