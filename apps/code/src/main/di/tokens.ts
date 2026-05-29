@@ -56,7 +56,6 @@ export const MAIN_TOKENS = Object.freeze({
   McpAppsService: Symbol.for("Main.McpAppsService"),
   FileWatcherService: Symbol.for("Main.FileWatcherService"),
   FocusService: Symbol.for("Main.FocusService"),
-  FocusSyncService: Symbol.for("Main.FocusSyncService"),
   FoldersService: Symbol.for("Main.FoldersService"),
   FsService: Symbol.for("Main.FsService"),
   GitService: Symbol.for("Main.GitService"),

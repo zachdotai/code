@@ -19,12 +19,9 @@ import {
   FocusServiceEvent,
   type FocusServiceEvents,
 } from "../../services/focus/service";
-import type { FocusSyncService } from "../../services/focus/sync-service";
 import { publicProcedure, router } from "../trpc";
 
 const getService = () => container.get<FocusService>(MAIN_TOKENS.FocusService);
-const getSyncService = () =>
-  container.get<FocusSyncService>(MAIN_TOKENS.FocusSyncService);
 
 function subscribe<K extends keyof FocusServiceEvents>(event: K) {
   return publicProcedure.subscription(async function* (opts) {
@@ -156,10 +153,10 @@ export const focusRouter = router({
   startSync: publicProcedure
     .input(syncInput)
     .mutation(({ input }) =>
-      getSyncService().startSync(input.mainRepoPath, input.worktreePath),
+      getService().startSync(input.mainRepoPath, input.worktreePath),
     ),
 
-  stopSync: publicProcedure.mutation(() => getSyncService().stopSync()),
+  stopSync: publicProcedure.mutation(() => getService().stopSync()),
 
   startWatchingMainRepo: publicProcedure
     .input(mainRepoPathInput)

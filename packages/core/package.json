@@ -15,6 +15,7 @@
     "clean": "node ../../scripts/rimraf.mjs .turbo"
   },
   "dependencies": {
+    "@posthog/shared": "workspace:*",
     "@posthog/workspace-client": "workspace:*"
   },
   "devDependencies": {

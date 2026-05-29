@@ -92,6 +92,10 @@ The desktop **main process is not the home of business logic anymore.** It does 
 - **Source-smoothing belongs with the source, not in core.** Debouncing a noisy event stream, dedup, bulk-threshold throttling, filtering source-specific noise (irrelevant git dir events, etc.) — these are properties of the *event source*, not domain decisions. They live in the workspace-server procedure that owns the source, so every client gets the smoothed stream for free. Don't put them in core just because they look like "orchestration."
 - **Hooks are pure react-query idioms.** `useQuery`, `useMutation`, `useSubscription` over a tRPC procedure — that's the whole hook. No `useEffect` constructing services. No `for-await` over async iterables in a hook body. No imperative subscribe/unsubscribe ceremony with a wrappers map. If you find yourself reaching for those, the orchestration is in the wrong place — push it to wherever the tRPC procedure lives (typically workspace-server) and the hook collapses to 5 lines.
 - **`useState`, `useRef`, `useEffect` in a hook are usually a smell.** They mean the hook is holding application state or subscription bookkeeping that should live elsewhere — react-query's cache, a Zustand store, a workspace-server procedure, or just derivation from existing query data. The legitimate uses are narrow: `useRef` for DOM refs (focus, scroll, measurement), `useEffect` for synchronizing imperative browser APIs (event listeners on `window`, `ResizeObserver`, etc.). Anything else — caching a previous value, holding a subscription handle, stashing a callback ref to avoid re-renders, building a wrappers map — means the hook is doing work that belongs upstream.
+- **Try framework primitives before reaching for core.** Before extracting a forbidden pattern into a new core module, ask: does react-query / tRPC / Zustand already do this? `useMutation` dedups by mutation key. `useQuery` dedups by query key. `useSubscription` handles lifecycle. tRPC subscriptions invalidate caches. Most "I need a state machine for this" cases dissolve into a single mutation + its `onSuccess`. **Delete the forbidden pattern and use the framework primitive** is the first move. Only reach for a core module when you can't express the orchestration as a mutation/query/subscription — typically a Saga (multi-step with rollback), a long-running protocol (OAuth dance with redirects), or coordination that crosses multiple queries with invariants.
+- **Smallest change first.** Try deleting the offending code before introducing a new abstraction. Try moving side effects into an existing `onSuccess` before writing an event bus. Try inlining at the call site before extracting a helper. The refactor PR should land *less* code than it deletes whenever possible. If your change adds a net new package, a new singleton, or a new abstraction layer, justify the line count.
+- **Validate the app actually runs.** Typecheck and tests pass on incomplete work all the time. For any user-visible change, open the app and exercise the feature. For background changes, watch logs through one real usage cycle. CI green ≠ feature works.
+- **Some main services stay in main forever.** Single-instance lock, window manager, deep-link router, crash reporter, auto-updater, app-lifecycle, anything that *is* the Electron shell. Don't try to migrate these. Mark them explicitly as "host-only" in code comments or a service-categorization doc so nobody wastes time auditing them for a slice.
 
 ## Comment markers
 
@@ -115,8 +119,11 @@ Use these consistently. Grep targets matter — follow-up passes hunt for each m
 | `apps/code/src/renderer/features/<X>/` (UI) | `packages/ui/<X>/` |
 | `apps/code/src/renderer/stores/<X>.ts` (thin UI state) | `packages/ui/<X>/store.ts` (still Zustand, still thin) |
 | `apps/code/src/main/platform-adapters/<X>.ts` | `apps/desktop/platform-adapters/<X>.ts` |
+| Renderer-consumed host capability (auth, notifications, integrations — anything in main that the renderer needs to query/mutate via electron-trpc) | `packages/platform/src/<capability>.ts` interface + `apps/code/src/renderer/platform-adapters/<capability>.ts` adapter that wraps `trpcClient.X.*` |
 
 If the migrated feature is pure data-piping (server → useQuery → component), there's no row to core — that's expected, not a missed step.
+
+**Platform adapters apply in both directions.** The existing 15 interfaces in `packages/platform/src/` are all main-process-consumed (main service calls `IClipboard.write`). The same pattern works for renderer-consumed capabilities: interface in `packages/platform/`, adapter in `apps/<host>/src/<process>/platform-adapters/`, ui/core consume via the interface. This is the path for features that live in main and need to be reachable from ui — there's no separate "electron-trpc-client" package needed; the adapter IS the bridge.
 
 ---
 
@@ -136,6 +143,64 @@ Do these in order. One feature at a time.
 7. **Delete the old main service and router.** No shims, no re-exports — unless coexistence is genuinely needed for fan-in consumers ([Coexistence and bridges](#coexistence-and-bridges)).
 8. **Apply in-slice cleanups.** See below.
 9. **Add a MIGRATION.md entry.** What moved, what was cleaned, what was deliberately left, what the retirement condition is for any bridge.
+
+---
+
+## Canonical shape for features with real orchestration
+
+When a feature genuinely needs core (multi-step Saga, OAuth dance, cross-query invariants — not just "we already had a forbidden pattern there"), use this shape. The **focus** port is the worked example.
+
+```
+packages/core/src/<feature>/<feature>.ts
+  └─ export interface <Feature>ControllerDeps { ... }   // narrow, feature-scoped
+  └─ export class <Feature>Controller {
+       constructor(private deps: <Feature>ControllerDeps, ...) {}
+       async enableX(input): Promise<XResult>          // methods DO things, RETURN results
+       async disableX(input): Promise<XResult>         // no internal state held about the domain
+     }
+
+apps/code/src/renderer/stores/<feature>Store.ts
+  └─ const controller = new <Feature>Controller({       // module-scope singleton, OK because stateless
+       methodA: (...) => trpcClient.X.a.mutate(...),    // each dep: one-line trpc wrap
+       methodB: (...) => trpcClient.X.b.query(...),
+       ...
+     }, logger);
+  └─ export const use<Feature>Store = create<...>()((set, get) => ({
+       session: null,                                    // pure UI state
+       isLoading: false,
+       enableX: async (input) => {
+         set({ isLoading: true });
+         const result = await controller.enableX(input);
+         set({ isLoading: false, session: result.success ? result.session : get().session });
+         return result;
+       },
+       // ... thin actions: call controller, set state from result
+     }));
+```
+
+**Why this shape:**
+
+- **Controller is stateless.** It orchestrates. Domain state lives where react can render it (store / react-query cache). The controller never holds `this.session` or `this.user` — those would be a second source of truth.
+- **Module-scope `new Controller(...)` is fine** because the controller is stateless and its deps are trpc-bound (which is also a singleton). The forbidden "store owning a singleton with state" pattern doesn't apply.
+- **Deps are feature-scoped, defined in core.** Not a global platform interface, not a re-export from the trpc client. ~20-30 narrow methods the controller actually uses. The renderer adapter is dumb one-line wraps over `trpcClient.X`.
+- **Store actions are call-controller-then-set.** No multi-step flow in the store. No `let inFlight` dedup. No cross-store reach-ins (those move to the controller, or to mutation `onSuccess` if simple).
+- **No event bus.** State changes via store updates after each action returns. React-query consumers react via cache invalidation (the store action can invalidate after success).
+
+**When this shape applies:**
+
+The feature has at least one of:
+- A Saga (multi-step with rollback) — e.g., focus enable: stash, checkout, save session, on failure unstash and restore
+- A long-running protocol — OAuth dance with redirects, multi-round handshake
+- An invariant that spans multiple queries — e.g., "if A is true, B must also be refreshed"
+- A state machine genuinely complex enough that expressing it as one mutation `onSuccess` is hostile
+
+If none of those apply — if the orchestration is "call endpoint, set state from result" — the feature **doesn't need core**. Use `useMutation`/`useQuery` directly. Don't invent a controller for symmetry.
+
+**When this shape does NOT apply:**
+
+- Pure data-piping (server query → useQuery → render). No core. The hook is 5 lines of `useQuery` over the tRPC procedure.
+- Source-smoothing (debounce, dedup of noisy events). Goes in the workspace-server procedure that owns the source, not in core.
+- Plain auth state that's already served by `trpc.X.getState`. React-query's cache IS the state. Don't shadow it with a stateful core class.
 
 ---
 
@@ -221,13 +286,20 @@ If you find debt that isn't a forbidden pattern and isn't a layering fix, **leav
 
 ## Recommended order
 
-1. **Read-only, no subscriptions.** Done — diff-stats.
-2. **Read-only, subscription-based** — done. file-watcher proved the SSE streaming transport (workspace-client `splitLink` + `httpSubscriptionLink`, hono server accepting `?secret=` query).
-3. **Auth / api-client-adjacent.** Exercises the api-client path end-to-end. Next.
-4. **Write paths** (focus mode, worktree ops).
+1. **Read-only, no subscriptions** — done. diff-stats.
+2. **Read-only, subscription-based** — done. file-watcher proved the SSE streaming transport (workspace-client `splitLink` + `httpSubscriptionLink`, hono server accepting `?secret=` query). Source-smoothing lives in workspace-server, hook is pure `useSubscription`.
+3. **Write paths with Saga orchestration** — done. focus proved the [canonical core-bearing shape](#canonical-shape-for-features-with-real-orchestration): stateless `FocusController` in core with feature-scoped deps interface, thin store wraps `trpcClient.X.*` as deps adapter, store actions call controller and set state from result. This is the reference for any future feature that genuinely needs core.
+4. **Renderer-side platform adapter** — next. Auth or notifications. Establishes the pattern for the ~25 host-capability services to follow: `packages/platform/src/<cap>.ts` interface + `apps/code/src/renderer/platform-adapters/<cap>.ts` adapter wrapping `trpcClient.X.*` + ui consumes via context. Unlocks the bulk of the remaining main services.
 5. **Terminal / pty proxying.** Most ambitious. Tests the full pipeline including binary data.
 
-The first two slices also surfaced two recurring patterns now baked into the ground rules: source-smoothing belongs with the source (not core), and hooks are pure react-query idioms (not useEffect wrappers). Apply them on every slice going forward.
+Patterns now baked into the ground rules from prior slices:
+- Source-smoothing belongs with the source (not core) — file-watcher.
+- Hooks are pure react-query idioms — file-watcher.
+- Stateless controller + thin store + dumb deps adapter for features that need core — focus.
+- Try framework primitives before reaching for core; most "I need a state machine" cases dissolve into `useMutation` + `onSuccess`.
+- Platform adapters apply in both directions; the existing 15 are main-consumed, the next ones are renderer-consumed.
+
+Apply these on every slice going forward.
 
 ---
 

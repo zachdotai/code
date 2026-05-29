@@ -8,34 +8,26 @@ import {
 } from "@posthog/git/queries";
 import { ApplyPatchSaga } from "@posthog/git/sagas/patch";
 import ignore, { type Ignore } from "ignore";
-import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import { subscribeWithTimeout } from "../../utils/async";
-import { logger } from "../../utils/logger";
-import type { WatcherRegistryService } from "../watcher-registry/service";
-
-const log = logger.scope("focus-sync");
+import { injectable } from "inversify";
 
 const DEBOUNCE_MS = 250;
+const SUBSCRIBE_TIMEOUT_MS = 5_000;
 const ALWAYS_IGNORE = [".git", ".jj", "node_modules"];
+const WRITE_COOLDOWN_MS = 1_000;
 
 interface PendingSync {
-  /** Files changed in main, need to sync to worktree */
   mainToWorktree: Map<string, "copy" | "delete">;
-  /** Files changed in worktree, need to sync to main */
   worktreeToMain: Map<string, "copy" | "delete">;
   timer: ReturnType<typeof setTimeout> | null;
 }
-
-/** How long to ignore events for a file after we write it */
-const WRITE_COOLDOWN_MS = 1000;
 
 @injectable()
 export class FocusSyncService {
   private mainRepoPath: string | null = null;
   private worktreePath: string | null = null;
-  private mainWatcherId: string | null = null;
-  private worktreeWatcherId: string | null = null;
+  private mainSubscription: { unsubscribe(): Promise<unknown> } | null = null;
+  private worktreeSubscription: { unsubscribe(): Promise<unknown> } | null =
+    null;
   private gitignore!: Ignore;
   private pending: PendingSync = {
     mainToWorktree: new Map(),
@@ -45,13 +37,7 @@ export class FocusSyncService {
   private syncing = false;
   private initialSyncing = false;
   private currentSyncPromise: Promise<void> | null = null;
-
-  private recentWrites: Map<string, number> = new Map();
-
-  constructor(
-    @inject(MAIN_TOKENS.WatcherRegistryService)
-    private watcherRegistry: WatcherRegistryService,
-  ) {}
+  private recentWrites = new Map<string, number>();
 
   async startSync(mainRepoPath: string, worktreePath: string): Promise<void> {
     const [mainExists, worktreeExists] = await Promise.all([
@@ -65,21 +51,11 @@ export class FocusSyncService {
         .catch(() => false),
     ]);
 
-    if (!mainExists) {
-      log.error(
-        `Cannot start sync: main repo path does not exist: ${mainRepoPath}`,
-      );
+    if (!mainExists || !worktreeExists) {
       return;
     }
 
-    if (!worktreeExists) {
-      log.error(
-        `Cannot start sync: worktree path does not exist: ${worktreePath}`,
-      );
-      return;
-    }
-
-    if (this.mainWatcherId || this.worktreeWatcherId) {
+    if (this.mainSubscription || this.worktreeSubscription) {
       await this.stopSync();
     }
 
@@ -88,91 +64,44 @@ export class FocusSyncService {
 
     await Promise.race([
       this.loadGitignore(mainRepoPath),
-      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      new Promise<void>((resolve) => setTimeout(resolve, 2_000)),
     ]);
 
     this.initialSyncing = true;
     try {
       await this.copyUncommittedFiles(worktreePath, mainRepoPath);
-    } catch (error) {
-      log.warn("Initial sync failed:", error);
     } finally {
       this.initialSyncing = false;
     }
 
-    const watcherIgnore = ALWAYS_IGNORE.map((p) => `**/${p}/**`);
-    const mainWatcherId = `focus-sync:main:${mainRepoPath}`;
-    const worktreeWatcherId = `focus-sync:worktree:${worktreePath}`;
+    const watcherIgnore = ALWAYS_IGNORE.map((entry) => `**/${entry}/**`);
 
-    let mainRegistered = false;
-    try {
-      const mainSubPromise = watcher.subscribe(
+    const mainSubscribe = subscribeWithTimeout(
+      watcher.subscribe(
         mainRepoPath,
-        (err, events) => {
-          if (!mainRegistered || this.watcherRegistry.isShutdown) return;
-          if (err) {
-            log.error("Main repo watcher error:", err);
-            return;
-          }
+        (error, events) => {
+          if (error) return;
           this.handleEvents("main", events);
         },
         { ignore: watcherIgnore },
-      );
+      ),
+      SUBSCRIBE_TIMEOUT_MS,
+    );
 
-      const mainSubResult = await subscribeWithTimeout(
-        mainSubPromise,
-        5000,
-        mainWatcherId,
-      );
-
-      if (mainSubResult.result === "timeout") {
-        log.warn("Main repo watcher subscription timed out");
-      } else {
-        mainRegistered = true;
-        this.mainWatcherId = mainWatcherId;
-        this.watcherRegistry.register(
-          this.mainWatcherId,
-          mainSubResult.subscription,
-        );
-      }
-    } catch (error) {
-      log.error("Failed to subscribe to main repo watcher:", error);
-    }
-
-    let worktreeRegistered = false;
-    try {
-      const worktreeSubPromise = watcher.subscribe(
+    const worktreeSubscribe = subscribeWithTimeout(
+      watcher.subscribe(
         worktreePath,
-        (err, events) => {
-          if (!worktreeRegistered || this.watcherRegistry.isShutdown) return;
-          if (err) {
-            log.error("Worktree watcher error:", err);
-            return;
-          }
+        (error, events) => {
+          if (error) return;
           this.handleEvents("worktree", events);
         },
         { ignore: watcherIgnore },
-      );
+      ),
+      SUBSCRIBE_TIMEOUT_MS,
+    );
 
-      const worktreeSubResult = await subscribeWithTimeout(
-        worktreeSubPromise,
-        5000,
-        worktreeWatcherId,
-      );
-
-      if (worktreeSubResult.result === "timeout") {
-        log.warn("Worktree watcher subscription timed out");
-      } else {
-        worktreeRegistered = true;
-        this.worktreeWatcherId = worktreeWatcherId;
-        this.watcherRegistry.register(
-          this.worktreeWatcherId,
-          worktreeSubResult.subscription,
-        );
-      }
-    } catch (error) {
-      log.error("Failed to subscribe to worktree watcher:", error);
-    }
+    this.mainSubscription = await mainSubscribe;
+    this.worktreeSubscription = await worktreeSubscribe;
   }
 
   async stopSync(): Promise<void> {
@@ -184,7 +113,7 @@ export class FocusSyncService {
     if (this.currentSyncPromise) {
       await Promise.race([
         this.currentSyncPromise,
-        new Promise((resolve) => setTimeout(resolve, 2000)),
+        new Promise((resolve) => setTimeout(resolve, 2_000)),
       ]);
     }
 
@@ -194,20 +123,15 @@ export class FocusSyncService {
     ) {
       await Promise.race([
         this.doFlush(),
-        new Promise((resolve) => setTimeout(resolve, 2000)),
+        new Promise((resolve) => setTimeout(resolve, 2_000)),
       ]);
     }
 
-    if (this.mainWatcherId) {
-      await this.watcherRegistry.unregister(this.mainWatcherId);
-      this.mainWatcherId = null;
-    }
+    await this.mainSubscription?.unsubscribe();
+    await this.worktreeSubscription?.unsubscribe();
 
-    if (this.worktreeWatcherId) {
-      await this.watcherRegistry.unregister(this.worktreeWatcherId);
-      this.worktreeWatcherId = null;
-    }
-
+    this.mainSubscription = null;
+    this.worktreeSubscription = null;
     this.mainRepoPath = null;
     this.worktreePath = null;
     this.pending.mainToWorktree.clear();
@@ -216,10 +140,6 @@ export class FocusSyncService {
     this.initialSyncing = false;
   }
 
-  /**
-   * Sync all uncommitted changes from source to destination using git diff/apply.
-   * Preserves staged vs unstaged state. Handles deletes, renames, moves correctly.
-   */
   async copyUncommittedFiles(srcPath: string, dstPath: string): Promise<void> {
     const [stagedPatch, unstagedPatch, untrackedList] = await Promise.all([
       getStagedDiff(srcPath).catch(() => ""),
@@ -235,24 +155,12 @@ export class FocusSyncService {
       return;
     }
 
-    log.info(
-      `Syncing changes: staged=${hasStaged}, unstaged=${hasUnstaged}, untracked=${untrackedList.length} files`,
-    );
-
     if (hasStaged) {
-      try {
-        await this.applyPatch(dstPath, stagedPatch, true);
-      } catch (error) {
-        log.warn("Failed to apply staged changes:", error);
-      }
+      await this.applyPatch(dstPath, stagedPatch, true).catch(() => {});
     }
 
     if (hasUnstaged) {
-      try {
-        await this.applyPatch(dstPath, unstagedPatch, false);
-      } catch (error) {
-        log.warn("Failed to apply unstaged changes:", error);
-      }
+      await this.applyPatch(dstPath, unstagedPatch, false).catch(() => {});
     }
 
     if (hasUntracked) {
@@ -288,7 +196,7 @@ export class FocusSyncService {
       await fs.copyFile(srcPath, dstPath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        log.warn(`Failed to copy file: ${srcPath}`, error);
+        throw error;
       }
     }
   }
@@ -322,42 +230,38 @@ export class FocusSyncService {
       source === "main"
         ? this.pending.mainToWorktree
         : this.pending.worktreeToMain;
-
     const now = Date.now();
 
     for (const event of events) {
       const relativePath = path.relative(basePath, event.path);
 
-      // Skip ignored files
       if (this.gitignore.ignores(relativePath)) {
         continue;
       }
 
-      // Skip files we recently wrote (prevents sync loops)
       const lastWrite = this.recentWrites.get(event.path);
       if (lastWrite && now - lastWrite < WRITE_COOLDOWN_MS) {
         continue;
       }
 
-      if (event.type === "delete") {
-        pendingMap.set(relativePath, "delete");
-      } else {
-        // create or update
-        pendingMap.set(relativePath, "copy");
-      }
+      pendingMap.set(relativePath, event.type === "delete" ? "delete" : "copy");
     }
 
-    // Schedule flush
     if (this.pending.timer) {
       clearTimeout(this.pending.timer);
     }
-    this.pending.timer = setTimeout(() => this.flushPending(), DEBOUNCE_MS);
+    this.pending.timer = setTimeout(
+      () => void this.flushPending(),
+      DEBOUNCE_MS,
+    );
   }
 
   private async flushPending(): Promise<void> {
     if (this.syncing) {
-      // Already syncing, reschedule
-      this.pending.timer = setTimeout(() => this.flushPending(), DEBOUNCE_MS);
+      this.pending.timer = setTimeout(
+        () => void this.flushPending(),
+        DEBOUNCE_MS,
+      );
       return;
     }
 
@@ -371,18 +275,16 @@ export class FocusSyncService {
     this.pending.timer = null;
 
     try {
-      // Process main -> worktree
       if (this.pending.mainToWorktree.size > 0) {
-        const ops = new Map(this.pending.mainToWorktree);
+        const operations = new Map(this.pending.mainToWorktree);
         this.pending.mainToWorktree.clear();
-        await this.syncFiles("main", ops);
+        await this.syncFiles("main", operations);
       }
 
-      // Process worktree -> main
       if (this.pending.worktreeToMain.size > 0) {
-        const ops = new Map(this.pending.worktreeToMain);
+        const operations = new Map(this.pending.worktreeToMain);
         this.pending.worktreeToMain.clear();
-        await this.syncFiles("worktree", ops);
+        await this.syncFiles("worktree", operations);
       }
     } finally {
       this.syncing = false;
@@ -398,11 +300,11 @@ export class FocusSyncService {
 
     if (!srcBase || !dstBase) return;
 
-    for (const [relativePath, op] of operations) {
+    for (const [relativePath, operation] of operations) {
       const srcPath = path.join(srcBase, relativePath);
       const dstPath = path.join(dstBase, relativePath);
 
-      if (op === "delete") {
+      if (operation === "delete") {
         await this.deleteFile(dstPath);
       } else {
         await this.copyFile(srcPath, dstPath);
@@ -416,7 +318,6 @@ export class FocusSyncService {
       srcStat = await fs.stat(srcPath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        log.debug(`Source file no longer exists, skipping: ${srcPath}`);
         return;
       }
       throw error;
@@ -452,10 +353,30 @@ export class FocusSyncService {
     try {
       await fs.rm(filePath);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
       }
-      throw error;
     }
   }
+}
+
+async function subscribeWithTimeout<
+  T extends { unsubscribe(): Promise<unknown> },
+>(subscribePromise: Promise<T>, timeoutMs: number): Promise<T | null> {
+  let timeoutHandle!: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve(null), timeoutMs);
+  });
+
+  const result = await Promise.race([subscribePromise, timeoutPromise]);
+  clearTimeout(timeoutHandle);
+
+  if (result === null) {
+    subscribePromise.then((subscription) => {
+      void subscription.unsubscribe().catch(() => {});
+    });
+    return null;
+  }
+
+  return result;
 }

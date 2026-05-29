@@ -898,6 +898,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@posthog/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@posthog/workspace-client':
         specifier: workspace:*
         version: link:../workspace-client
@@ -1101,6 +1104,9 @@ importers:
       hono:
         specifier: 'catalog:'
         version: 4.11.7
+      ignore:
+        specifier: ^7.0.5
+        version: 7.0.5
       inversify:
         specifier: 'catalog:'
         version: 7.11.0(reflect-metadata@0.2.2)

@@ -29,6 +29,17 @@ For the procedure to follow when porting a new feature, see [REFACTOR.md](./REFA
 
 ---
 
+## 2026-05-28 — focus (core owns orchestration, workspace-server owns host/git work)
+
+- Moved host operations out of Electron main: `apps/code/src/main/services/focus/sync-service.ts` deleted; git/worktree/watch logic now lives in `packages/workspace-server/src/services/focus/{service,sync-service}.ts` behind one-line `focus.*` procedures in `packages/workspace-server/src/trpc.ts`.
+- Moved orchestration out of the renderer: `apps/code/src/renderer/stores/sagas/focusSagas.ts` deleted; multi-step enable/disable/restore flow now lives in `packages/core/src/focus/service.ts` as `FocusController`, with dependencies injected as a pure interface.
+- Renderer stays thin: `apps/code/src/renderer/stores/focusStore.ts` is now UI state plus one controller call per action. It adapts existing tRPC calls into the core dependency interface and no longer owns the flow graph.
+- Main is a bridge, not the source of truth for focus logic: `apps/code/src/main/services/focus/service.ts` now persists the local session snapshot for Electron restarts, forwards mutations/queries to workspace-server through `WorkspaceClient`, and re-emits focus events to legacy main-router subscribers.
+- Bridge retirement: delete the main `FocusService` shim and move persisted focus-session storage out of Electron once session restore/event subscribers can read directly from workspace-server (or the eventual shared persistence layer). At that point the main `focus` router can disappear with the bridge.
+- Left as-is: restore still re-saves the validated session before starting workspace-server watchers so the server-side in-memory session map is repopulated after app restart. That is intentional coexistence glue, not the final architecture.
+
+---
+
 ## 2026-05-27 — diff-stats
 
 - Moved: `apps/code/src/main/services/git/getDiffStats` → `packages/workspace-server/src/services/git/service.ts` + `packages/ui/src/features/diff-stats/`

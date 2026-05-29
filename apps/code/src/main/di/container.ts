@@ -38,8 +38,6 @@ import { DeepLinkService } from "../services/deep-link/service";
 import { EnrichmentService } from "../services/enrichment/service";
 import { EnvironmentService } from "../services/environment/service";
 import { ExternalAppsService } from "../services/external-apps/service";
-import { FocusService } from "../services/focus/service";
-import { FocusSyncService } from "../services/focus/sync-service";
 import { FoldersService } from "../services/folders/service";
 import { FsService } from "../services/fs/service";
 import { GitService } from "../services/git/service";
@@ -124,8 +122,6 @@ container.bind(MAIN_TOKENS.ProvisioningService).to(ProvisioningService);
 container.bind(MAIN_TOKENS.ExternalAppsService).to(ExternalAppsService);
 container.bind(MAIN_TOKENS.LlmGatewayService).to(LlmGatewayService);
 container.bind(MAIN_TOKENS.McpAppsService).to(McpAppsService);
-container.bind(MAIN_TOKENS.FocusService).to(FocusService);
-container.bind(MAIN_TOKENS.FocusSyncService).to(FocusSyncService);
 container.bind(MAIN_TOKENS.FoldersService).to(FoldersService);
 container.bind(MAIN_TOKENS.FsService).to(FsService);
 container

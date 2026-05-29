@@ -1,30 +1,14 @@
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import * as watcher from "@parcel/watcher";
-import {
-  getHeadSha,
-  branchExists as gitBranchExists,
-  getCurrentBranch as gitGetCurrentBranch,
-  hasChanges,
-} from "@posthog/git/queries";
-import { SwitchBranchSaga } from "@posthog/git/sagas/branch";
-import { CleanWorkingTreeSaga } from "@posthog/git/sagas/clean";
-import { DetachHeadSaga, ReattachBranchSaga } from "@posthog/git/sagas/head";
-import {
-  StashApplySaga,
-  StashPopSaga,
-  StashPushSaga,
-} from "@posthog/git/sagas/stash";
-import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import { logger } from "../../utils/logger";
+// PORT NOTE: shim — delegates host operations to workspace-server and keeps
+// local focus-session persistence in Electron. Delete when focus session
+// persistence also moves out of main.
+import fs from "node:fs/promises";
+import path from "node:path";
+import type { WorkspaceClient } from "@posthog/workspace-client/client";
+import type { FocusBranchRenamedEvent } from "@posthog/workspace-client/types";
 import { type FocusSession, focusStore } from "../../utils/store";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import { getWorktreeLocation } from "../settingsStore";
-import type { WatcherRegistryService } from "../watcher-registry/service";
 import type { FocusResult, StashResult } from "./schemas";
-
-const log = logger.scope("focus");
 
 export const FocusServiceEvent = {
   BranchRenamed: "branchRenamed",
@@ -46,284 +30,21 @@ export interface FocusServiceEvents {
   };
 }
 
-@injectable()
 export class FocusService extends TypedEventEmitter<FocusServiceEvents> {
-  private watchedMainRepo: string | null = null;
-  private mainRepoWatcherId: string | null = null;
-
-  constructor(
-    @inject(MAIN_TOKENS.WatcherRegistryService)
-    private watcherRegistry: WatcherRegistryService,
-  ) {
+  constructor(private readonly workspace: WorkspaceClient) {
     super();
-  }
-
-  async startWatchingMainRepo(mainRepoPath: string): Promise<void> {
-    if (this.watchedMainRepo === mainRepoPath && this.mainRepoWatcherId) {
-      return;
-    }
-
-    await this.stopWatchingMainRepo();
-
-    const gitDir = path.join(mainRepoPath, ".git");
-    log.info(`Starting main repo watcher: ${gitDir}`);
-
-    this.watchedMainRepo = mainRepoPath;
-    this.mainRepoWatcherId = `focus:main-repo:${mainRepoPath}`;
-
-    const subscription = await watcher.subscribe(gitDir, (err, events) => {
-      if (this.watcherRegistry.isShutdown) {
-        return;
-      }
-
-      if (err) {
-        log.error("Main repo watcher error:", err);
-        return;
-      }
-
-      const isRelevant = events.some(
-        (e) => e.path.endsWith("/HEAD") || e.path.includes("/refs/heads/"),
-      );
-
-      if (isRelevant) {
-        log.info("Main repo git state changed, checking for branch rename");
-        this.checkForBranchRename(mainRepoPath);
-      }
+    this.workspace.focus.onBranchRenamed.subscribe(undefined, {
+      onData: (event) => {
+        void this.handleBranchRenamed(event);
+      },
+      onError: () => {},
     });
-
-    this.watcherRegistry.register(this.mainRepoWatcherId, subscription);
-  }
-
-  async stopWatchingMainRepo(): Promise<void> {
-    if (this.mainRepoWatcherId) {
-      await this.watcherRegistry.unregister(this.mainRepoWatcherId);
-      this.mainRepoWatcherId = null;
-      this.watchedMainRepo = null;
-      log.info("Stopped main repo watcher");
-    }
-  }
-
-  private async checkForBranchRename(mainRepoPath: string): Promise<void> {
-    const session = this.getSession(mainRepoPath);
-    if (!session) return;
-
-    const currentBranch = await this.getCurrentBranch(mainRepoPath);
-    if (!currentBranch) return;
-
-    if (currentBranch === session.branch) return;
-
-    const oldBranchExists = await this.branchExists(
-      mainRepoPath,
-      session.branch,
-    );
-
-    if (!oldBranchExists) {
-      log.info(`Branch renamed: ${session.branch} -> ${currentBranch}`);
-      const oldBranch = session.branch;
-      session.branch = currentBranch;
-      session.commitSha = await this.getCommitSha(mainRepoPath);
-      this.saveSession(session);
-
-      this.emit(FocusServiceEvent.BranchRenamed, {
-        mainRepoPath,
-        worktreePath: session.worktreePath,
-        oldBranch,
-        newBranch: currentBranch,
-      });
-    } else {
-      log.warn(
-        `Foreign branch checkout detected: ${session.branch} -> ${currentBranch} (old branch still exists)`,
-      );
-      this.emit(FocusServiceEvent.ForeignBranchCheckout, {
-        mainRepoPath,
-        worktreePath: session.worktreePath,
-        focusedBranch: session.branch,
-        foreignBranch: currentBranch,
-      });
-    }
-  }
-
-  private async branchExists(
-    repoPath: string,
-    branch: string,
-  ): Promise<boolean> {
-    return gitBranchExists(repoPath, branch);
-  }
-
-  async getCommitSha(repoPath: string): Promise<string> {
-    return getHeadSha(repoPath);
-  }
-
-  /**
-   * Convert absolute worktree path to relative path for storage.
-   * Format: {repoName}/{worktreeName}
-   */
-  toRelativeWorktreePath(absolutePath: string, mainRepoPath: string): string {
-    const repoName = path.basename(mainRepoPath);
-    const worktreeName = path.basename(absolutePath);
-    return `${repoName}/${worktreeName}`;
-  }
-
-  /**
-   * Convert relative worktree path back to absolute path.
-   */
-  toAbsoluteWorktreePath(relativePath: string): string {
-    return path.join(getWorktreeLocation(), relativePath);
-  }
-
-  /**
-   * Check if a worktree exists at the given relative path.
-   */
-  async worktreeExistsAtPath(relativePath: string): Promise<boolean> {
-    const absolutePath = this.toAbsoluteWorktreePath(relativePath);
-    try {
-      await fs.access(absolutePath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async findWorktreeByBranch(
-    mainRepoPath: string,
-    branch: string,
-  ): Promise<string | null> {
-    const worktreesDir = path.join(mainRepoPath, ".git", "worktrees");
-    const branchSuffix = branch.split("/").pop() ?? branch;
-
-    let entries: string[];
-    try {
-      entries = await fs.readdir(worktreesDir);
-    } catch {
-      return null;
-    }
-
-    for (const name of entries) {
-      if (name !== branchSuffix) continue;
-
-      const wtDir = path.join(worktreesDir, name);
-      const gitdirPath = path.join(wtDir, "gitdir");
-      const headPath = path.join(wtDir, "HEAD");
-
-      try {
-        const [gitdirContent, headContent] = await Promise.all([
-          fs.readFile(gitdirPath, "utf-8"),
-          fs.readFile(headPath, "utf-8"),
-        ]);
-
-        const isDetached = !headContent.trim().startsWith("ref:");
-        if (!isDetached) continue;
-
-        const worktreePath = path.dirname(gitdirContent.trim());
-        return worktreePath;
-      } catch {}
-    }
-
-    return null;
-  }
-
-  async cleanWorkingTree(repoPath: string): Promise<void> {
-    const saga = new CleanWorkingTreeSaga();
-    const result = await saga.run({ baseDir: repoPath });
-    if (!result.success) {
-      throw new Error(`Failed to clean working tree: ${result.error}`);
-    }
-  }
-
-  async detachWorktree(worktreePath: string): Promise<FocusResult> {
-    const saga = new DetachHeadSaga();
-    const result = await saga.run({ baseDir: worktreePath });
-    if (!result.success) {
-      log.error("Failed to detach worktree:", result.error);
-      return {
-        success: false,
-        error: `Failed to detach worktree: ${result.error}`,
-      };
-    }
-    log.info(`Detached worktree at ${worktreePath}`);
-    return { success: true };
-  }
-
-  async reattachWorktree(
-    worktreePath: string,
-    branchName: string,
-  ): Promise<FocusResult> {
-    const saga = new ReattachBranchSaga();
-    const result = await saga.run({ baseDir: worktreePath, branchName });
-    if (!result.success) {
-      log.error("Failed to reattach worktree:", result.error);
-      return {
-        success: false,
-        error: `Failed to reattach worktree: ${result.error}`,
-      };
-    }
-    log.info(`Reattached worktree at ${worktreePath} to branch ${branchName}`);
-    return { success: true };
-  }
-
-  async getCurrentBranch(repoPath: string): Promise<string | null> {
-    const branch = await gitGetCurrentBranch(repoPath);
-    if (!branch) {
-      log.warn("getCurrentBranch returned empty (detached HEAD?)");
-      return null;
-    }
-    return branch;
-  }
-
-  async isDirty(repoPath: string): Promise<boolean> {
-    return hasChanges(repoPath);
-  }
-
-  async stash(repoPath: string, message: string): Promise<StashResult> {
-    const saga = new StashPushSaga();
-    const result = await saga.run({ baseDir: repoPath, message });
-    if (!result.success) {
-      log.error("Failed to stash:", result.error);
-      return { success: false, error: `Failed to stash: ${result.error}` };
-    }
-    if (result.data.stashSha) {
-      return { success: true, stashRef: result.data.stashSha };
-    }
-    return { success: true };
-  }
-
-  async stashApply(repoPath: string, stashRef: string): Promise<FocusResult> {
-    const saga = new StashApplySaga();
-    const result = await saga.run({ baseDir: repoPath, stashSha: stashRef });
-    if (!result.success) {
-      log.error("Failed to apply stash:", result.error);
-      return {
-        success: false,
-        error: `Failed to apply stash: ${result.error}`,
-      };
-    }
-    if (!result.data.dropped) {
-      log.warn(`Stash SHA ${stashRef} not found in reflog, skipping drop`);
-    }
-    return { success: true };
-  }
-
-  async stashPop(repoPath: string): Promise<FocusResult> {
-    const saga = new StashPopSaga();
-    const result = await saga.run({ baseDir: repoPath });
-    if (!result.success) {
-      log.error("Failed to pop stash:", result.error);
-      return { success: false, error: `Failed to pop stash: ${result.error}` };
-    }
-    return { success: true };
-  }
-
-  async checkout(repoPath: string, branch: string): Promise<FocusResult> {
-    const saga = new SwitchBranchSaga();
-    const result = await saga.run({ baseDir: repoPath, branchName: branch });
-    if (!result.success) {
-      log.error(`Failed to checkout ${branch}:`, result.error);
-      return {
-        success: false,
-        error: `Failed to checkout ${branch}: ${result.error}`,
-      };
-    }
-    return { success: true };
+    this.workspace.focus.onForeignBranchCheckout.subscribe(undefined, {
+      onData: (event) => {
+        this.emit(FocusServiceEvent.ForeignBranchCheckout, event);
+      },
+      onError: () => {},
+    });
   }
 
   getSession(mainRepoPath: string): FocusSession | null {
@@ -331,18 +52,18 @@ export class FocusService extends TypedEventEmitter<FocusServiceEvents> {
     return sessions[mainRepoPath] ?? null;
   }
 
-  saveSession(session: FocusSession): void {
+  async saveSession(session: FocusSession): Promise<void> {
     const sessions = focusStore.get("sessions", {});
     sessions[session.mainRepoPath] = session;
     focusStore.set("sessions", sessions);
-    log.info("Saved focus session", { mainRepoPath: session.mainRepoPath });
+    await this.workspace.focus.saveSession.mutate(session);
   }
 
-  deleteSession(mainRepoPath: string): void {
+  async deleteSession(mainRepoPath: string): Promise<void> {
     const sessions = focusStore.get("sessions", {});
     delete sessions[mainRepoPath];
     focusStore.set("sessions", sessions);
-    log.info("Deleted focus session", { mainRepoPath });
+    await this.workspace.focus.deleteSession.mutate({ mainRepoPath });
   }
 
   isFocusActive(mainRepoPath: string): boolean {
@@ -360,5 +81,118 @@ export class FocusService extends TypedEventEmitter<FocusServiceEvents> {
       return `Cannot focus: already on branch "${targetBranch}".`;
     }
     return null;
+  }
+
+  async getCommitSha(repoPath: string): Promise<string> {
+    return await this.workspace.focus.getCommitSha.query({ repoPath });
+  }
+
+  async findWorktreeByBranch(
+    mainRepoPath: string,
+    branch: string,
+  ): Promise<string | null> {
+    return await this.workspace.focus.findWorktreeByBranch.query({
+      mainRepoPath,
+      branch,
+    });
+  }
+
+  toRelativeWorktreePath(absolutePath: string, mainRepoPath: string): string {
+    const repoName = path.basename(mainRepoPath);
+    const worktreeName = path.basename(absolutePath);
+    return `${repoName}/${worktreeName}`;
+  }
+
+  toAbsoluteWorktreePath(relativePath: string): string {
+    return path.join(getWorktreeLocation(), relativePath);
+  }
+
+  async worktreeExistsAtPath(relativePath: string): Promise<boolean> {
+    const absolutePath = this.toAbsoluteWorktreePath(relativePath);
+    try {
+      await fs.access(absolutePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async cleanWorkingTree(repoPath: string): Promise<void> {
+    await this.workspace.focus.cleanWorkingTree.mutate({ repoPath });
+  }
+
+  async detachWorktree(worktreePath: string): Promise<FocusResult> {
+    return await this.workspace.focus.detachWorktree.mutate({ worktreePath });
+  }
+
+  async reattachWorktree(
+    worktreePath: string,
+    branchName: string,
+  ): Promise<FocusResult> {
+    return await this.workspace.focus.reattachWorktree.mutate({
+      worktreePath,
+      branch: branchName,
+    });
+  }
+
+  async isDirty(repoPath: string): Promise<boolean> {
+    return await this.workspace.focus.isDirty.query({ repoPath });
+  }
+
+  async stash(repoPath: string, message: string): Promise<StashResult> {
+    return await this.workspace.focus.stash.mutate({ repoPath, message });
+  }
+
+  async stashApply(repoPath: string, stashRef: string): Promise<FocusResult> {
+    return await this.workspace.focus.stashApply.mutate({ repoPath, stashRef });
+  }
+
+  async stashPop(repoPath: string): Promise<FocusResult> {
+    return await this.workspace.focus.stashPop.mutate({ repoPath });
+  }
+
+  async checkout(repoPath: string, branch: string): Promise<FocusResult> {
+    return await this.workspace.focus.checkout.mutate({ repoPath, branch });
+  }
+
+  async startSync(mainRepoPath: string, worktreePath: string): Promise<void> {
+    await this.workspace.focus.startSync.mutate({ mainRepoPath, worktreePath });
+  }
+
+  async stopSync(): Promise<void> {
+    await this.workspace.focus.stopSync.mutate();
+  }
+
+  async startWatchingMainRepo(mainRepoPath: string): Promise<void> {
+    await this.workspace.focus.startWatchingMainRepo.mutate({ mainRepoPath });
+  }
+
+  async stopWatchingMainRepo(): Promise<void> {
+    await this.workspace.focus.stopWatchingMainRepo.mutate();
+  }
+
+  private async handleBranchRenamed(
+    event: FocusBranchRenamedEvent,
+  ): Promise<void> {
+    const remoteSession = await this.workspace.focus.getSession
+      .query({ mainRepoPath: event.mainRepoPath })
+      .catch(() => null);
+    const localSession = this.getSession(event.mainRepoPath);
+    const sessionToPersist =
+      remoteSession ??
+      (localSession
+        ? {
+            ...localSession,
+            branch: event.newBranch,
+          }
+        : null);
+
+    if (sessionToPersist) {
+      const sessions = focusStore.get("sessions", {});
+      sessions[event.mainRepoPath] = sessionToPersist;
+      focusStore.set("sessions", sessions);
+    }
+
+    this.emit(FocusServiceEvent.BranchRenamed, event);
   }
 }

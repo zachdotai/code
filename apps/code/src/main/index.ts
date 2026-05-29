@@ -4,6 +4,7 @@ import { createWorkspaceClient } from "@posthog/workspace-client/client";
 import { app, BrowserWindow, dialog } from "electron";
 import log from "electron-log/main";
 import { FileWatcherBridge } from "./services/file-watcher/bridge";
+import { FocusService } from "./services/focus/service";
 import "./utils/logger";
 import "./services/index.js";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
@@ -242,6 +243,9 @@ app.whenReady().then(async () => {
   container
     .bind(MAIN_TOKENS.FileWatcherService)
     .toConstantValue(new FileWatcherBridge(workspaceClient));
+  container
+    .bind(MAIN_TOKENS.FocusService)
+    .toConstantValue(new FocusService(workspaceClient));
 
   await initializeServices();
   initializeDeepLinks();

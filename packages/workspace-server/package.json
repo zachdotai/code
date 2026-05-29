@@ -21,6 +21,7 @@
     "@posthog/git": "workspace:*",
     "@trpc/server": "catalog:",
     "hono": "catalog:",
+    "ignore": "^7.0.5",
     "inversify": "catalog:",
     "reflect-metadata": "catalog:",
     "superjson": "catalog:",
