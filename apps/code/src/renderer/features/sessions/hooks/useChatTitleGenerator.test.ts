@@ -1,4 +1,3 @@
-import type { Task } from "@shared/types";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,10 +7,8 @@ const mockEnrichDescription = vi.hoisted(() =>
 const mockGenerateTitle = vi.hoisted(() => vi.fn());
 const mockGetAuthenticatedClient = vi.hoisted(() => vi.fn());
 const mockGetCachedTask = vi.hoisted(() => vi.fn());
-const mockIsAuthenticated = vi.hoisted(() => ({ value: true }));
 const mockUpdateTask = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockSetQueriesData = vi.hoisted(() => vi.fn());
-const mockSetQueryData = vi.hoisted(() => vi.fn());
 const mockUpdateSessionTaskTitle = vi.hoisted(() => vi.fn());
 const mockPrompts = vi.hoisted(() => ({ value: [] as string[] }));
 const mockSessionStoreSetters = vi.hoisted(() => ({
@@ -27,26 +24,9 @@ vi.mock("@features/auth/hooks/authClient", () => ({
   getAuthenticatedClient: mockGetAuthenticatedClient,
 }));
 
-vi.mock("@features/auth/hooks/authQueries", () => ({
-  useAuthStateValue: (
-    selector: (state: {
-      status: string;
-      cloudRegion: string | null;
-    }) => unknown,
-  ) =>
-    selector(
-      mockIsAuthenticated.value
-        ? { status: "authenticated", cloudRegion: "us-east-1" }
-        : { status: "anonymous", cloudRegion: null },
-    ),
-}));
-
 vi.mock("@utils/queryClient", () => ({
   getCachedTask: mockGetCachedTask,
-  queryClient: {
-    setQueriesData: mockSetQueriesData,
-    setQueryData: mockSetQueryData,
-  },
+  queryClient: { setQueriesData: mockSetQueriesData },
 }));
 
 vi.mock("@utils/session", () => ({
@@ -89,108 +69,22 @@ import { useChatTitleGenerator } from "./useChatTitleGenerator";
 
 const TASK_ID = "task-1";
 
-function createTask(overrides: Partial<Task> = {}): Task {
-  return {
-    id: TASK_ID,
-    task_number: 1,
-    slug: "task-1",
-    title: "Fix the login bug",
-    description: "Fix the login bug",
-    created_at: "2026-05-28T00:00:00.000Z",
-    updated_at: "2026-05-28T00:00:00.000Z",
-    origin_product: "user_created",
-    ...overrides,
-  };
-}
-
 describe("useChatTitleGenerator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsAuthenticated.value = true;
     mockPrompts.value = [];
     mockEnrichDescription.mockImplementation((desc: string) =>
       Promise.resolve(desc),
     );
-    mockGetCachedTask.mockReturnValue(undefined);
     mockGetAuthenticatedClient.mockResolvedValue({
       updateTask: mockUpdateTask,
     });
+    mockGetCachedTask.mockReturnValue(undefined);
   });
 
-  it("does not generate when promptCount is 0 and the task already has a custom title", () => {
-    renderHook(() =>
-      useChatTitleGenerator(
-        createTask({
-          title: "Custom task title",
-        }),
-      ),
-    );
+  it("does not generate when promptCount is 0", () => {
+    renderHook(() => useChatTitleGenerator(TASK_ID));
     expect(mockGenerateTitle).not.toHaveBeenCalled();
-  });
-
-  it("generates title from the saved task description before prompt events arrive", async () => {
-    mockGenerateTitle.mockResolvedValue({
-      title: "Fix login bug",
-      summary: "User is fixing a login issue",
-    });
-
-    renderHook(() => useChatTitleGenerator(createTask()));
-
-    await waitFor(() => {
-      expect(mockEnrichDescription).toHaveBeenCalledWith("Fix the login bug");
-    });
-    await waitFor(() => {
-      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
-        title: "Fix login bug",
-      });
-    });
-  });
-
-  it("generates title when the task has no title yet", async () => {
-    mockGenerateTitle.mockResolvedValue({
-      title: "Fix login bug",
-      summary: "User is fixing a login issue",
-    });
-
-    renderHook(() =>
-      useChatTitleGenerator(
-        createTask({
-          title: "",
-        }),
-      ),
-    );
-
-    await waitFor(() => {
-      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
-        title: "Fix login bug",
-      });
-    });
-  });
-
-  it("regenerates title when title_manually_set is true but the title still matches the fallback", async () => {
-    mockGenerateTitle.mockResolvedValue({
-      title: "Fix login bug",
-      summary: "User is fixing a login issue",
-    });
-    mockGetCachedTask.mockReturnValue(
-      createTask({
-        title_manually_set: true,
-      }),
-    );
-
-    renderHook(() =>
-      useChatTitleGenerator(
-        createTask({
-          title_manually_set: true,
-        }),
-      ),
-    );
-
-    await waitFor(() => {
-      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
-        title: "Fix login bug",
-      });
-    });
   });
 
   it("generates title on first prompt", async () => {
@@ -200,13 +94,7 @@ describe("useChatTitleGenerator", () => {
     });
     mockPrompts.value = ["Fix the login bug"];
 
-    renderHook(() =>
-      useChatTitleGenerator(
-        createTask({
-          title: "Raw prompt title",
-        }),
-      ),
-    );
+    renderHook(() => useChatTitleGenerator(TASK_ID));
 
     await waitFor(() => {
       expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
@@ -233,28 +121,17 @@ describe("useChatTitleGenerator", () => {
   ])(
     "skips title update when title_manually_set ($name)",
     async ({ summary, expectsSummaryUpdate }) => {
-      mockGetCachedTask.mockReturnValue(
-        createTask({
-          title: "Custom auth title",
-          description: "fix auth",
-          title_manually_set: true,
-        }),
-      );
+      mockGetCachedTask.mockReturnValue({
+        id: TASK_ID,
+        title_manually_set: true,
+      });
       mockGenerateTitle.mockResolvedValue({
         title: "Auto title",
         summary,
       });
       mockPrompts.value = ["fix auth"];
 
-      renderHook(() =>
-        useChatTitleGenerator(
-          createTask({
-            title: "Custom auth title",
-            description: "fix auth",
-            title_manually_set: true,
-          }),
-        ),
-      );
+      renderHook(() => useChatTitleGenerator(TASK_ID));
 
       await waitFor(() => {
         expect(mockGenerateTitle).toHaveBeenCalled();
@@ -282,14 +159,7 @@ describe("useChatTitleGenerator", () => {
     });
     mockPrompts.value = ['<file path="/tmp/code.ts" />'];
 
-    renderHook(() =>
-      useChatTitleGenerator(
-        createTask({
-          title: "Code file prompt",
-          description: "Code file prompt",
-        }),
-      ),
-    );
+    renderHook(() => useChatTitleGenerator(TASK_ID));
 
     await waitFor(() => {
       expect(mockEnrichDescription).toHaveBeenCalledWith(
@@ -306,14 +176,7 @@ describe("useChatTitleGenerator", () => {
     });
     mockPrompts.value = ["fix auth"];
 
-    renderHook(() =>
-      useChatTitleGenerator(
-        createTask({
-          title: "Auth prompt",
-          description: "fix auth",
-        }),
-      ),
-    );
+    renderHook(() => useChatTitleGenerator(TASK_ID));
 
     await waitFor(() => {
       expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
@@ -327,26 +190,11 @@ describe("useChatTitleGenerator", () => {
     mockGenerateTitle.mockResolvedValue(null);
     mockPrompts.value = ["some prompt"];
 
-    renderHook(() =>
-      useChatTitleGenerator(
-        createTask({
-          title: "Some prompt",
-          description: "some prompt",
-        }),
-      ),
-    );
+    renderHook(() => useChatTitleGenerator(TASK_ID));
 
     await waitFor(() => {
       expect(mockGenerateTitle).toHaveBeenCalled();
     });
     expect(mockUpdateTask).not.toHaveBeenCalled();
-  });
-
-  it("waits for authentication before generating", () => {
-    mockIsAuthenticated.value = false;
-
-    renderHook(() => useChatTitleGenerator(createTask()));
-
-    expect(mockGenerateTitle).not.toHaveBeenCalled();
   });
 });

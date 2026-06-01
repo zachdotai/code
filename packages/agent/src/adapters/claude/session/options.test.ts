@@ -17,7 +17,6 @@ function makeParams() {
     sessionId: "test-session",
     isResume: false,
     settingsManager: new SettingsManager(cwd),
-    taskState: new Map(),
   };
 }
 

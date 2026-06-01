@@ -15,32 +15,11 @@ export interface FetchGatewayModelsOptions {
   gatewayUrl: string;
 }
 
-export const DEFAULT_GATEWAY_MODEL = "claude-opus-4-8";
+export const DEFAULT_GATEWAY_MODEL = "claude-opus-4-7";
 
-export const DEFAULT_CODEX_MODEL = "gpt-5.5";
+export const DEFAULT_CODEX_MODEL = "gpt-5.4";
 
-const BLOCKED_MODELS = new Set([
-  "gpt-5-mini",
-  "openai/gpt-5-mini",
-  "gpt-5.2",
-  "openai/gpt-5.2",
-  "gpt-5.3",
-  "openai/gpt-5.3",
-  "gpt-5.3-codex",
-  "openai/gpt-5.3-codex",
-  "claude-opus-4-5",
-  "anthropic/claude-opus-4-5",
-  "claude-opus-4-6",
-  "anthropic/claude-opus-4-6",
-  "claude-sonnet-4-5",
-  "anthropic/claude-sonnet-4-5",
-  "claude-haiku-4-5",
-  "anthropic/claude-haiku-4-5",
-]);
-
-export function isBlockedModelId(modelId: string): boolean {
-  return BLOCKED_MODELS.has(modelId.toLowerCase());
-}
+export const BLOCKED_MODELS = new Set(["gpt-5-mini", "openai/gpt-5-mini"]);
 
 type ModelsListResponse =
   | {
@@ -83,7 +62,7 @@ export async function fetchGatewayModels(
     }
 
     const data = (await response.json()) as GatewayModelsResponse;
-    const models = (data.data ?? []).filter((m) => !isBlockedModelId(m.id));
+    const models = (data.data ?? []).filter((m) => !BLOCKED_MODELS.has(m.id));
     gatewayModelsCache = {
       models,
       expiry: Date.now() + CACHE_TTL,
@@ -150,7 +129,6 @@ export async function fetchModelsList(
     for (const model of models) {
       const id = model?.id ? String(model.id) : "";
       if (!id) continue;
-      if (isBlockedModelId(id)) continue;
       results.push({ id, owned_by: model?.owned_by });
     }
     modelsListCache = {
@@ -177,20 +155,7 @@ export function getProviderName(ownedBy: string): string {
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];
 
 export function formatGatewayModelName(model: GatewayModel): string {
-  if (isOpenAIModel(model)) {
-    return stripProviderPrefix(model.id).toLowerCase();
-  }
-
   return formatModelId(model.id);
-}
-
-function stripProviderPrefix(modelId: string): string {
-  for (const prefix of PROVIDER_PREFIXES) {
-    if (modelId.startsWith(prefix)) {
-      return modelId.slice(prefix.length);
-    }
-  }
-  return modelId;
 }
 
 export function formatModelId(modelId: string): string {

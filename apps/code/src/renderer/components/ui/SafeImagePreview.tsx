@@ -1,4 +1,3 @@
-import { useImagePanAndZoom } from "@hooks/useImagePanAndZoom";
 import {
   buildImageDataUrl,
   isAllowedImageMimeType,
@@ -40,7 +39,6 @@ export function SafeImagePreview({
 }: SafeImagePreviewProps) {
   const [hasError, setHasError] = useState(false);
   const [lastSource, setLastSource] = useState({ base64, mimeType });
-  const zoom = useImagePanAndZoom();
 
   if (lastSource.base64 !== base64 || lastSource.mimeType !== mimeType) {
     setLastSource({ base64, mimeType });
@@ -57,30 +55,12 @@ export function SafeImagePreview({
   }
 
   return (
-    <div
-      ref={zoom.containerRef}
-      className={`flex touch-none select-none items-center justify-center overflow-hidden ${className ?? "max-h-full max-w-full"}`}
-      style={{
-        ...style,
-        cursor: zoom.isDragging
-          ? "grabbing"
-          : zoom.isZoomed
-            ? "grab"
-            : style?.cursor,
-      }}
-    >
-      <img
-        src={buildImageDataUrl(mimeType, base64)}
-        alt={alt ?? "image preview"}
-        draggable={false}
-        className="max-h-full max-w-full object-contain"
-        style={{
-          transform: zoom.transform,
-          transformOrigin: "center center",
-          willChange: "transform",
-        }}
-        onError={() => setHasError(true)}
-      />
-    </div>
+    <img
+      src={buildImageDataUrl(mimeType, base64)}
+      alt={alt ?? "image preview"}
+      className={className ?? "max-h-full max-w-full object-contain"}
+      style={style}
+      onError={() => setHasError(true)}
+    />
   );
 }

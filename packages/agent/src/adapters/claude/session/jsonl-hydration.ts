@@ -3,7 +3,6 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { DEFAULT_GATEWAY_MODEL } from "../../../gateway-models";
 import type { PostHogAPIClient } from "../../../posthog-api";
 import type { StoredEntry } from "../../../types";
 import { supports1MContext } from "./models";
@@ -313,7 +312,7 @@ export function conversationTurnsToJsonlEntries(
 ): string[] {
   const lines: string[] = [];
   let parentUuid: string | null = null;
-  const model = config.model ?? DEFAULT_GATEWAY_MODEL;
+  const model = config.model ?? "claude-opus-4-6";
   const version = config.version ?? "2.1.63";
   const gitBranch = config.gitBranch ?? "";
   const slug = config.slug ?? generateSlug();

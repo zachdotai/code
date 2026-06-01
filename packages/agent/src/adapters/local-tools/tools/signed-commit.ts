@@ -1,5 +1,4 @@
-import { isCloudRun } from "../../../utils/common";
-import { resolveGithubToken } from "../../../utils/github-token";
+import { isCloudRun, resolveGithubToken } from "../../../utils/common";
 import {
   runSignedCommitTool,
   SIGNED_COMMIT_TOOL_DESCRIPTION,
@@ -22,10 +21,7 @@ export const signedCommitTool = defineLocalTool({
   alwaysLoad: true,
   isEnabled: (_ctx, meta) => isCloudRun(meta),
   handler: (ctx, args) => {
-    // Prefer a freshly-resolved token (reads the live agentsh env file) over
-    // the one captured at session setup, so a mid-session credential refresh
-    // takes effect without rebuilding the session.
-    const token = resolveGithubToken() ?? ctx.token;
+    const token = ctx.token ?? resolveGithubToken();
     if (!token) {
       return Promise.resolve({
         content: [

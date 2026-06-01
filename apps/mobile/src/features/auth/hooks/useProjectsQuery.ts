@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { authedFetch, getBaseUrl } from "@/lib/api";
 import { useAuthStore } from "../stores/authStore";
 
 export interface ProjectSummary {
@@ -15,19 +14,21 @@ export interface ProjectSummary {
  * rather than dropping the project from the list.
  */
 export function useProjectsQuery() {
-  const { cloudRegion, oauthAccessToken, scopedTeams } = useAuthStore();
+  const { cloudRegion, oauthAccessToken, scopedTeams, getCloudUrlFromRegion } =
+    useAuthStore();
 
   return useQuery({
     queryKey: ["projects", cloudRegion, scopedTeams],
     queryFn: async (): Promise<ProjectSummary[]> => {
-      const baseUrl = getBaseUrl();
+      if (!cloudRegion) throw new Error("No cloud region");
+      const baseUrl = getCloudUrlFromRegion(cloudRegion);
 
       return Promise.all(
         scopedTeams.map(async (id): Promise<ProjectSummary> => {
           try {
-            const response = await authedFetch(
-              `${baseUrl}/api/projects/${id}/`,
-            );
+            const response = await fetch(`${baseUrl}/api/projects/${id}/`, {
+              headers: { Authorization: `Bearer ${oauthAccessToken}` },
+            });
             if (!response.ok) return { id, name: `Project ${id}` };
             const data: { name?: string } = await response.json();
             return { id, name: data.name || `Project ${id}` };

@@ -5,6 +5,8 @@ import { create } from "zustand";
 
 const log = logger.scope("update-store");
 
+let menuCheckPending = false;
+
 type UpdateStatus =
   | "idle"
   | "checking"
@@ -12,21 +14,10 @@ type UpdateStatus =
   | "ready"
   | "installing";
 
-interface StatusPayload {
-  checking: boolean;
-  downloading?: boolean;
-  upToDate?: boolean;
-  updateReady?: boolean;
-  installing?: boolean;
-  version?: string;
-  error?: string;
-}
-
 interface UpdateState {
   status: UpdateStatus;
   version: string | null;
   isEnabled: boolean;
-  menuCheckPending: boolean;
 
   installUpdate: () => Promise<void>;
   checkForUpdates: () => void;
@@ -36,7 +27,6 @@ export const useUpdateStore = create<UpdateState>()((set, get) => ({
   status: "idle",
   version: null,
   isEnabled: false,
-  menuCheckPending: false,
 
   installUpdate: async () => {
     if (get().status === "installing") return;
@@ -72,44 +62,42 @@ export function initializeUpdateStore() {
       log.error("Failed to get update enabled status", { error });
     });
 
-  trpcClient.updates.getStatus
-    .query()
-    .then((status) => {
-      applyStatus(status);
-    })
-    .catch((error: unknown) => {
-      log.error("Failed to get update status", { error });
-    });
-
   const statusSub = trpcClient.updates.onStatus.subscribe(undefined, {
     onData: (status) => {
-      applyStatus(status);
-
-      if (status.upToDate) {
-        if (useUpdateStore.getState().menuCheckPending) {
-          useUpdateStore.setState({ menuCheckPending: false });
+      if (status.checking && status.downloading) {
+        useUpdateStore.setState({ status: "downloading" });
+      } else if (status.checking) {
+        useUpdateStore.setState({ status: "checking" });
+      } else if (status.upToDate) {
+        const current = useUpdateStore.getState().status;
+        if (current === "checking" || current === "downloading") {
+          useUpdateStore.setState({ status: "idle" });
+        }
+        if (menuCheckPending) {
+          menuCheckPending = false;
           toast.success("You're on the latest version");
         }
       } else if (status.error) {
         log.error("Update check failed", { error: status.error });
-        if (useUpdateStore.getState().menuCheckPending) {
-          useUpdateStore.setState({ menuCheckPending: false });
+        const current = useUpdateStore.getState().status;
+        if (current === "checking" || current === "downloading") {
+          useUpdateStore.setState({ status: "idle" });
+        }
+        if (menuCheckPending) {
+          menuCheckPending = false;
           toast.error("Failed to check for updates", {
             description: status.error,
           });
         }
-      } else if (
-        status.checking === false &&
-        useUpdateStore.getState().menuCheckPending
-      ) {
-        // Check finished and an update was found (download in progress / ready)
-        // — the UpdateBanner will surface it, so suppress the menu-check toast.
-        useUpdateStore.setState({ menuCheckPending: false });
+      } else if (status.checking === false && menuCheckPending) {
+        // Check finished and an update was found (download in progress / ready) —
+        // the UpdateBanner will surface it, so suppress the menu-check toast.
+        menuCheckPending = false;
       }
     },
     onError: (error) => {
       log.error("Update status subscription error", { error });
-      useUpdateStore.setState({ menuCheckPending: false });
+      menuCheckPending = false;
     },
   });
 
@@ -127,24 +115,24 @@ export function initializeUpdateStore() {
 
   const menuCheckSub = trpcClient.updates.onCheckFromMenu.subscribe(undefined, {
     onData: () => {
-      useUpdateStore.setState({ menuCheckPending: true });
+      menuCheckPending = true;
       trpcClient.updates.check
         .mutate()
         .then((result) => {
           if (!result.success) {
             if (result.errorCode === "disabled") {
-              useUpdateStore.setState({ menuCheckPending: false });
+              menuCheckPending = false;
               toast.error(result.errorMessage ?? "Updates not available");
             } else if (result.errorCode !== "already_checking") {
               // Unknown/future error code — reset the flag so it never gets stuck.
-              useUpdateStore.setState({ menuCheckPending: false });
+              menuCheckPending = false;
             }
             // For "already_checking", keep the flag so the in-flight check
             // surfaces the toast when it resolves.
           }
         })
         .catch((error: unknown) => {
-          useUpdateStore.setState({ menuCheckPending: false });
+          menuCheckPending = false;
           log.error("Failed to check for updates", { error });
           toast.error("Failed to check for updates");
         });
@@ -159,39 +147,4 @@ export function initializeUpdateStore() {
     readySub.unsubscribe();
     menuCheckSub.unsubscribe();
   };
-}
-
-function applyStatus(status: StatusPayload): void {
-  if (status.installing) {
-    useUpdateStore.setState({
-      status: "installing",
-      version: status.version ?? null,
-    });
-    return;
-  }
-
-  if (status.updateReady) {
-    useUpdateStore.setState({
-      status: "ready",
-      version: status.version ?? null,
-    });
-    return;
-  }
-
-  if (status.checking && status.downloading) {
-    useUpdateStore.setState({ status: "downloading" });
-    return;
-  }
-
-  if (status.checking) {
-    useUpdateStore.setState({ status: "checking" });
-    return;
-  }
-
-  if (status.upToDate || status.error) {
-    const current = useUpdateStore.getState().status;
-    if (current !== "ready" && current !== "installing") {
-      useUpdateStore.setState({ status: "idle" });
-    }
-  }
 }

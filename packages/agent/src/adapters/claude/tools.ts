@@ -29,10 +29,8 @@ export const WEB_TOOLS: Set<string> = new Set(["WebSearch", "WebFetch"]);
 export const AGENT_TOOLS: Set<string> = new Set([
   "Task",
   "Agent",
-  "TaskCreate",
-  "TaskUpdate",
-  "TaskGet",
-  "TaskList",
+  "TodoWrite",
+  "Skill",
 ]);
 
 const BASE_ALLOWED_TOOLS = [

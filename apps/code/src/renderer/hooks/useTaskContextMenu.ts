@@ -113,7 +113,7 @@ export function useTaskContextMenu() {
         log.error("Failed to show context menu", error);
       }
     },
-    [archiveTask, deleteWithConfirm, restoreTask, suspendTask],
+    [deleteWithConfirm, archiveTask, suspendTask, restoreTask],
   );
 
   return {

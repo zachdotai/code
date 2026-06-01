@@ -57,8 +57,7 @@ import {
   type PermissionMode,
 } from "../../execution-mode";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../../types";
-import { isCloudRun } from "../../utils/common";
-import { resolveGithubToken } from "../../utils/github-token";
+import { isCloudRun, resolveGithubToken } from "../../utils/common";
 import { Logger } from "../../utils/logger";
 import {
   nodeReadableToWebReadable,
@@ -467,7 +466,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
     // Carry taskRunId/taskId across load so prompt() still emits cloud
     // notifications (TURN_COMPLETE, USAGE_UPDATE) after a reload. newSession
-    // and resumeSession both do this; loadSession historically did
+    // and unstable_resumeSession both do this; loadSession historically did
     // not, which silently broke task-completion tracking on re-attach.
     resetSessionState(this.sessionState, params.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
@@ -490,7 +489,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     return response;
   }
 
-  async resumeSession(
+  async unstable_resumeSession(
     params: ResumeSessionRequest,
   ): Promise<ResumeSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;

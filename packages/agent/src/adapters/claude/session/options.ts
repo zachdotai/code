@@ -13,14 +13,12 @@ import type {
 import type { FileEnrichmentDeps } from "../../../enrichment/file-enricher";
 import { IS_ROOT } from "../../../utils/common";
 import type { Logger } from "../../../utils/logger";
-import type { TaskState } from "../conversion/task-state";
 import {
   createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
   createSignedCommitGuardHook,
   createSubagentRewriteHook,
-  createTaskHook,
   type EnrichedReadCache,
   type OnModeChange,
 } from "../hooks";
@@ -60,11 +58,6 @@ export interface BuildOptionsParams {
   enrichedReadCache?: EnrichedReadCache;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
-  /** Per-session task state populated by createTaskHook from SDK Task* events. */
-  taskState: TaskState;
-  /** Called after createTaskHook mutates taskState so callers can emit a plan
-   * sessionUpdate to the client. */
-  onTaskStateChange?: () => Promise<void>;
 }
 
 export function buildSystemPrompt(
@@ -118,13 +111,6 @@ function buildEnvironment(): Record<string, string> {
     ? `${existingCustomHeaders}\n${bedrockFallbackHeader}`
     : bedrockFallbackHeader;
 
-  // SDK 0.3.142 made MCP servers connect in the background by default. That
-  // default is what we want: a slow or unreachable user MCP server (PostHog
-  // MCP, custom stdio servers) would otherwise stall turn 1 by up to ~5s per
-  // server. We honor an explicit override from the caller's environment for
-  // sessions that genuinely need MCP tools available on turn 1.
-  const mcpNonblocking = process.env.MCP_CONNECTION_NONBLOCKING;
-
   return {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
@@ -133,9 +119,6 @@ function buildEnvironment(): Record<string, string> {
     ENABLE_TOOL_SEARCH: "auto:0",
     // Enable idle state as end-of-turn signal (required for SDK 0.2.114+)
     CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
-    ...(mcpNonblocking !== undefined && {
-      MCP_CONNECTION_NONBLOCKING: mcpNonblocking,
-    }),
     // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
   };
@@ -150,8 +133,6 @@ function buildHooks(
   enrichedReadCache: EnrichedReadCache | undefined,
   registeredAgents: ReadonlySet<string>,
   cloudMode: boolean,
-  taskState: TaskState,
-  onTaskStateChange: (() => Promise<void>) | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [createPostToolUseHook({ onModeChange })];
   if (enrichmentDeps && enrichedReadCache) {
@@ -168,8 +149,6 @@ function buildHooks(
     preToolUseHooks.push(createSignedCommitGuardHook(logger));
   }
 
-  const taskHook = createTaskHook(taskState, onTaskStateChange);
-
   return {
     ...userHooks,
     PostToolUse: [
@@ -177,13 +156,11 @@ function buildHooks(
       { hooks: postToolUseHooks },
     ],
     PreToolUse: [...(userHooks?.PreToolUse || []), { hooks: preToolUseHooks }],
-    TaskCreated: [...(userHooks?.TaskCreated || []), { hooks: [taskHook] }],
-    TaskCompleted: [...(userHooks?.TaskCompleted || []), { hooks: [taskHook] }],
   };
 }
 
 /**
- * Read-only exploration agent. Registered under the `ph-explore`
+ * Read-only Haiku-powered exploration agent. Registered under the `ph-explore`
  * name rather than `Explore` to work around a Claude Agent SDK bug where
  * `options.agents` cannot shadow built-in agent definitions. The
  * `createSubagentRewriteHook` rewrites `subagent_type: "Explore"` to
@@ -218,10 +195,7 @@ Rules:
     "WebFetch",
     "WebSearch",
     "NotebookRead",
-    "TaskCreate",
-    "TaskUpdate",
-    "TaskGet",
-    "TaskList",
+    "TodoWrite",
   ],
 };
 
@@ -383,8 +357,6 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.enrichedReadCache,
       registeredAgentNames,
       params.cloudMode ?? false,
-      params.taskState,
-      params.onTaskStateChange,
     ),
     outputFormat: params.outputFormat,
     abortController: getAbortController(

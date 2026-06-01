@@ -21,7 +21,6 @@ import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import {
   POSTHOG_API_KEY,
   POSTHOG_OPTIONS,
-  useIdentifyUser,
   useRegisterAppVersion,
   useScreenTracking,
 } from "@/lib/posthog";
@@ -38,7 +37,6 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   const pathname = usePathname();
 
   useScreenTracking();
-  useIdentifyUser();
   useRegisterAppVersion();
 
   useEffect(() => {

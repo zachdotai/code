@@ -6,7 +6,6 @@ import {
   isEnabledOutput,
   UpdatesEvent,
   type UpdatesEvents,
-  updatesStatusOutput,
 } from "../../services/updates/schemas";
 import type { UpdatesService } from "../../services/updates/service";
 import { publicProcedure, router } from "../trpc";
@@ -33,11 +32,6 @@ export const updatesRouter = router({
   check: publicProcedure.output(checkForUpdatesOutput).mutation(() => {
     const service = getService();
     return service.checkForUpdates();
-  }),
-
-  getStatus: publicProcedure.output(updatesStatusOutput).query(() => {
-    const service = getService();
-    return service.getStatus();
   }),
 
   install: publicProcedure.output(installUpdateOutput).mutation(() => {

@@ -36,7 +36,7 @@ export function useSessionConnection({
   const { isOnline } = useConnectivity();
   const cloudAuthState = useAuthStateValue((state) => state);
 
-  useChatTitleGenerator(task);
+  useChatTitleGenerator(taskId);
 
   useEffect(() => {
     const taskRunId = session?.taskRunId;
