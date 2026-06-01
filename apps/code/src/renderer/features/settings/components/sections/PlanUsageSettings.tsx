@@ -24,6 +24,7 @@ import {
   Text,
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
+import { BRING_YOUR_OWN_KEY_FLAG } from "@shared/constants";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { PLAN_PRO_ALPHA } from "@shared/types/seat";
 import { useQuery } from "@tanstack/react-query";
@@ -59,8 +60,9 @@ export function PlanUsageSettings() {
   const { data: useCodexSubscription } = useQuery(
     trpcReact.codexSubscription.getEnabled.queryOptions(),
   );
+  const byokEnabled = useFeatureFlag(BRING_YOUR_OWN_KEY_FLAG);
 
-  if (useClaudeSubscription || useCodexSubscription) {
+  if (byokEnabled && (useClaudeSubscription || useCodexSubscription)) {
     const agents = [
       useClaudeSubscription ? "Claude" : null,
       useCodexSubscription ? "Codex" : null,

@@ -1,6 +1,8 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { trpcClient } from "@renderer/trpc/client";
+import { BRING_YOUR_OWN_KEY_FLAG } from "@shared/constants";
 import {
   ANALYTICS_EVENTS,
   type RepositoryProvider,
@@ -106,13 +108,17 @@ export function useOnboardingFlow() {
   );
 
   const hasCodeAccess = useAuthStateValue((state) => state.hasCodeAccess);
+  // "Bring your own key/subscription" is employee-gated. When off, the
+  // agent-auth-method step offers no real choice, so drop it entirely.
+  const byokEnabled = useFeatureFlag(BRING_YOUR_OWN_KEY_FLAG);
 
   const activeSteps = useMemo(() => {
-    if (hasCodeAccess === true) {
-      return ONBOARDING_STEPS.filter((s) => s !== "invite-code");
-    }
-    return ONBOARDING_STEPS;
-  }, [hasCodeAccess]);
+    return ONBOARDING_STEPS.filter((s) => {
+      if (s === "invite-code" && hasCodeAccess === true) return false;
+      if (s === "agent-auth-method" && !byokEnabled) return false;
+      return true;
+    });
+  }, [hasCodeAccess, byokEnabled]);
 
   useEffect(() => {
     if (!activeSteps.includes(currentStep)) {

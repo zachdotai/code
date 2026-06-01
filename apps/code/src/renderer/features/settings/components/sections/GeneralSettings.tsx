@@ -9,6 +9,7 @@ import {
   type SendMessagesWith,
   useSettingsStore,
 } from "@features/settings/stores/settingsStore";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { ArrowSquareOut } from "@phosphor-icons/react";
 import {
   Button,
@@ -20,6 +21,7 @@ import {
   Text,
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
+import { BRING_YOUR_OWN_KEY_FLAG } from "@shared/constants";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { ThemePreference } from "@stores/themeStore";
 import { useThemeStore } from "@stores/themeStore";
@@ -36,6 +38,8 @@ export function GeneralSettings() {
     (state) => state.status === "authenticated",
   );
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
+  // "Bring your own key/subscription" is gated to PostHog employees.
+  const byokEnabled = useFeatureFlag(BRING_YOUR_OWN_KEY_FLAG);
 
   // Appearance state
   const theme = useThemeStore((state) => state.theme);
@@ -510,17 +514,21 @@ export function GeneralSettings() {
         />
       </SettingRow>
 
-      {/* Claude */}
-      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
-        Claude
-      </Text>
-      <ClaudeSubscriptionSettings />
+      {byokEnabled && (
+        <>
+          {/* Claude */}
+          <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+            Claude
+          </Text>
+          <ClaudeSubscriptionSettings />
 
-      {/* Codex */}
-      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
-        Codex
-      </Text>
-      <CodexSubscriptionSettings />
+          {/* Codex */}
+          <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+            Codex
+          </Text>
+          <CodexSubscriptionSettings />
+        </>
+      )}
 
       {/* Fun */}
       <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
