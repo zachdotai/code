@@ -18,7 +18,7 @@ import { useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { useOnboardingFlow } from "../hooks/useOnboardingFlow";
-import { ClaudeAuthMethodStep } from "./ClaudeAuthMethodStep";
+import { AgentAuthMethodStep } from "./AgentAuthMethodStep";
 import { ConnectGitHubStep } from "./ConnectGitHubStep";
 import { InstallCliStep } from "./InstallCliStep";
 import { InviteCodeStep } from "./InviteCodeStep";
@@ -220,9 +220,9 @@ export function OnboardingFlow() {
             </motion.div>
           )}
 
-          {currentStep === "claude-auth-method" && (
+          {currentStep === "agent-auth-method" && (
             <motion.div
-              key="claude-auth-method"
+              key="agent-auth-method"
               custom={direction}
               initial="enter"
               animate="center"
@@ -231,7 +231,7 @@ export function OnboardingFlow() {
               transition={{ duration: 0.3 }}
               className="min-h-0 w-full flex-1"
             >
-              <ClaudeAuthMethodStep onNext={next} onBack={back} />
+              <AgentAuthMethodStep onNext={next} onBack={back} />
             </motion.div>
           )}
 

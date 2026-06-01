@@ -56,8 +56,15 @@ export function PlanUsageSettings() {
   const { data: useClaudeSubscription } = useQuery(
     trpcReact.claudeSubscription.getEnabled.queryOptions(),
   );
+  const { data: useCodexSubscription } = useQuery(
+    trpcReact.codexSubscription.getEnabled.queryOptions(),
+  );
 
-  if (useClaudeSubscription) {
+  if (useClaudeSubscription || useCodexSubscription) {
+    const agents = [
+      useClaudeSubscription ? "Claude" : null,
+      useCodexSubscription ? "Codex" : null,
+    ].filter(Boolean);
     return (
       <Flex direction="column" gap="3">
         <Callout.Root color="blue" size="1">
@@ -65,9 +72,9 @@ export function PlanUsageSettings() {
             <Info size={16} />
           </Callout.Icon>
           <Callout.Text className="text-sm">
-            You're using your own Claude subscription. PostHog plan usage and
-            billing don't apply. To switch back, turn off "Use my Claude
-            subscription" in General settings.
+            You're using your own {agents.join(" and ")} subscription. PostHog
+            plan usage and billing don't apply. To switch back, turn off the
+            subscription toggles in General settings.
           </Callout.Text>
         </Callout.Root>
       </Flex>

@@ -323,7 +323,7 @@ export interface TaskFeedbackProperties {
 // Onboarding events
 export type OnboardingStepId =
   | "welcome"
-  | "claude-auth-method"
+  | "agent-auth-method"
   | "project-select"
   | "invite-code"
   | "connect-github"

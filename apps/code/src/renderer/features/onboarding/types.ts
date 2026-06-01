@@ -1,6 +1,6 @@
 export type OnboardingStep =
   | "welcome"
-  | "claude-auth-method"
+  | "agent-auth-method"
   | "project-select"
   | "invite-code"
   | "connect-github"
@@ -9,7 +9,7 @@ export type OnboardingStep =
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   "welcome",
-  "claude-auth-method",
+  "agent-auth-method",
   "project-select",
   "invite-code",
   "connect-github",

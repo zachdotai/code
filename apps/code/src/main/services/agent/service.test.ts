@@ -107,6 +107,7 @@ vi.mock("@shared/errors.js", () => ({
 
 vi.mock("../settingsStore.js", () => ({
   getUseClaudeSubscription: vi.fn(() => false),
+  getUseCodexSubscription: vi.fn(() => false),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {

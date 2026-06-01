@@ -516,6 +516,12 @@ export function GeneralSettings() {
       </Text>
       <ClaudeSubscriptionSettings />
 
+      {/* Codex */}
+      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Codex
+      </Text>
+      <CodexSubscriptionSettings />
+
       {/* Fun */}
       <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
         Fun
@@ -597,6 +603,89 @@ function ClaudeSubscriptionSettings() {
                   color="gray"
                 >
                   claude auth login
+                </Text>{" "}
+                in your terminal, then click Refresh.
+              </Text>
+            )
+          }
+          noBorder
+        >
+          <Button
+            size="1"
+            variant="outline"
+            onClick={() => {
+              void refetchStatus();
+            }}
+          >
+            Refresh
+          </Button>
+        </SettingRow>
+      )}
+    </>
+  );
+}
+
+function CodexSubscriptionSettings() {
+  const trpcReact = useTRPC();
+  const queryClient = useQueryClient();
+  const { data: enabled } = useQuery(
+    trpcReact.codexSubscription.getEnabled.queryOptions(),
+  );
+  const { data: status, refetch: refetchStatus } = useQuery(
+    trpcReact.codexSubscription.getStatus.queryOptions(),
+  );
+  const setEnabledMutation = useMutation(
+    trpcReact.codexSubscription.setEnabled.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: trpcReact.codexSubscription.getEnabled.queryKey(),
+        });
+      },
+    }),
+  );
+
+  const isEnabled = enabled ?? false;
+  const isSignedIn = status?.signedIn ?? false;
+
+  const handleToggle = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "use_codex_subscription",
+        new_value: checked,
+        old_value: isEnabled,
+      });
+      setEnabledMutation.mutate({ enabled: checked });
+      if (checked) void refetchStatus();
+    },
+    [isEnabled, setEnabledMutation, refetchStatus],
+  );
+
+  return (
+    <>
+      <SettingRow
+        label="Use my Codex subscription"
+        description="Bypass PostHog's LLM gateway and use your personal OpenAI/ChatGPT subscription. PostHog plan usage doesn't apply when this is on."
+      >
+        <Switch checked={isEnabled} onCheckedChange={handleToggle} size="1" />
+      </SettingRow>
+
+      {isEnabled && (
+        <SettingRow
+          label="Codex account"
+          description={
+            isSignedIn ? (
+              <Text color="gray" className="text-[13px]">
+                Signed in
+                {status?.accountEmail ? ` as ${status.accountEmail}` : ""}.
+              </Text>
+            ) : (
+              <Text color="gray" className="text-[13px]">
+                Run{" "}
+                <Text
+                  className="rounded-(--radius-2) bg-(--gray-3) px-1 py-0.5 font-mono text-[12px]"
+                  color="gray"
+                >
+                  codex login
                 </Text>{" "}
                 in your terminal, then click Refresh.
               </Text>

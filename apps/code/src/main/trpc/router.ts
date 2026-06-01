@@ -5,6 +5,7 @@ import { archiveRouter } from "./routers/archive";
 import { authRouter } from "./routers/auth";
 import { claudeSubscriptionRouter } from "./routers/claude-subscription";
 import { cloudTaskRouter } from "./routers/cloud-task";
+import { codexSubscriptionRouter } from "./routers/codex-subscription";
 import { connectivityRouter } from "./routers/connectivity";
 import { contextMenuRouter } from "./routers/context-menu";
 import { deepLinkRouter } from "./routers/deep-link";
@@ -49,6 +50,7 @@ export const trpcRouter = router({
   auth: authRouter,
   claudeSubscription: claudeSubscriptionRouter,
   cloudTask: cloudTaskRouter,
+  codexSubscription: codexSubscriptionRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
 

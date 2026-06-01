@@ -56,7 +56,10 @@ import type { McpAppsService } from "../mcp-apps/service";
 import type { PosthogPluginService } from "../posthog-plugin/service";
 import type { ProcessTrackingService } from "../process-tracking/service";
 import { loadSessionEnvOverrides } from "../session-env/loader";
-import { getUseClaudeSubscription } from "../settingsStore";
+import {
+  getUseClaudeSubscription,
+  getUseCodexSubscription,
+} from "../settingsStore";
 import type { SleepService } from "../sleep/service";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { discoverExternalPlugins } from "./discover-plugins";
@@ -613,7 +616,11 @@ When creating pull requests, add the following footer at the end of the PR descr
     const channel = `agent-event:${taskRunId}`;
     const mockNodeDir = this.setupMockNodeEnvironment();
     const useClaudeSubscription = getUseClaudeSubscription();
-    const proxyUrl = useClaudeSubscription
+    const useCodexSubscription = getUseCodexSubscription();
+    // Whether the adapter we're about to run is on the user's own subscription.
+    const subscriptionActive =
+      adapter === "codex" ? useCodexSubscription : useClaudeSubscription;
+    const proxyUrl = subscriptionActive
       ? null
       : await this.agentAuthAdapter.ensureGatewayProxy(credentials.apiHost);
     await this.agentAuthAdapter.configureProcessEnv({
@@ -621,7 +628,9 @@ When creating pull requests, add the following footer at the end of the PR descr
       mockNodeDir,
       proxyUrl,
       claudeCliPath: this.getClaudeCliPath(),
-      useClaudeSubscription,
+      // Only strip gateway env for the Claude SDK when Claude itself is the
+      // adapter running on the user's subscription.
+      useClaudeSubscription: adapter === "claude" && useClaudeSubscription,
     });
 
     const isPreview = taskId === "__preview__";
@@ -648,7 +657,8 @@ When creating pull requests, add the following footer at the end of the PR descr
       const acpConnection = await agent.run(taskId, taskRunId, {
         adapter,
         gatewayUrl: proxyUrl ?? undefined,
-        useClaudeSubscription,
+        useClaudeSubscription: adapter === "claude" && useClaudeSubscription,
+        useCodexSubscription: adapter === "codex" && useCodexSubscription,
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
         model,

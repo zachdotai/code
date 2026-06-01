@@ -12,6 +12,7 @@ interface SettingsSchema {
   maxActiveWorktrees: number;
   autoSuspendAfterDays: number;
   useClaudeSubscription: boolean;
+  useCodexSubscription: boolean;
 }
 
 function getDefaultWorktreeLocation(): string {
@@ -89,6 +90,10 @@ const schema = {
     type: "boolean" as const,
     default: false,
   },
+  useCodexSubscription: {
+    type: "boolean" as const,
+    default: false,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -102,6 +107,7 @@ export const settingsStore = new Store<SettingsSchema>({
     maxActiveWorktrees: 5,
     autoSuspendAfterDays: 7,
     useClaudeSubscription: false,
+    useCodexSubscription: false,
   },
 });
 
@@ -179,4 +185,12 @@ export function getUseClaudeSubscription(): boolean {
 
 export function setUseClaudeSubscription(value: boolean): void {
   settingsStore.set("useClaudeSubscription", value);
+}
+
+export function getUseCodexSubscription(): boolean {
+  return settingsStore.get("useCodexSubscription", false);
+}
+
+export function setUseCodexSubscription(value: boolean): void {
+  settingsStore.set("useCodexSubscription", value);
 }

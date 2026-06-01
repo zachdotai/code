@@ -93,9 +93,15 @@ export class Agent {
     taskRunId: string,
     options: TaskExecutionOptions = {},
   ): Promise<InProcessAcpConnection> {
+    // Skip the gateway when the chosen adapter is running against the user's own
+    // subscription (Claude → ~/.claude.json, Codex → ~/.codex/auth.json).
+    const useSubscription =
+      options.adapter === "codex"
+        ? !!options.useCodexSubscription
+        : !!options.useClaudeSubscription;
     const gatewayConfig = await this._configureLlmGateway(
       options.gatewayUrl,
-      options.useClaudeSubscription,
+      useSubscription,
     );
     this.taskRunId = taskRunId;
 
@@ -145,11 +151,16 @@ export class Agent {
       posthogApiConfig: this.posthogApiConfig,
       enricherEnabled: this.enricherEnabled,
       codexOptions:
-        options.adapter === "codex" && gatewayConfig
+        options.adapter === "codex"
           ? {
               cwd: options.repositoryPath,
-              apiBaseUrl: `${gatewayConfig.gatewayUrl}/v1`,
-              apiKey: gatewayConfig.apiKey,
+              // In subscription mode there is no gatewayConfig; leaving
+              // apiBaseUrl/apiKey undefined makes spawn.ts omit the PostHog
+              // model-provider block so codex-acp uses ~/.codex/auth.json.
+              apiBaseUrl: gatewayConfig
+                ? `${gatewayConfig.gatewayUrl}/v1`
+                : undefined,
+              apiKey: gatewayConfig ? gatewayConfig.apiKey : undefined,
               binaryPath: options.codexBinaryPath,
               model: sanitizedModel,
               instructions: options.instructions,

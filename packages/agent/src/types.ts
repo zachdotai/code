@@ -128,6 +128,13 @@ export interface TaskExecutionOptions {
    * Claude Max / Pro subscription — instead of routing through PostHog's gateway.
    */
   useClaudeSubscription?: boolean;
+  /**
+   * When true (Codex adapter), skip the PostHog gateway model-provider config so
+   * `codex-acp` falls back to its default provider authenticated with the user's
+   * local `~/.codex/auth.json` (`codex login`) — i.e. their own OpenAI/ChatGPT
+   * subscription — instead of routing through PostHog's gateway.
+   */
+  useCodexSubscription?: boolean;
   codexBinaryPath?: string;
   instructions?: string;
   processCallbacks?: ProcessSpawnedCallback;
