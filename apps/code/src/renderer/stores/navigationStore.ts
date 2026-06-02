@@ -1,6 +1,7 @@
 import { foldersApi } from "@features/folders/hooks/useFolders";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { getTaskDirectory } from "@hooks/useRepositoryDirectory";
+import { router } from "@renderer/router";
 import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { setActiveTaskAnalyticsContext, track } from "@utils/analytics";
@@ -11,6 +12,56 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 const log = logger.scope("navigation-store");
+
+// Mirror nav store actions to the router URL so deep-links, back/forward, and
+// future per-route logic stay coherent. This store is a transitional shim
+// until consumers are ported to use router APIs directly.
+const syncToRouter = (view: ViewState) => {
+  switch (view.type) {
+    case "task-input":
+      void router.navigate({ to: "/code" });
+      return;
+    case "task-detail":
+      if (view.taskId || view.data?.id) {
+        void router.navigate({
+          to: "/code/tasks/$taskId",
+          params: { taskId: view.taskId ?? (view.data?.id as string) },
+        });
+      }
+      return;
+    case "task-pending":
+      if (view.pendingTaskKey) {
+        void router.navigate({
+          to: "/code/tasks/pending/$key",
+          params: { key: view.pendingTaskKey },
+        });
+      }
+      return;
+    case "folder-settings":
+      if (view.folderId) {
+        void router.navigate({
+          to: "/folders/$folderId",
+          params: { folderId: view.folderId },
+        });
+      }
+      return;
+    case "inbox":
+      void router.navigate({ to: "/code/inbox" });
+      return;
+    case "archived":
+      void router.navigate({ to: "/code/archived" });
+      return;
+    case "command-center":
+      void router.navigate({ to: "/command-center" });
+      return;
+    case "skills":
+      void router.navigate({ to: "/skills" });
+      return;
+    case "mcp-servers":
+      void router.navigate({ to: "/mcp-servers" });
+      return;
+  }
+};
 
 type ViewType =
   | "task-detail"
@@ -135,6 +186,7 @@ export const useNavigationStore = create<NavigationStore>()(
         setActiveTaskAnalyticsContext(
           newView.type === "task-detail" ? (newView.data ?? null) : null,
         );
+        syncToRouter(newView);
       };
 
       return {
@@ -317,6 +369,7 @@ export const useNavigationStore = create<NavigationStore>()(
             setActiveTaskAnalyticsContext(
               newView.type === "task-detail" ? (newView.data ?? null) : null,
             );
+            syncToRouter(newView);
           }
         },
 
@@ -332,6 +385,7 @@ export const useNavigationStore = create<NavigationStore>()(
             setActiveTaskAnalyticsContext(
               newView.type === "task-detail" ? (newView.data ?? null) : null,
             );
+            syncToRouter(newView);
           }
         },
 

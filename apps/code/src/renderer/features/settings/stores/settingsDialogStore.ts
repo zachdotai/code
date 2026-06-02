@@ -1,3 +1,4 @@
+import { router } from "@renderer/router";
 import { create } from "zustand";
 
 export type SettingsCategory =
@@ -56,16 +57,22 @@ export const useSettingsDialogStore = create<SettingsDialogStore>()(
         window.history.pushState({ settingsOpen: true }, "");
       }
       const isAction = typeof contextOrAction === "string";
+      const nextCategory = category ?? get().activeCategory;
       set({
         isOpen: true,
-        activeCategory: category ?? get().activeCategory,
+        activeCategory: nextCategory,
         context: isAction ? {} : (contextOrAction ?? {}),
         initialAction: isAction ? contextOrAction : null,
         formMode: false,
       });
+      void router.navigate({
+        to: "/settings/$category",
+        params: { category: nextCategory },
+      });
     },
     close: () => {
-      if (get().isOpen && window.history.state?.settingsOpen) {
+      const wasOpen = get().isOpen;
+      if (wasOpen && window.history.state?.settingsOpen) {
         window.history.back();
       }
       set({
@@ -74,9 +81,23 @@ export const useSettingsDialogStore = create<SettingsDialogStore>()(
         initialAction: null,
         formMode: false,
       });
+      if (wasOpen) {
+        const matches = router.state.matches;
+        const onSettings = matches.some((m) =>
+          m.routeId.startsWith("/settings"),
+        );
+        if (onSettings) {
+          void router.navigate({ to: "/code" });
+        }
+      }
     },
-    setCategory: (category) =>
-      set({ activeCategory: category, initialAction: null, formMode: false }),
+    setCategory: (category) => {
+      set({ activeCategory: category, initialAction: null, formMode: false });
+      void router.navigate({
+        to: "/settings/$category",
+        params: { category },
+      });
+    },
     clearContext: () => set({ context: {} }),
     consumeInitialAction: () => {
       const action = get().initialAction;

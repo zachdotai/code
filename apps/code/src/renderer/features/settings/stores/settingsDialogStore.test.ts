@@ -1,4 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@renderer/router", () => ({
+  router: {
+    navigate: vi.fn(),
+    state: { matches: [] },
+  },
+}));
+
 import { useSettingsDialogStore } from "./settingsDialogStore";
 
 describe("settingsDialogStore", () => {
