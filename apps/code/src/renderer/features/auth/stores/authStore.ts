@@ -1,11 +1,11 @@
 import { useSeatStore } from "@features/billing/stores/seatStore";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { closeSettings } from "@features/settings/hooks/useOpenSettings";
+import { openTaskInput } from "@hooks/useOpenTask";
 import { PostHogAPIClient } from "@renderer/api/posthogClient";
 import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { CloudRegion } from "@shared/types/regions";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
-import { useNavigationStore } from "@stores/navigationStore";
 import {
   identifyUser,
   resetUser,
@@ -240,14 +240,14 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
     sessionResetCallback?.();
     await trpcClient.auth.selectProject.mutate({ projectId });
     await syncAuthState();
-    useNavigationStore.getState().navigateToTaskInput();
+    openTaskInput();
   },
 
   logout: async () => {
     track(ANALYTICS_EVENTS.USER_LOGGED_OUT);
     sessionResetCallback?.();
     useSeatStore.getState().reset();
-    useSettingsDialogStore.getState().close();
+    closeSettings();
 
     set((state) => ({
       ...state,
@@ -267,7 +267,7 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
     lastCompletedAuthSyncKey = null;
 
     clearAuthenticatedRendererState({ clearAllQueries: true });
-    useNavigationStore.getState().navigateToTaskInput();
+    openTaskInput();
     await trpcClient.auth.logout.mutate();
   },
 }));

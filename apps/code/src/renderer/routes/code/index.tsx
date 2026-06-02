@@ -1,5 +1,5 @@
 import { TaskInput } from "@features/task-detail/components/TaskInput";
-import { useNavigationStore } from "@stores/navigationStore";
+import { useAppView } from "@hooks/useAppView";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/code/")({
@@ -7,38 +7,16 @@ export const Route = createFileRoute("/code/")({
 });
 
 function CodeIndexRoute() {
-  const view = useNavigationStore((s) => s.view);
-  const taskInputReportAssociation = useNavigationStore(
-    (s) => s.taskInputReportAssociation,
-  );
-  const taskInputCloudRepository = useNavigationStore(
-    (s) => s.taskInputCloudRepository,
-  );
-
-  const initialPrompt =
-    view.type === "task-input" ? view.initialPrompt : undefined;
-  const initialPromptKey =
-    view.type === "task-input" ? view.taskInputRequestId : undefined;
-  const initialCloudRepository =
-    view.type === "task-input"
-      ? (view.initialCloudRepository ?? taskInputCloudRepository)
-      : taskInputCloudRepository;
-  const initialModel =
-    view.type === "task-input" ? view.initialModel : undefined;
-  const initialMode = view.type === "task-input" ? view.initialMode : undefined;
-  const reportAssociation =
-    view.type === "task-input"
-      ? (view.reportAssociation ?? taskInputReportAssociation)
-      : taskInputReportAssociation;
+  const view = useAppView();
 
   return (
     <TaskInput
-      initialPrompt={initialPrompt}
-      initialPromptKey={initialPromptKey}
-      initialCloudRepository={initialCloudRepository}
-      initialModel={initialModel}
-      initialMode={initialMode}
-      reportAssociation={reportAssociation}
+      initialPrompt={view.initialPrompt}
+      initialPromptKey={view.taskInputRequestId}
+      initialCloudRepository={view.initialCloudRepository}
+      initialModel={view.initialModel}
+      initialMode={view.initialMode}
+      reportAssociation={view.reportAssociation}
     />
   );
 }

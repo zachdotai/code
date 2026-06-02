@@ -6,17 +6,23 @@ const {
   showDockBadgeMutate,
   bounceDockMutate,
   playSound,
-  getNavState,
+  getViewSnapshot,
 } = vi.hoisted(() => ({
   sendMutate: vi.fn().mockResolvedValue(undefined),
   showDockBadgeMutate: vi.fn().mockResolvedValue(undefined),
   bounceDockMutate: vi.fn().mockResolvedValue(undefined),
   playSound: vi.fn(),
-  getNavState: vi.fn(() => ({ view: { type: "task-input" } })),
+  getViewSnapshot: vi.fn(
+    () =>
+      ({ type: "task-input" }) as {
+        type: string;
+        taskId?: string;
+      },
+  ),
 }));
 
-vi.mock("@stores/navigationStore", () => ({
-  useNavigationStore: { getState: getNavState },
+vi.mock("@hooks/useAppView", () => ({
+  getAppViewSnapshot: getViewSnapshot,
 }));
 
 vi.mock("@renderer/trpc/client", () => ({
@@ -52,7 +58,12 @@ const OTHER_TASK_ID = "task-999";
 type View = { type: string; data?: { id: string }; taskId?: string };
 
 function setView(view: View) {
-  getNavState.mockReturnValue({ view });
+  // The notifications module now reads via getAppViewSnapshot which returns
+  // the view shape directly (no nesting under `view`).
+  getViewSnapshot.mockReturnValue({
+    type: view.type,
+    taskId: view.taskId ?? view.data?.id,
+  });
 }
 
 function setFocus(focused: boolean) {

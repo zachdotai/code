@@ -15,13 +15,14 @@ import {
   useWorkspaces,
   workspaceApi,
 } from "@features/workspace/hooks/useWorkspace";
+import { useAppView } from "@hooks/useAppView";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
+import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { Box, Flex } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
 import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -54,8 +55,7 @@ export const Route = createRootRoute({
 });
 
 function RootLayout() {
-  const { view, hydrateTask, navigateToTaskInput, navigateToTask } =
-    useNavigationStore();
+  const view = useAppView();
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -77,7 +77,7 @@ function RootLayout() {
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
   const activeTaskId =
-    view.type === "task-detail" && view.data ? view.data.id : null;
+    view.type === "task-detail" && view.taskId ? view.taskId : null;
 
   useIntegrations();
   useTaskDeepLink();
@@ -85,11 +85,8 @@ function RootLayout() {
   useSetupDiscovery();
   useNewTaskDeepLink();
 
-  useEffect(() => {
-    if (tasks) {
-      hydrateTask(tasks);
-    }
-  }, [tasks, hydrateTask]);
+  // hydrateTask is no longer needed — the URL is the source of truth and the
+  // task cache populates view.data automatically.
 
   useEffect(() => {
     if (!syncCloudTasksEnabled) return;
@@ -126,11 +123,8 @@ function RootLayout() {
     trpcReact,
   ]);
 
-  useEffect(() => {
-    if (view.type === "task-detail" && !view.data && !view.taskId) {
-      navigateToTaskInput();
-    }
-  }, [view, navigateToTaskInput]);
+  // Note: a malformed /code/tasks/$taskId without a valid id is impossible —
+  // TanStack Router only mounts the task-detail route when taskId is in the URL.
 
   const handleToggleCommandMenu = useCallback(() => {
     toggleCommandMenu();
@@ -180,8 +174,8 @@ function RootLayout() {
         activeTaskId={activeTaskId}
         allTasks={tasks ?? []}
         isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
-        onNavigateToTask={navigateToTask}
-        onNewTask={navigateToTaskInput}
+        onNavigateToTask={openTask}
+        onNewTask={openTaskInput}
       />
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <KeyboardShortcutsSheet

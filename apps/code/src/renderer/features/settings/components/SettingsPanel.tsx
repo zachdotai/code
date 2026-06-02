@@ -5,10 +5,9 @@ import {
   useCurrentUser,
 } from "@features/auth/hooks/authQueries";
 import { getUserInitials } from "@features/auth/utils/userInitials";
-import {
-  type SettingsCategory,
-  useSettingsDialogStore,
-} from "@features/settings/stores/settingsDialogStore";
+import { closeSettings } from "@features/settings/hooks/useOpenSettings";
+import { useSettingsPageStore } from "@features/settings/stores/settingsPageStore";
+import type { SettingsCategory } from "@features/settings/types";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSeat } from "@hooks/useSeat";
 import {
@@ -31,6 +30,7 @@ import {
   Wrench,
 } from "@phosphor-icons/react";
 import { Avatar, Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
+import * as nav from "@renderer/navigationBridge";
 import { BILLING_FLAG } from "@shared/constants";
 import { type ReactNode, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -113,9 +113,30 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   advanced: AdvancedSettings,
 };
 
-export function SettingsPanel() {
-  const { activeCategory, close, setCategory, formMode } =
-    useSettingsDialogStore();
+export interface SettingsPanelProps {
+  /**
+   * Override the active category. Defaults to the `$category` URL param
+   * (which is what every in-app entry point uses). Provided for the
+   * pre-router `AiApprovalScreen` shell where RouterProvider isn't mounted.
+   */
+  activeCategory?: SettingsCategory;
+  /** Override the close handler. Defaults to router history back. */
+  onClose?: () => void;
+  /** Override the category-change handler. Defaults to router navigation. */
+  onCategoryChange?: (category: SettingsCategory) => void;
+}
+
+export function SettingsPanel({
+  activeCategory: activeCategoryProp,
+  onClose,
+  onCategoryChange,
+}: SettingsPanelProps = {}) {
+  const formMode = useSettingsPageStore((s) => s.formMode);
+  const activeCategory = activeCategoryProp ?? "general";
+  const close = onClose ?? closeSettings;
+  const setCategory =
+    onCategoryChange ??
+    ((cat: SettingsCategory) => nav.navigateToSettings(cat));
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );

@@ -1,8 +1,10 @@
 import { FullScreenLayout } from "@components/FullScreenLayout";
 import { useLogoutMutation } from "@features/auth/hooks/authMutations";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
-import { SettingsDialog } from "@features/settings/components/SettingsDialog";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import {
+  openSettingsDialog,
+  SettingsDialog,
+} from "@features/settings/components/SettingsDialog";
 import {
   ArrowSquareOut,
   GearSix,
@@ -27,7 +29,6 @@ interface AiApprovalScreenProps {
 
 export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
   const logoutMutation = useLogoutMutation();
-  const openSettings = useSettingsDialogStore((s) => s.open);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: fire once on mount; later isAdmin changes from query resolution should not re-fire
@@ -35,7 +36,7 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
     track(ANALYTICS_EVENTS.AI_CONSENT_GATE_SHOWN, { is_org_admin: isAdmin });
   }, []);
 
-  useHotkeys(SHORTCUTS.SETTINGS, () => openSettings(), {
+  useHotkeys(SHORTCUTS.SETTINGS, () => openSettingsDialog(), {
     preventDefault: true,
     enableOnFormTags: true,
   });
@@ -54,7 +55,7 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
       size="1"
       variant="ghost"
       color="gray"
-      onClick={() => openSettings()}
+      onClick={() => openSettingsDialog()}
       className="opacity-70"
     >
       <GearSix size={14} />
