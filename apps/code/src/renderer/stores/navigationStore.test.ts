@@ -3,24 +3,36 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Bridge mocks: assert the store calls navigationBridge for every action
 // instead of trying to drive a real router instance from the test runner.
-const bridgeMocks = vi.hoisted(() => ({
-  navigateToCode: vi.fn(),
-  navigateToTaskDetail: vi.fn(),
-  navigateToTaskPending: vi.fn(),
-  navigateToFolderSettings: vi.fn(),
-  navigateToInbox: vi.fn(),
-  navigateToArchived: vi.fn(),
-  navigateToCommandCenter: vi.fn(),
-  navigateToSkills: vi.fn(),
-  navigateToMcpServers: vi.fn(),
-  navigateToSettings: vi.fn(),
-  goBackInHistory: vi.fn(),
-  goForwardInHistory: vi.fn(),
-  isOnSettingsRoute: vi.fn(() => false),
-  getCurrentMatches: vi.fn(() => [{ routeId: "/code/", params: {} }]),
-  getCurrentLocation: vi.fn(() => ({ pathname: "/code/" })),
-  subscribeToRouterResolved: vi.fn(() => () => {}),
-}));
+const bridgeMocks = vi.hoisted(() => {
+  const resolvedSubscribers: Array<() => void> = [];
+  return {
+    navigateToCode: vi.fn(),
+    navigateToTaskDetail: vi.fn(),
+    navigateToTaskPending: vi.fn(),
+    navigateToFolderSettings: vi.fn(),
+    navigateToInbox: vi.fn(),
+    navigateToArchived: vi.fn(),
+    navigateToCommandCenter: vi.fn(),
+    navigateToSkills: vi.fn(),
+    navigateToMcpServers: vi.fn(),
+    navigateToSettings: vi.fn(),
+    goBackInHistory: vi.fn(),
+    goForwardInHistory: vi.fn(),
+    isOnSettingsRoute: vi.fn(() => false),
+    getCurrentMatches: vi.fn(() => [{ routeId: "/code/", params: {} }]),
+    getCurrentLocation: vi.fn(() => ({ pathname: "/code/" })),
+    subscribeToRouterResolved: vi.fn((fn: () => void) => {
+      resolvedSubscribers.push(fn);
+      return () => {
+        const i = resolvedSubscribers.indexOf(fn);
+        if (i >= 0) resolvedSubscribers.splice(i, 1);
+      };
+    }),
+    _fireRouterResolved: () => {
+      for (const fn of resolvedSubscribers) fn();
+    },
+  };
+});
 
 vi.mock("@renderer/navigationBridge", () => bridgeMocks);
 
@@ -33,6 +45,9 @@ vi.mock("@utils/logger", () => ({
 }));
 vi.mock("@utils/queryClient", () => ({
   getCachedTask: vi.fn(() => undefined),
+  queryClient: {
+    getQueryCache: () => ({ subscribe: vi.fn(() => () => {}) }),
+  },
 }));
 vi.mock("@features/workspace/hooks/useWorkspace", () => ({
   workspaceApi: {
@@ -75,20 +90,29 @@ describe("navigationStore (router-derived facade)", () => {
     ]);
   });
 
+  // Trigger the store's router-resolved subscriber after changing
+  // getCurrentMatches; the store batches via queueMicrotask so we await it.
+  async function flushRouterChange(): Promise<void> {
+    bridgeMocks._fireRouterResolved();
+    await Promise.resolve();
+  }
+
   describe("view derivation", () => {
-    it("returns task-input for the /code/ route", () => {
+    it("returns task-input for the /code/ route", async () => {
+      await flushRouterChange();
       expect(useNavigationStore.getState().view.type).toBe("task-input");
     });
 
-    it("returns task-detail with taskId from URL params", () => {
+    it("returns task-detail with taskId from URL params", async () => {
       bridgeMocks.getCurrentMatches.mockReturnValue([
         { routeId: "/code/tasks/$taskId", params: { taskId: "task-99" } },
       ]);
+      await flushRouterChange();
       const view = useNavigationStore.getState().view;
       expect(view).toMatchObject({ type: "task-detail", taskId: "task-99" });
     });
 
-    it("returns inbox/archived/command-center/skills/mcp-servers per route", () => {
+    it("returns inbox/archived/command-center/skills/mcp-servers per route", async () => {
       const cases: Array<[string, string]> = [
         ["/code/inbox", "inbox"],
         ["/code/archived", "archived"],
@@ -100,14 +124,16 @@ describe("navigationStore (router-derived facade)", () => {
         bridgeMocks.getCurrentMatches.mockReturnValue([
           { routeId, params: {} },
         ]);
+        await flushRouterChange();
         expect(useNavigationStore.getState().view.type).toBe(expected);
       }
     });
 
-    it("pulls task-input prefill from useTaskInputPrefillStore", () => {
+    it("pulls task-input prefill from useTaskInputPrefillStore", async () => {
       useTaskInputPrefillStore.setState({
         prefill: { initialPrompt: "hello", requestId: "req-1" },
       });
+      await flushRouterChange();
       const view = useNavigationStore.getState().view;
       expect(view).toMatchObject({
         type: "task-input",

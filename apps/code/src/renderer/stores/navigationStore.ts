@@ -5,11 +5,11 @@ import { getTaskDirectory } from "@hooks/useRepositoryDirectory";
 import * as nav from "@renderer/navigationBridge";
 import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useRouterState } from "@tanstack/react-router";
 import { setActiveTaskAnalyticsContext, track } from "@utils/analytics";
 import { logger } from "@utils/logger";
-import { getCachedTask } from "@utils/queryClient";
+import { getCachedTask, queryClient } from "@utils/queryClient";
 import { getTaskRepository } from "@utils/repository";
+import { create } from "zustand";
 
 const log = logger.scope("navigation-store");
 
@@ -263,8 +263,37 @@ function getSnapshot(): NavigationStore {
 }
 
 // ---------------------------------------------------------------------------
-// React hook with .getState() / .setState() compatibility for legacy callers
+// Backing store — Zustand for selector memoization, but write-only from our
+// own subscriptions to the router / prefill / task cache. Components never
+// write to it directly (setState is a no-op for back-compat).
 // ---------------------------------------------------------------------------
+
+const baseStore = create<NavigationStore>(() => getSnapshot());
+
+let refreshScheduled = false;
+function refresh(): void {
+  if (refreshScheduled) return;
+  refreshScheduled = true;
+  queueMicrotask(() => {
+    refreshScheduled = false;
+    baseStore.setState(getSnapshot(), true);
+  });
+}
+
+// Trigger refresh on router navigations, prefill updates, and task cache
+// changes (so view.data populates once useTasks resolves).
+nav.subscribeToRouterResolved(() => {
+  refresh();
+  const view = deriveView();
+  setActiveTaskAnalyticsContext(
+    view.type === "task-detail" ? (view.data ?? null) : null,
+  );
+});
+useTaskInputPrefillStore.subscribe(refresh);
+queryClient.getQueryCache().subscribe((event) => {
+  const key = event.query?.queryKey;
+  if (Array.isArray(key) && key[0] === "tasks") refresh();
+});
 
 type Selector<T> = (state: NavigationStore) => T;
 
@@ -272,28 +301,24 @@ interface UseNavigationStore {
   <T = NavigationStore>(selector?: Selector<T>): T;
   getState: () => NavigationStore;
   /**
-   * @deprecated Setting nav state is a no-op now that view derives from the
-   * router. Use the navigate* actions, or write to
-   * useTaskInputPrefillStore for transient task-input prefill.
+   * @deprecated View state derives from the router and is read-only. Use the
+   * navigate* actions, or write to useTaskInputPrefillStore for transient
+   * task-input prefill. Calls are ignored.
    */
   setState: (partial: Partial<NavigationStore>) => void;
 }
 
-const useNavigationStoreImpl = <T = NavigationStore>(
+function useNavigationStoreImpl<T = NavigationStore>(
   selector?: Selector<T>,
-): T => {
-  // Re-render on every route change.
-  useRouterState({ select: (s) => s.location.pathname });
-  // Re-render on prefill changes (so transient task-input fields propagate).
-  useTaskInputPrefillStore((s) => s.prefill);
-  const snapshot = getSnapshot();
-  return (selector ? selector(snapshot) : snapshot) as T;
-};
+): T {
+  if (selector) return baseStore(selector);
+  return baseStore() as T;
+}
 
 export const useNavigationStore: UseNavigationStore = Object.assign(
   useNavigationStoreImpl,
   {
-    getState: getSnapshot,
+    getState: () => baseStore.getState(),
     setState: (_partial: Partial<NavigationStore>) => {
       log.warn(
         "useNavigationStore.setState is a no-op; view derives from the router.",
@@ -301,14 +326,3 @@ export const useNavigationStore: UseNavigationStore = Object.assign(
     },
   },
 );
-
-// ---------------------------------------------------------------------------
-// Side effects — keep analytics task context aligned with the active view
-// ---------------------------------------------------------------------------
-
-nav.subscribeToRouterResolved(() => {
-  const view = deriveView();
-  setActiveTaskAnalyticsContext(
-    view.type === "task-detail" ? (view.data ?? null) : null,
-  );
-});
