@@ -55,7 +55,7 @@ interface TaskSessionViewProps {
   pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
   isConnecting?: boolean;
   isThinking?: boolean;
-  terminalStatus?: "failed" | "completed";
+  terminalStatus?: "failed" | "completed" | "cancelled";
   lastError?: string | null;
   onRetry?: () => void;
   onOpenTask?: (taskId: string) => void;
@@ -795,6 +795,64 @@ function ConnectingIndicator() {
   );
 }
 
+// Terminal-state banner shown at the top of a finished run's transcript.
+// "failed" reads as an error and offers a retry; "completed" and "cancelled"
+// are non-error ends (the latter meaning the run was stopped / the user
+// finished with it) and offer to continue the conversation.
+function TerminalStatusBanner({
+  terminalStatus,
+  lastError,
+  onRetry,
+}: {
+  terminalStatus: "failed" | "completed" | "cancelled";
+  lastError?: string | null;
+  onRetry?: () => void;
+}) {
+  const isFailed = terminalStatus === "failed";
+  const label =
+    terminalStatus === "failed"
+      ? "Run failed"
+      : terminalStatus === "cancelled"
+        ? "Run stopped"
+        : "Run completed";
+  const actionLabel = isFailed ? "Retry" : "Continue";
+
+  return (
+    <View
+      className={`mx-4 mt-2 mb-4 rounded-lg px-4 py-3 ${
+        isFailed ? "bg-status-error/10" : "bg-status-success/10"
+      }`}
+    >
+      <Text
+        className={`font-semibold text-sm ${
+          isFailed ? "text-status-error" : "text-status-success"
+        }`}
+      >
+        {label}
+      </Text>
+      {lastError && (
+        <Text className="mt-1 text-gray-11 text-xs">{lastError}</Text>
+      )}
+      {onRetry && (
+        <Pressable
+          onPress={onRetry}
+          className={`mt-2 self-start rounded-md px-3 py-1.5 ${
+            isFailed ? "bg-status-error/20" : "bg-status-success/20"
+          }`}
+        >
+          <Text
+            className={`font-medium text-xs ${
+              isFailed ? "text-status-error" : "text-status-success"
+            }`}
+          >
+            {actionLabel}
+          </Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 export function TaskSessionView({
   events,
   pendingPermissions,
@@ -1017,46 +1075,11 @@ export function TaskSessionView({
         initialNumToRender={30}
         ListHeaderComponent={
           terminalStatus ? (
-            <View
-              className={`mx-4 mt-2 mb-4 rounded-lg px-4 py-3 ${
-                terminalStatus === "failed"
-                  ? "bg-status-error/10"
-                  : "bg-status-success/10"
-              }`}
-            >
-              <Text
-                className={`font-semibold text-sm ${
-                  terminalStatus === "failed"
-                    ? "text-status-error"
-                    : "text-status-success"
-                }`}
-              >
-                {terminalStatus === "failed" ? "Run failed" : "Run completed"}
-              </Text>
-              {lastError && (
-                <Text className="mt-1 text-gray-11 text-xs">{lastError}</Text>
-              )}
-              {onRetry && (
-                <Pressable
-                  onPress={onRetry}
-                  className={`mt-2 self-start rounded-md px-3 py-1.5 ${
-                    terminalStatus === "failed"
-                      ? "bg-status-error/20"
-                      : "bg-status-success/20"
-                  }`}
-                >
-                  <Text
-                    className={`font-medium text-xs ${
-                      terminalStatus === "failed"
-                        ? "text-status-error"
-                        : "text-status-success"
-                    }`}
-                  >
-                    {terminalStatus === "failed" ? "Retry" : "Continue"}
-                  </Text>
-                </Pressable>
-              )}
-            </View>
+            <TerminalStatusBanner
+              terminalStatus={terminalStatus}
+              lastError={lastError}
+              onRetry={onRetry}
+            />
           ) : null
         }
       />

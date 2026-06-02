@@ -261,8 +261,8 @@ export interface TaskSession {
   // the log). Used to dedup the canonical copy against the echo.
   localUserEchoes?: Set<string>;
   // Terminal backend status for this run, populated by status updates so the
-  // UI can surface "Run failed" / "Run completed".
-  terminalStatus?: "failed" | "completed";
+  // UI can surface "Run failed" / "Run completed" / "Run stopped".
+  terminalStatus?: "failed" | "completed" | "cancelled";
   lastError?: string | null;
   // True when the user initiated work (new task, sendPrompt, resume) and
   // we should play a sound when control returns. False when reconnecting
@@ -331,10 +331,30 @@ const connectAttempts = new Set<string>();
 
 function mapTerminalStatus(
   status: string | undefined | null,
-): "completed" | "failed" | undefined {
+): "completed" | "failed" | "cancelled" | undefined {
   if (status === "completed") return "completed";
-  if (status === "failed" || status === "cancelled") return "failed";
+  if (status === "failed") return "failed";
+  // A "cancelled" run is a normal lifecycle end — the sandbox was stopped or
+  // the user finished with the task. It is NOT a failure, so it is kept
+  // distinct here instead of being collapsed into "failed".
+  if (status === "cancelled") return "cancelled";
   return undefined;
+}
+
+// A terminal transition is "stale" when the backend recorded it well before
+// we observed it — i.e. the run ended while this device wasn't watching and
+// we're only now catching up via a reconnect snapshot. Firing a (possibly
+// hours-late) "failed"/"finished" ping for a run the user has already moved on
+// from is the spurious notification we want to avoid. A missing/unparseable
+// timestamp is treated as fresh so a genuine, just-happened terminal alert is
+// never suppressed.
+const TERMINAL_PING_STALENESS_MS = 2 * 60 * 1000;
+
+function isTerminalTransitionStale(statusUpdatedAt?: string | null): boolean {
+  if (!statusUpdatedAt) return false;
+  const ts = Date.parse(statusUpdatedAt);
+  if (Number.isNaN(ts)) return false;
+  return Date.now() - ts > TERMINAL_PING_STALENESS_MS;
 }
 
 export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
@@ -964,7 +984,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     if (update.kind === "status" || update.kind === "snapshot") {
       if (isTerminalStatus(update.status)) {
         const preState = get().sessions[taskRunId];
-        const shouldPing = preState?.awaitingPing ?? false;
+        const wasAwaitingPing = preState?.awaitingPing ?? false;
         const terminal = mapTerminalStatus(update.status);
         set((state) => {
           const current = state.sessions[taskRunId];
@@ -982,14 +1002,32 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             },
           };
         });
+
+        // Only alert when (a) the user was actively awaiting a ping on this
+        // device, (b) the run reached this terminal state recently — not a
+        // stale reconnect to a run that ended while we were away — and (c) the
+        // run actually failed or completed. A "cancelled" run is a normal
+        // lifecycle end (sandbox stopped / user finished), so it never pings;
+        // surfacing it as "<task> failed" was the source of spurious failure
+        // notifications for idle/finished tasks.
+        const notifyKind: "task_failed" | "turn_complete" | null =
+          terminal === "failed"
+            ? "task_failed"
+            : terminal === "completed"
+              ? "turn_complete"
+              : null;
+        const shouldPing =
+          wasAwaitingPing &&
+          notifyKind !== null &&
+          !isTerminalTransitionStale(update.statusUpdatedAt);
         if (shouldPing && usePreferencesStore.getState().pingsEnabled) {
           playMeepSound().catch(() => {});
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
-        if (shouldPing) {
+        if (shouldPing && notifyKind) {
           maybePresentLocalNotification({
             taskRunId,
-            kind: terminal === "failed" ? "task_failed" : "turn_complete",
+            kind: notifyKind,
           });
         }
       }

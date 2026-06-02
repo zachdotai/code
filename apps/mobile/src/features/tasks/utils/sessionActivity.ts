@@ -5,7 +5,7 @@ export type SessionActivityPhase = "idle" | "connecting" | "working";
 interface SessionActivityState {
   isPromptPending?: boolean;
   awaitingAgentOutput?: boolean;
-  terminalStatus?: "failed" | "completed";
+  terminalStatus?: "failed" | "completed" | "cancelled";
   events?: SessionEvent[];
 }
 

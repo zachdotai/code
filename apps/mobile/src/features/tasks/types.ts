@@ -183,6 +183,10 @@ export interface CloudTaskStatusUpdate extends CloudTaskUpdateBase {
   output?: Record<string, unknown> | null;
   errorMessage?: string | null;
   branch?: string | null;
+  // ISO timestamp the backend last updated the run. Used to tell a
+  // just-happened terminal transition apart from a stale reconnect to a run
+  // that ended while this device wasn't watching.
+  statusUpdatedAt?: string | null;
 }
 
 export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
@@ -194,6 +198,8 @@ export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
   output?: Record<string, unknown> | null;
   errorMessage?: string | null;
   branch?: string | null;
+  // See CloudTaskStatusUpdate.statusUpdatedAt.
+  statusUpdatedAt?: string | null;
 }
 
 export interface CloudTaskErrorUpdate extends CloudTaskUpdateBase {

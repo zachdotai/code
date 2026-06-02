@@ -566,6 +566,7 @@ function emitSnapshot(watcher: WatcherState, entries: StoredLogEntry[]): void {
     output: watcher.lastOutput,
     errorMessage: watcher.lastErrorMessage,
     branch: watcher.lastBranch,
+    statusUpdatedAt: watcher.lastStatusUpdatedAt,
   });
 }
 
@@ -579,6 +580,7 @@ function emitStatus(watcher: WatcherState): void {
     output: watcher.lastOutput,
     errorMessage: watcher.lastErrorMessage,
     branch: watcher.lastBranch,
+    statusUpdatedAt: watcher.lastStatusUpdatedAt,
   });
 }
 
