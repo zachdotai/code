@@ -1,14 +1,23 @@
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sendMutate, showDockBadgeMutate, bounceDockMutate, playSound } =
-  vi.hoisted(() => ({
-    sendMutate: vi.fn().mockResolvedValue(undefined),
-    showDockBadgeMutate: vi.fn().mockResolvedValue(undefined),
-    bounceDockMutate: vi.fn().mockResolvedValue(undefined),
-    playSound: vi.fn(),
-  }));
+const {
+  sendMutate,
+  showDockBadgeMutate,
+  bounceDockMutate,
+  playSound,
+  getNavState,
+} = vi.hoisted(() => ({
+  sendMutate: vi.fn().mockResolvedValue(undefined),
+  showDockBadgeMutate: vi.fn().mockResolvedValue(undefined),
+  bounceDockMutate: vi.fn().mockResolvedValue(undefined),
+  playSound: vi.fn(),
+  getNavState: vi.fn(() => ({ view: { type: "task-input" } })),
+}));
+
+vi.mock("@stores/navigationStore", () => ({
+  useNavigationStore: { getState: getNavState },
+}));
 
 vi.mock("@renderer/trpc/client", () => ({
   trpcClient: {
@@ -43,10 +52,7 @@ const OTHER_TASK_ID = "task-999";
 type View = { type: string; data?: { id: string }; taskId?: string };
 
 function setView(view: View) {
-  useNavigationStore.setState({
-    // biome-ignore lint/suspicious/noExplicitAny: test-only narrow cast
-    view: view as any,
-  });
+  getNavState.mockReturnValue({ view });
 }
 
 function setFocus(focused: boolean) {

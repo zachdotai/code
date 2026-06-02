@@ -1,55 +1,21 @@
 import { foldersApi } from "@features/folders/hooks/useFolders";
+import { useTaskInputPrefillStore } from "@features/task-detail/stores/taskInputPrefillStore";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { getTaskDirectory } from "@hooks/useRepositoryDirectory";
 import * as nav from "@renderer/navigationBridge";
 import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { useRouterState } from "@tanstack/react-router";
 import { setActiveTaskAnalyticsContext, track } from "@utils/analytics";
-import { electronStorage } from "@utils/electronStorage";
 import { logger } from "@utils/logger";
+import { getCachedTask } from "@utils/queryClient";
 import { getTaskRepository } from "@utils/repository";
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 const log = logger.scope("navigation-store");
 
-// Mirror nav store actions to the router URL so deep-links, back/forward, and
-// future per-route logic stay coherent. This store is a transitional shim
-// until consumers are ported to use router APIs directly.
-const syncToRouter = (view: ViewState) => {
-  switch (view.type) {
-    case "task-input":
-      nav.navigateToCode();
-      return;
-    case "task-detail": {
-      const taskId = view.taskId ?? view.data?.id;
-      if (!taskId) return;
-      nav.navigateToTaskDetail(taskId);
-      return;
-    }
-    case "task-pending":
-      if (view.pendingTaskKey) nav.navigateToTaskPending(view.pendingTaskKey);
-      return;
-    case "folder-settings":
-      if (view.folderId) nav.navigateToFolderSettings(view.folderId);
-      return;
-    case "inbox":
-      nav.navigateToInbox();
-      return;
-    case "archived":
-      nav.navigateToArchived();
-      return;
-    case "command-center":
-      nav.navigateToCommandCenter();
-      return;
-    case "skills":
-      nav.navigateToSkills();
-      return;
-    case "mcp-servers":
-      nav.navigateToMcpServers();
-      return;
-  }
-};
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 type ViewType =
   | "task-detail"
@@ -92,11 +58,12 @@ interface ViewState {
 
 interface NavigationStore {
   view: ViewState;
+  // history / historyIndex are router-owned now. Stubbed for back-compat.
   history: ViewState[];
   historyIndex: number;
   taskInputReportAssociation?: TaskInputReportAssociation;
   taskInputCloudRepository?: string;
-  navigateToTask: (task: Task) => void;
+  navigateToTask: (task: Task) => Promise<void>;
   navigateToPendingTask: (pendingTaskKey: string) => void;
   navigateToTaskInput: (
     folderIdOrOptions?: string | TaskInputNavigationOptions,
@@ -115,304 +82,233 @@ interface NavigationStore {
   hydrateTask: (tasks: Task[]) => void;
 }
 
-const isSameView = (view1: ViewState, view2: ViewState): boolean => {
-  if (view1.type !== view2.type) return false;
-  if (view1.type === "task-detail" && view2.type === "task-detail") {
-    return view1.data?.id === view2.data?.id;
+// ---------------------------------------------------------------------------
+// View derivation — pure function of router state + caches
+// ---------------------------------------------------------------------------
+
+function deriveView(): ViewState {
+  const matches = nav.getCurrentMatches();
+  const last = matches[matches.length - 1];
+  if (!last) return { type: "task-input" };
+
+  const prefill = useTaskInputPrefillStore.getState().prefill;
+
+  switch (last.routeId) {
+    case "/code/tasks/$taskId": {
+      const taskId = (last.params as { taskId?: string }).taskId;
+      if (!taskId) return { type: "task-input" };
+      const data = getCachedTask(taskId);
+      return { type: "task-detail", taskId, data };
+    }
+    case "/code/tasks/pending/$key": {
+      const key = (last.params as { key?: string }).key;
+      return { type: "task-pending", pendingTaskKey: key };
+    }
+    case "/folders/$folderId": {
+      const folderId = (last.params as { folderId?: string }).folderId;
+      return { type: "folder-settings", folderId };
+    }
+    case "/code/inbox":
+      return { type: "inbox" };
+    case "/code/archived":
+      return { type: "archived" };
+    case "/command-center":
+      return { type: "command-center" };
+    case "/skills":
+      return { type: "skills" };
+    case "/mcp-servers":
+      return { type: "mcp-servers" };
+    default:
+      // /code/, /, or anything else → treat as task-input. Pull transient
+      // prefill so the new-task screen restores prompt/folder/etc.
+      return {
+        type: "task-input",
+        folderId: prefill.folderId,
+        initialPrompt: prefill.initialPrompt,
+        initialCloudRepository: prefill.initialCloudRepository,
+        initialModel: prefill.initialModel,
+        initialMode: prefill.initialMode,
+        reportAssociation: prefill.reportAssociation,
+        taskInputRequestId: prefill.requestId,
+      };
   }
-  if (view1.type === "task-pending" && view2.type === "task-pending") {
-    return view1.pendingTaskKey === view2.pendingTaskKey;
+}
+
+// ---------------------------------------------------------------------------
+// Actions — call the navigation bridge; no internal state
+// ---------------------------------------------------------------------------
+
+async function navigateToTask(task: Task): Promise<void> {
+  nav.navigateToTaskDetail(task.id);
+  track(ANALYTICS_EVENTS.TASK_VIEWED, { task_id: task.id });
+
+  const repoKey = getTaskRepository(task) ?? undefined;
+  const existingWorkspace = await workspaceApi.get(task.id);
+
+  if (existingWorkspace?.folderId) {
+    const folders = await foldersApi.getFolders();
+    const folder = folders.find((f) => f.id === existingWorkspace.folderId);
+
+    if (folder && folder.exists === false) {
+      log.info("Folder path is stale, redirecting to folder settings", {
+        folderId: folder.id,
+        path: folder.path,
+      });
+      nav.navigateToFolderSettings(folder.id);
+      return;
+    }
+    if (folder) return;
   }
-  if (view1.type === "task-input" && view2.type === "task-input") {
-    return (
-      view1.folderId === view2.folderId &&
-      view1.taskInputRequestId === view2.taskInputRequestId
-    );
+
+  const directory = await getTaskDirectory(task.id, repoKey ?? undefined);
+
+  if (directory) {
+    try {
+      await foldersApi.addFolder(directory);
+      const workspaceMode =
+        task.latest_run?.environment === "cloud" ? "cloud" : "local";
+      await workspaceApi.create({
+        taskId: task.id,
+        mainRepoPath: directory,
+        folderId: "",
+        folderPath: directory,
+        mode: workspaceMode,
+      });
+    } catch (error) {
+      log.error("Failed to auto-register folder on task open:", error);
+    }
+  } else if (task.latest_run?.environment === "cloud") {
+    await workspaceApi.create({
+      taskId: task.id,
+      mainRepoPath: "",
+      folderId: "",
+      folderPath: "",
+      mode: "cloud",
+    });
   }
-  if (view1.type === "folder-settings" && view2.type === "folder-settings") {
-    return view1.folderId === view2.folderId;
-  }
-  if (view1.type === "inbox" && view2.type === "inbox") {
-    return true;
-  }
-  if (view1.type === "archived" && view2.type === "archived") {
-    return true;
-  }
-  if (view1.type === "command-center" && view2.type === "command-center") {
-    return true;
-  }
-  if (view1.type === "skills" && view2.type === "skills") {
-    return true;
-  }
-  if (view1.type === "mcp-servers" && view2.type === "mcp-servers") {
-    return true;
-  }
-  return false;
+}
+
+function navigateToTaskInput(
+  folderIdOrOptions?: string | TaskInputNavigationOptions,
+): void {
+  const options =
+    typeof folderIdOrOptions === "string"
+      ? { folderId: folderIdOrOptions }
+      : (folderIdOrOptions ?? {});
+
+  const hasTransientState =
+    !!options.initialPrompt ||
+    !!options.initialCloudRepository ||
+    !!options.initialModel ||
+    !!options.initialMode ||
+    !!options.reportAssociation;
+
+  useTaskInputPrefillStore.setState({
+    prefill: {
+      folderId: options.folderId,
+      initialPrompt: options.initialPrompt,
+      initialCloudRepository: options.initialCloudRepository,
+      initialModel: options.initialModel,
+      initialMode: options.initialMode,
+      reportAssociation: options.reportAssociation,
+      requestId: hasTransientState
+        ? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`)
+        : undefined,
+    },
+  });
+  nav.navigateToCode();
+}
+
+function clearTaskInputReportAssociation(): void {
+  useTaskInputPrefillStore.getState().clearReportAssociation();
+}
+
+function navigateToCommandCenter(): void {
+  nav.navigateToCommandCenter();
+  track(ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED);
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot — used by .getState() and per-render derivation
+// ---------------------------------------------------------------------------
+
+function getSnapshot(): NavigationStore {
+  const view = deriveView();
+  const prefill = useTaskInputPrefillStore.getState().prefill;
+
+  return {
+    view,
+    history: [],
+    historyIndex: 0,
+    taskInputReportAssociation: prefill.reportAssociation,
+    taskInputCloudRepository: prefill.initialCloudRepository,
+    navigateToTask,
+    navigateToPendingTask: nav.navigateToTaskPending,
+    navigateToTaskInput,
+    clearTaskInputReportAssociation,
+    navigateToFolderSettings: nav.navigateToFolderSettings,
+    navigateToInbox: nav.navigateToInbox,
+    navigateToArchived: nav.navigateToArchived,
+    navigateToCommandCenter,
+    navigateToSkills: nav.navigateToSkills,
+    navigateToMcpServers: nav.navigateToMcpServers,
+    goBack: nav.goBackInHistory,
+    goForward: nav.goForwardInHistory,
+    canGoBack: () => true,
+    canGoForward: () => true,
+    hydrateTask: () => {
+      /* No-op: the URL is the source of truth now. */
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// React hook with .getState() / .setState() compatibility for legacy callers
+// ---------------------------------------------------------------------------
+
+type Selector<T> = (state: NavigationStore) => T;
+
+interface UseNavigationStore {
+  <T = NavigationStore>(selector?: Selector<T>): T;
+  getState: () => NavigationStore;
+  /**
+   * @deprecated Setting nav state is a no-op now that view derives from the
+   * router. Use the navigate* actions, or write to
+   * useTaskInputPrefillStore for transient task-input prefill.
+   */
+  setState: (partial: Partial<NavigationStore>) => void;
+}
+
+const useNavigationStoreImpl = <T = NavigationStore>(
+  selector?: Selector<T>,
+): T => {
+  // Re-render on every route change.
+  useRouterState({ select: (s) => s.location.pathname });
+  // Re-render on prefill changes (so transient task-input fields propagate).
+  useTaskInputPrefillStore((s) => s.prefill);
+  const snapshot = getSnapshot();
+  return (selector ? selector(snapshot) : snapshot) as T;
 };
 
-export const useNavigationStore = create<NavigationStore>()(
-  persist(
-    (set, get) => {
-      const navigate = (newView: ViewState) => {
-        const { view, history, historyIndex } = get();
-        if (isSameView(view, newView)) {
-          return;
-        }
-        // Replace transient task-pending entries instead of stacking them in
-        // history — going back to a pending view after the real task lands
-        // would render an empty placeholder.
-        const baseHistory =
-          view.type === "task-pending"
-            ? history.slice(0, historyIndex)
-            : history.slice(0, historyIndex + 1);
-        const newHistory = [...baseHistory, newView];
-        set({
-          view: newView,
-          history: newHistory,
-          historyIndex: newHistory.length - 1,
-        });
-        setActiveTaskAnalyticsContext(
-          newView.type === "task-detail" ? (newView.data ?? null) : null,
-        );
-        syncToRouter(newView);
-      };
-
-      return {
-        view: { type: "task-input" },
-        history: [{ type: "task-input" }],
-        historyIndex: 0,
-        taskInputReportAssociation: undefined,
-        taskInputCloudRepository: undefined,
-
-        navigateToTask: async (task: Task) => {
-          navigate({ type: "task-detail", data: task, taskId: task.id });
-          track(ANALYTICS_EVENTS.TASK_VIEWED, {
-            task_id: task.id,
-          });
-
-          const repoKey = getTaskRepository(task) ?? undefined;
-
-          const existingWorkspace = await workspaceApi.get(task.id);
-          if (existingWorkspace?.folderId) {
-            const folders = await foldersApi.getFolders();
-            const folder = folders.find(
-              (f) => f.id === existingWorkspace.folderId,
-            );
-
-            if (folder && folder.exists === false) {
-              log.info("Folder path is stale, redirecting to folder settings", {
-                folderId: folder.id,
-                path: folder.path,
-              });
-              navigate({ type: "folder-settings", folderId: folder.id });
-              return;
-            }
-
-            if (folder) {
-              return;
-            }
-          }
-
-          const directory = await getTaskDirectory(
-            task.id,
-            repoKey ?? undefined,
-          );
-
-          if (directory) {
-            try {
-              await foldersApi.addFolder(directory);
-
-              const workspaceMode =
-                task.latest_run?.environment === "cloud" ? "cloud" : "local";
-
-              await workspaceApi.create({
-                taskId: task.id,
-                mainRepoPath: directory,
-                folderId: "",
-                folderPath: directory,
-                mode: workspaceMode,
-              });
-            } catch (error) {
-              log.error("Failed to auto-register folder on task open:", error);
-            }
-          } else if (task.latest_run?.environment === "cloud") {
-            await workspaceApi.create({
-              taskId: task.id,
-              mainRepoPath: "",
-              folderId: "",
-              folderPath: "",
-              mode: "cloud",
-            });
-          }
-        },
-
-        navigateToPendingTask: (pendingTaskKey: string) => {
-          navigate({ type: "task-pending", pendingTaskKey });
-        },
-
-        navigateToTaskInput: (folderIdOrOptions) => {
-          const options =
-            typeof folderIdOrOptions === "string"
-              ? { folderId: folderIdOrOptions }
-              : (folderIdOrOptions ?? {});
-          const hasTransientState =
-            !!options.initialPrompt ||
-            !!options.initialCloudRepository ||
-            !!options.initialModel ||
-            !!options.initialMode ||
-            !!options.reportAssociation;
-          if (options.reportAssociation || options.initialCloudRepository) {
-            set({
-              taskInputReportAssociation: options.reportAssociation,
-              taskInputCloudRepository: options.initialCloudRepository,
-            });
-          }
-          navigate({
-            type: "task-input",
-            folderId: options.folderId,
-            initialPrompt: options.initialPrompt,
-            initialCloudRepository: options.initialCloudRepository,
-            initialModel: options.initialModel,
-            initialMode: options.initialMode,
-            reportAssociation: options.reportAssociation,
-            taskInputRequestId: hasTransientState
-              ? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`)
-              : undefined,
-          });
-        },
-
-        clearTaskInputReportAssociation: () => {
-          const {
-            view,
-            history,
-            historyIndex,
-            taskInputReportAssociation,
-            taskInputCloudRepository,
-          } = get();
-          if (
-            !taskInputReportAssociation &&
-            !view.reportAssociation &&
-            !taskInputCloudRepository &&
-            !view.initialCloudRepository
-          ) {
-            return;
-          }
-
-          const updatedView = {
-            ...view,
-            reportAssociation: undefined,
-            initialCloudRepository: undefined,
-          };
-          const updatedHistory = [...history];
-          if (updatedHistory[historyIndex]?.type === "task-input") {
-            updatedHistory[historyIndex] = {
-              ...updatedHistory[historyIndex],
-              reportAssociation: undefined,
-              initialCloudRepository: undefined,
-            };
-          }
-
-          set({
-            view: updatedView,
-            history: updatedHistory,
-            taskInputReportAssociation: undefined,
-            taskInputCloudRepository: undefined,
-          });
-        },
-
-        navigateToFolderSettings: (folderId: string) => {
-          navigate({ type: "folder-settings", folderId });
-        },
-
-        navigateToInbox: () => {
-          navigate({ type: "inbox" });
-        },
-
-        navigateToArchived: () => {
-          navigate({ type: "archived" });
-        },
-
-        navigateToCommandCenter: () => {
-          navigate({ type: "command-center" });
-          track(ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED);
-        },
-
-        navigateToSkills: () => {
-          navigate({ type: "skills" });
-        },
-
-        navigateToMcpServers: () => {
-          navigate({ type: "mcp-servers" });
-        },
-
-        goBack: () => {
-          const { history, historyIndex } = get();
-          if (historyIndex > 0) {
-            const newIndex = historyIndex - 1;
-            const newView = history[newIndex];
-            set({
-              view: newView,
-              historyIndex: newIndex,
-            });
-            setActiveTaskAnalyticsContext(
-              newView.type === "task-detail" ? (newView.data ?? null) : null,
-            );
-            syncToRouter(newView);
-          }
-        },
-
-        goForward: () => {
-          const { history, historyIndex } = get();
-          if (historyIndex < history.length - 1) {
-            const newIndex = historyIndex + 1;
-            const newView = history[newIndex];
-            set({
-              view: newView,
-              historyIndex: newIndex,
-            });
-            setActiveTaskAnalyticsContext(
-              newView.type === "task-detail" ? (newView.data ?? null) : null,
-            );
-            syncToRouter(newView);
-          }
-        },
-
-        canGoBack: () => {
-          const { historyIndex } = get();
-          return historyIndex > 0;
-        },
-
-        canGoForward: () => {
-          const { history, historyIndex } = get();
-          return historyIndex < history.length - 1;
-        },
-
-        hydrateTask: (tasks: Task[]) => {
-          const { view, navigateToTask, navigateToTaskInput } = get();
-          if (view.type !== "task-detail" || !view.taskId || view.data) return;
-
-          const task = tasks.find((t) => t.id === view.taskId);
-          if (task) {
-            navigateToTask(task);
-          } else {
-            navigateToTaskInput();
-          }
-        },
-      };
+export const useNavigationStore: UseNavigationStore = Object.assign(
+  useNavigationStoreImpl,
+  {
+    getState: getSnapshot,
+    setState: (_partial: Partial<NavigationStore>) => {
+      log.warn(
+        "useNavigationStore.setState is a no-op; view derives from the router.",
+      );
     },
-    {
-      name: "navigation-storage",
-      storage: electronStorage,
-      partialize: (state) => ({
-        view:
-          state.view.type === "task-pending"
-            ? { type: "task-input" as const }
-            : {
-                type: state.view.type,
-                taskId: state.view.taskId,
-                folderId: state.view.folderId,
-              },
-      }),
-    },
-  ),
+  },
 );
+
+// ---------------------------------------------------------------------------
+// Side effects — keep analytics task context aligned with the active view
+// ---------------------------------------------------------------------------
+
+nav.subscribeToRouterResolved(() => {
+  const view = deriveView();
+  setActiveTaskAnalyticsContext(
+    view.type === "task-detail" ? (view.data ?? null) : null,
+  );
+});

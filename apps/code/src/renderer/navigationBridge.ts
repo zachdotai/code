@@ -69,3 +69,23 @@ export function isOnSettingsRoute(): boolean {
 export function goBackInHistory(): void {
   router.history.back();
 }
+
+export function goForwardInHistory(): void {
+  router.history.forward();
+}
+
+// Accessors for code that needs to read router state outside of React (e.g.
+// Zustand actions, imperative event handlers). Components should prefer the
+// `useRouterState` hook from `@tanstack/react-router`.
+export function getCurrentMatches() {
+  return router.state.matches;
+}
+
+export function getCurrentLocation() {
+  return router.state.location;
+}
+
+export function subscribeToRouterResolved(handler: () => void): () => void {
+  const unsub = router.subscribe("onResolved", handler);
+  return unsub;
+}

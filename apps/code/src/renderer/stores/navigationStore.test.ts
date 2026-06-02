@@ -1,32 +1,42 @@
 import type { Task } from "@shared/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getItem, setItem } = vi.hoisted(() => ({
-  getItem: vi.fn(),
-  setItem: vi.fn(),
+// Bridge mocks: assert the store calls navigationBridge for every action
+// instead of trying to drive a real router instance from the test runner.
+const bridgeMocks = vi.hoisted(() => ({
+  navigateToCode: vi.fn(),
+  navigateToTaskDetail: vi.fn(),
+  navigateToTaskPending: vi.fn(),
+  navigateToFolderSettings: vi.fn(),
+  navigateToInbox: vi.fn(),
+  navigateToArchived: vi.fn(),
+  navigateToCommandCenter: vi.fn(),
+  navigateToSkills: vi.fn(),
+  navigateToMcpServers: vi.fn(),
+  navigateToSettings: vi.fn(),
+  goBackInHistory: vi.fn(),
+  goForwardInHistory: vi.fn(),
+  isOnSettingsRoute: vi.fn(() => false),
+  getCurrentMatches: vi.fn(() => [{ routeId: "/code/", params: {} }]),
+  getCurrentLocation: vi.fn(() => ({ pathname: "/code/" })),
+  subscribeToRouterResolved: vi.fn(() => () => {}),
 }));
 
-vi.mock("@renderer/trpc/client", () => ({
-  trpcClient: {
-    secureStore: {
-      getItem: { query: getItem },
-      setItem: { query: setItem },
-      removeItem: { query: vi.fn() },
-    },
-  },
-}));
+vi.mock("@renderer/navigationBridge", () => bridgeMocks);
 
 vi.mock("@utils/analytics", () => ({
   track: vi.fn(),
   setActiveTaskAnalyticsContext: vi.fn(),
 }));
 vi.mock("@utils/logger", () => ({
-  logger: { scope: () => ({ info: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
+  logger: { scope: () => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn() }) },
+}));
+vi.mock("@utils/queryClient", () => ({
+  getCachedTask: vi.fn(() => undefined),
 }));
 vi.mock("@features/workspace/hooks/useWorkspace", () => ({
   workspaceApi: {
     get: vi.fn().mockResolvedValue(null),
-    getAll: vi.fn().mockResolvedValue({}),
     create: vi.fn().mockResolvedValue(null),
   },
 }));
@@ -40,6 +50,7 @@ vi.mock("@hooks/useRepositoryDirectory", () => ({
   getTaskDirectory: vi.fn().mockResolvedValue(null),
 }));
 
+import { useTaskInputPrefillStore } from "@features/task-detail/stores/taskInputPrefillStore";
 import { useNavigationStore } from "./navigationStore";
 
 const mockTask: Task = {
@@ -53,239 +64,135 @@ const mockTask: Task = {
   updated_at: "2024-01-01T00:00:00Z",
 };
 
-const getStore = () => useNavigationStore.getState();
-const getView = () => getStore().view;
-
-describe("navigationStore", () => {
+describe("navigationStore (router-derived facade)", () => {
   beforeEach(() => {
-    getItem.mockReset();
-    setItem.mockReset();
-    getItem.mockResolvedValue(null);
-    setItem.mockResolvedValue(undefined);
-    useNavigationStore.setState({
-      view: { type: "task-input" },
-      history: [{ type: "task-input" }],
-      historyIndex: 0,
-    });
+    for (const fn of Object.values(bridgeMocks)) {
+      if (typeof fn === "function" && "mockClear" in fn) fn.mockClear();
+    }
+    useTaskInputPrefillStore.setState({ prefill: {} });
+    bridgeMocks.getCurrentMatches.mockReturnValue([
+      { routeId: "/code/", params: {} },
+    ]);
   });
 
-  it("starts with task-input view", () => {
-    expect(getView().type).toBe("task-input");
-  });
-
-  describe("navigation", () => {
-    it("navigates to task detail with taskId", async () => {
-      await getStore().navigateToTask(mockTask);
-      expect(getView()).toMatchObject({
-        type: "task-detail",
-        data: mockTask,
-        taskId: "task-123",
-      });
+  describe("view derivation", () => {
+    it("returns task-input for the /code/ route", () => {
+      expect(useNavigationStore.getState().view.type).toBe("task-input");
     });
 
-    it("navigates to folder settings", () => {
-      getStore().navigateToFolderSettings("folder-123");
-      expect(getView()).toMatchObject({
-        type: "folder-settings",
-        folderId: "folder-123",
-      });
+    it("returns task-detail with taskId from URL params", () => {
+      bridgeMocks.getCurrentMatches.mockReturnValue([
+        { routeId: "/code/tasks/$taskId", params: { taskId: "task-99" } },
+      ]);
+      const view = useNavigationStore.getState().view;
+      expect(view).toMatchObject({ type: "task-detail", taskId: "task-99" });
     });
 
-    it("navigates to task input with folderId", () => {
-      getStore().navigateToTaskInput("folder-123");
-      expect(getView()).toMatchObject({
+    it("returns inbox/archived/command-center/skills/mcp-servers per route", () => {
+      const cases: Array<[string, string]> = [
+        ["/code/inbox", "inbox"],
+        ["/code/archived", "archived"],
+        ["/command-center", "command-center"],
+        ["/skills", "skills"],
+        ["/mcp-servers", "mcp-servers"],
+      ];
+      for (const [routeId, expected] of cases) {
+        bridgeMocks.getCurrentMatches.mockReturnValue([
+          { routeId, params: {} },
+        ]);
+        expect(useNavigationStore.getState().view.type).toBe(expected);
+      }
+    });
+
+    it("pulls task-input prefill from useTaskInputPrefillStore", () => {
+      useTaskInputPrefillStore.setState({
+        prefill: { initialPrompt: "hello", requestId: "req-1" },
+      });
+      const view = useNavigationStore.getState().view;
+      expect(view).toMatchObject({
         type: "task-input",
-        folderId: "folder-123",
+        initialPrompt: "hello",
+        taskInputRequestId: "req-1",
       });
-    });
-
-    it("navigates to task input with report association", () => {
-      getStore().navigateToTaskInput({
-        initialPrompt: "Fix this report",
-        reportAssociation: { reportId: "report-123", title: "Broken signup" },
-      });
-
-      expect(getView()).toMatchObject({
-        type: "task-input",
-        initialPrompt: "Fix this report",
-        reportAssociation: { reportId: "report-123", title: "Broken signup" },
-      });
-      expect(getView().taskInputRequestId).toBeTruthy();
-    });
-
-    it("mints a fresh taskInputRequestId on each navigation with transient state", () => {
-      getStore().navigateToTaskInput({
-        initialPrompt: "Discuss this",
-        reportAssociation: { reportId: "report-456", title: "Slow checkout" },
-      });
-      const firstRequestId = getView().taskInputRequestId;
-      expect(firstRequestId).toBeTruthy();
-
-      getStore().navigateToInbox();
-      getStore().navigateToTaskInput({
-        initialPrompt: "Discuss this",
-        reportAssociation: { reportId: "report-456", title: "Slow checkout" },
-      });
-      expect(getView().taskInputRequestId).not.toBe(firstRequestId);
-    });
-
-    it("clears task input report association", () => {
-      getStore().navigateToTaskInput({
-        initialPrompt: "Fix this report",
-        initialCloudRepository: "posthog/code",
-        reportAssociation: { reportId: "report-123", title: "Broken signup" },
-      });
-
-      getStore().clearTaskInputReportAssociation();
-
-      expect(getView().reportAssociation).toBeUndefined();
-      expect(getView().initialCloudRepository).toBeUndefined();
-      expect(
-        getStore().history[getStore().historyIndex].reportAssociation,
-      ).toBeUndefined();
-      expect(
-        getStore().history[getStore().historyIndex].initialCloudRepository,
-      ).toBeUndefined();
-      expect(getStore().taskInputReportAssociation).toBeUndefined();
-    });
-
-    it("clears cloud-only task input state without report association", () => {
-      getStore().navigateToTaskInput({
-        initialCloudRepository: "posthog/code",
-      });
-
-      getStore().clearTaskInputReportAssociation();
-
-      expect(getView().initialCloudRepository).toBeUndefined();
-      expect(getStore().taskInputCloudRepository).toBeUndefined();
-      expect(
-        getStore().history[getStore().historyIndex].initialCloudRepository,
-      ).toBeUndefined();
-    });
-
-    it("clears persisted task input report association after returning to task input", () => {
-      getStore().navigateToTaskInput({
-        initialPrompt: "Fix this report",
-        initialCloudRepository: "posthog/code",
-        reportAssociation: { reportId: "report-123", title: "Broken signup" },
-      });
-      getStore().navigateToInbox();
-      getStore().navigateToTaskInput();
-
-      getStore().clearTaskInputReportAssociation();
-
-      expect(getStore().taskInputReportAssociation).toBeUndefined();
-      expect(getStore().taskInputCloudRepository).toBeUndefined();
-      expect(getView().initialCloudRepository).toBeUndefined();
-    });
-
-    it("keeps task input report association after leaving task input", () => {
-      getStore().navigateToTaskInput({
-        initialPrompt: "Fix this report",
-        initialCloudRepository: "posthog/code",
-        reportAssociation: { reportId: "report-123", title: "Broken signup" },
-      });
-
-      getStore().navigateToInbox();
-      getStore().navigateToTaskInput();
-
-      expect(getStore().taskInputReportAssociation).toEqual({
-        reportId: "report-123",
-        title: "Broken signup",
-      });
-      expect(getStore().taskInputCloudRepository).toBe("posthog/code");
-    });
-
-    it("navigates to inbox", () => {
-      getStore().navigateToInbox();
-      expect(getView()).toMatchObject({
-        type: "inbox",
-      });
-    });
-
-    it("navigates to pending task with key", () => {
-      getStore().navigateToPendingTask("pending-key-123");
-      expect(getView()).toMatchObject({
-        type: "task-pending",
-        pendingTaskKey: "pending-key-123",
-      });
-    });
-
-    it("replaces task-pending in history when navigating to real task", async () => {
-      getStore().navigateToTaskInput();
-      getStore().navigateToPendingTask("pending-key-123");
-      const indexBeforeReal = getStore().history.length - 1;
-      expect(getStore().history[indexBeforeReal].type).toBe("task-pending");
-
-      await getStore().navigateToTask(mockTask);
-
-      const finalHistory = getStore().history;
-      expect(finalHistory[finalHistory.length - 1].type).toBe("task-detail");
-      expect(finalHistory.some((v) => v.type === "task-pending")).toBe(false);
     });
   });
 
-  describe("history", () => {
-    it("tracks history and supports back/forward", async () => {
-      await getStore().navigateToTask(mockTask);
-      getStore().navigateToFolderSettings("folder-123");
-
-      expect(getStore().history).toHaveLength(3);
-      expect(getStore().canGoBack()).toBe(true);
-
-      getStore().goBack();
-      expect(getView().type).toBe("task-detail");
-
-      expect(getStore().canGoForward()).toBe(true);
-      getStore().goForward();
-      expect(getView().type).toBe("folder-settings");
-    });
-  });
-
-  describe("persistence", () => {
-    it("persists view type and taskId but not full task data", async () => {
-      await getStore().navigateToTask(mockTask);
-
-      await vi.waitFor(() => {
-        expect(setItem).toHaveBeenCalled();
-      });
-
-      const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
-      const persisted = JSON.parse(lastCall[0].value);
-      expect(persisted.state.view).toEqual({
-        type: "task-detail",
-        taskId: "task-123",
-        folderId: undefined,
-      });
+  describe("actions delegate to navigationBridge", () => {
+    it("navigateToTask calls bridge with the task id", async () => {
+      await useNavigationStore.getState().navigateToTask(mockTask);
+      expect(bridgeMocks.navigateToTaskDetail).toHaveBeenCalledWith("task-123");
     });
 
-    it("restores view from electronStorage without task data", async () => {
-      const storedState = JSON.stringify({
-        state: {
-          view: {
-            type: "task-detail",
-            taskId: "task-123",
-            folderId: undefined,
-          },
+    it("navigateToTaskInput writes prefill and navigates to /code", () => {
+      useNavigationStore
+        .getState()
+        .navigateToTaskInput({ initialPrompt: "draft" });
+      expect(useTaskInputPrefillStore.getState().prefill.initialPrompt).toBe(
+        "draft",
+      );
+      expect(bridgeMocks.navigateToCode).toHaveBeenCalled();
+    });
+
+    it("navigateToInbox/archived/etc. call the matching bridge function", () => {
+      const s = useNavigationStore.getState();
+      s.navigateToInbox();
+      s.navigateToArchived();
+      s.navigateToCommandCenter();
+      s.navigateToSkills();
+      s.navigateToMcpServers();
+      s.navigateToFolderSettings("folder-1");
+      s.navigateToPendingTask("pending-1");
+      expect(bridgeMocks.navigateToInbox).toHaveBeenCalled();
+      expect(bridgeMocks.navigateToArchived).toHaveBeenCalled();
+      expect(bridgeMocks.navigateToCommandCenter).toHaveBeenCalled();
+      expect(bridgeMocks.navigateToSkills).toHaveBeenCalled();
+      expect(bridgeMocks.navigateToMcpServers).toHaveBeenCalled();
+      expect(bridgeMocks.navigateToFolderSettings).toHaveBeenCalledWith(
+        "folder-1",
+      );
+      expect(bridgeMocks.navigateToTaskPending).toHaveBeenCalledWith(
+        "pending-1",
+      );
+    });
+
+    it("goBack/goForward call router history", () => {
+      useNavigationStore.getState().goBack();
+      useNavigationStore.getState().goForward();
+      expect(bridgeMocks.goBackInHistory).toHaveBeenCalled();
+      expect(bridgeMocks.goForwardInHistory).toHaveBeenCalled();
+    });
+
+    it("clearTaskInputReportAssociation clears the prefill store", () => {
+      useTaskInputPrefillStore.setState({
+        prefill: {
+          reportAssociation: { reportId: "r1", title: "t" },
+          initialCloudRepository: "owner/repo",
         },
-        version: 0,
       });
+      useNavigationStore.getState().clearTaskInputReportAssociation();
+      const prefill = useTaskInputPrefillStore.getState().prefill;
+      expect(prefill.reportAssociation).toBeUndefined();
+      expect(prefill.initialCloudRepository).toBeUndefined();
+    });
+  });
 
-      getItem.mockResolvedValue(storedState);
+  describe("legacy compatibility shims", () => {
+    it("history/historyIndex stay stubbed", () => {
+      const s = useNavigationStore.getState();
+      expect(s.history).toEqual([]);
+      expect(s.historyIndex).toBe(0);
+    });
 
-      useNavigationStore.setState({
-        view: { type: "task-input" },
-        history: [{ type: "task-input" }],
-        historyIndex: 0,
-      });
+    it("hydrateTask is a no-op (URL is source of truth)", () => {
+      expect(() =>
+        useNavigationStore.getState().hydrateTask([mockTask]),
+      ).not.toThrow();
+    });
 
-      await useNavigationStore.persist.rehydrate();
-
-      expect(getView()).toMatchObject({
-        type: "task-detail",
-        taskId: "task-123",
-      });
-      expect(getView().data).toBeUndefined();
+    it("setState logs a warning and does nothing", () => {
+      const before = useNavigationStore.getState().view;
+      useNavigationStore.setState({ view: { type: "inbox" } });
+      expect(useNavigationStore.getState().view).toEqual(before);
     });
   });
 });
