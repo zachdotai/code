@@ -8,6 +8,9 @@ import {
 
 interface TaskRunEventStreamSenderConfig {
   apiUrl: string;
+  // Base URL for the event-ingest POST only. Lets the deployment route ingest to the
+  // standalone agent-proxy while the rest of the agent's API calls stay on apiUrl.
+  eventIngestBaseUrl?: string;
   projectId: number;
   taskId: string;
   runId: string;
@@ -85,8 +88,11 @@ export class TaskRunEventStreamSender {
   private bufferRevision = 0;
 
   constructor(private readonly config: TaskRunEventStreamSenderConfig) {
-    const apiUrl = config.apiUrl.replace(/\/$/, "");
-    this.ingestUrl = `${apiUrl}/api/projects/${config.projectId}/tasks/${encodeURIComponent(
+    const ingestBase = (config.eventIngestBaseUrl ?? config.apiUrl).replace(
+      /\/$/,
+      "",
+    );
+    this.ingestUrl = `${ingestBase}/api/projects/${config.projectId}/tasks/${encodeURIComponent(
       config.taskId,
     )}/runs/${encodeURIComponent(config.runId)}/event_stream/`;
     this.maxBufferedEvents =

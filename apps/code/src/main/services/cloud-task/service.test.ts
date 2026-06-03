@@ -604,6 +604,59 @@ describe("CloudTaskService", () => {
     ).toBe(true);
   });
 
+  it("stops without reconnecting when the server emits stream-end on a non-terminal run", async () => {
+    vi.useFakeTimers();
+
+    // Run status stays non-terminal the whole time. Pre-durable-contract, a clean EOF on a
+    // non-terminal run reconnects (see the test above); the stream-end sentinel must override that.
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: "build",
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(
+        createSseResponse(
+          'id: 1\ndata: {"type":"notification","timestamp":"2026-01-01T00:00:01Z","notification":{"jsonrpc":"2.0","method":"_posthog/console","params":{"sessionId":"run-1","level":"info","message":"hi"}}}\n\nevent: stream-end\ndata: {}\n\n',
+        ),
+      ),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const hasWatcher = (): boolean =>
+      (
+        service as unknown as { watchers: Map<string, unknown> }
+      ).watchers.has("task-1:run-1");
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    // Let the reconnect delay (2s base) elapse; with stream-end honored, none is scheduled.
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(mockStreamFetch.mock.calls.length).toBe(1);
+    await waitFor(() => !hasWatcher());
+  });
+
   it("fails the watcher after exhausting the cumulative reconnect budget on clean-EOF loops", async () => {
     vi.useFakeTimers();
 

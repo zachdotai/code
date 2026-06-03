@@ -29,6 +29,11 @@ const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
 
+// Durable end-of-stream sentinel emitted by the server (and the agent-proxy) once a run's
+// event stream is complete. It is the authoritative "no more events, ever" signal — the
+// client stops on it without consulting run status (status-unaware durable-stream contract).
+const STREAM_END_EVENT_NAME = "stream-end";
+
 interface SessionLogsPage {
   entries: StoredLogEntry[];
   hasMore: boolean;
@@ -109,6 +114,7 @@ interface WatcherState {
   failed: boolean;
   needsPostBootstrapReconnect: boolean;
   needsStopAfterBootstrap: boolean;
+  streamEnded: boolean;
 }
 
 function watcherKey(taskId: string, runId: string): string {
@@ -426,6 +432,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       failed: false,
       needsPostBootstrapReconnect: false,
       needsStopAfterBootstrap: false,
+      streamEnded: false,
     };
 
     this.watchers.set(key, watcher);
@@ -585,6 +592,10 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     if (!this.applyTaskRunState(watcher, run)) return;
     if (isTerminalStatus(watcher.lastStatus)) return;
 
+    this.emitStatusUpdate(watcher);
+  }
+
+  private emitStatusUpdate(watcher: WatcherState): void {
     this.emit(CloudTaskEvent.Update, {
       taskId: watcher.taskId,
       runId: watcher.runId,
@@ -747,6 +758,14 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         ? event.data.error
         : "Unknown stream error";
       throw new BackendStreamError(message);
+    }
+
+    if (event.event === STREAM_END_EVENT_NAME) {
+      // The run's stream is durably complete. Mark it so completion stops instead
+      // of reconnecting, independent of run status. The connection will close
+      // naturally (clean EOF) right after this sentinel.
+      watcher.streamEnded = true;
+      return;
     }
 
     // A keepalive or real event proves the transport recovered, so clear the
@@ -1108,6 +1127,16 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   ): Promise<void> {
     const watcher = this.watchers.get(key);
     if (!watcher) return;
+    if (watcher.failed) return;
+
+    // Durable end-of-stream: the server signalled this run's stream is complete, so
+    // stop without polling run status. This is the status-unaware durable-stream contract
+    // — absent this sentinel we keep reconnecting (below) to ride out transport churn.
+    if (watcher.streamEnded) {
+      this.emitStatusUpdate(watcher);
+      this.stopWatcher(key);
+      return;
+    }
 
     const { reconnectIfNonTerminal } = options;
     const run = await this.fetchTaskRun(watcher);
