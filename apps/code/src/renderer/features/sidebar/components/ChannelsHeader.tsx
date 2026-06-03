@@ -1,34 +1,12 @@
 import { Plus } from "@phosphor-icons/react";
-import { Flex, IconButton, Text, TextField } from "@radix-ui/themes";
+import { Flex, IconButton, Text } from "@radix-ui/themes";
 import { useState } from "react";
-import { useDesktopFileSystemMutations } from "../hooks/useDesktopFileSystem";
+import { CreateChannelModal } from "./CreateChannelModal";
 
-// Header above the channel tree with an inline "add channel" affordance. The
-// add form is purely local UI state; the create itself goes through the cloud
-// mutation hook.
+// Header above the channel tree with an "add channel" affordance that opens a
+// Slack-style create-channel modal.
 export function ChannelsHeader() {
-  const { createChannel, isCreating } = useDesktopFileSystemMutations();
-  const [isAdding, setIsAdding] = useState(false);
-  const [draft, setDraft] = useState("");
-
-  const cancel = () => {
-    setIsAdding(false);
-    setDraft("");
-  };
-
-  const submit = async () => {
-    const name = draft.trim();
-    if (!name) {
-      cancel();
-      return;
-    }
-    try {
-      await createChannel(name);
-      cancel();
-    } catch {
-      // Keep the input open so the user can retry; the mutation surfaces the error.
-    }
-  };
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
     <Flex direction="column" className="px-2 pb-1">
@@ -41,35 +19,13 @@ export function ChannelsHeader() {
           variant="ghost"
           color="gray"
           size="1"
-          aria-label="Add channel"
-          onClick={() => setIsAdding(true)}
+          aria-label="Create channel"
+          onClick={() => setIsModalOpen(true)}
         >
           <Plus size={12} />
         </IconButton>
       </Flex>
-      {isAdding && (
-        <TextField.Root
-          autoFocus
-          size="1"
-          className="mt-1"
-          value={draft}
-          placeholder="Channel name"
-          disabled={isCreating}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => {
-            if (!draft.trim()) cancel();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void submit();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              cancel();
-            }
-          }}
-        />
-      )}
+      <CreateChannelModal open={isModalOpen} onOpenChange={setIsModalOpen} />
     </Flex>
   );
 }
