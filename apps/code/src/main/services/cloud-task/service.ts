@@ -115,6 +115,11 @@ interface WatcherState {
   needsPostBootstrapReconnect: boolean;
   needsStopAfterBootstrap: boolean;
   streamEnded: boolean;
+  // Read-leg routing, resolved once from the stream_token endpoint and reused across reconnects.
+  // streamBaseUrl set => read via the agent-proxy with streamReadToken; null => read from Django.
+  streamTargetResolved: boolean;
+  streamBaseUrl: string | null;
+  streamReadToken: string | null;
 }
 
 function watcherKey(taskId: string, runId: string): string {
@@ -433,6 +438,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       needsPostBootstrapReconnect: false,
       needsStopAfterBootstrap: false,
       streamEnded: false,
+      streamTargetResolved: false,
+      streamBaseUrl: null,
+      streamReadToken: null,
     };
 
     this.watchers.set(key, watcher);
@@ -618,8 +626,28 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const controller = new AbortController();
     watcher.sseAbortController = controller;
 
+    // Resolve the read target once (proxy URL + token, or Django). The server owns the decision;
+    // reused across reconnects so transport churn never re-mints a token.
+    if (!watcher.streamTargetResolved) {
+      await this.resolveStreamTarget(watcher);
+      const resolvedWatcher = this.watchers.get(key);
+      if (
+        !resolvedWatcher ||
+        resolvedWatcher !== watcher ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
+    }
+
+    const usingProxy = Boolean(
+      watcher.streamBaseUrl && watcher.streamReadToken,
+    );
+    const base = usingProxy
+      ? watcher.streamBaseUrl?.replace(/\/+$/, "")
+      : watcher.apiHost;
     const url = new URL(
-      `${watcher.apiHost}/api/projects/${watcher.teamId}/tasks/${watcher.taskId}/runs/${watcher.runId}/stream/`,
+      `${base}/api/projects/${watcher.teamId}/tasks/${watcher.taskId}/runs/${watcher.runId}/stream/`,
     );
     if (options?.startLatest && !watcher.lastEventId) {
       url.searchParams.set("start", "latest");
@@ -629,6 +657,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     };
     if (watcher.lastEventId) {
       headers["Last-Event-ID"] = watcher.lastEventId;
+    }
+    if (usingProxy) {
+      headers.Authorization = `Bearer ${watcher.streamReadToken}`;
     }
 
     const parser = new SseEventParser();
@@ -641,15 +672,19 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     let streamWasEstablished = false;
 
     try {
-      const response = await this.authService.authenticatedFetch(
-        fetch,
-        url.toString(),
-        {
-          method: "GET",
-          headers,
-          signal: controller.signal,
-        },
-      );
+      // The proxy authenticates with the run-scoped Bearer token, not the user session, so it
+      // takes a plain fetch. The Django leg still goes through authenticatedFetch.
+      const response = usingProxy
+        ? await fetch(url.toString(), {
+            method: "GET",
+            headers,
+            signal: controller.signal,
+          })
+        : await this.authService.authenticatedFetch(fetch, url.toString(), {
+            method: "GET",
+            headers,
+            signal: controller.signal,
+          });
 
       if (!response.ok) {
         throw createStreamStatusError(response.status);
@@ -1337,6 +1372,39 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       }
 
       offset += page.entries.length;
+    }
+  }
+
+  private async resolveStreamTarget(watcher: WatcherState): Promise<void> {
+    const url = `${watcher.apiHost}/api/projects/${watcher.teamId}/tasks/${watcher.taskId}/runs/${watcher.runId}/stream_token/`;
+    try {
+      const response = await this.authService.authenticatedFetch(fetch, url, {
+        method: "GET",
+      });
+      if (!response.ok) {
+        // Reachable but refused: read from Django and don't retry resolution.
+        watcher.streamBaseUrl = null;
+        watcher.streamReadToken = null;
+        watcher.streamTargetResolved = true;
+        return;
+      }
+      const data = (await response.json()) as {
+        token?: string;
+        stream_base_url?: string | null;
+      };
+      watcher.streamReadToken = data.token ?? null;
+      watcher.streamBaseUrl = data.stream_base_url ?? null;
+      watcher.streamTargetResolved = true;
+    } catch (error) {
+      // Transient failure: leave unresolved so the next reconnect retries; connectSse falls back
+      // to the Django leg meanwhile since streamBaseUrl stays null.
+      watcher.streamBaseUrl = null;
+      watcher.streamReadToken = null;
+      log.warn("Cloud task stream target resolution failed", {
+        taskId: watcher.taskId,
+        runId: watcher.runId,
+        error,
+      });
     }
   }
 

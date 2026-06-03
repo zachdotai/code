@@ -3,15 +3,21 @@ import { CloudTaskEvent } from "./schemas";
 
 const mockNetFetch = vi.hoisted(() => vi.fn());
 const mockStreamFetch = vi.hoisted(() => vi.fn());
+const mockStreamTokenFetch = vi.hoisted(() => vi.fn());
 
 // The service now uses global fetch for BOTH authenticated API calls (JSON)
 // and SSE streaming. The two used to be distinct (net.fetch vs global fetch).
-// To preserve the existing test fixtures, route by URL: /stream/ → stream mock,
-// everything else → API mock.
+// Route by URL: /stream_token/ → token mock (read-leg resolution), /stream/ → stream mock,
+// everything else → API mock. The token mock has a Django-path default so existing fixtures
+// (which never set it) are untouched.
 const fetchRouter = vi.hoisted(() =>
   vi.fn((input: string | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.url;
-    const impl = url.includes("/stream/") ? mockStreamFetch : mockNetFetch;
+    const impl = url.includes("/stream_token/")
+      ? mockStreamTokenFetch
+      : url.includes("/stream/")
+        ? mockStreamFetch
+        : mockNetFetch;
     return impl(input, init);
   }),
 );
@@ -97,6 +103,13 @@ describe("CloudTaskService", () => {
     service = new CloudTaskService(mockAuthService as never);
     mockNetFetch.mockReset();
     mockStreamFetch.mockReset();
+    mockStreamTokenFetch.mockReset();
+    // Default read-leg resolution: no proxy URL, so the stream reads from Django directly.
+    mockStreamTokenFetch.mockImplementation(() =>
+      Promise.resolve(
+        createJsonResponse({ token: "test-token", stream_base_url: null }),
+      ),
+    );
     mockAuthService.authenticatedFetch.mockReset();
     vi.stubGlobal("fetch", fetchRouter);
 
@@ -655,6 +668,60 @@ describe("CloudTaskService", () => {
 
     expect(mockStreamFetch.mock.calls.length).toBe(1);
     await waitFor(() => !hasWatcher());
+  });
+
+  it("reads via the agent-proxy with a Bearer token when the server resolves a base url", async () => {
+    vi.useFakeTimers();
+
+    mockStreamTokenFetch.mockImplementation(() =>
+      Promise.resolve(
+        createJsonResponse({
+          token: "proxy-token",
+          stream_base_url: "https://proxy.example",
+        }),
+      ),
+    );
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: "build",
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createSseResponse("event: stream-end\ndata: {}\n\n")),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+
+    const [calledUrl, init] = mockStreamFetch.mock.calls[0];
+    expect(String(calledUrl)).toMatch(
+      /^https:\/\/proxy\.example\/api\/projects\/2\/tasks\/task-1\/runs\/run-1\/stream\/(\?|$)/,
+    );
+    expect((init?.headers as Record<string, string>)?.Authorization).toBe(
+      "Bearer proxy-token",
+    );
   });
 
   it("fails the watcher after exhausting the cumulative reconnect budget on clean-EOF loops", async () => {
