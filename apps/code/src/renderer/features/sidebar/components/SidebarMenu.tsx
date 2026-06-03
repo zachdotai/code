@@ -40,6 +40,7 @@ import { McpServersItem } from "./items/McpServersItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
+import { SidebarPanelToggle } from "./SidebarPanelToggle";
 import { TaskListView } from "./TaskListView";
 
 const log = logger.scope("sidebar-menu");
@@ -74,10 +75,15 @@ function SidebarMenuComponent() {
     activeView: view,
   });
 
-  const useFsSidebar =
+  const fsSidebarEnabled =
     useFeatureFlag(FILE_SYSTEM_SIDEBAR_FLAG) || import.meta.env.DEV;
+  const activePanel = useSidebarStore((s) => s.activePanel);
+  const setActivePanel = useSidebarStore((s) => s.setActivePanel);
+  // The file-system tree is only ever shown behind the flag; without it we
+  // always fall back to the task list regardless of the persisted panel.
+  const showFiles = fsSidebarEnabled && activePanel === "files";
   const { data: fsItems = [], isLoading: fsLoading } = useDesktopFileSystem({
-    enabled: useFsSidebar,
+    enabled: showFiles,
   });
   const fsTree = useMemo(() => buildFileSystemTree(fsItems), [fsItems]);
   const inboxPollingActive = useRendererWindowFocusStore((s) => s.focused);
@@ -418,7 +424,16 @@ function SidebarMenuComponent() {
 
           <Separator className="mx-2 my-2" />
 
-          {useFsSidebar ? (
+          {fsSidebarEnabled && (
+            <Box px="2">
+              <SidebarPanelToggle
+                activePanel={activePanel}
+                onChange={setActivePanel}
+              />
+            </Box>
+          )}
+
+          {showFiles ? (
             fsLoading ? (
               <SidebarItem
                 depth={0}

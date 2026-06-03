@@ -14,6 +14,7 @@ interface SidebarStoreState {
   sortMode: "updated" | "created";
   showAllUsers: boolean;
   showInternal: boolean;
+  activePanel: "tasks" | "files";
 }
 
 interface SidebarStoreActions {
@@ -32,6 +33,7 @@ interface SidebarStoreActions {
   setSortMode: (mode: SidebarStoreState["sortMode"]) => void;
   setShowAllUsers: (showAllUsers: boolean) => void;
   setShowInternal: (showInternal: boolean) => void;
+  setActivePanel: (panel: SidebarStoreState["activePanel"]) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -50,6 +52,7 @@ export const useSidebarStore = create<SidebarStore>()(
       sortMode: "updated",
       showAllUsers: false,
       showInternal: false,
+      activePanel: "files",
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -100,6 +103,7 @@ export const useSidebarStore = create<SidebarStore>()(
       setSortMode: (sortMode) => set({ sortMode }),
       setShowAllUsers: (showAllUsers) => set({ showAllUsers }),
       setShowInternal: (showInternal) => set({ showInternal }),
+      setActivePanel: (activePanel) => set({ activePanel }),
     }),
     {
       name: "sidebar-storage",
@@ -114,6 +118,7 @@ export const useSidebarStore = create<SidebarStore>()(
         sortMode: state.sortMode,
         showAllUsers: state.showAllUsers,
         showInternal: state.showInternal,
+        activePanel: state.activePanel,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -127,6 +132,7 @@ export const useSidebarStore = create<SidebarStore>()(
           sortMode?: SidebarStoreState["sortMode"];
           showAllUsers?: boolean;
           showInternal?: boolean;
+          activePanel?: SidebarStoreState["activePanel"];
         };
         return {
           ...current,
@@ -145,6 +151,7 @@ export const useSidebarStore = create<SidebarStore>()(
           sortMode: persistedState.sortMode ?? current.sortMode,
           showAllUsers: persistedState.showAllUsers ?? current.showAllUsers,
           showInternal: persistedState.showInternal ?? current.showInternal,
+          activePanel: persistedState.activePanel ?? current.activePanel,
         };
       },
     },
