@@ -645,9 +645,9 @@ describe("CloudTaskService", () => {
     });
 
     const hasWatcher = (): boolean =>
-      (
-        service as unknown as { watchers: Map<string, unknown> }
-      ).watchers.has("task-1:run-1");
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
 
     await waitFor(() => mockStreamFetch.mock.calls.length === 1);
     // Let the reconnect delay (2s base) elapse; with stream-end honored, none is scheduled.
