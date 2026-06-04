@@ -4,6 +4,9 @@ export const EXPERIMENT_SUGGESTIONS_FLAG =
   "posthog-code-experiment-suggestions";
 export const SYNC_CLOUD_TASKS_FLAG = "posthog-code-sync-cloud-tasks";
 export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
+// Gates the entire canvas feature (nav rail, Home/Website spaces, dashboards,
+// top-level Inbox space). When off, the app falls back to the code-only shell.
+export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
 export const BRANCH_PREFIX = "posthog-code/";
 export const DATA_DIR = ".posthog-code";
 export const WORKTREES_DIR = ".posthog-code/worktrees";
