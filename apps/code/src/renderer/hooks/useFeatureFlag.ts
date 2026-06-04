@@ -21,3 +21,19 @@ export function useFeatureFlag(
 
   return enabled;
 }
+
+/**
+ * True once PostHog has resolved feature flags at least once. Use this to defer
+ * flag-dependent redirects until a flag's value is trustworthy, rather than
+ * acting on the `false` default that every flag reports before load.
+ */
+export function useFeatureFlagsLoaded(): boolean {
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    // onFeatureFlagsLoaded fires immediately if flags are already resolved.
+    return onFeatureFlagsLoaded(() => setLoaded(true));
+  }, []);
+
+  return loaded;
+}

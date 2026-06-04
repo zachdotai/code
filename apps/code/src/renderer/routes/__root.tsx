@@ -1,3 +1,4 @@
+import { AppNav } from "@components/AppNav";
 import { HeaderRow } from "@components/HeaderRow";
 import { HedgehogMode } from "@components/HedgehogMode";
 import { KeyboardShortcutsSheet } from "@components/KeyboardShortcutsSheet";
@@ -16,12 +17,17 @@ import {
   workspaceApi,
 } from "@features/workspace/hooks/useWorkspace";
 import { useAppView } from "@hooks/useAppView";
-import { useFeatureFlag } from "@hooks/useFeatureFlag";
+import { useFeatureFlag, useFeatureFlagsLoaded } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { Box, Flex } from "@radix-ui/themes";
+import { navigateToCode } from "@renderer/navigationBridge";
 import { useTRPC } from "@renderer/trpc/client";
-import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
+import {
+  BILLING_FLAG,
+  PROJECT_BLUEBIRD_FLAG,
+  SYNC_CLOUD_TASKS_FLAG,
+} from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -102,6 +108,11 @@ function RootLayout() {
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
+  // Default on in dev so the rail shows locally without PostHog serving the flag.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
 
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
@@ -159,11 +170,30 @@ function RootLayout() {
     toggleCommandMenu();
   }, [toggleCommandMenu]);
 
-  // Settings is a full-page route — drop the app chrome (header/sidebar/
+  // Settings is a full-page route — drop the app chrome (rail/header/sidebar/
   // space-switcher) so the panel occupies the full window.
   const isSettingsRoute = useRouterState({
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
+
+  // The Home and Inbox spaces render full-screen (rail only, no code chrome).
+  const onHomePath = useRouterState({
+    select: (s) => s.location.pathname === "/",
+  });
+  const onInboxPath = useRouterState({
+    select: (s) => s.location.pathname === "/inbox",
+  });
+  const isHomeRoute = bluebirdEnabled && onHomePath;
+  const isInboxRoute = bluebirdEnabled && onInboxPath;
+
+  // With the rail hidden there's no way to leave a rail-only space, so a user
+  // stranded on / or /inbox (cold-boot restore, stale deep link) goes to /code
+  // — but only once flags resolve, so a flagged user isn't bounced mid-load.
+  const flagsLoaded = useFeatureFlagsLoaded();
+  useEffect(() => {
+    if (!flagsLoaded || bluebirdEnabled) return;
+    if (onHomePath || onInboxPath) navigateToCode();
+  }, [flagsLoaded, bluebirdEnabled, onHomePath, onInboxPath]);
 
   if (isSettingsRoute) {
     return (
@@ -188,24 +218,40 @@ function RootLayout() {
     );
   }
 
+  const isRailSpace = isHomeRoute || isInboxRoute;
+
   return (
-    <Flex direction="column" height="100vh">
-      <HeaderRow />
-      <Flex flexGrow="1" overflow="hidden">
-        <MainSidebar />
-        <Box flexGrow="1" overflow="hidden">
-          <Outlet />
-        </Box>
+    <Flex height="100vh" overflow="hidden">
+      {bluebirdEnabled && <AppNav />}
+      <Flex direction="column" flexGrow="1" overflow="hidden">
+        {isRailSpace ? (
+          <Box flexGrow="1" overflow="hidden">
+            <Outlet />
+          </Box>
+        ) : (
+          <>
+            <HeaderRow />
+            <Flex flexGrow="1" overflow="hidden">
+              <MainSidebar />
+              <Box flexGrow="1" overflow="hidden">
+                <Outlet />
+              </Box>
+            </Flex>
+
+            <SpaceSwitcher
+              tasks={visualTaskOrder}
+              activeTaskId={activeTaskId}
+              allTasks={tasks ?? []}
+              isOnNewTask={
+                view.type === "task-input" || view.type === "task-pending"
+              }
+              onNavigateToTask={openTask}
+              onNewTask={openTaskInput}
+            />
+          </>
+        )}
       </Flex>
 
-      <SpaceSwitcher
-        tasks={visualTaskOrder}
-        activeTaskId={activeTaskId}
-        allTasks={tasks ?? []}
-        isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
-        onNavigateToTask={openTask}
-        onNewTask={openTaskInput}
-      />
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <KeyboardShortcutsSheet
         open={shortcutsSheetOpen}
