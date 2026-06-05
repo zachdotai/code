@@ -7,6 +7,7 @@ import {
   dashboardRecordSchema,
   dashboardSummarySchema,
   listDashboardsInput,
+  refreshDashboardInput,
   updateDashboardInput,
 } from "../../services/dashboards/schemas";
 import type { DashboardsService } from "../../services/dashboards/service";
@@ -39,4 +40,7 @@ export const dashboardsRouter = router({
     .input(listDashboardsInput)
     .output(z.number())
     .mutation(({ input }) => getService().adoptOrphans(input.channelId)),
+  refresh: publicProcedure
+    .input(refreshDashboardInput)
+    .mutation(({ input }) => getService().refresh(input)),
 });

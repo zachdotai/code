@@ -197,12 +197,16 @@ function buildClaudeCodeOptions(args: {
   additionalDirectories?: string[];
   effort?: EffortLevel;
   plugins: { type: "local"; path: string }[];
+  disallowedTools?: string[];
 }) {
   return {
     ...(args.additionalDirectories?.length && {
       additionalDirectories: args.additionalDirectories,
     }),
     ...(args.effort && { effort: args.effort }),
+    ...(args.disallowedTools?.length && {
+      disallowedTools: args.disallowedTools,
+    }),
     plugins: args.plugins,
   };
 }
@@ -228,6 +232,8 @@ interface SessionConfig {
   jsonSchema?: Record<string, unknown> | null;
   /** When set, replaces the default system prompt (keeps only project scoping) */
   systemPromptOverride?: string;
+  /** Tool names the agent may NOT use (Claude Code SDK `disallowedTools`). */
+  disallowedTools?: string[];
 }
 
 interface ManagedSession {
@@ -742,6 +748,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         additionalDirectories,
         effort,
         plugins,
+        disallowedTools: config.disallowedTools,
       });
 
       let configOptions: SessionConfigOption[] | undefined;
@@ -1564,6 +1571,8 @@ For git operations while detached:
         "systemPromptOverride" in params
           ? params.systemPromptOverride
           : undefined,
+      disallowedTools:
+        "disallowedTools" in params ? params.disallowedTools : undefined,
     };
   }
 

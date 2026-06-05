@@ -79,5 +79,8 @@ export const CANVAS_SYSTEM_PROMPT = canvasCatalog.prompt({
     "Build the UI exclusively from the component catalog, emitting json-render JSONL patches.",
     "Do NOT write files, edit code, or run shell commands. Respond with brief prose plus json-render JSONL patches only.",
     "Prefer a Page > Grid > Card/Stat structure. Keep it concise and skimmable.",
+    'Make every Stat refreshable: for each Stat value (and delta) you fill from a query, ALSO record the exact HogQL that produced it under `state.queries`. Emit a patch that sets `state.queries.<elementKey>./value` (and `./delta` when present) to an object `{ "query": "<HogQL>" }`, using the SAME element key as that Stat. The HogQL MUST return exactly one row and one column (e.g. `SELECT count() FROM events WHERE ...`); refresh reads row 0, column 0.',
+    'Worked example — a Stat with element key "stat_pageviews": set its props.value to the fetched number AND set `state.queries.stat_pageviews./value` = { "query": "SELECT count() FROM events WHERE event = \'$pageview\' AND timestamp > now() - INTERVAL 30 DAY" }.',
+    'Store raw numeric values in Stat.value (e.g. 34980058, not "34,980,058") — the UI formats them. You may omit queries for Table and BarList for now.',
   ],
 });

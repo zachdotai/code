@@ -1,6 +1,6 @@
 import { ErrorBoundary } from "@components/ErrorBoundary";
 import { CanvasChat } from "@features/canvas/components/CanvasChat";
-import { CanvasRenderer } from "@features/canvas/genui/registry";
+import { EditRenderer } from "@features/canvas/genui/EditRenderer";
 import { useCanvasThread } from "@features/canvas/stores/canvasChatStore";
 import { registerCanvasSubscription } from "@features/canvas/subscriptions";
 import { isNonEmptySpec } from "@json-render/core";
@@ -32,7 +32,13 @@ export function WebsiteCanvas({ threadId }: { threadId: string }) {
               </Flex>
             }
           >
-            <CanvasRenderer spec={spec} loading={isStreaming} />
+            {/* Direct manipulation (drag/inline-edit) is live only when the
+                agent isn't streaming, so user edits can't race snapshots. */}
+            <EditRenderer
+              spec={spec}
+              threadId={threadId}
+              interactive={!isStreaming}
+            />
           </ErrorBoundary>
         ) : (
           <Flex

@@ -39,3 +39,11 @@ export const updateDashboardInput = z.object({
 });
 
 export const dashboardIdInput = z.object({ id: z.string().min(1) });
+
+export const refreshDashboardInput = z.object({
+  id: z.string().min(1),
+  // Limit the refresh to these elements' subtrees (per-card refresh).
+  elementKeys: z.array(z.string()).optional(),
+  // Skip bumping updatedAt (e.g. for background polling) to avoid reordering.
+  touchUpdatedAt: z.boolean().optional(),
+});

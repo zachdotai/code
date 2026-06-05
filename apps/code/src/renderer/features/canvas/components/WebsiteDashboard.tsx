@@ -1,6 +1,6 @@
 import { ErrorBoundary } from "@components/ErrorBoundary";
 import { WebsiteCanvas } from "@features/canvas/components/WebsiteCanvas";
-import { CanvasRenderer } from "@features/canvas/genui/registry";
+import { ViewRenderer } from "@features/canvas/genui/ViewRenderer";
 import { useDashboard } from "@features/canvas/hooks/useDashboards";
 import { useCanvasChatStore } from "@features/canvas/stores/canvasChatStore";
 import { useIsDashboardEditing } from "@features/canvas/stores/dashboardEditStore";
@@ -34,7 +34,7 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
     <ScrollArea className="h-full bg-gray-1">
       {isNonEmptySpec(spec) ? (
         <ErrorBoundary name="dashboard-renderer" resetKey={spec}>
-          <CanvasRenderer spec={spec} />
+          <ViewRenderer spec={spec} dashboardId={dashboardId} />
         </ErrorBoundary>
       ) : (
         <Flex

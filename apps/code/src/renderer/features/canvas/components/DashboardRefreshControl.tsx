@@ -1,4 +1,4 @@
-import { useDashboard } from "@features/canvas/hooks/useDashboards";
+import { useRefreshDashboard } from "@features/canvas/hooks/useRefreshDashboard";
 import { useIsDashboardEditing } from "@features/canvas/stores/dashboardEditStore";
 import { ArrowClockwiseIcon, GearSixIcon } from "@phosphor-icons/react";
 import {
@@ -13,9 +13,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
-import { useTRPC } from "@renderer/trpc/client";
-import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 const POLL_OPTIONS = { "10s": 10_000, "10min": 600_000 } as const;
 type RefreshMode = "static" | keyof typeof POLL_OPTIONS;
@@ -37,19 +35,13 @@ export function DashboardRefreshControl({
 }: {
   dashboardId: string;
 }) {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
   const editing = useIsDashboardEditing(dashboardId);
-  const { isFetching } = useDashboard(dashboardId);
+  const { refresh, isRefreshing } = useRefreshDashboard(dashboardId);
 
   const [mode, setMode] = useState<RefreshMode>("static");
   const intervalMs = mode === "static" ? null : POLL_OPTIONS[mode];
   const polling = intervalMs != null && !editing;
   const [secondsLeft, setSecondsLeft] = useState(0);
-
-  const refetch = useCallback(() => {
-    void queryClient.invalidateQueries(trpc.dashboards.get.pathFilter());
-  }, [queryClient, trpc]);
 
   useEffect(() => {
     if (!polling || intervalMs == null) return;
@@ -57,14 +49,15 @@ export function DashboardRefreshControl({
     const id = setInterval(() => {
       setSecondsLeft((s) => {
         if (s <= 1) {
-          refetch();
+          // Polling refresh shouldn't reorder the dashboards list.
+          void refresh({ touchUpdatedAt: false });
           return Math.round(intervalMs / 1000);
         }
         return s - 1;
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [polling, intervalMs, refetch]);
+  }, [polling, intervalMs, refresh]);
 
   const label =
     intervalMs == null
@@ -75,10 +68,15 @@ export function DashboardRefreshControl({
 
   return (
     <ButtonGroup>
-      <Button variant="outline" size="sm" onClick={refetch}>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={isRefreshing}
+        onClick={() => void refresh()}
+      >
         <ArrowClockwiseIcon
           size={14}
-          className={isFetching ? "motion-safe:animate-spin" : undefined}
+          className={isRefreshing ? "motion-safe:animate-spin" : undefined}
         />
         {label}
       </Button>

@@ -28,6 +28,19 @@ const log = logger.scope("canvas-gen");
 
 const TASK_RUN_PREFIX = "canvas:";
 
+// File-writing, shell, and network tools the canvas agent must never use. It
+// builds dashboards from PostHog MCP data only; everything else is denied so the
+// turn can't write files, run commands, or fetch arbitrary URLs.
+const CANVAS_DISALLOWED_TOOLS = [
+  "Bash",
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+  "WebFetch",
+  "WebSearch",
+];
+
 interface ThreadState {
   /** The json-render Spec assembled from streamed JSONL patches. */
   spec: Record<string, unknown>;
@@ -120,6 +133,10 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
       projectId,
       permissionMode: "bypassPermissions",
       systemPromptOverride: systemPrompt,
+      // The canvas agent only needs PostHog MCP (read) tools. Deny file/shell/
+      // network tools so a misbehaving or prompt-injected turn can't write
+      // files, run commands, or exfiltrate — a hard guard, not just the prompt.
+      disallowedTools: CANVAS_DISALLOWED_TOOLS,
       ...(model ? { model } : {}),
     });
 

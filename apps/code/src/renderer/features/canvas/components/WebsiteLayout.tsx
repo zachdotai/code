@@ -4,7 +4,10 @@ import {
   useDashboard,
   useDashboardMutations,
 } from "@features/canvas/hooks/useDashboards";
-import { useCanvasThread } from "@features/canvas/stores/canvasChatStore";
+import {
+  useCanvasChatStore,
+  useCanvasThread,
+} from "@features/canvas/stores/canvasChatStore";
 import {
   useDashboardEditStore,
   useIsDashboardEditing,
@@ -15,6 +18,7 @@ import {
   CaretRightIcon,
   GitForkIcon,
   PencilSimpleIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
@@ -47,11 +51,12 @@ function DashboardControls({
 }) {
   const navigate = useNavigate();
   const editing = useIsDashboardEditing(dashboardId);
-  const toggle = useDashboardEditStore((s) => s.toggle);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
+  const resetThread = useCanvasChatStore((s) => s.reset);
 
+  const threadId = threadIdFor(dashboardId);
   const { dashboard } = useDashboard(dashboardId);
-  const { spec: liveSpec } = useCanvasThread(threadIdFor(dashboardId));
+  const { spec: liveSpec } = useCanvasThread(threadId);
   const { saveDashboard, createDashboard, isSaving } = useDashboardMutations();
 
   const savedSpec = dashboard?.spec ?? null;
@@ -75,9 +80,22 @@ function DashboardControls({
     });
   };
 
+  const onToggleEdit = () => {
+    if (editing) {
+      // Cancel: drop unsaved edits. Resetting the thread clears the live spec so
+      // re-entering edit re-seeds from the saved dashboard; the file is untouched.
+      void resetThread(threadId);
+      setEditing(dashboardId, false);
+    } else {
+      setEditing(dashboardId, true);
+    }
+  };
+
   return (
     <Flex align="center" gap="2" className="no-drag ml-auto">
-      <DashboardRefreshControl dashboardId={dashboardId} />
+      {/* Refresh is view-mode only: in edit the canvas shows the live thread
+          spec, so a file refresh wouldn't show and Save would clobber it. */}
+      {!editing && <DashboardRefreshControl dashboardId={dashboardId} />}
       {editing && (
         <>
           <Button
@@ -103,10 +121,14 @@ function DashboardControls({
         variant="outline"
         size="sm"
         data-selected={editing}
-        onClick={() => toggle(dashboardId)}
+        onClick={onToggleEdit}
       >
-        <PencilSimpleIcon size={14} weight={editing ? "fill" : "regular"} />
-        Edit
+        {editing ? (
+          <XIcon size={14} />
+        ) : (
+          <PencilSimpleIcon size={14} weight="regular" />
+        )}
+        {editing ? "Cancel" : "Edit"}
       </Button>
     </Flex>
   );

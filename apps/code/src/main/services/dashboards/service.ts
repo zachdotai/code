@@ -5,6 +5,8 @@ import type { IStoragePaths } from "@posthog/platform/storage-paths";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
+import type { DashboardQuery } from "../dashboard-query/schemas";
+import type { DashboardQueryService } from "../dashboard-query/service";
 import {
   type DashboardRecord,
   type DashboardSummary,
@@ -20,6 +22,8 @@ export class DashboardsService {
   constructor(
     @inject(MAIN_TOKENS.StoragePaths)
     private readonly storagePaths: IStoragePaths,
+    @inject(MAIN_TOKENS.DashboardQueryService)
+    private readonly dashboardQuery: DashboardQueryService,
   ) {}
 
   private get dir(): string {
@@ -122,6 +126,52 @@ export class DashboardsService {
     }
   }
 
+  // Re-run the HogQL queries stored at spec.state.queries and write the fresh
+  // values back into the spec props. `elementKeys` (a card's element) limits the
+  // refresh to that card's subtree. Failures keep their prior literal.
+  async refresh(input: {
+    id: string;
+    elementKeys?: string[];
+    touchUpdatedAt?: boolean;
+  }): Promise<{
+    updated: number;
+    failures: { elementKey: string; error: string }[];
+  }> {
+    const record = await this.get(input.id);
+    if (!record || !record.spec) return { updated: 0, failures: [] };
+
+    const spec = record.spec;
+    const queries = collectQueries(spec, input.elementKeys);
+    if (queries.length === 0) return { updated: 0, failures: [] };
+
+    const results = await this.dashboardQuery.run({ queries });
+
+    let nextSpec = spec;
+    let updated = 0;
+    const failures: { elementKey: string; error: string }[] = [];
+    for (const r of results) {
+      if (r.ok) {
+        const patched = patchProp(nextSpec, r.elementKey, r.propPath, r.value);
+        if (patched !== nextSpec) {
+          nextSpec = patched;
+          updated++;
+        }
+      } else {
+        failures.push({ elementKey: r.elementKey, error: r.error });
+      }
+    }
+
+    if (updated > 0) {
+      await this.write({
+        ...record,
+        spec: nextSpec,
+        updatedAt:
+          input.touchUpdatedAt === false ? record.updatedAt : Date.now(),
+      });
+    }
+    return { updated, failures };
+  }
+
   private async write(record: DashboardRecord): Promise<void> {
     await this.ensureDir();
     await writeFile(this.filePath(record.id), JSON.stringify(record, null, 2));
@@ -138,4 +188,81 @@ export class DashboardsService {
       return null;
     }
   }
+}
+
+type SpecElements = Record<string, { children?: string[]; props?: unknown }>;
+type StoredQuery = { query?: unknown; column?: unknown };
+
+// Collect refreshable queries from spec.state.queries, optionally limited to the
+// subtree(s) of `elementKeys` and skipping queries whose element no longer exists.
+function collectQueries(
+  spec: Record<string, unknown>,
+  elementKeys?: string[],
+): DashboardQuery[] {
+  const state = spec.state as Record<string, unknown> | undefined;
+  const queriesMap = state?.queries as
+    | Record<string, Record<string, StoredQuery>>
+    | undefined;
+  if (!queriesMap) return [];
+
+  const elements = spec.elements as SpecElements | undefined;
+  const allowed =
+    elementKeys && elements ? descendantKeys(elements, elementKeys) : null;
+
+  const out: DashboardQuery[] = [];
+  for (const [elementKey, props] of Object.entries(queriesMap)) {
+    if (allowed && !allowed.has(elementKey)) continue;
+    if (elements && !elements[elementKey]) continue; // stale key
+    for (const [propPath, stored] of Object.entries(props)) {
+      if (stored && typeof stored.query === "string") {
+        out.push({
+          elementKey,
+          propPath,
+          query: stored.query,
+          column: typeof stored.column === "string" ? stored.column : undefined,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// Keys reachable from any of `roots` via `children` (inclusive of the roots).
+function descendantKeys(elements: SpecElements, roots: string[]): Set<string> {
+  const seen = new Set<string>();
+  const stack = [...roots];
+  while (stack.length > 0) {
+    const key = stack.pop();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const children = elements[key]?.children;
+    if (children) stack.push(...children);
+  }
+  return seen;
+}
+
+// Immutably set spec.elements[elementKey].props[<propPath>]; no-op (same ref)
+// when the element is absent.
+function patchProp(
+  spec: Record<string, unknown>,
+  elementKey: string,
+  propPath: string,
+  value: string | number,
+): Record<string, unknown> {
+  const elements = spec.elements as
+    | Record<string, { props?: Record<string, unknown> }>
+    | undefined;
+  const el = elements?.[elementKey];
+  if (!elements || !el) return spec;
+  const propName = propPath.replace(/^\//, "");
+  return {
+    ...spec,
+    elements: {
+      ...elements,
+      [elementKey]: {
+        ...el,
+        props: { ...(el.props ?? {}), [propName]: value },
+      },
+    },
+  };
 }

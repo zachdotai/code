@@ -57,6 +57,12 @@ export const startSessionInput = z.object({
    * Used by non-coding agent surfaces (e.g. the canvas generation agent).
    */
   systemPromptOverride: z.string().optional(),
+  /**
+   * Tool names the agent may NOT use (Claude Code SDK `disallowedTools`). Used by
+   * non-coding surfaces (e.g. the canvas agent) to deny file/shell tools so the
+   * agent can't write files or run commands regardless of permission mode.
+   */
+  disallowedTools: z.array(z.string()).optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;

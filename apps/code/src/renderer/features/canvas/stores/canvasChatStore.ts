@@ -40,6 +40,20 @@ interface CanvasChatStore {
   reset: (threadId: string) => Promise<void>;
   /** Seed a thread's spec from a saved dashboard without clobbering live work. */
   ensureSpec: (threadId: string, spec: Spec) => void;
+  /** Inline edit: set a prop on an element (propPath is a pointer like "/title"). */
+  setElementProp: (
+    threadId: string,
+    elementKey: string,
+    propPath: string,
+    value: unknown,
+  ) => void;
+  /** Drag-and-drop: move a child before/after a sibling within its parent. */
+  moveChild: (
+    threadId: string,
+    parentKey: string,
+    sourceKey: string,
+    targetKey: string,
+  ) => void;
 
   // Stream handlers, driven by the subscription registrar.
   appendProse: (threadId: string, text: string) => void;
@@ -119,6 +133,51 @@ export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
       // hydrate an empty thread (e.g. first entry into edit on a saved board).
       if (cur?.isStreaming || isNonEmptySpec(cur?.spec)) return;
       patch(threadId, (prev) => ({ ...prev, spec }));
+    },
+
+    setElementProp: (threadId, elementKey, propPath, value) => {
+      patch(threadId, (prev) => {
+        if (!isNonEmptySpec(prev.spec)) return prev;
+        const el = prev.spec.elements[elementKey];
+        if (!el) return prev;
+        // Catalog prop paths are single segments (e.g. "/title"). New refs all
+        // the way up so Zustand selectors + dirty-detection both fire.
+        const propName = propPath.replace(/^\//, "");
+        const nextSpec: Spec = {
+          ...prev.spec,
+          elements: {
+            ...prev.spec.elements,
+            [elementKey]: {
+              ...el,
+              props: { ...el.props, [propName]: value },
+            },
+          },
+        };
+        return { ...prev, spec: nextSpec };
+      });
+    },
+
+    moveChild: (threadId, parentKey, sourceKey, targetKey) => {
+      patch(threadId, (prev) => {
+        if (!isNonEmptySpec(prev.spec)) return prev;
+        const el = prev.spec.elements[parentKey];
+        const children = el?.children;
+        if (!el || !children) return prev;
+        const from = children.indexOf(sourceKey);
+        const to = children.indexOf(targetKey);
+        if (from < 0 || to < 0 || from === to) return prev;
+        const next = children.slice();
+        next.splice(from, 1);
+        next.splice(to, 0, sourceKey);
+        const nextSpec: Spec = {
+          ...prev.spec,
+          elements: {
+            ...prev.spec.elements,
+            [parentKey]: { ...el, children: next },
+          },
+        };
+        return { ...prev, spec: nextSpec };
+      });
     },
 
     appendProse: (threadId, text) => {
