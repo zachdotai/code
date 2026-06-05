@@ -1422,6 +1422,10 @@ describe("AgentServer HTTP Mode", () => {
           expect(prompt).toContain("# Identity");
           expect(prompt).toContain("PostHog Slack app");
           expect(prompt).toContain("Do NOT refer to yourself as Claude");
+          expect(prompt).toContain("# Slack formatting");
+          expect(prompt).toContain(
+            "NEVER wrap a URL or link in bold or any other formatting",
+          );
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         },
       );
