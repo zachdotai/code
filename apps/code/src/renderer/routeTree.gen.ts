@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WebsiteRouteImport } from './routes/website'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as McpServersRouteImport } from './routes/mcp-servers'
-import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as CommandCenterRouteImport } from './routes/command-center'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WebsiteIndexRouteImport } from './routes/website/index'
@@ -43,11 +42,6 @@ const SkillsRoute = SkillsRouteImport.update({
 const McpServersRoute = McpServersRouteImport.update({
   id: '/mcp-servers',
   path: '/mcp-servers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InboxRoute = InboxRouteImport.update({
-  id: '/inbox',
-  path: '/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CommandCenterRoute = CommandCenterRouteImport.update({
@@ -137,7 +131,6 @@ const CodeTasksPendingKeyRoute = CodeTasksPendingKeyRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
-  '/inbox': typeof InboxRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/website': typeof WebsiteRouteWithChildren
@@ -159,7 +152,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
-  '/inbox': typeof InboxRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/code/archived': typeof CodeArchivedRoute
@@ -181,7 +173,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
-  '/inbox': typeof InboxRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/website': typeof WebsiteRouteWithChildren
@@ -205,7 +196,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/command-center'
-    | '/inbox'
     | '/mcp-servers'
     | '/skills'
     | '/website'
@@ -227,7 +217,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/command-center'
-    | '/inbox'
     | '/mcp-servers'
     | '/skills'
     | '/code/archived'
@@ -248,7 +237,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/command-center'
-    | '/inbox'
     | '/mcp-servers'
     | '/skills'
     | '/website'
@@ -271,7 +259,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CommandCenterRoute: typeof CommandCenterRoute
-  InboxRoute: typeof InboxRoute
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
   WebsiteRoute: typeof WebsiteRouteWithChildren
@@ -306,13 +293,6 @@ declare module '@tanstack/react-router' {
       path: '/mcp-servers'
       fullPath: '/mcp-servers'
       preLoaderRoute: typeof McpServersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/inbox': {
-      id: '/inbox'
-      path: '/inbox'
-      fullPath: '/inbox'
-      preLoaderRoute: typeof InboxRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/command-center': {
@@ -455,7 +435,6 @@ const WebsiteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CommandCenterRoute: CommandCenterRoute,
-  InboxRoute: InboxRoute,
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
   WebsiteRoute: WebsiteRouteWithChildren,

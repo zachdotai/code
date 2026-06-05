@@ -31,13 +31,11 @@ import { useState } from "react";
 function NavButton({
   label,
   active,
-  disabled,
   count,
   onClick,
 }: {
   label: string;
   active?: boolean;
-  disabled?: boolean;
   count?: number;
   onClick?: () => void;
 }) {
@@ -46,7 +44,6 @@ function NavButton({
       variant="default"
       size="sm"
       data-selected={active || undefined}
-      disabled={disabled}
       onClick={onClick}
       className="w-full justify-start data-selected:bg-fill-selected data-selected:text-gray-12"
     >
@@ -194,7 +191,9 @@ function ChannelSection({ channel }: { channel: Channel }) {
   );
 }
 
-export function HomeSidebar() {
+// The channel list, embedded in the code sidebar's "Channels" tab. Channels are
+// server-backed; selecting one opens its dashboards under /website/$channelId.
+export function ChannelsList() {
   const { channels, isLoading } = useChannels();
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -202,38 +201,30 @@ export function HomeSidebar() {
   useAdoptOrphanDashboards(channels[0]?.id);
 
   return (
-    <Box
-      className="h-full shrink-0 border-gray-6 border-r bg-gray-1"
-      style={{ width: 240, minWidth: 240 }}
-    >
-      <Flex direction="column" gap="2" className="px-2 pt-10 pb-2">
-        <Flex align="center" justify="between" className="px-1">
-          <Text size="2" weight="bold" className="text-gray-12">
-            Home
-          </Text>
-          <IconButton
-            variant="ghost"
-            color="gray"
-            size="1"
-            aria-label="Create channel"
-            onClick={() => setModalOpen(true)}
-          >
-            <PlusIcon size={12} />
-          </IconButton>
-        </Flex>
-
-        {!isLoading && channels.length === 0 && (
-          <Text size="1" className="px-2 text-gray-9">
-            No channels yet. Create one to get started.
-          </Text>
-        )}
-
-        {channels.map((channel) => (
-          <ChannelSection key={channel.id} channel={channel} />
-        ))}
+    <Flex direction="column" gap="1" className="px-1 pb-2">
+      <Flex align="center" justify="end" className="px-1">
+        <IconButton
+          variant="ghost"
+          color="gray"
+          size="1"
+          aria-label="Create channel"
+          onClick={() => setModalOpen(true)}
+        >
+          <PlusIcon size={12} />
+        </IconButton>
       </Flex>
 
+      {!isLoading && channels.length === 0 && (
+        <Text size="1" className="px-2 text-gray-9">
+          No channels yet. Create one to get started.
+        </Text>
+      )}
+
+      {channels.map((channel) => (
+        <ChannelSection key={channel.id} channel={channel} />
+      ))}
+
       <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />
-    </Box>
+    </Flex>
   );
 }

@@ -3,9 +3,6 @@ import { HedgehogMode } from "@components/HedgehogMode";
 import { KeyboardShortcutsSheet } from "@components/KeyboardShortcutsSheet";
 import { SpaceSwitcher } from "@components/SpaceSwitcher";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
-import { CanvasNav } from "@features/canvas/components/CanvasNav";
-import { HomeSidebar } from "@features/canvas/components/HomeSidebar";
-import { isHomeSpacePath } from "@features/canvas/spaces";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { useSetupDiscovery } from "@features/setup/hooks/useSetupDiscovery";
@@ -19,17 +16,12 @@ import {
   workspaceApi,
 } from "@features/workspace/hooks/useWorkspace";
 import { useAppView } from "@hooks/useAppView";
-import { useFeatureFlag, useFeatureFlagsLoaded } from "@hooks/useFeatureFlag";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { Box, Flex } from "@radix-ui/themes";
-import { navigateToCode } from "@renderer/navigationBridge";
 import { useTRPC } from "@renderer/trpc/client";
-import {
-  BILLING_FLAG,
-  PROJECT_BLUEBIRD_FLAG,
-  SYNC_CLOUD_TASKS_FLAG,
-} from "@shared/constants";
+import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -110,12 +102,6 @@ function RootLayout() {
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
-  // Default on in dev so local work on the canvas feature isn't hidden behind a
-  // flag PostHog doesn't serve locally; prod is gated purely by project-bluebird.
-  const bluebirdEnabled = useFeatureFlag(
-    PROJECT_BLUEBIRD_FLAG,
-    import.meta.env.DEV,
-  );
 
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
@@ -179,35 +165,6 @@ function RootLayout() {
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
 
-  // Home space routes get their own sidenav + canvas scenes instead of the code
-  // app chrome (header/sidebar/space-switcher).
-  const onHomePath = useRouterState({
-    select: (s) => isHomeSpacePath(s.location.pathname),
-  });
-
-  // Inbox is a top-level space: it renders full-screen (rail only, no code
-  // header/sidebar/space-switcher).
-  const onInboxPath = useRouterState({
-    select: (s) => s.location.pathname === "/inbox",
-  });
-
-  // The canvas feature (nav rail + Home/Website/Inbox spaces) is gated behind
-  // project-bluebird. When off, the app is the code-only shell and the canvas
-  // spaces collapse to their pre-canvas layout.
-  const isHomeRoute = bluebirdEnabled && onHomePath;
-  const isInboxRoute = bluebirdEnabled && onInboxPath;
-
-  // With the rail hidden there's no way to leave a canvas-only path, so a user
-  // who lands on one (cold-boot last-route restore, stale deep link) would be
-  // stranded rendering canvas content inside the code chrome. Send them to
-  // /code — but only once flags have resolved, so a flagged user isn't bounced
-  // off /website during the brief window before project-bluebird loads.
-  const flagsLoaded = useFeatureFlagsLoaded();
-  useEffect(() => {
-    if (!flagsLoaded || bluebirdEnabled) return;
-    if (onHomePath || onInboxPath) navigateToCode();
-  }, [flagsLoaded, bluebirdEnabled, onHomePath, onInboxPath]);
-
   if (isSettingsRoute) {
     return (
       <Flex direction="column" height="100vh">
@@ -232,43 +189,23 @@ function RootLayout() {
   }
 
   return (
-    <Flex height="100vh" overflow="hidden">
-      {bluebirdEnabled && <CanvasNav />}
-      <Flex direction="column" flexGrow="1" overflow="hidden">
-        {isHomeRoute ? (
-          <Flex flexGrow="1" overflow="hidden">
-            <HomeSidebar />
-            <Box flexGrow="1" overflow="hidden">
-              <Outlet />
-            </Box>
-          </Flex>
-        ) : isInboxRoute ? (
-          <Box flexGrow="1" overflow="hidden">
-            <Outlet />
-          </Box>
-        ) : (
-          <>
-            <HeaderRow />
-            <Flex flexGrow="1" overflow="hidden">
-              <MainSidebar />
-              <Box flexGrow="1" overflow="hidden">
-                <Outlet />
-              </Box>
-            </Flex>
-
-            <SpaceSwitcher
-              tasks={visualTaskOrder}
-              activeTaskId={activeTaskId}
-              allTasks={tasks ?? []}
-              isOnNewTask={
-                view.type === "task-input" || view.type === "task-pending"
-              }
-              onNavigateToTask={openTask}
-              onNewTask={openTaskInput}
-            />
-          </>
-        )}
+    <Flex direction="column" height="100vh">
+      <HeaderRow />
+      <Flex flexGrow="1" overflow="hidden">
+        <MainSidebar />
+        <Box flexGrow="1" overflow="hidden">
+          <Outlet />
+        </Box>
       </Flex>
+
+      <SpaceSwitcher
+        tasks={visualTaskOrder}
+        activeTaskId={activeTaskId}
+        allTasks={tasks ?? []}
+        isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
+        onNavigateToTask={openTask}
+        onNewTask={openTaskInput}
+      />
 
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <KeyboardShortcutsSheet
