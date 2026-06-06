@@ -50,17 +50,20 @@ function getBuildDate(): string {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-function fixFilenameCircularRef(): Plugin {
+function fixImportMetaUrl(): Plugin {
   return {
-    name: "fix-filename-circular-ref",
+    name: "fix-import-meta-url",
     enforce: "post",
     generateBundle(_options, bundle) {
       for (const fileName in bundle) {
         const chunk = bundle[fileName];
         if (chunk.type === "chunk") {
+          // Rolldown (Vite 8) lowers `import.meta.url` to `{}.url` (undefined) in
+          // the CJS main bundle, crashing createRequire/fileURLToPath at boot.
+          // Restore a CJS-safe URL from the bundle's own __filename.
           chunk.code = chunk.code.replace(
-            /const __filename(\d+) = [\w$]+\.fileURLToPath\(typeof document === "undefined" \? require\("url"\)\.pathToFileURL\(__filename\1\)\.href : [^;]+\);/g,
-            "const __filename$1 = __filename;",
+            /\{\}\.url/g,
+            'require("url").pathToFileURL(__filename).href',
           );
         }
       }
@@ -609,7 +612,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       tsconfigPaths(),
       autoServicesPlugin(join(__dirname, "src/main/services")),
-      fixFilenameCircularRef(),
+      fixImportMetaUrl(),
       copyClaudeExecutable(),
       copyPosthogPlugin(isDev),
       copyDrizzleMigrations(),
