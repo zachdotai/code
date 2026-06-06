@@ -100,3 +100,12 @@ patchedDependencies:
 # Force a release that knows Electron 42 (ABI 146).
 overrides:
   node-abi: ^3.92.0
+  # Dedupe the zod 4.x line to one version so cross-package schema types stay
+  # nameable (TS2742). The agent SDK peer-declares zod ^4.0.0, so this is safe.
+  # Scoped to 4.x; zod 3.x consumers are left untouched.
+  'zod@^4.0.0': 4.4.3
+  # Keep one React across the monorepo so apps/code (19.2) and apps/mobile share
+  # an instance (react-test-renderer must match react). RN 0.81 peers react ^19.1.
+  react: 19.2.6
+  react-dom: 19.2.6
+  react-test-renderer: 19.2.6
