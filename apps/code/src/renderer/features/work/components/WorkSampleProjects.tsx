@@ -28,7 +28,6 @@ import type { ProjectIconId, WorkProject } from "@shared/types/work-projects";
 import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
 import { type ComponentType, useMemo, useState } from "react";
-import { useWorkThreadsStore } from "../stores/workThreadsStore";
 
 const log = logger.scope("work-sample-projects");
 
@@ -291,7 +290,6 @@ function SampleCard({
 
 export function WorkSampleProjects({ projects }: { projects: WorkProject[] }) {
   const navigateToWorkTask = useNavigationStore((s) => s.navigateToWorkTask);
-  const addThread = useWorkThreadsStore((s) => s.addThread);
   const { folders, isLoaded: foldersLoaded } = useFolders();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -309,13 +307,10 @@ export function WorkSampleProjects({ projects }: { projects: WorkProject[] }) {
         content: prompt,
         repoPath,
         workspaceMode: "local",
-        // HACKATHON SHORTCUT: see useWorkThreadTasks.ts.
-        repositoryConfig: { work_thread: true, collaborators: [] },
       };
 
       const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
       const result = await taskService.createTask(input, (output) => {
-        addThread(output.task.id);
         navigateToWorkTask(output.task.id);
       });
 
