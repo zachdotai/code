@@ -39,6 +39,13 @@ export function navigateToFolderSettings(folderId: string): void {
   });
 }
 
+export function navigateToFolderContext(folderId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/channels/$folderId/context",
+    params: { folderId },
+  });
+}
+
 export function navigateToInbox(): void {
   void getRouterOrNull()?.navigate({ to: "/code/inbox" });
 }

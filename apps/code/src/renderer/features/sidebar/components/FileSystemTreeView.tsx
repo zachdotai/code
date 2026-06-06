@@ -1,12 +1,17 @@
-import { Code, Hash } from "@phosphor-icons/react";
+import { Code, FileText, Hash } from "@phosphor-icons/react";
 import { AlertDialog, Button, Flex, Spinner, Text } from "@radix-ui/themes";
-import { navigateToTaskDetail } from "@renderer/navigationBridge";
+import {
+  navigateToFolderContext,
+  navigateToTaskDetail,
+} from "@renderer/navigationBridge";
 import { useState } from "react";
 import { useDesktopFileSystemMutations } from "../hooks/useDesktopFileSystem";
 import { useSidebarStore } from "../stores/sidebarStore";
 import type { FileSystemTreeNode } from "../utils/fileSystemTree";
 import { SidebarItem } from "./SidebarItem";
 import { SidebarSection } from "./SidebarSection";
+
+const CONTEXT_LEAF_LABEL = "CONTEXT.md";
 
 // Persisted collapse state is shared with the task view's repo groups; namespace
 // file system keys so the two never collide.
@@ -53,6 +58,10 @@ function FileSystemTreeNodeRow({
   // Only real top-level channel rows are deletable: depth 0 with a backing cloud
   // row (derived intermediate folders have no item/id and can't be removed).
   const isDeletableChannel = depth === 0 && Boolean(node.item?.id);
+  // CONTEXT.md hangs off any folder that has a real FileSystem row id; derived
+  // intermediate folders (no `item`) have no id to attach instructions to.
+  const folderId = node.item?.id ?? null;
+  const showContextLeaf = folderId !== null;
 
   return (
     <SidebarSection
@@ -67,6 +76,18 @@ function FileSystemTreeNodeRow({
       onDelete={isDeletableChannel ? () => onDeleteChannel(node) : undefined}
       deleteTooltip="Delete channel"
     >
+      {showContextLeaf && folderId ? (
+        // Child rows recurse through FileSystemTreeNodeRow with depth+1, and
+        // the leaf branch adds another +1 — so sibling leaves end up at
+        // visualDepth+2. CONTEXT.md is rendered directly here without that
+        // recursion, so we mirror the same offset to keep it aligned.
+        <SidebarItem
+          depth={Math.min(visualDepth + 2, MAX_VISUAL_DEPTH)}
+          label={CONTEXT_LEAF_LABEL}
+          icon={<FileText size={14} className="text-gray-10" />}
+          onClick={() => navigateToFolderContext(folderId)}
+        />
+      ) : null}
       {node.children.map((child) => (
         <FileSystemTreeNodeRow
           key={child.id}

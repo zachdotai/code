@@ -21,6 +21,7 @@ import { Route as CodeInboxRouteImport } from './routes/code/inbox'
 import { Route as CodeArchivedRouteImport } from './routes/code/archived'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
+import { Route as CodeChannelsFolderIdContextRouteImport } from './routes/code/channels/$folderId/context'
 
 const SkillsRoute = SkillsRouteImport.update({
   id: '/skills',
@@ -82,6 +83,12 @@ const CodeTasksPendingKeyRoute = CodeTasksPendingKeyRouteImport.update({
   path: '/code/tasks/pending/$key',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CodeChannelsFolderIdContextRoute =
+  CodeChannelsFolderIdContextRouteImport.update({
+    id: '/code/channels/$folderId/context',
+    path: '/code/channels/$folderId/context',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -95,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/code/channels/$folderId/context': typeof CodeChannelsFolderIdContextRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
 }
 export interface FileRoutesByTo {
@@ -109,6 +117,7 @@ export interface FileRoutesByTo {
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/code/channels/$folderId/context': typeof CodeChannelsFolderIdContextRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
 }
 export interface FileRoutesById {
@@ -124,6 +133,7 @@ export interface FileRoutesById {
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/code/channels/$folderId/context': typeof CodeChannelsFolderIdContextRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
 }
 export interface FileRouteTypes {
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/code/'
     | '/settings/'
     | '/code/tasks/$taskId'
+    | '/code/channels/$folderId/context'
     | '/code/tasks/pending/$key'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -154,6 +165,7 @@ export interface FileRouteTypes {
     | '/code'
     | '/settings'
     | '/code/tasks/$taskId'
+    | '/code/channels/$folderId/context'
     | '/code/tasks/pending/$key'
   id:
     | '__root__'
@@ -168,6 +180,7 @@ export interface FileRouteTypes {
     | '/code/'
     | '/settings/'
     | '/code/tasks/$taskId'
+    | '/code/channels/$folderId/context'
     | '/code/tasks/pending/$key'
   fileRoutesById: FileRoutesById
 }
@@ -183,6 +196,7 @@ export interface RootRouteChildren {
   CodeIndexRoute: typeof CodeIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   CodeTasksTaskIdRoute: typeof CodeTasksTaskIdRoute
+  CodeChannelsFolderIdContextRoute: typeof CodeChannelsFolderIdContextRoute
   CodeTasksPendingKeyRoute: typeof CodeTasksPendingKeyRoute
 }
 
@@ -272,6 +286,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeTasksPendingKeyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/code/channels/$folderId/context': {
+      id: '/code/channels/$folderId/context'
+      path: '/code/channels/$folderId/context'
+      fullPath: '/code/channels/$folderId/context'
+      preLoaderRoute: typeof CodeChannelsFolderIdContextRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -287,6 +308,7 @@ const rootRouteChildren: RootRouteChildren = {
   CodeIndexRoute: CodeIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   CodeTasksTaskIdRoute: CodeTasksTaskIdRoute,
+  CodeChannelsFolderIdContextRoute: CodeChannelsFolderIdContextRoute,
   CodeTasksPendingKeyRoute: CodeTasksPendingKeyRoute,
 }
 export const routeTree = rootRouteImport
