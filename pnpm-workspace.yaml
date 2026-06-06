@@ -93,3 +93,10 @@ onlyBuiltDependencies:
 
 patchedDependencies:
   node-pty: patches/node-pty.patch
+  better-sqlite3@12.10.0: patches/better-sqlite3@12.10.0.patch
+
+# node-abi 3.87.0 (pulled transitively) predates Electron 42 and cannot resolve
+# its ABI, which breaks @electron/rebuild and prebuild-install while packaging.
+# Force a release that knows Electron 42 (ABI 146).
+overrides:
+  node-abi: ^3.92.0
