@@ -1,4 +1,5 @@
 import { CreateChannelModal } from "@features/canvas/components/CreateChannelModal";
+import { RenameChannelModal } from "@features/canvas/components/RenameChannelModal";
 import {
   type Channel,
   useChannelMutations,
@@ -9,7 +10,12 @@ import {
   useChannelTasksStore,
 } from "@features/canvas/stores/websiteTasksStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
-import { DotsThreeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import {
+  DotsThreeIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import {
   Badge,
   Button,
@@ -56,9 +62,10 @@ function NavButton({
   );
 }
 
-// Hover-revealed "..." menu on a channel header: delete the channel.
+// Hover-revealed "..." menu on a channel header: rename or delete the channel.
 function ChannelMenu({ channel }: { channel: Channel }) {
   const [open, setOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { deleteChannel, isDeleting } = useChannelMutations();
@@ -99,7 +106,16 @@ function ChannelMenu({ channel }: { channel: Channel }) {
             </IconButton>
           }
         />
-        <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+        <DropdownMenuContent
+          align="end"
+          side="bottom"
+          sideOffset={4}
+          className="w-auto min-w-fit"
+        >
+          <DropdownMenuItem onClick={() => setRenameOpen(true)}>
+            <PencilSimpleIcon size={14} />
+            Rename channel
+          </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
             disabled={isDeleting}
@@ -110,6 +126,12 @@ function ChannelMenu({ channel }: { channel: Channel }) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <RenameChannelModal
+        channel={channel}
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+      />
     </Box>
   );
 }

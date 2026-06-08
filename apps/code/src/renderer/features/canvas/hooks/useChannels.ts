@@ -67,11 +67,22 @@ export function useChannelMutations() {
     onSuccess: invalidate,
   });
 
+  const renameMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      if (!client) throw new Error("Not authenticated");
+      return client.renameDesktopFileSystemChannel(id, name);
+    },
+    onSuccess: invalidate,
+  });
+
   return {
     createChannel: (name: string) =>
       createMutation.mutateAsync(name).then(toChannel),
     deleteChannel: (id: string) => deleteMutation.mutateAsync(id),
+    renameChannel: (id: string, name: string) =>
+      renameMutation.mutateAsync({ id, name }).then(toChannel),
     isCreating: createMutation.isPending,
     isDeleting: deleteMutation.isPending,
+    isRenaming: renameMutation.isPending,
   };
 }

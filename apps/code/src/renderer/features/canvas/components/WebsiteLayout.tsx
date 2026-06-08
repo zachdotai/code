@@ -18,6 +18,7 @@ import { isNonEmptySpec } from "@json-render/core";
 import {
   CaretRightIcon,
   GitForkIcon,
+  HashIcon,
   PencilSimpleIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -161,7 +162,11 @@ export function WebsiteLayout() {
 
     // The channel (links to its dashboards grid), then the active sub-view.
     const crumbs: React.ReactNode[] = [
-      <ChannelGridLink key="channel" channelId={channelId}>
+      <ChannelGridLink
+        key="channel"
+        channelId={channelId}
+        icon={<HashIcon size={11} weight="bold" className="text-gray-8" />}
+      >
         {channelName}
       </ChannelGridLink>,
     ];
@@ -232,20 +237,24 @@ export function WebsiteLayout() {
 }
 
 // A breadcrumb link back to the channel's dashboards grid. Renders as a centered
-// inline-flex so it shares the dashboard-name crumb's vertical alignment.
+// inline-flex so it shares the dashboard-name crumb's vertical alignment. `icon`
+// (e.g. a faded #) renders before the label.
 function ChannelGridLink({
   channelId,
+  icon,
   children,
 }: {
   channelId: string;
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <Link
       to="/website/$channelId"
       params={{ channelId }}
-      className="no-drag inline-flex items-center"
+      className="no-drag inline-flex items-center gap-0.5"
     >
+      {icon}
       <Text
         size="1"
         weight="medium"

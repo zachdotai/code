@@ -668,6 +668,31 @@ export class PostHogAPIClient {
     return (await response.json()) as Schemas.FileSystem;
   }
 
+  // Rename a top-level channel: PATCH its path (a single segment) to the new
+  // name. The backend recomputes depth from the path.
+  async renameDesktopFileSystemChannel(
+    id: string,
+    name: string,
+  ): Promise<Schemas.FileSystem> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(id)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ path: name }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to rename desktop file system channel: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as Schemas.FileSystem;
+  }
+
   // Delete a desktop file system entry by id (used to remove top-level channels).
   async deleteDesktopFileSystem(id: string): Promise<void> {
     const teamId = await this.getTeamId();
