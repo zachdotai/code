@@ -1,0 +1,160 @@
+# Canvas templates, open-ended building & data sources — design scope
+
+**Status:** Proposal / scoped. Not yet implemented.
+**Owner:** canvas feature.
+**Branch:** `feat/canvases-rename` (builds on `feat/canvas` → `feat/canvas-quill`).
+
+## Vision
+
+A **canvas** is a freeform, agent-built surface — not a PostHog dashboard. At
+creation the user picks a **template** that injects its own agent context
+(prompt + component palette + data policy + optional starter spec). "Dashboard"
+becomes _one_ template; "Blank canvas" can become anything the user describes —
+a tool, a form, a whole mini-site. Data is not limited to product analytics: the
+agent can pull from any connected PostHog **data-warehouse source** (Stripe,
+Postgres, …) via HogQL.
+
+The rigid, PostHog-data-centric gen-UI is being generalised into a
+template-driven, source-aware canvas builder.
+
+## Locked decisions
+
+1. **Catalog + prompt move to main.** The component contract and the agent
+   system prompt are business logic; they leave the renderer.
+2. **Blank canvas = curated palette + sanitized rich text.** No arbitrary
+   `<script>`; "website" means composing many sanitized sections, not raw markup.
+3. **Design for user-defined templates from the start.** Templates are data
+   (records), not hardcoded. Built-ins are seeded; users can add their own later.
+4. **New warehouse sources: link out to PostHog.** We surface available/connected
+   sources and deep-link to PostHog to connect new ones — no in-app OAuth.
+
+## Current state (what we're changing)
+
+- One hardcoded `CANVAS_SYSTEM_PROMPT` and one `canvasCatalog`, both in the
+  renderer (`genui/catalog.ts`), passed to the agent at session start.
+- `canvas-gen` main service owns the agent session: `bypassPermissions`,
+  `repoPath = tmpdir`, `disallowedTools = [Bash, Write, Edit, MultiEdit,
+  NotebookEdit, WebFetch, WebSearch]`. The agent is read-only and can only reach
+  **PostHog MCP tools** (`mcp.posthog.com/mcp`).
+- A canvas record is `{ id, channelId, name, spec }` (desktop-fs `meta` blob).
+  No template or data-source field.
+- Warehouse data is **already queryable via HogQL** (the `dashboard-query`
+  refresh path runs HogQL; the MCP exposes `data-warehouse` / `external-data` /
+  `execute-sql` domains). The gap is _discoverability_ and _UI_, not reachability.
+
+## The model
+
+### `CanvasTemplate` (data, main-owned)
+
+```ts
+interface CanvasTemplate {
+  id: string;                 // "dashboard" | "blank" | <user-defined uuid>
+  name: string;
+  description: string;        // shown in the create picker
+  builtIn: boolean;           // seeded vs user-created
+  systemPrompt: string;       // agent context injection (per-template)
+  catalogId: string;          // which component palette the agent may emit
+  starterSpec?: Spec;         // optional scaffold rendered before the first turn
+  dataPolicy: DataPolicy;     // which sources the agent may query
+  createdAt: number;
+  updatedAt: number;
+}
+```
+
+- Templates are **records**, served by a `CanvasTemplatesService` (main),
+  exposed via a one-line tRPC router. Built-ins ("dashboard", "blank") are seeded
+  on first run; user templates persist alongside (same store as canvases, or a
+  dedicated templates store — see Open questions).
+- Today's `CANVAS_SYSTEM_PROMPT` + `canvasCatalog` become the **Dashboard**
+  template: cards, charts, Stats, refresh buttons, PostHog-data-centric.
+- **Blank** template: looser prompt ("build whatever the user asks"), a wider
+  curated palette (layout primitives + sanitized rich-text/markdown block).
+
+### Context injection
+
+- A canvas stores `templateId`. `canvas-gen.generate` resolves the template's
+  `systemPrompt` at **session start** (the agent's system prompt is frozen
+  there).
+- Per-turn we keep injecting the canvas title (already done) **plus a
+  data-source manifest** (below), so the agent always knows what it can pull.
+
+### Data sources & the warehouse
+
+- Add a main method to **list warehouse sources/tables** for the project
+  (PostHog `external_data` / warehouse API).
+- Inject a compact **manifest** into the agent context, e.g.
+  `Available data: events, persons, stripe_invoices(customer_id, amount, created)…`
+  so the agent writes correct HogQL against Stripe et al.
+- Warehouse-backed Stat refresh reuses the existing `dashboard-query` HogQL
+  path — no new mechanism.
+- Connecting a _new_ source is a PostHog-side flow: surface status and
+  **deep-link to PostHog** (decision 4). No in-app OAuth.
+
+## Architecture by layer (per CLAUDE.md)
+
+| Layer      | Change |
+| ---------- | ------ |
+| **shared** | The component **catalog contract** — names, Zod prop schemas, descriptions — moves to a shared module so one source feeds both the renderer registry and the main prompt builder. |
+| **main**   | New `CanvasTemplatesService` (list/get/create templates; compute `systemPrompt`). The `catalog.prompt()` generation moves to main. `canvas-gen.generate` takes a `templateId` and resolves prompt + catalog + data manifest. New warehouse-sources listing method (on a data service). Routers stay one-liners (R10). |
+| **renderer** | Template **picker** at create. `genui/registry.tsx` keeps mapping catalog component names → React bodies (it imports the shared contract). Thin tRPC calls only — no prompt/catalog logic left here. |
+
+**Catalog split (decision 1):** the _contract_ (what components exist + their
+prop schemas) is shared so the renderer can render it; the _prompt text_
+(`catalog.prompt(...)`) is generated in main as part of each template. The
+renderer no longer constructs or passes `CANVAS_SYSTEM_PROMPT`.
+
+## Blank canvas — rendering & safety (decision 2)
+
+- Blank gets a **broader curated palette** (more layout/content primitives) plus
+  a **sanitized** markdown/rich-text block (we already depend on
+  `rehype-sanitize`).
+- **No arbitrary `<script>`.** The agent's _tools_ are sandboxed, but its
+  _rendered output_ runs in our renderer — raw HTML/iframe is an
+  XSS/exfiltration surface, deferred and gated.
+- "Whole website" = composing many sanitized sections/components, not
+  unrestricted markup.
+- Interactivity (forms/buttons that _do_ things) → json-render already has
+  `actions`/bindings; treat as a deliberate later phase with its own review.
+
+## Data model / storage
+
+- Add `templateId: string` (default `"dashboard"` for back-compat) and optional
+  `dataSources?: string[]` to the canvas record + fs-meta schema. Existing boards
+  read as the Dashboard template.
+- Templates persisted as records (built-ins seeded; user templates addable).
+
+## Phasing
+
+1. **Template plumbing** — `CanvasTemplate` + `templateId` on records; today's
+   behaviour = the Dashboard template; create flow offers Dashboard | Blank
+   (Blank starts with the same catalog + a looser prompt). Move catalog contract
+   to shared and prompt generation to main. _No new render risk._
+2. **Blank palette** — widen the catalog + add the sanitized rich-text block.
+3. **Warehouse manifest** — list sources → inject into context (unlocks Stripe
+   et al. at build time and refresh).
+4. **Data UI** — show/choose connected sources on a canvas; link out to PostHog
+   to connect new ones; warehouse-backed refresh surfaced in the UI.
+5. **User-defined templates** — UI to save the current canvas (prompt + palette +
+   starter) as a reusable template.
+6. _Later_ — interactivity/actions, template sharing.
+
+## Open questions
+
+- **Template store:** reuse the canvases desktop-fs store (a `type: template`
+  row) or a dedicated store? (Leaning: same desktop-fs backend, distinct type.)
+- **Catalog packaging:** one shared catalog with per-template _allow-lists_, or
+  fully separate catalogs per template? (Leaning: one contract, per-template
+  allow-list, so the renderer registry stays single-source.)
+- **Per-template tool gating:** should Blank get a different `disallowedTools`
+  set than Dashboard? (Default: keep the read-only sandbox for all.)
+- **Data manifest size:** cap/scope the injected warehouse schema for large
+  projects to avoid blowing the context.
+
+## Related
+
+- Component contract & renderer: `genui/catalog.ts`, `genui/registry.tsx`,
+  `genui/bodies.tsx`.
+- Agent session: `main/services/canvas-gen/service.ts`.
+- Refresh / HogQL: `main/services/dashboard-query/service.ts`.
+- Storage: `main/services/dashboards/{schemas,service}.ts`.
+- Conventions: `features/canvas/AGENTS.md`.
