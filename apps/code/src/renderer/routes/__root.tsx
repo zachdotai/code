@@ -21,7 +21,7 @@ import { useAppView } from "@hooks/useAppView";
 import { useFeatureFlag, useFeatureFlagsLoaded } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { openTask, openTaskInput } from "@hooks/useOpenTask";
-import { Box, Flex } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { navigateToCode } from "@renderer/navigationBridge";
 import { useTRPC } from "@renderer/trpc/client";
 import {
@@ -233,9 +233,24 @@ function RootLayout() {
           </Box>
         ) : isChannelsSpace ? (
           <Flex flexGrow="1" overflow="hidden">
-            <Box className="w-[260px] shrink-0 overflow-y-auto border-gray-6 border-r bg-gray-2">
-              <ChannelsList />
-            </Box>
+            <Flex
+              direction="column"
+              className="w-[260px] shrink-0 border-gray-6 border-r bg-gray-2"
+            >
+              {/* Aligns the channel list with the outlet's breadcrumb bar (same
+                  h-10) so both columns start at the same line, like /code. */}
+              <Flex
+                align="center"
+                className="h-10 shrink-0 border-gray-6 border-b px-3"
+              >
+                <Text size="1" weight="medium" className="text-gray-12">
+                  Channels
+                </Text>
+              </Flex>
+              <Box className="min-h-0 flex-1 overflow-y-auto">
+                <ChannelsList />
+              </Box>
+            </Flex>
             <Box flexGrow="1" overflow="hidden">
               <Outlet />
             </Box>
