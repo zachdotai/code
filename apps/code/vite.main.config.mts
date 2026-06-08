@@ -55,17 +55,26 @@ function fixImportMetaUrl(): Plugin {
     name: "fix-import-meta-url",
     enforce: "post",
     generateBundle(_options, bundle) {
+      // Rolldown (Vite 8) lowers `import.meta.url` to `{}.url` (undefined) in the
+      // CJS main bundle, crashing createRequire/fileURLToPath at boot. Restore a
+      // CJS-safe URL from the bundle's own __filename.
+      let replaced = 0;
       for (const fileName in bundle) {
         const chunk = bundle[fileName];
         if (chunk.type === "chunk") {
-          // Rolldown (Vite 8) lowers `import.meta.url` to `{}.url` (undefined) in
-          // the CJS main bundle, crashing createRequire/fileURLToPath at boot.
-          // Restore a CJS-safe URL from the bundle's own __filename.
-          chunk.code = chunk.code.replace(
-            /\{\}\.url/g,
-            'require("url").pathToFileURL(__filename).href',
-          );
+          chunk.code = chunk.code.replace(/\{\}\.url/g, () => {
+            replaced++;
+            return 'require("url").pathToFileURL(__filename).href';
+          });
         }
+      }
+      // If a future Rolldown changes or fixes that lowering, this plugin silently
+      // stops firing and the boot crash returns. Warn loudly so we re-check the
+      // packaged app's boot (or drop this plugin once Rolldown handles it).
+      if (replaced === 0) {
+        this.warn(
+          "fix-import-meta-url found no `{}.url` to patch; verify Rolldown's import.meta.url lowering and that the packaged app still boots",
+        );
       }
     },
   };
