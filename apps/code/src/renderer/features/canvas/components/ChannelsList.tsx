@@ -190,35 +190,42 @@ function ChannelSection({ channel }: { channel: Channel }) {
   );
 }
 
-// The channel list, embedded in the code sidebar's "Channels" tab. Channels are
-// server-backed; selecting one opens its dashboards under /website/$channelId.
+// The channel list — the Channels space sidebar. Channels are server-backed;
+// selecting one opens its dashboards under /website/$channelId.
 export function ChannelsList() {
   const { channels, isLoading } = useChannels();
   const [modalOpen, setModalOpen] = useState(false);
 
   return (
-    <Flex direction="column" gap="1">
-      <Flex align="center" justify="end" className="px-1">
-        <IconButton
-          variant="ghost"
-          color="gray"
-          size="1"
-          aria-label="Create channel"
-          onClick={() => setModalOpen(true)}
-        >
-          <PlusIcon size={12} />
-        </IconButton>
+    <Flex direction="column" className="h-full min-h-0">
+      <Flex
+        direction="column"
+        gap="1"
+        className="min-h-0 flex-1 overflow-y-auto px-1 pt-1"
+      >
+        {!isLoading && channels.length === 0 && (
+          <Text size="1" className="px-2 text-gray-9">
+            No channels yet. Create one to get started.
+          </Text>
+        )}
+
+        {channels.map((channel) => (
+          <ChannelSection key={channel.id} channel={channel} />
+        ))}
       </Flex>
 
-      {!isLoading && channels.length === 0 && (
-        <Text size="1" className="px-2 text-gray-9">
-          No channels yet. Create one to get started.
-        </Text>
-      )}
-
-      {channels.map((channel) => (
-        <ChannelSection key={channel.id} channel={channel} />
-      ))}
+      {/* Pinned to the bottom of the channels nav. */}
+      <Box className="shrink-0 border-gray-6 border-t p-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-center"
+          onClick={() => setModalOpen(true)}
+        >
+          <PlusIcon size={14} />
+          New channel
+        </Button>
+      </Box>
 
       <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />
     </Flex>

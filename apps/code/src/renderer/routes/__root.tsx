@@ -247,7 +247,7 @@ function RootLayout() {
                   Channels
                 </Text>
               </Flex>
-              <Box className="min-h-0 flex-1 overflow-y-auto">
+              <Box className="min-h-0 flex-1 overflow-hidden">
                 <ChannelsList />
               </Box>
             </Flex>
