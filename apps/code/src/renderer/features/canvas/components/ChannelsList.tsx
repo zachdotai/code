@@ -197,6 +197,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
                 <Flex direction="column" gap="1" pt="1" pl="3">
                   <NavButton
                     label="New task"
+                    icon={<PlusIcon size={14} className="text-gray-9" />}
                     active={pathname === `${base}/new`}
                     onClick={() =>
                       navigate({
