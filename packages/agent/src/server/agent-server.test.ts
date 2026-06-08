@@ -198,9 +198,15 @@ interface TestableServer {
   ): Promise<void>;
   detectAndAttachPrUrl(payload: unknown, update: unknown): void;
   detectedPrUrl: string | null;
-  buildCloudSystemPrompt(prUrl?: string | null): string;
+  buildCloudSystemPrompt(
+    prUrl?: string | null,
+    slackThreadUrl?: string | null,
+  ): string;
   buildDetectedPrContext(prUrl: string): string;
-  buildSessionSystemPrompt(prUrl?: string | null): string | { append: string };
+  buildSessionSystemPrompt(
+    prUrl?: string | null,
+    slackThreadUrl?: string | null,
+  ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
   getRuntimeAdapter(): "claude" | "codex";
 }
@@ -1454,6 +1460,58 @@ describe("AgentServer HTTP Mode", () => {
         expect(prompt).not.toContain("# Identity");
         expect(prompt).not.toContain("PostHog Slack app");
         delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+      });
+    });
+
+    describe("PR body guidance (why context + brevity)", () => {
+      it("instructs Why and brevity (no thread link without a URL) when auto-creating a Slack PR", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt();
+          expect(prompt).toContain("gh pr create --draft");
+          // why context
+          expect(prompt).toContain("**Why**");
+          expect(prompt).toContain("the reason the user asked for this change");
+          // brevity
+          expect(prompt).toContain("Keep the PR description brief");
+          expect(prompt).toContain("do NOT enumerate every change");
+          // no thread link is added when no concrete URL is available
+          expect(prompt).not.toContain("Slack thread");
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("embeds the concrete Slack thread link when one is available", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            "https://posthog.slack.com/archives/C123/p456",
+          );
+          expect(prompt).toContain(
+            "this task started from a Slack thread, also link it: https://posthog.slack.com/archives/C123/p456",
+          );
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("instructs Why and brevity but omits the thread hint on the non-Slack no-repository path", () => {
+        delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        const prompt = (
+          createServer({
+            repositoryPath: undefined,
+          }) as unknown as TestableServer
+        ).buildCloudSystemPrompt();
+        expect(prompt).toContain("open a draft pull request");
+        expect(prompt).toContain("**Why**");
+        expect(prompt).toContain("Keep the PR description brief");
+        expect(prompt).not.toContain("Slack thread");
       });
     });
   });
