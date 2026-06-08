@@ -455,7 +455,7 @@ function SidebarMenuComponent() {
           />
         </Box>
 
-        <Box mb="2">
+        <Box>
           <CommandCenterItem
             isActive={sidebarData.isCommandCenterActive}
             onClick={handleCommandCenterClick}
@@ -465,17 +465,18 @@ function SidebarMenuComponent() {
       </Flex>
 
       {bluebirdEnabled ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <Tabs
-            value={sidebarTab}
-            onValueChange={(value) =>
-              setSidebarTab(value as "tasks" | "channels")
-            }
-          >
-            <TabsList className="mx-1 mt-1">
-              <TabsTrigger value="tasks">Tasks</TabsTrigger>
-              <TabsTrigger value="channels">Channels</TabsTrigger>
-            </TabsList>
+        <Tabs
+          value={sidebarTab}
+          onValueChange={(value) =>
+            setSidebarTab(value as "tasks" | "channels")
+          }
+          className="flex min-h-0 flex-1 flex-col gap-0"
+        >
+          <TabsList className="w-full shrink-0 px-2">
+            <TabsTrigger value="tasks">Tasks</TabsTrigger>
+            <TabsTrigger value="channels">Channels</TabsTrigger>
+          </TabsList>
+          <div className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             <TabsContent value="tasks" className="mt-1">
               <Flex direction="column" className="gap-px px-2 pb-2">
                 {taskList}
@@ -484,8 +485,8 @@ function SidebarMenuComponent() {
             <TabsContent value="channels" className="mt-1">
               <ChannelsList />
             </TabsContent>
-          </Tabs>
-        </div>
+          </div>
+        </Tabs>
       ) : (
         <>
           <Separator className="mx-2 my-2 shrink-0" />
