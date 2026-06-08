@@ -1,6 +1,3 @@
-import type { DragDropEvents } from "@dnd-kit/react";
-import { DragDropProvider } from "@dnd-kit/react";
-import { useSortable } from "@dnd-kit/react/sortable";
 import {
   type BodyCtx,
   PLAIN_CTX,
@@ -9,14 +6,13 @@ import {
 import { isEditableTextProp } from "@features/canvas/genui/editable";
 import { useCanvasChatStore } from "@features/canvas/stores/canvasChatStore";
 import type { Spec } from "@json-render/react";
-import { DotsSixVerticalIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@radix-ui/themes";
 import { type ReactNode, useRef } from "react";
 
 // Edit-mode renderer: a thin recursive walk over the json-render Spec (the map
 // key IS the element id, which createRenderer doesn't expose). Each element is
 // rendered via the SAME presentational bodies as view mode (bodies.tsx), wrapped
-// with hover/drag affordances and inline text editors.
+// with a hover frame and inline text editors.
 //
 // `interactive` is false while the agent streams — affordances collapse to a
 // plain (view-identical) render so user edits can't race the incoming snapshots.
@@ -29,30 +25,15 @@ export function EditRenderer({
   threadId: string;
   interactive: boolean;
 }) {
-  const moveChild = useCanvasChatStore((s) => s.moveChild);
-
-  const handleDragEnd: DragDropEvents["dragend"] = (event) => {
-    const { source, target } = event.operation;
-    if (!source || !target || source.id === target.id) return;
-    const parentKey = source.data?.parentKey as string | undefined;
-    // Only reorder within the same parent.
-    if (!parentKey || target.data?.parentKey !== parentKey) return;
-    moveChild(threadId, parentKey, String(source.id), String(target.id));
-  };
-
-  const tree = (
+  return (
     <EditNode
       spec={spec}
       threadId={threadId}
       elementKey={spec.root}
       parentKey={null}
-      index={0}
       interactive={interactive}
     />
   );
-
-  if (!interactive) return tree;
-  return <DragDropProvider onDragEnd={handleDragEnd}>{tree}</DragDropProvider>;
 }
 
 function EditNode({
@@ -60,14 +41,12 @@ function EditNode({
   threadId,
   elementKey,
   parentKey,
-  index,
   interactive,
 }: {
   spec: Spec;
   threadId: string;
   elementKey: string;
   parentKey: string | null;
-  index: number;
   interactive: boolean;
 }) {
   const element = spec.elements[elementKey];
@@ -76,14 +55,13 @@ function EditNode({
   const childKeys = element.children ?? [];
   const children =
     childKeys.length > 0
-      ? childKeys.map((childKey, i) => (
+      ? childKeys.map((childKey) => (
           <EditNode
             key={childKey}
             spec={spec}
             threadId={threadId}
             elementKey={childKey}
             parentKey={elementKey}
-            index={i}
             interactive={interactive}
           />
         ))
@@ -95,17 +73,9 @@ function EditNode({
 
   const body = renderBody(element.type, element.props, children, ctx);
 
-  // Root is never draggable; children get a sortable + hover frame in edit mode.
+  // Root renders bare; children get a hover frame to signal they're editable.
   if (!interactive || parentKey === null) return body;
-  return (
-    <SortableElement
-      elementKey={elementKey}
-      parentKey={parentKey}
-      index={index}
-    >
-      {body}
-    </SortableElement>
-  );
+  return <HoverFrame>{body}</HoverFrame>;
 }
 
 function makeEditCtx(
@@ -130,38 +100,9 @@ function makeEditCtx(
   };
 }
 
-function SortableElement({
-  elementKey,
-  parentKey,
-  index,
-  children,
-}: {
-  elementKey: string;
-  parentKey: string;
-  index: number;
-  children: ReactNode;
-}) {
-  const { ref, handleRef, isDragging } = useSortable({
-    id: elementKey,
-    index,
-    group: parentKey,
-    data: { parentKey },
-  });
-
+function HoverFrame({ children }: { children: ReactNode }) {
   return (
-    <div
-      ref={ref}
-      className="group/edit relative"
-      style={{ opacity: isDragging ? 0.5 : 1 }}
-    >
-      <button
-        type="button"
-        ref={handleRef as React.RefCallback<HTMLButtonElement>}
-        aria-label="Drag to reorder"
-        className="-left-5 absolute top-1 z-10 flex h-5 w-5 cursor-grab items-center justify-center rounded text-gray-9 opacity-0 hover:bg-gray-4 hover:text-gray-11 active:cursor-grabbing group-hover/edit:opacity-100"
-      >
-        <DotsSixVerticalIcon size={14} />
-      </button>
+    <div className="group/edit relative">
       <div className="rounded outline-1 outline-transparent outline-offset-2 transition-[outline-color] group-hover/edit:outline-accent-7">
         {children}
       </div>

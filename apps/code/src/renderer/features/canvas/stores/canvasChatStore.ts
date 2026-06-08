@@ -47,13 +47,6 @@ interface CanvasChatStore {
     propPath: string,
     value: unknown,
   ) => void;
-  /** Drag-and-drop: move a child before/after a sibling within its parent. */
-  moveChild: (
-    threadId: string,
-    parentKey: string,
-    sourceKey: string,
-    targetKey: string,
-  ) => void;
 
   // Stream handlers, driven by the subscription registrar.
   appendProse: (threadId: string, text: string) => void;
@@ -151,29 +144,6 @@ export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
               ...el,
               props: { ...el.props, [propName]: value },
             },
-          },
-        };
-        return { ...prev, spec: nextSpec };
-      });
-    },
-
-    moveChild: (threadId, parentKey, sourceKey, targetKey) => {
-      patch(threadId, (prev) => {
-        if (!isNonEmptySpec(prev.spec)) return prev;
-        const el = prev.spec.elements[parentKey];
-        const children = el?.children;
-        if (!el || !children) return prev;
-        const from = children.indexOf(sourceKey);
-        const to = children.indexOf(targetKey);
-        if (from < 0 || to < 0 || from === to) return prev;
-        const next = children.slice();
-        next.splice(from, 1);
-        next.splice(to, 0, sourceKey);
-        const nextSpec: Spec = {
-          ...prev.spec,
-          elements: {
-            ...prev.spec.elements,
-            [parentKey]: { ...el, children: next },
           },
         };
         return { ...prev, spec: nextSpec };
