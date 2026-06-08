@@ -17,13 +17,14 @@ import { useTasks } from "@features/tasks/hooks/useTasks";
 import { isNonEmptySpec } from "@json-render/core";
 import {
   CaretRightIcon,
+  FunnelIcon,
   GitForkIcon,
   HashIcon,
   PencilSimpleIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex } from "@radix-ui/themes";
 import {
   Outlet,
   useNavigate,
@@ -153,9 +154,9 @@ export function WebsiteLayout() {
     ? tasks?.find((t) => t.id === taskId)?.title
     : undefined;
 
-  // Breadcrumbs + (on a dashboard) its controls. The Channels space has its own
-  // chrome (rail + channel list), no code HeaderRow, so this renders as the
-  // space's own top bar rather than going through the header store.
+  // The crumb row for the top bar. The Channels space has its own chrome (rail +
+  // channel list), no code HeaderRow, so this renders as the space's own bar
+  // rather than going through the header store. Controls live in the bar below.
   const breadcrumbs = useMemo(() => {
     if (!channelId) return null;
 
@@ -188,25 +189,14 @@ export function WebsiteLayout() {
     // channel crumb already links to it.
 
     return (
-      <Flex
-        align="center"
-        justify="between"
-        gap="2"
-        pr="3"
-        className="w-full min-w-0"
-      >
-        <Flex align="center" gap="1" className="min-w-0">
-          {crumbs.map((crumb, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: crumb order is stable
-            <Fragment key={i}>
-              {i > 0 && <CaretRightIcon size={12} className="text-gray-8" />}
-              {crumb}
-            </Fragment>
-          ))}
-        </Flex>
-        {isDashboardDetail && channelId && dashboardId && (
-          <DashboardControls channelId={channelId} dashboardId={dashboardId} />
-        )}
+      <Flex align="center" gap="1" className="min-w-0">
+        {crumbs.map((crumb, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: crumb order is stable
+          <Fragment key={i}>
+            {i > 0 && <CaretRightIcon size={12} className="text-gray-8" />}
+            {crumb}
+          </Fragment>
+        ))}
       </Flex>
     );
   }, [
@@ -222,11 +212,27 @@ export function WebsiteLayout() {
 
   return (
     <Flex direction="column" height="100%" overflow="hidden">
+      {/* Top bar: breadcrumbs only. */}
       <Flex
         align="center"
         className="h-10 shrink-0 border-gray-6 border-b px-3"
       >
         {breadcrumbs}
+      </Flex>
+      {/* Toolbar: a (dead) Filter on the left, dashboard controls on the right. */}
+      <Flex
+        align="center"
+        justify="between"
+        gap="2"
+        className="h-10 shrink-0 border-gray-6 border-b px-3"
+      >
+        <Button variant="default" size="sm">
+          <FunnelIcon size={14} />
+          Filter
+        </Button>
+        {isDashboardDetail && channelId && dashboardId && (
+          <DashboardControls channelId={channelId} dashboardId={dashboardId} />
+        )}
       </Flex>
       <Box flexGrow="1" overflow="hidden">
         <Outlet />
@@ -263,14 +269,12 @@ function ChannelGridLink({
   );
 }
 
+// The current (leaf) crumb: a disabled quill button so it matches the clickable
+// crumbs' shape, just non-interactive.
 function CrumbText({ children }: { children: React.ReactNode }) {
   return (
-    <Text
-      size="1"
-      weight="medium"
-      className="inline-flex items-center text-gray-12"
-    >
+    <Button variant="default" size="sm" disabled className="font-medium">
       {children}
-    </Text>
+    </Button>
   );
 }
