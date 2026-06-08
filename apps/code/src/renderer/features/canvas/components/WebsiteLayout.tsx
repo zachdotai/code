@@ -1,4 +1,5 @@
 import { DashboardRefreshControl } from "@features/canvas/components/DashboardRefreshControl";
+import { dashboardTitleFromSpec } from "@features/canvas/genui/dashboardTitle";
 import { useChannels } from "@features/canvas/hooks/useChannels";
 import {
   useDashboard,
@@ -66,12 +67,16 @@ function DashboardControls({
 
   const onSave = () => {
     if (!dirty) return;
-    void saveDashboard(dashboardId, liveSpec);
+    // The h1 title is the dashboard's name: sync it to the file on every save so
+    // renaming the canvas title renames the saved dashboard.
+    void saveDashboard(dashboardId, liveSpec, dashboardTitleFromSpec(liveSpec));
   };
 
   const onFork = async () => {
     if (!hasSpec) return;
-    const name = `${dashboard?.name ?? "Dashboard"} (fork)`;
+    const title =
+      dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Dashboard";
+    const name = `${title} (fork)`;
     const record = await createDashboard(channelId, name, liveSpec);
     setEditing(record.id, true);
     void navigate({

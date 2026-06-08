@@ -1,53 +1,88 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { IStoragePaths } from "@posthog/platform/storage-paths";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { logger } from "../../utils/logger";
+import type { AuthService } from "../auth/service";
 import type { DashboardQuery } from "../dashboard-query/schemas";
 import type { DashboardQueryService } from "../dashboard-query/service";
-import {
-  type DashboardRecord,
-  type DashboardSummary,
-  dashboardRecordSchema,
-} from "./schemas";
+import type { DashboardRecord, DashboardSummary } from "./schemas";
 
-const log = logger.scope("dashboards");
+// Desktop file-system "type" tag for a dashboard entry. Channels are `folder`
+// rows (depth 1); dashboards are these `dashboard` files nested beneath them.
+const DASHBOARD_TYPE = "dashboard";
+const MAX_PAGES = 50;
 
-// File-backed dashboard store (MVP): each dashboard is a JSON file holding a
-// json-render spec under <appData>/dashboards/<id>.json.
+// Shape of the slice of a desktop file-system row we care about. The dashboard
+// spec and our own bookkeeping ride along in the free-form `meta` JSON blob.
+interface DashboardMeta {
+  spec?: Record<string, unknown> | null;
+  channelId?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+interface FsEntry {
+  id: string;
+  path: string;
+  type?: string;
+  meta?: DashboardMeta | null;
+  created_at?: string;
+}
+
+/**
+ * Dashboards backed by the PostHog desktop file system (not local files), so a
+ * dashboard is a `dashboard`-typed row nested under its channel folder and its
+ * name is the last path segment — i.e. the canvas h1. The json-render spec lives
+ * in the row's `meta.spec`. This keeps dashboards (and their names) in sync with
+ * the backend, the same surface that owns channel names.
+ */
 @injectable()
 export class DashboardsService {
   constructor(
-    @inject(MAIN_TOKENS.StoragePaths)
-    private readonly storagePaths: IStoragePaths,
+    @inject(MAIN_TOKENS.AuthService)
+    private readonly authService: AuthService,
     @inject(MAIN_TOKENS.DashboardQueryService)
     private readonly dashboardQuery: DashboardQueryService,
   ) {}
 
-  private get dir(): string {
-    return join(this.storagePaths.appDataPath, "dashboards");
+  // Raw fetch against this project's desktop_file_system surface. `suffix` is
+  // appended after `.../desktop_file_system/` (e.g. `<id>/` or a `?offset=` page).
+  private async fsFetch(suffix: string, init?: RequestInit): Promise<Response> {
+    const { apiHost } = await this.authService.getValidAccessToken();
+    const projectId = this.authService.getState().currentProjectId;
+    if (projectId == null) throw new Error("No PostHog project selected");
+    const url = `${apiHost}/api/projects/${projectId}/desktop_file_system/${suffix}`;
+    return this.authService.authenticatedFetch(fetch, url, init);
   }
 
-  private filePath(id: string): string {
-    return join(this.dir, `${id}.json`);
+  private async listAll(): Promise<FsEntry[]> {
+    const all: FsEntry[] = [];
+    let suffix = "";
+    for (let i = 0; i < MAX_PAGES; i++) {
+      const res = await this.fsFetch(suffix);
+      if (!res.ok) throw new Error(`Failed to list dashboards (${res.status})`);
+      const page = (await res.json()) as {
+        next: string | null;
+        results: FsEntry[];
+      };
+      all.push(...page.results);
+      if (!page.next) return all;
+      suffix = new URL(page.next).search; // carries the pagination offset
+    }
+    return all;
   }
 
-  private async ensureDir(): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
+  private async getEntry(id: string): Promise<FsEntry | null> {
+    const res = await this.fsFetch(`${encodeURIComponent(id)}/`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Failed to load dashboard (${res.status})`);
+    return (await res.json()) as FsEntry;
   }
 
   async list(channelId: string): Promise<DashboardSummary[]> {
-    await this.ensureDir();
-    const entries = await readdir(this.dir);
-    const records: DashboardRecord[] = [];
-    for (const entry of entries) {
-      if (!entry.endsWith(".json")) continue;
-      const record = await this.readFileRecord(join(this.dir, entry));
-      if (record && record.channelId === channelId) records.push(record);
-    }
-    return records
+    const entries = await this.listAll();
+    return entries
+      .filter(
+        (e) => e.type === DASHBOARD_TYPE && e.meta?.channelId === channelId,
+      )
+      .map((e) => toRecord(e))
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map(({ id, channelId: cid, name, updatedAt }) => ({
         id,
@@ -58,25 +93,14 @@ export class DashboardsService {
   }
 
   async get(id: string): Promise<DashboardRecord | null> {
-    return this.readFileRecord(this.filePath(id));
+    const entry = await this.getEntry(id);
+    return entry ? toRecord(entry) : null;
   }
 
-  // One-time backfill: assign any channel-less dashboard (saved before channel
-  // scoping) to the given default channel. Idempotent — returns how many were
-  // adopted, 0 once none remain.
-  async adoptOrphans(channelId: string): Promise<number> {
-    await this.ensureDir();
-    const entries = await readdir(this.dir);
-    let adopted = 0;
-    for (const entry of entries) {
-      if (!entry.endsWith(".json")) continue;
-      const record = await this.readFileRecord(join(this.dir, entry));
-      if (record && !record.channelId) {
-        await this.write({ ...record, channelId, updatedAt: Date.now() });
-        adopted++;
-      }
-    }
-    return adopted;
+  // Orphan adoption only made sense for the old local-file store; with the
+  // file-system backing every dashboard is already scoped to a channel folder.
+  async adoptOrphans(_channelId: string): Promise<number> {
+    return 0;
   }
 
   async create(input: {
@@ -84,17 +108,25 @@ export class DashboardsService {
     name: string;
     spec: Record<string, unknown> | null;
   }): Promise<DashboardRecord> {
+    const channelPath = await this.channelPath(input.channelId);
     const now = Date.now();
-    const record: DashboardRecord = {
-      id: randomUUID(),
-      channelId: input.channelId,
-      name: input.name,
+    const meta: DashboardMeta = {
       spec: input.spec,
+      channelId: input.channelId,
       createdAt: now,
       updatedAt: now,
     };
-    await this.write(record);
-    return record;
+    const res = await this.fsFetch("", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: `${channelPath}/${sanitizeSegment(input.name)}`,
+        type: DASHBOARD_TYPE,
+        meta,
+      }),
+    });
+    if (!res.ok) throw new Error(`Failed to create dashboard (${res.status})`);
+    return toRecord((await res.json()) as FsEntry);
   }
 
   async update(input: {
@@ -102,27 +134,42 @@ export class DashboardsService {
     name?: string;
     spec: Record<string, unknown> | null;
   }): Promise<DashboardRecord> {
-    const existing = await this.get(input.id);
+    const entry = await this.getEntry(input.id);
     const now = Date.now();
-    const record: DashboardRecord = {
-      id: input.id,
-      // Preserve channel ownership; only spec/name change on update.
-      channelId: existing?.channelId ?? "",
-      name: input.name ?? existing?.name ?? "Untitled dashboard",
+    const prevMeta = entry?.meta ?? {};
+    const meta: DashboardMeta = {
+      ...prevMeta,
       spec: input.spec,
-      createdAt: existing?.createdAt ?? now,
       updatedAt: now,
+      createdAt: prevMeta.createdAt ?? toEpoch(entry?.created_at),
     };
-    await this.write(record);
-    return record;
+
+    const body: Record<string, unknown> = { meta };
+    // A new name renames the file: keep it under the same parent folder so the
+    // canvas h1 stays the dashboard's name on the backend too.
+    if (input.name && entry) {
+      const parent = parentPath(entry.path);
+      const next = sanitizeSegment(input.name);
+      const newPath = parent ? `${parent}/${next}` : next;
+      if (newPath !== entry.path) body.path = newPath;
+    }
+
+    const res = await this.fsFetch(`${encodeURIComponent(input.id)}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Failed to save dashboard (${res.status})`);
+    return toRecord((await res.json()) as FsEntry);
   }
 
   async delete(id: string): Promise<void> {
-    try {
-      await unlink(this.filePath(id));
-    } catch (err) {
-      // Already gone is a successful delete; surface anything else.
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    const res = await this.fsFetch(`${encodeURIComponent(id)}/`, {
+      method: "DELETE",
+    });
+    // Already gone is a successful delete; surface anything else.
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Failed to delete dashboard (${res.status})`);
     }
   }
 
@@ -137,10 +184,10 @@ export class DashboardsService {
     updated: number;
     failures: { elementKey: string; error: string }[];
   }> {
-    const record = await this.get(input.id);
-    if (!record || !record.spec) return { updated: 0, failures: [] };
+    const entry = await this.getEntry(input.id);
+    const spec = entry?.meta?.spec;
+    if (!entry || !spec) return { updated: 0, failures: [] };
 
-    const spec = record.spec;
     const queries = collectQueries(spec, input.elementKeys);
     if (queries.length === 0) return { updated: 0, failures: [] };
 
@@ -162,32 +209,68 @@ export class DashboardsService {
     }
 
     if (updated > 0) {
-      await this.write({
-        ...record,
+      const prevMeta = entry.meta ?? {};
+      const meta: DashboardMeta = {
+        ...prevMeta,
         spec: nextSpec,
         updatedAt:
-          input.touchUpdatedAt === false ? record.updatedAt : Date.now(),
+          input.touchUpdatedAt === false
+            ? (prevMeta.updatedAt ?? toEpoch(entry.created_at))
+            : Date.now(),
+      };
+      await this.fsFetch(`${encodeURIComponent(input.id)}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meta }),
       });
     }
     return { updated, failures };
   }
 
-  private async write(record: DashboardRecord): Promise<void> {
-    await this.ensureDir();
-    await writeFile(this.filePath(record.id), JSON.stringify(record, null, 2));
+  // Resolve a channel's folder path from its file-system id so child dashboards
+  // can be created beneath it (paths are name-based, ids are not).
+  private async channelPath(channelId: string): Promise<string> {
+    const entry = await this.getEntry(channelId);
+    if (!entry) throw new Error("Channel not found");
+    return entry.path;
   }
+}
 
-  private async readFileRecord(path: string): Promise<DashboardRecord | null> {
-    try {
-      const parsed = dashboardRecordSchema.safeParse(
-        JSON.parse(await readFile(path, "utf8")),
-      );
-      return parsed.success ? parsed.data : null;
-    } catch (err) {
-      log.warn("Failed to read dashboard file", { path, err });
-      return null;
-    }
-  }
+// Build the renderer-facing record from a file-system row. The name is the last
+// path segment (the canvas h1); spec + timestamps ride in `meta`.
+function toRecord(entry: FsEntry): DashboardRecord {
+  const meta = entry.meta ?? {};
+  const createdAt = meta.createdAt ?? toEpoch(entry.created_at);
+  return {
+    id: entry.id,
+    channelId: meta.channelId ?? "",
+    name: lastSegment(entry.path),
+    spec: meta.spec ?? null,
+    createdAt,
+    updatedAt: meta.updatedAt ?? createdAt,
+  };
+}
+
+// Path segments are "/"-separated on the backend, so a name can't contain one.
+function sanitizeSegment(name: string): string {
+  const cleaned = name.replace(/\//g, " ").replace(/\s+/g, " ").trim();
+  return cleaned || "Untitled dashboard";
+}
+
+function parentPath(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? "" : path.slice(0, i);
+}
+
+function lastSegment(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? path : path.slice(i + 1);
+}
+
+function toEpoch(iso?: string): number {
+  if (!iso) return Date.now();
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? Date.now() : t;
 }
 
 type SpecElements = Record<string, { children?: string[]; props?: unknown }>;
