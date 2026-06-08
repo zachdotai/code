@@ -167,9 +167,8 @@ export function WebsiteLayout() {
       </ChannelGridLink>,
     ];
     if (isDashboardDetail && dashboardId) {
-      // The dashboard's own name is the big h1 just below, so the breadcrumb
-      // stops at "Dashboards" (still a link back to the grid) rather than
-      // repeating it.
+      // On a single dashboard, the grid is the parent: show it as a link. The
+      // dashboard's own name is the h1 below, so it isn't repeated as a crumb.
       crumbs.push(
         <ChannelGridLink key="dashboards" channelId={channelId}>
           Dashboards
@@ -181,9 +180,9 @@ export function WebsiteLayout() {
       crumbs.push(<CrumbText key="settings">Settings</CrumbText>);
     } else if (taskId) {
       crumbs.push(<CrumbText key="task">{taskTitle || "Task"}</CrumbText>);
-    } else {
-      crumbs.push(<CrumbText key="dashboards">Dashboards</CrumbText>);
     }
+    // The dashboards grid itself adds no crumb — its h1 is "Dashboards" and the
+    // channel crumb already links to it.
 
     return (
       <Flex
