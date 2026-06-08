@@ -2,6 +2,7 @@ import { DashboardRefreshControl } from "@features/canvas/components/DashboardRe
 import { dashboardTitleFromSpec } from "@features/canvas/genui/dashboardTitle";
 import { useChannels } from "@features/canvas/hooks/useChannels";
 import {
+  useCreateAndOpenDashboard,
   useDashboard,
   useDashboardMutations,
 } from "@features/canvas/hooks/useDashboards";
@@ -21,6 +22,7 @@ import {
   GitForkIcon,
   HashIcon,
   PencilSimpleIcon,
+  PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
@@ -37,8 +39,25 @@ function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
 }
 
+// "New dashboard" action, shown in the top bar on the dashboards grid.
+function NewDashboardButton({ channelId }: { channelId: string }) {
+  const createAndOpen = useCreateAndOpenDashboard(channelId);
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="no-drag"
+      onClick={() => void createAndOpen()}
+    >
+      <PlusIcon size={14} />
+      New dashboard
+    </Button>
+  );
+}
+
 // Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
-function DashboardControls({
+// Lives in the top bar; refresh is a separate control in the toolbar below.
+function DashboardEditControls({
   channelId,
   dashboardId,
 }: {
@@ -92,10 +111,7 @@ function DashboardControls({
   };
 
   return (
-    <Flex align="center" gap="2" className="no-drag ml-auto">
-      {/* Refresh is view-mode only: in edit the canvas shows the live thread
-          spec, so a file refresh wouldn't show and Save would clobber it. */}
-      {!editing && <DashboardRefreshControl dashboardId={dashboardId} />}
+    <Flex align="center" gap="2" className="no-drag">
       {editing && (
         <>
           <Button
@@ -150,6 +166,9 @@ export function WebsiteLayout() {
     : null;
 
   const isDashboardDetail = Boolean(channelId && dashboardId);
+  // The dashboards grid (a channel with no sub-view selected).
+  const isDashboardsGrid = Boolean(channelId) && pathname === base;
+  const editing = useIsDashboardEditing(dashboardId ?? "");
   const taskTitle = taskId
     ? tasks?.find((t) => t.id === taskId)?.title
     : undefined;
@@ -184,9 +203,11 @@ export function WebsiteLayout() {
       crumbs.push(<CrumbText key="settings">Settings</CrumbText>);
     } else if (taskId) {
       crumbs.push(<CrumbText key="task">{taskTitle || "Task"}</CrumbText>);
+    } else {
+      // The dashboards grid: "Dashboards" is the current (leaf) crumb, replacing
+      // the old in-page h1.
+      crumbs.push(<CrumbText key="dashboards">Dashboards</CrumbText>);
     }
-    // The dashboards grid itself adds no crumb — its h1 is "Dashboards" and the
-    // channel crumb already links to it.
 
     return (
       <Flex align="center" gap="1" className="min-w-0">
@@ -212,26 +233,36 @@ export function WebsiteLayout() {
 
   return (
     <Flex direction="column" height="100%" overflow="hidden">
-      {/* Top bar: breadcrumbs only. */}
-      <Flex
-        align="center"
-        className="h-10 shrink-0 border-gray-6 border-b px-3"
-      >
-        {breadcrumbs}
-      </Flex>
-      {/* Toolbar: a (dead) Filter on the left, dashboard controls on the right. */}
+      {/* Top bar: breadcrumbs on the left, primary actions on the right. */}
       <Flex
         align="center"
         justify="between"
         gap="2"
         className="h-10 shrink-0 border-gray-6 border-b px-3"
       >
-        <Button variant="default" size="sm">
+        {breadcrumbs ?? <span />}
+        {isDashboardDetail && channelId && dashboardId ? (
+          <DashboardEditControls
+            channelId={channelId}
+            dashboardId={dashboardId}
+          />
+        ) : isDashboardsGrid && channelId ? (
+          <NewDashboardButton channelId={channelId} />
+        ) : null}
+      </Flex>
+      {/* Toolbar: a (dead) Filter on the left, refresh on the right. */}
+      <Flex
+        align="center"
+        justify="between"
+        gap="2"
+        className="h-10 shrink-0 border-gray-6 border-b px-3"
+      >
+        <Button variant="outline" size="sm">
           <FunnelIcon size={14} />
           Filter
         </Button>
-        {isDashboardDetail && channelId && dashboardId && (
-          <DashboardControls channelId={channelId} dashboardId={dashboardId} />
+        {isDashboardDetail && dashboardId && !editing && (
+          <DashboardRefreshControl dashboardId={dashboardId} />
         )}
       </Flex>
       <Box flexGrow="1" overflow="hidden">

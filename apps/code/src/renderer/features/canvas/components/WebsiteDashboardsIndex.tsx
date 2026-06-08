@@ -65,19 +65,6 @@ export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
   return (
     <ScrollArea className="h-full bg-gray-1">
       <Box className="p-5">
-        <Flex align="center" justify="between" className="mb-4">
-          <Text size="3" weight="bold" className="text-gray-12">
-            Dashboards
-          </Text>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void createAndOpen()}
-          >
-            <PlusIcon size={14} />
-            New dashboard
-          </Button>
-        </Flex>
         <Grid columns={{ initial: "1", sm: "2", md: "3" }} gap="4">
           {dashboards.map((d) => (
             <DashboardCard key={d.id} channelId={channelId} summary={d} />
