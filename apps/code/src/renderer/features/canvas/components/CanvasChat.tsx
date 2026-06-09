@@ -5,13 +5,7 @@ import {
 } from "@features/canvas/stores/canvasChatStore";
 import { isNonEmptySpec } from "@json-render/core";
 import { PaperPlaneRightIcon, SpinnerGapIcon } from "@phosphor-icons/react";
-import {
-  Button,
-  ItemContent,
-  ItemGroup,
-  ItemMenuItem,
-  ItemTitle,
-} from "@posthog/quill";
+import { Button } from "@posthog/quill";
 import { Box, Flex, ScrollArea, Text, TextArea } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 
@@ -70,21 +64,20 @@ export function CanvasChat({ threadId }: { threadId: string }) {
                 Describe the canvas or app you want. The agent queries your
                 PostHog project and builds it live on the canvas.
               </Text>
-              {suggestions.length > 0 && (
-                <ItemGroup className="gap-1">
+              {suggestions.length > 0 && draft.trim().length === 0 && (
+                <Flex direction="column" align="start" gap="1">
                   {suggestions.map((suggestion) => (
-                    <ItemMenuItem
+                    <Button
                       key={suggestion}
-                      size="xs"
-                      className="w-full"
+                      variant="outline"
+                      size="sm"
+                      className="max-w-full justify-start text-left"
                       onClick={() => fillSuggestion(suggestion)}
                     >
-                      <ItemContent variant="menuItem">
-                        <ItemTitle>{suggestion}</ItemTitle>
-                      </ItemContent>
-                    </ItemMenuItem>
+                      {suggestion}
+                    </Button>
                   ))}
-                </ItemGroup>
+                </Flex>
               )}
             </Flex>
           )}
