@@ -27,6 +27,38 @@ template-driven, source-aware canvas builder.
    (records), not hardcoded. Built-ins are seeded; users can add their own later.
 4. **New warehouse sources: link out to PostHog.** We surface available/connected
    sources and deep-link to PostHog to connect new ones — no in-app OAuth.
+5. **Both built-in templates are Declarative.** See the stance below.
+
+## Generative-UI stance: Controlled / Declarative / Open-ended
+
+Prior art: Shubham Saboo's "three patterns of Generative UI" (controlled →
+declarative → open-ended; CopilotKit / AG-UI / A2UI).
+
+- **Controlled** — pre-built components bound to tool names; the agent picks
+  which to render. Pixel-perfect but pays a per-turn token tax (~400 tok per
+  registered component) and mis-picks past ~25.
+- **Declarative** — the agent emits a **schema**; the app maps it to a **catalog**
+  of components with typed props. One tool, many UIs, flat token cost. The
+  pattern "built for the long tail: dashboards, results, forms, cards, widgets."
+- **Open-ended** — no catalog; the agent writes **raw HTML in a sandboxed
+  iframe**. Maximal freedom, but brand drift and brittleness — "never as the
+  primary surface," only for disposable/one-shot output.
+
+**Our canvas is Declarative** (json-render schema → shared catalog → React
+bodies with Zod props). That's deliberate and stays the model for BOTH built-in
+templates:
+
+- **Dashboard** — Declarative, data-focused catalog (Stat/charts/Table + refresh).
+- **Blank** — Declarative, _broader_ catalog (Hero/Section/Markdown/Button/tones)
+  + a looser prompt. NOT open-ended: saved canvases are primary, reopenable,
+  branded surfaces, so they must stay editable, on-brand, dark-mode-safe, and
+  data-bindable.
+- **Interactivity** (forms, buttons that _do_ things) is pursued the declarative
+  way: **actions in the schema** that fire an event back to the agent
+  (json-render already supports `on`/actions + bindings) — not by going
+  open-ended.
+- **Open-ended** is reserved for a possible future _disposable_ "quick sketch"
+  mode (a throwaway viz in chat), never the default for a saved canvas.
 
 ## Current state (what we're changing)
 
@@ -133,11 +165,11 @@ object placed in a prop used to crash the whole canvas to "Rendering…"; it now
 degrades to empty via `asText()`, and the schema mirror + template rules tell
 the agent to emit static content only.
 
-This is load-bearing for the roadmap: **"a whole website" or an interactive
-tool needs more than a wider palette — it needs the renderer to resolve
-json-render's dynamic features** (or we adopt `createRenderer` for view mode and
-keep the custom walk only for edit affordances). Treat "make the renderer
-dynamic" as its own phase (2.5 below), gating real interactivity (Phase 6).
+This is load-bearing: it keeps us firmly in **Declarative-static** today. The
+path to interactivity is NOT open-ended HTML — it's making the renderer resolve
+json-render's _declarative_ dynamic features (`on`/actions + bindings), so a
+button in the schema can fire an event back to the agent (the A2UI model). Treat
+that as Phase 2.5 below; it stays declarative and on-brand.
 
 ## Phasing
 
@@ -165,12 +197,15 @@ dynamic" as its own phase (2.5 below), gating real interactivity (Phase 6).
   per-template allow-list (leaning) so a template constrains which components the
   agent may emit. Currently all templates can emit everything.
 
-### Phase 2.5 — Dynamic renderer (NEW, gates interactivity)
+### Phase 2.5 — Declarative interactivity (gates forms/tools)
 
-- Teach the renderer json-render's dynamic features (resolve `{$state}`/`{$item}`
-  bindings, `repeat`, `visible`) — likely by using `createRenderer` for view
-  mode and resolving bindings in the edit walk — then relax the "static only"
-  rules per-template. Required before forms/tools that hold state.
+- Teach the renderer json-render's _declarative_ dynamic features: resolve
+  `{$state}`/`{$item}` bindings, `repeat`, `visible`, and wire `on`/actions so a
+  schema button fires an event back to the agent (the A2UI model). Likely use
+  `createRenderer` for view mode and resolve bindings in the edit walk; relax the
+  "static only" rules per-template once supported.
+- This stays Declarative — NOT open-ended HTML. Required before forms/tools that
+  hold state or react to clicks.
 
 ### Phase 3 — Source @mentions (data sources)
 
@@ -208,6 +243,11 @@ their in-chat OAuth and permission modes.
 
 - Real interactivity/actions (depends on Phase 2.5), template sharing, more
   built-in templates.
+- **Open-ended "quick sketch" mode** (optional): a third `renderMode` for
+  _disposable_, throwaway visualizations — agent writes sanitized HTML in a
+  sandboxed iframe (`sandbox="allow-scripts allow-forms"`, never
+  `allow-same-origin`). Per the prior art, this is NEVER the default for a saved
+  canvas — only an explicit, ephemeral surface.
 
 ## Cross-cutting follow-ups (not phase-gated)
 
@@ -231,8 +271,15 @@ their in-chat OAuth and permission modes.
   set than Dashboard? (Default: keep the read-only sandbox for all.)
 - **Data manifest size:** cap/scope the injected warehouse schema for large
   projects to avoid blowing the context.
-- **Dynamic vs static renderer:** is Blank allowed to be interactive (Phase 2.5),
-  or do we keep all canvases static for now and defer tools/forms?
+
+## Resolved decisions
+
+- **Render mode (resolved):** both built-in templates are **Declarative**.
+  Blank is _not_ open-ended — saved canvases are primary surfaces, so they stay
+  declarative (editable, on-brand, data-bindable). Open-ended is reserved for a
+  future disposable mode only (Phase 6).
+- **Interactivity (resolved):** pursued declaratively via schema `on`/actions
+  (Phase 2.5), not raw HTML.
 
 ## Related
 
