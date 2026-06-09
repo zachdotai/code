@@ -3,11 +3,10 @@ import { useCreateAndOpenDashboard } from "@features/canvas/hooks/useDashboards"
 import { PlusIcon } from "@phosphor-icons/react";
 import {
   Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
   ItemContent,
   ItemDescription,
   ItemMenuItem,
@@ -15,9 +14,9 @@ import {
 } from "@posthog/quill";
 import { useState } from "react";
 
-// "New canvas" entry point: pick a template (Dashboard, Blank, …) and the chosen
-// template's agent context drives how the canvas is built. Falls back to a plain
-// create (default template) until the template list loads.
+// "New canvas" entry point: opens a dialog to pick a template (Dashboard,
+// Blank, …); the chosen template's agent context drives how the canvas is
+// built. Falls back to a plain create (default template) until templates load.
 export function NewCanvasMenu({
   channelId,
   variant = "outline",
@@ -44,39 +43,39 @@ export function NewCanvasMenu({
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
         render={(props) => (
           <Button variant={variant} size="sm" className="no-drag" {...props} />
         )}
       >
         <PlusIcon size={14} />
         New canvas
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        className="w-auto max-w-2xs"
-        align="end"
-        sideOffset={4}
-      >
-        <DropdownMenuGroup>
+      </DialogTrigger>
+      <DialogContent showCloseButton={false} className="max-w-md">
+        {/* No visible title; keep one for screen readers only. */}
+        <DialogTitle className="sr-only">New canvas</DialogTitle>
+        <div className="flex flex-col gap-1">
           {templates.map((t) => (
-            <DropdownMenuItem
+            <ItemMenuItem
               key={t.id}
-              onClick={() => void createAndOpen({ templateId: t.id })}
-              render={
-                <ItemMenuItem size="xs" className="w-full">
-                  <ItemContent variant="menuItem">
-                    <ItemTitle>{t.name}</ItemTitle>
-                    <ItemDescription className="leading-tight">
-                      {t.description}
-                    </ItemDescription>
-                  </ItemContent>
-                </ItemMenuItem>
-              }
-            />
+              size="sm"
+              className="h-auto w-full"
+              onClick={() => {
+                setOpen(false);
+                void createAndOpen({ templateId: t.id });
+              }}
+            >
+              <ItemContent variant="menuItem">
+                <ItemTitle>{t.name}</ItemTitle>
+                <ItemDescription className="[text-wrap:initial]">
+                  {t.description}
+                </ItemDescription>
+              </ItemContent>
+            </ItemMenuItem>
           ))}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
