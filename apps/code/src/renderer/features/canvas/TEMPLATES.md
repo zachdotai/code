@@ -251,10 +251,10 @@ their in-chat OAuth and permission modes.
 
 ## Cross-cutting follow-ups (not phase-gated)
 
-- **Reloaded-board append-only seeding**: a reopened saved canvas starts
-  `state.spec = {}` in `canvas-gen` while the UI shows the hydrated spec — the
-  agent's first append can wipe the visible board. Seed `state.spec` from the
-  saved spec at session start.
+- ✅ **Reloaded-board append-only seeding**: `canvas-gen.generate` now takes the
+  canvas's `currentSpec`; the thread's `state.spec` is seeded from it at session
+  start, and the agent prompt includes the current spec so it appends against
+  real element keys instead of rebuilding from empty.
 - **Chart tooltip vars**: `--color-bg-surface-*` / `--color-text-primary-inverse`
   aren't in beta.14 quill CSS → tooltip styling falls back.
 - **vitest can't import `quill-charts`** (dayjs subpath) → add a resolve alias if

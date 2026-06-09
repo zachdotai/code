@@ -75,14 +75,20 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
   }
 
   async generate(input: CanvasGenerateInput): Promise<void> {
-    const { threadId, prompt, templateId, model } = input;
+    const { threadId, prompt, templateId, model, currentSpec } = input;
     const taskRunId = `${TASK_RUN_PREFIX}${threadId}`;
     const systemPrompt = this.templatesService.systemPromptFor(templateId);
 
     this.ensureForwarding();
 
     try {
-      await this.ensureSession(threadId, taskRunId, systemPrompt, model);
+      await this.ensureSession(
+        threadId,
+        taskRunId,
+        systemPrompt,
+        model,
+        currentSpec,
+      );
     } catch (err) {
       this.emitEvent(threadId, {
         type: "error",
@@ -120,6 +126,7 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
     taskRunId: string,
     systemPrompt: string,
     model?: string,
+    currentSpec?: Record<string, unknown> | null,
   ): Promise<void> {
     if (this.startedSessions.has(threadId)) return;
 
@@ -144,13 +151,18 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
       ...(model ? { model } : {}),
     });
 
-    this.threads.set(threadId, this.createThreadState(threadId));
+    this.threads.set(threadId, this.createThreadState(threadId, currentSpec));
     this.startedSessions.add(threadId);
   }
 
-  private createThreadState(threadId: string): ThreadState {
+  private createThreadState(
+    threadId: string,
+    initialSpec?: Record<string, unknown> | null,
+  ): ThreadState {
     const state: ThreadState = {
-      spec: {},
+      // Seed with the saved spec so the agent appends onto the existing board
+      // instead of rebuilding from empty (which would wipe a reopened canvas).
+      spec: initialSpec ? { ...initialSpec } : {},
       parser: createMixedStreamParser({
         onText: (text) => {
           if (text.trim().length === 0) return;

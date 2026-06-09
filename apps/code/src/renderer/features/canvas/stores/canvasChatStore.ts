@@ -106,12 +106,22 @@ export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
       }));
 
       // The agent session's system prompt is frozen at session start, so the
-      // dashboard identity rides the prompt every turn — this keeps the agent
-      // anchored to the board currently open, even after a reload or a switch.
-      const title = dashboardTitleFromSpec(current.spec);
-      const context = title
-        ? `[Context] You are editing the existing dashboard titled "${title}". Apply all changes to THIS dashboard only, appending to its current content. Do not start a new dashboard or recreate existing elements.`
-        : "[Context] You are starting a new, untitled dashboard.";
+      // canvas identity + current contents ride the prompt — keeping the agent
+      // anchored to the open board (even after a reload) and letting it append
+      // against the real element keys instead of rebuilding from scratch.
+      let context: string;
+      if (isNonEmptySpec(current.spec)) {
+        const title = dashboardTitleFromSpec(current.spec);
+        context = [
+          `[Context] You are editing the existing canvas${title ? ` titled "${title}"` : ""}. APPEND to it — never recreate or replace existing elements. Reuse the element keys in the spec below; add new elements under new keys and attach them by appending to the relevant container's children.`,
+          "Current canvas spec (json-render):",
+          "```json",
+          JSON.stringify(current.spec),
+          "```",
+        ].join("\n");
+      } else {
+        context = "[Context] You are starting a new, untitled canvas.";
+      }
       const agentPrompt = `${context}\n\n${text}`;
 
       try {
@@ -119,6 +129,7 @@ export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
           threadId,
           prompt: agentPrompt,
           templateId: current.templateId,
+          currentSpec: current.spec as Record<string, unknown> | null,
         });
       } catch (error) {
         log.error("Canvas generate failed", { error });

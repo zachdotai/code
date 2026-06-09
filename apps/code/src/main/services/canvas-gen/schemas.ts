@@ -10,6 +10,13 @@ export const canvasGenerateInput = z.object({
    * ephemeral agent session for this thread is created. Defaults to "dashboard".
    */
   templateId: z.string().default("dashboard"),
+  /**
+   * The canvas's current spec, sent on the first turn of a thread so the agent
+   * session is seeded with it. Without this, reopening a saved canvas starts the
+   * main-side spec accumulator empty and the agent's first additive patches
+   * would render as if the board were blank (wiping it). null/absent = empty.
+   */
+  currentSpec: z.record(z.string(), z.unknown()).nullish(),
   model: z.string().optional(),
 });
 export type CanvasGenerateInput = z.infer<typeof canvasGenerateInput>;
