@@ -5,12 +5,10 @@ import {
   Button,
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogHeader,
   DialogTitle,
   DialogTrigger,
-  ItemContent,
-  ItemDescription,
-  ItemMenuItem,
-  ItemTitle,
 } from "@posthog/quill";
 import { useState } from "react";
 
@@ -52,27 +50,30 @@ export function NewCanvasMenu({
         <PlusIcon size={14} />
         New canvas
       </DialogTrigger>
-      <DialogContent showCloseButton={false} className="max-w-md">
-        {/* No visible title; keep one for screen readers only. */}
-        <DialogTitle className="sr-only">New canvas</DialogTitle>
-        <div className="flex flex-col gap-1">
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Choose a template</DialogTitle>
+          <DialogDescription>
+            This gives the agent context for which guardrails to follow when
+            generating UI.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-2 pt-2">
           {templates.map((t) => (
-            <ItemMenuItem
+            <Button
               key={t.id}
-              size="sm"
-              className="h-auto w-full"
+              variant="default"
+              className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-3 text-left"
               onClick={() => {
                 setOpen(false);
                 void createAndOpen({ templateId: t.id });
               }}
             >
-              <ItemContent variant="menuItem">
-                <ItemTitle>{t.name}</ItemTitle>
-                <ItemDescription className="[text-wrap:initial]">
-                  {t.description}
-                </ItemDescription>
-              </ItemContent>
-            </ItemMenuItem>
+              <span className="font-medium text-gray-12">{t.name}</span>
+              <span className="font-normal text-gray-10 text-xs [text-wrap:initial]">
+                {t.description}
+              </span>
+            </Button>
           ))}
         </div>
       </DialogContent>
