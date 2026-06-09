@@ -189,9 +189,9 @@ export function WebsiteLayout() {
     } else if (taskId) {
       crumbs.push(<CrumbText key="task">{taskTitle || "Task"}</CrumbText>);
     } else {
-      // The dashboards grid: "Dashboards" is the current (leaf) crumb, replacing
+      // The canvases grid: "Canvases" is the current (leaf) crumb, replacing
       // the old in-page h1.
-      crumbs.push(<CrumbText key="dashboards">Dashboards</CrumbText>);
+      crumbs.push(<CrumbText key="dashboards">Canvases</CrumbText>);
     }
 
     return (
