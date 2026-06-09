@@ -91,9 +91,18 @@ export const CANVAS_COMPONENTS = {
       eyebrow: z.string().optional(),
       subtitle: z.string().optional(),
       ctaText: z.string().optional(),
+      tone: z.enum(["default", "muted", "accent", "contrast"]).optional(),
     }),
     description:
-      "A centered hero section for the top of a page: a big title with an optional eyebrow, subtitle, and call-to-action label.",
+      "A centered hero section for the top of a page: a big title with an optional eyebrow, subtitle, and call-to-action label. `tone` sets the background: default (page), muted (subtle grey), accent (brand), contrast (dark).",
+  },
+  Section: {
+    props: z.object({
+      tone: z.enum(["default", "muted", "accent", "contrast"]).optional(),
+    }),
+    slots: ["default"],
+    description:
+      "A full-width band that groups content on a background. Set `tone` (default | muted | accent | contrast) and alternate bands down a page for rich visual rhythm. Place Headings, Text, Grids, Cards etc. inside.",
   },
   Markdown: {
     props: z.object({ content: z.string() }),

@@ -65,11 +65,30 @@ export interface BadgeProps {
   text: string;
   color?: "gray" | "green" | "red" | "amber" | "blue";
 }
+export type CanvasTone = "default" | "muted" | "accent" | "contrast";
+
+// Constrained, theme-aware backgrounds (no arbitrary CSS) so agent-built pages
+// stay on-brand and dark-mode-safe. Maps a tone to bg + text classes.
+const TONE_CLASS: Record<CanvasTone, string> = {
+  default: "",
+  muted: "bg-gray-3 text-gray-12",
+  accent: "bg-accent-3 text-gray-12",
+  contrast: "bg-gray-12 text-gray-1",
+};
+
+function toneClass(tone?: CanvasTone): string {
+  return TONE_CLASS[tone ?? "default"];
+}
+
 export interface HeroProps {
   title: string;
   eyebrow?: string;
   subtitle?: string;
   ctaText?: string;
+  tone?: CanvasTone;
+}
+export interface SectionProps {
+  tone?: CanvasTone;
 }
 export interface MarkdownProps {
   content: string;
@@ -345,6 +364,23 @@ export function SparklineBody({
   );
 }
 
+export function SectionBody({
+  props,
+  children,
+}: {
+  props: SectionProps;
+  children?: ReactNode;
+  ctx: BodyCtx;
+}) {
+  return (
+    <Box className={`rounded-xl px-6 py-8 ${toneClass(props.tone)}`}>
+      <Flex direction="column" gap="4">
+        {children}
+      </Flex>
+    </Box>
+  );
+}
+
 export function HeroBody({ props, ctx }: { props: HeroProps; ctx: BodyCtx }) {
   return (
     <Flex
@@ -352,7 +388,7 @@ export function HeroBody({ props, ctx }: { props: HeroProps; ctx: BodyCtx }) {
       align="center"
       gap="3"
       py="8"
-      className="text-center"
+      className={`rounded-xl px-6 text-center ${toneClass(props.tone)}`}
     >
       {props.eyebrow && (
         <Text size="2" weight="bold" className="text-accent-11 uppercase">
@@ -457,6 +493,12 @@ export function renderBody(
       return <SparklineBody props={p} ctx={ctx} />;
     case "Badge":
       return <BadgeBody props={p} ctx={ctx} />;
+    case "Section":
+      return (
+        <SectionBody props={p} ctx={ctx}>
+          {children}
+        </SectionBody>
+      );
     case "Hero":
       return <HeroBody props={p} ctx={ctx} />;
     case "Markdown":

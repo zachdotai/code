@@ -12,6 +12,7 @@ import {
   MarkdownBody,
   PageBody,
   PLAIN_CTX,
+  SectionBody,
   SparklineBody,
   StatBody,
   TableBody,
@@ -59,6 +60,11 @@ export const CanvasRenderer = createRenderer(canvasCatalog, {
     <SparklineBody props={element.props} ctx={PLAIN_CTX} />
   ),
   Badge: ({ element }) => <BadgeBody props={element.props} ctx={PLAIN_CTX} />,
+  Section: ({ element, children }) => (
+    <SectionBody props={element.props} ctx={PLAIN_CTX}>
+      {children}
+    </SectionBody>
+  ),
   Hero: ({ element }) => <HeroBody props={element.props} ctx={PLAIN_CTX} />,
   Markdown: ({ element }) => (
     <MarkdownBody props={element.props} ctx={PLAIN_CTX} />
