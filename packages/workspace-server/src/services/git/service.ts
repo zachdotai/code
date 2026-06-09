@@ -73,6 +73,7 @@ import type {
   PrReviewComment,
   PrReviewThread,
   PrStatusOutput,
+  PrWorkItem,
   PublishOutput,
   PullOutput,
   PushOutput,
@@ -154,6 +155,68 @@ export interface GitCloneEvents {
 }
 
 const execFileAsync = promisify(execFile);
+
+/** Shape of a `gh pr list --json …` row consumed by `derivePrWorkItems`. */
+interface GhPrListItem {
+  number: number;
+  title: string;
+  url: string;
+  headRefName: string;
+  headRefOid?: string;
+  mergeable?: string;
+  reviewDecision?: string;
+  isDraft?: boolean;
+  statusCheckRollup?: Array<{ state?: string; conclusion?: string }>;
+}
+
+// Check-run `conclusion` / status-context `state` values that count as a real
+// failure worth a fix-it task. Ambiguous outcomes (cancelled, action_required,
+// pending) are intentionally excluded so we don't nag about non-failures.
+const FAILED_CHECK_CONCLUSIONS = new Set(["FAILURE", "TIMED_OUT"]);
+const FAILED_CHECK_STATES = new Set(["FAILURE", "ERROR"]);
+
+function hasFailingCheck(rollup: GhPrListItem["statusCheckRollup"]): boolean {
+  if (!rollup?.length) return false;
+  return rollup.some((check) => {
+    const conclusion = check.conclusion?.toUpperCase();
+    const state = check.state?.toUpperCase();
+    return (
+      (!!conclusion && FAILED_CHECK_CONCLUSIONS.has(conclusion)) ||
+      (!!state && FAILED_CHECK_STATES.has(state))
+    );
+  });
+}
+
+/**
+ * Derives 0..N work items from the current user's open PRs. A single PR can
+ * surface several (e.g. changes-requested *and* failing CI).
+ *
+ * Drafts surface only `conflict`: a merge conflict is the author's to resolve
+ * regardless of ready state and only rots, whereas changes-requested / failing
+ * CI on a draft is expected work-in-progress noise.
+ */
+export function derivePrWorkItems(prs: GhPrListItem[]): PrWorkItem[] {
+  const items: PrWorkItem[] = [];
+  for (const pr of prs) {
+    const base = {
+      prNumber: pr.number,
+      title: pr.title,
+      url: pr.url,
+      headRefName: pr.headRefName,
+      headSha: pr.headRefOid ?? "",
+    };
+    if (!pr.isDraft && pr.reviewDecision === "CHANGES_REQUESTED") {
+      items.push({ ...base, kind: "review" });
+    }
+    if (!pr.isDraft && hasFailingCheck(pr.statusCheckRollup)) {
+      items.push({ ...base, kind: "ci" });
+    }
+    if (pr.mergeable === "CONFLICTING") {
+      items.push({ ...base, kind: "conflict" });
+    }
+  }
+  return items;
+}
 
 @injectable()
 export class GitService extends TypedEventEmitter<GitCloneEvents> {
@@ -900,6 +963,48 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       return data[0]?.url ?? null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Surfaces the current user's open PRs in this repo that need action:
+   *   - `review`: changes requested
+   *   - `ci`: a failing check
+   *   - `conflict`: merge conflicts
+   * Returns `[]` (no noise) when this isn't a GitHub repo, gh is missing/
+   * unauthenticated, or the call fails.
+   */
+  public async getPrWorkItems(directoryPath: string): Promise<PrWorkItem[]> {
+    try {
+      const remoteUrl = await getRemoteUrl(directoryPath);
+      const parsed = remoteUrl ? parseGithubUrl(remoteUrl) : null;
+      if (!parsed) return [];
+
+      const result = await execGh(
+        [
+          "pr",
+          "list",
+          "--author",
+          "@me",
+          "--state",
+          "open",
+          "--limit",
+          "20",
+          "--repo",
+          `${parsed.owner}/${parsed.repo}`,
+          "--json",
+          "number,title,url,headRefName,headRefOid,mergeable,reviewDecision,statusCheckRollup,isDraft",
+        ],
+        { cwd: directoryPath },
+      );
+
+      if (result.exitCode !== 0) return [];
+
+      const prs = JSON.parse(result.stdout) as GhPrListItem[];
+      return derivePrWorkItems(prs);
+    } catch {
+      // Best-effort: any failure (no gh, network, parse) yields no suggestions.
+      return [];
     }
   }
 

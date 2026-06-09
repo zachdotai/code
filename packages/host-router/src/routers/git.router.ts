@@ -68,6 +68,8 @@ import {
   getPrTemplateOutput,
   getPrUrlForBranchInput,
   getPrUrlForBranchOutput,
+  getPrWorkItemsInput,
+  getPrWorkItemsOutput,
   ghAuthTokenOutput,
   ghStatusOutput,
   gitStateSnapshotSchema,
@@ -446,6 +448,15 @@ export const gitRouter = router({
       getWorkspaceClient(ctx.container).git.getPrUrlForBranch.query({
         directoryPath: input.directoryPath,
         branchName: input.branchName,
+      }),
+    ),
+
+  getPrWorkItems: publicProcedure
+    .input(getPrWorkItemsInput)
+    .output(getPrWorkItemsOutput)
+    .query(({ ctx, input }) =>
+      getWorkspaceClient(ctx.container).git.getPrWorkItems.query({
+        directoryPath: input.directoryPath,
       }),
     ),
 

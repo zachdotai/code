@@ -1,26 +1,21 @@
-import { X } from "@phosphor-icons/react";
-import type { DiscoveredTask } from "@posthog/core/setup/types";
-import {
-  CATEGORY_CONFIG,
-  FALLBACK_CATEGORY_CONFIG,
-} from "@posthog/ui/features/setup/categoryConfig";
+import { GitPullRequest, X } from "@phosphor-icons/react";
+import type { PrWorkItem } from "@posthog/core/git/router-schemas";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { motion } from "framer-motion";
 
-export interface SuggestedTaskCardProps {
-  task: DiscoveredTask;
-  onSelect: (task: DiscoveredTask) => void;
-  onDismiss: (task: DiscoveredTask) => void;
+const KIND_TITLE: Record<PrWorkItem["kind"], (prNumber: number) => string> = {
+  review: (n) => `Address review on PR #${n}`,
+  ci: (n) => `Fix failing CI on PR #${n}`,
+  conflict: (n) => `Resolve merge conflicts on PR #${n}`,
+};
+
+export interface WorkItemCardProps {
+  item: PrWorkItem;
+  onSelect: (item: PrWorkItem) => void;
+  onDismiss: (item: PrWorkItem) => void;
 }
 
-export function SuggestedTaskCard({
-  task,
-  onSelect,
-  onDismiss,
-}: SuggestedTaskCardProps) {
-  const config = CATEGORY_CONFIG[task.category] ?? FALLBACK_CATEGORY_CONFIG;
-  const TaskIcon = config.icon;
-
+export function WorkItemCard({ item, onSelect, onDismiss }: WorkItemCardProps) {
   return (
     <motion.div
       layout
@@ -35,26 +30,16 @@ export function SuggestedTaskCard({
       className="group relative origin-center"
     >
       <button
-        onClick={() => onSelect(task)}
+        onClick={() => onSelect(item)}
         type="button"
-        className="flex w-full cursor-pointer items-start gap-2.5 rounded-xl border border-(--gray-a3) bg-(--color-panel-solid) px-2.5 py-2 text-left shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] transition-[border-color,box-shadow] hover:border-(--card-hover-border) hover:shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_3px_rgba(0,0,0,0.04)]"
-        style={
-          {
-            "--card-hover-border": `var(--${config.color}-6)`,
-          } as React.CSSProperties
-        }
+        className="flex w-full cursor-pointer items-start gap-2.5 rounded-xl border border-(--gray-a3) bg-(--color-panel-solid) px-2.5 py-2 text-left shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] transition-[border-color,box-shadow] hover:border-(--blue-6) hover:shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_3px_rgba(0,0,0,0.04)]"
       >
         <Flex
           align="center"
           justify="center"
-          className="h-6 w-6 shrink-0 rounded-md"
-          style={{ backgroundColor: `var(--${config.color}-3)` }}
+          className="h-6 w-6 shrink-0 rounded-md bg-(--blue-3)"
         >
-          <TaskIcon
-            size={14}
-            weight="duotone"
-            color={`var(--${config.color}-9)`}
-          />
+          <GitPullRequest size={14} weight="duotone" color="var(--blue-9)" />
         </Flex>
         <Flex direction="column" gap="1" className="min-w-0 flex-1">
           <Text
@@ -62,13 +47,13 @@ export function SuggestedTaskCard({
             weight="medium"
             className="min-w-0 truncate text-(--gray-12)"
           >
-            {task.title}
+            {KIND_TITLE[item.kind](item.prNumber)}
           </Text>
           <Text
             size="1"
             className="line-clamp-1 text-(--gray-11) leading-normal"
           >
-            {task.description}
+            {item.title}
           </Text>
         </Flex>
       </button>
@@ -83,7 +68,7 @@ export function SuggestedTaskCard({
             aria-label="Dismiss suggestion"
             onClick={(e) => {
               e.stopPropagation();
-              onDismiss(task);
+              onDismiss(item);
             }}
             className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md bg-(--gray-3) text-(--gray-11) shadow-sm transition-colors hover:bg-(--gray-4) hover:text-(--gray-12)"
           >

@@ -1,4 +1,5 @@
 import { FileText, X } from "@phosphor-icons/react";
+import { xmlToContent } from "@posthog/core/message-editor/content";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
@@ -207,9 +208,11 @@ export function TaskInput({
 
   useEffect(() => {
     if (!initialPrompt || !prefillRequestKey) return;
-    useDraftStore.getState().actions.setPendingContent(sessionId, {
-      segments: [{ type: "text", text: initialPrompt }],
-    });
+    // Hydrate chip tags (e.g. <github_pr/>) into real pills; plain prompts
+    // round-trip unchanged to a single text segment.
+    useDraftStore
+      .getState()
+      .actions.setPendingContent(sessionId, xmlToContent(initialPrompt));
   }, [initialPrompt, prefillRequestKey, sessionId]);
 
   useEffect(() => {

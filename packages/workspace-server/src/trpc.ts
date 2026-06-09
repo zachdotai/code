@@ -89,6 +89,8 @@ import {
   getPrTemplateOutput,
   getPrUrlForBranchInput,
   getPrUrlForBranchOutput,
+  getPrWorkItemsInput,
+  getPrWorkItemsOutput,
   ghAuthTokenOutput,
   ghStatusOutput,
   gitBusyStateInput,
@@ -544,6 +546,11 @@ export function createAppRouter({
         .query(({ input }) =>
           gitService().getPrUrlForBranch(input.directoryPath, input.branchName),
         ),
+
+      getPrWorkItems: t.procedure
+        .input(getPrWorkItemsInput)
+        .output(getPrWorkItemsOutput)
+        .query(({ input }) => gitService().getPrWorkItems(input.directoryPath)),
 
       openPr: t.procedure
         .input(openPrInput)

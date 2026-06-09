@@ -332,6 +332,26 @@ export const getPrDiffStatsBatchOutput = z.record(
   prDiffStatsSchema,
 );
 
+// PR work items: the current user's open PRs that need action. Mirrors
+// `prWorkItemSchema` in `@posthog/core/git/router-schemas`.
+export const prWorkItemKindSchema = z.enum(["review", "ci", "conflict"]);
+export type PrWorkItemKind = z.infer<typeof prWorkItemKindSchema>;
+
+export const prWorkItemSchema = z.object({
+  kind: prWorkItemKindSchema,
+  prNumber: z.number(),
+  title: z.string(),
+  url: z.string(),
+  headRefName: z.string(),
+  // Head commit SHA — lets dismissals be commit-scoped (a new push re-surfaces).
+  headSha: z.string(),
+});
+
+export type PrWorkItem = z.infer<typeof prWorkItemSchema>;
+
+export const getPrWorkItemsInput = directoryPathInput;
+export const getPrWorkItemsOutput = z.array(prWorkItemSchema);
+
 export const getBranchChangedFilesInput = z.object({
   repo: z.string(),
   branch: z.string(),

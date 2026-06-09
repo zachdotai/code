@@ -490,6 +490,22 @@ export interface SetupTaskDismissedProperties {
   total_discovered: number;
 }
 
+export type WorkItemKind = "review" | "ci" | "conflict";
+
+export interface SetupWorkItemSelectedProperties {
+  kind: WorkItemKind;
+  pr_number: number;
+  position: number;
+  total: number;
+}
+
+export interface SetupWorkItemDismissedProperties {
+  kind: WorkItemKind;
+  pr_number: number;
+  position: number;
+  total: number;
+}
+
 // Inbox events
 export type InboxReportOpenMethod =
   | "click"
@@ -1010,6 +1026,8 @@ export const ANALYTICS_EVENTS = {
   SETUP_DISCOVERY_FAILED: "Setup discovery failed",
   SETUP_TASK_SELECTED: "Setup task selected",
   SETUP_TASK_DISMISSED: "Setup task dismissed",
+  SETUP_WORK_ITEM_SELECTED: "Setup work item selected",
+  SETUP_WORK_ITEM_DISMISSED: "Setup work item dismissed",
 
   // Deep link events
   DEEP_LINK_NEW_TASK: "Deep link new task",
@@ -1153,6 +1171,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED]: SetupDiscoveryFailedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_SELECTED]: SetupTaskSelectedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_DISMISSED]: SetupTaskDismissedProperties;
+  [ANALYTICS_EVENTS.SETUP_WORK_ITEM_SELECTED]: SetupWorkItemSelectedProperties;
+  [ANALYTICS_EVENTS.SETUP_WORK_ITEM_DISMISSED]: SetupWorkItemDismissedProperties;
 
   // Deep link events
   [ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK]: DeepLinkNewTaskProperties;
