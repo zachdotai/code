@@ -1,3 +1,4 @@
+import { Tooltip } from "@components/ui/Tooltip";
 import { CHAT_CONTENT_MAX_WIDTH } from "@features/sessions/constants";
 import type { IconProps } from "@phosphor-icons/react";
 import {
@@ -49,8 +50,11 @@ const PRODUCT_ICON: Record<PostHogProductId, ComponentType<IconProps>> = {
 /**
  * Docs page on posthog.com per product, so a chip links to the relevant
  * product docs. `Partial` on purpose — products without a dedicated docs page
- * (e.g. apm, which PostHog folds into LLM analytics / Logs) render as a plain,
- * non-clickable badge rather than linking somewhere misleading.
+ * render as a plain, non-clickable badge rather than linking somewhere
+ * misleading. Deliberately excluded:
+ *  - `code`: this chip means "the agent read files from your repository", not a
+ *    PostHog data product, so it must not link to the /code marketing page.
+ *  - `apm`: PostHog folds APM into LLM analytics / Logs, no standalone page.
  */
 const PRODUCT_DOC_URL: Partial<Record<PostHogProductId, string>> = {
   product_analytics: "https://posthog.com/docs/product-analytics",
@@ -65,8 +69,16 @@ const PRODUCT_DOC_URL: Partial<Record<PostHogProductId, string>> = {
   cdp: "https://posthog.com/docs/cdp",
   logs: "https://posthog.com/docs/logs",
   sql: "https://posthog.com/docs/sql",
-  code: "https://posthog.com/code",
   posthog: "https://posthog.com/docs",
+};
+
+/**
+ * Per-product hover explanation. For products that link to docs the default
+ * "Open … docs" is enough; the entries here override that for chips whose
+ * meaning isn't obvious from the label alone.
+ */
+const PRODUCT_TOOLTIP: Partial<Record<PostHogProductId, string>> = {
+  code: "PostHog Code read files from your repository this session",
 };
 
 interface SessionResourcesBarProps {
@@ -75,10 +87,13 @@ interface SessionResourcesBarProps {
 
 /**
  * Persistent bar above the composer listing the PostHog products the agent has
- * touched so far this session — via the MCP `exec` tool, or by reading a file
- * from the codebase (the "Code" chip). Each product appears once and is added
- * the moment it's first used. Hidden until at least one product has been used.
- * Mirrors PlanStatusBar's placement and styling.
+ * drawn on so far this session — via the MCP `exec` tool, or by reading a file
+ * from the codebase (the "Code" chip). It's a transparency hint: at a glance
+ * you can see which parts of PostHog grounded the answer. Each product appears
+ * once and is added the moment it's first used. Chips that map to a product
+ * docs page open it on click; others (e.g. "Code") are informational only.
+ * Hidden until at least one product has been used. Mirrors PlanStatusBar's
+ * placement and styling.
  */
 export function SessionResourcesBar({ events }: SessionResourcesBarProps) {
   const products = useMemo(() => accumulateSessionResources(events), [events]);
@@ -89,29 +104,37 @@ export function SessionResourcesBar({ events }: SessionResourcesBarProps) {
     <Box className="mb-3">
       <Box className="mx-auto" style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}>
         <Flex align="center" gap="2" wrap="wrap" className="px-3 pt-2">
-          <Text color="gray" className="whitespace-nowrap text-[12px]">
-            PostHog resources used
-          </Text>
+          <Tooltip content="PostHog products the agent drew on while working on this session. Click a product to open its docs.">
+            <Text
+              color="gray"
+              className="cursor-default whitespace-nowrap text-[12px]"
+            >
+              PostHog products used
+            </Text>
+          </Tooltip>
           {products.map((product) => {
             const Icon = PRODUCT_ICON[product.id] ?? SparkleIcon;
             const docUrl = PRODUCT_DOC_URL[product.id];
+            const tooltip =
+              PRODUCT_TOOLTIP[product.id] ??
+              (docUrl ? `Open ${product.label} docs` : product.label);
             return (
-              <Badge
-                key={product.id}
-                size="1"
-                color="gray"
-                variant="soft"
-                className={
-                  docUrl ? "cursor-pointer hover:bg-gray-4" : undefined
-                }
-                onClick={
-                  docUrl ? () => void openUrlInBrowser(docUrl) : undefined
-                }
-                title={docUrl ? `Open ${product.label} docs` : undefined}
-              >
-                <Icon size={12} />
-                {product.label}
-              </Badge>
+              <Tooltip key={product.id} content={tooltip}>
+                <Badge
+                  size="1"
+                  color="gray"
+                  variant="soft"
+                  className={
+                    docUrl ? "cursor-pointer hover:bg-gray-4" : undefined
+                  }
+                  onClick={
+                    docUrl ? () => void openUrlInBrowser(docUrl) : undefined
+                  }
+                >
+                  <Icon size={12} />
+                  {product.label}
+                </Badge>
+              </Tooltip>
             );
           })}
         </Flex>
