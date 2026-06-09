@@ -7,6 +7,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
 } from "@posthog/quill";
 import { useState } from "react";
 
@@ -58,12 +61,11 @@ export function NewCanvasMenu({
           <DropdownMenuItem
             key={t.id}
             onClick={() => void createAndOpen({ templateId: t.id })}
-            className="flex-col items-start gap-0.5"
           >
-            <span className="font-medium text-gray-12">{t.name}</span>
-            <span className="whitespace-normal text-pretty text-gray-10 text-xs leading-snug">
-              {t.description}
-            </span>
+            <ItemContent>
+              <ItemTitle>{t.name}</ItemTitle>
+              <ItemDescription>{t.description}</ItemDescription>
+            </ItemContent>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
