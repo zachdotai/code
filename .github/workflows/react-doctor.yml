@@ -43,6 +43,8 @@ jobs:
           NO_COLOR: "1"
           REACT_DOCTOR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Bypass `min-release-age` from .npmrc for this CI-only pinned utility.
+          NPM_CONFIG_MIN_RELEASE_AGE: "0"
         run: |
           # -e omitted: exit codes are captured and inspected explicitly.
           set -uo pipefail

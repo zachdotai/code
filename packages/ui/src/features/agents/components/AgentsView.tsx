@@ -1,5 +1,6 @@
 import { RobotIcon } from "@phosphor-icons/react";
 import { ConfigureAgentsSection } from "@posthog/ui/features/inbox/components/ConfigureAgentsSection";
+import { InboxOnboardingCallout } from "@posthog/ui/features/inbox/components/onboarding/InboxOnboardingCallout";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
@@ -27,7 +28,7 @@ export function AgentsView() {
       <Flex
         direction="column"
         gap="0.5"
-        className="cursor-default select-none border-(--gray-5) border-b px-6 pt-5 pb-5"
+        className="cursor-default select-none border-gray-5 border-b px-6 pt-5 pb-5"
       >
         <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
           Agents
@@ -38,6 +39,7 @@ export function AgentsView() {
         </Text>
       </Flex>
 
+      <InboxOnboardingCallout />
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-4xl px-6 py-6">
           <ConfigureAgentsSection />
