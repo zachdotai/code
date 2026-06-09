@@ -4,6 +4,7 @@ import { PlusIcon } from "@phosphor-icons/react";
 import {
   Button,
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -58,7 +59,7 @@ export function NewCanvasMenu({
             generating UI.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-2 pt-2">
+        <DialogBody className="flex flex-col gap-2">
           {templates.map((t) => (
             <Button
               key={t.id}
@@ -75,7 +76,7 @@ export function NewCanvasMenu({
               </span>
             </Button>
           ))}
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );
