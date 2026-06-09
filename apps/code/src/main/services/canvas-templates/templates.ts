@@ -33,6 +33,8 @@ interface BuiltInTemplate {
   description: string;
   system: string;
   rules: string[];
+  /** Starter prompts shown as clickable chips in an empty chat. */
+  suggestions: string[];
 }
 
 const BUILT_INS: BuiltInTemplate[] = [
@@ -44,6 +46,11 @@ const BUILT_INS: BuiltInTemplate[] = [
     system:
       "You are PostHog Canvas, an agent that builds live, data-driven dashboards and mini-apps for the user's current PostHog project.",
     rules: DASHBOARD_RULES,
+    suggestions: [
+      "Web analytics",
+      "Signups over the last 7 days",
+      "Revenue over the last 7 days",
+    ],
   },
   {
     id: "blank",
@@ -53,6 +60,7 @@ const BUILT_INS: BuiltInTemplate[] = [
     system:
       "You are PostHog Canvas, an agent that builds whatever the user asks — a dashboard, a tool, a form, a report, or a whole mini-site — for the user's current PostHog project.",
     rules: BLANK_RULES,
+    suggestions: ["Build me an automation tool for…"],
   },
 ];
 
@@ -61,6 +69,8 @@ export interface CanvasTemplate {
   name: string;
   description: string;
   builtIn: boolean;
+  /** Starter prompts shown as clickable chips in an empty chat. */
+  suggestions: string[];
   /** The agent system prompt for this template (catalog contract + rules). */
   systemPrompt: string;
 }
@@ -71,6 +81,7 @@ function buildTemplate(t: BuiltInTemplate): CanvasTemplate {
     name: t.name,
     description: t.description,
     builtIn: true,
+    suggestions: t.suggestions,
     systemPrompt: canvasCatalog.prompt({
       mode: "inline",
       system: t.system,

@@ -6,6 +6,7 @@ export const canvasTemplateSummarySchema = z.object({
   name: z.string(),
   description: z.string(),
   builtIn: z.boolean(),
+  suggestions: z.array(z.string()),
 });
 export type CanvasTemplateSummary = z.infer<typeof canvasTemplateSummarySchema>;
 

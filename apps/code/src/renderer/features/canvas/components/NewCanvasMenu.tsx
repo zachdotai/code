@@ -53,7 +53,11 @@ export function NewCanvasMenu({
         <PlusIcon size={14} />
         New canvas
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-auto" align="end" sideOffset={4}>
+      <DropdownMenuContent
+        className="w-auto max-w-2xs"
+        align="end"
+        sideOffset={4}
+      >
         <DropdownMenuGroup>
           {templates.map((t) => (
             <DropdownMenuItem
@@ -63,7 +67,7 @@ export function NewCanvasMenu({
                 <ItemMenuItem size="xs" className="w-full">
                   <ItemContent variant="menuItem">
                     <ItemTitle>{t.name}</ItemTitle>
-                    <ItemDescription className="leading-none">
+                    <ItemDescription className="leading-tight">
                       {t.description}
                     </ItemDescription>
                   </ItemContent>
