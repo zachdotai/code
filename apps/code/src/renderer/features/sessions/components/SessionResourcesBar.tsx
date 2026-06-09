@@ -23,7 +23,10 @@ import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import type { AcpMessage } from "@shared/types/session-events";
 import { openUrlInBrowser } from "@utils/browser";
 import { type ComponentType, useMemo } from "react";
-import { accumulateSessionResources } from "./accumulateSessionResources";
+import {
+  accumulateSessionResources,
+  type ResourceProduct,
+} from "./accumulateSessionResources";
 
 /**
  * Icon per PostHog product. `Record<PostHogProductId, …>` keeps this exhaustive:
@@ -86,6 +89,35 @@ interface SessionResourcesBarProps {
 }
 
 /**
+ * A single product chip. Clickable chips (those with a docs page) open it on
+ * click; chips get a tooltip only when it adds something beyond the label —
+ * a per-product explanation or an "open docs" hint — otherwise they render
+ * bare (e.g. apm).
+ */
+function ResourceChip({ id, label }: ResourceProduct) {
+  const Icon = PRODUCT_ICON[id] ?? SparkleIcon;
+  const docUrl = PRODUCT_DOC_URL[id];
+  const tooltip =
+    PRODUCT_TOOLTIP[id] ?? (docUrl ? `Open ${label} docs` : undefined);
+
+  const badge = (
+    <Badge
+      size="1"
+      color="gray"
+      variant="soft"
+      className={docUrl ? "cursor-pointer hover:bg-gray-4" : undefined}
+      onClick={docUrl ? () => void openUrlInBrowser(docUrl) : undefined}
+    >
+      <Icon size={12} />
+      {label}
+    </Badge>
+  );
+
+  if (!tooltip) return badge;
+  return <Tooltip content={tooltip}>{badge}</Tooltip>;
+}
+
+/**
  * Persistent bar above the composer listing the PostHog products the agent has
  * drawn on so far this session — via the MCP `exec` tool, or by reading a file
  * from the codebase (the "Code" chip). It's a transparency hint: at a glance
@@ -112,31 +144,9 @@ export function SessionResourcesBar({ events }: SessionResourcesBarProps) {
               PostHog products used
             </Text>
           </Tooltip>
-          {products.map((product) => {
-            const Icon = PRODUCT_ICON[product.id] ?? SparkleIcon;
-            const docUrl = PRODUCT_DOC_URL[product.id];
-            const tooltip =
-              PRODUCT_TOOLTIP[product.id] ??
-              (docUrl ? `Open ${product.label} docs` : product.label);
-            return (
-              <Tooltip key={product.id} content={tooltip}>
-                <Badge
-                  size="1"
-                  color="gray"
-                  variant="soft"
-                  className={
-                    docUrl ? "cursor-pointer hover:bg-gray-4" : undefined
-                  }
-                  onClick={
-                    docUrl ? () => void openUrlInBrowser(docUrl) : undefined
-                  }
-                >
-                  <Icon size={12} />
-                  {product.label}
-                </Badge>
-              </Tooltip>
-            );
-          })}
+          {products.map((product) => (
+            <ResourceChip key={product.id} {...product} />
+          ))}
         </Flex>
       </Box>
     </Box>
