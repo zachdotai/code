@@ -8,7 +8,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
-import { Flex, Text } from "@radix-ui/themes";
 import { useState } from "react";
 
 // "New canvas" entry point: pick a template (Dashboard, Blank, …) and the chosen
@@ -49,20 +48,22 @@ export function NewCanvasMenu({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger render={trigger} />
-      <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+      <DropdownMenuContent
+        align="end"
+        side="bottom"
+        sideOffset={4}
+        className="w-72"
+      >
         {templates.map((t) => (
           <DropdownMenuItem
             key={t.id}
             onClick={() => void createAndOpen({ templateId: t.id })}
+            className="flex-col items-start gap-0.5"
           >
-            <Flex direction="column" gap="1">
-              <Text size="2" weight="bold">
-                {t.name}
-              </Text>
-              <Text size="1" className="text-gray-10">
-                {t.description}
-              </Text>
-            </Flex>
+            <span className="font-medium text-gray-12">{t.name}</span>
+            <span className="whitespace-normal text-pretty text-gray-10 text-xs leading-snug">
+              {t.description}
+            </span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
