@@ -172,17 +172,31 @@ dynamic" as its own phase (2.5 below), gating real interactivity (Phase 6).
   mode and resolving bindings in the edit walk — then relax the "static only"
   rules per-template. Required before forms/tools that hold state.
 
-### Phase 3 — Warehouse manifest
+### Phase 3 — Source @mentions (data sources)
 
-- Main method to list warehouse sources/tables (PostHog `external_data` /
-  warehouse API). Inject a compact, size-capped manifest into the agent context
-  so it can write correct HogQL against Stripe et al.
-- Warehouse-backed Stat refresh reuses the existing `dashboard-query` path.
+Prior art: **Craft Agents' "sources"** (craft-ai-agents/craft-agents-oss) — a
+conversational abstraction where users `@mention` a source mid-chat and the
+agent gains its tools/schema, no restart. We adopt the *@mention* UX, not their
+connection layer: PostHog's Data Warehouse already owns connecting Stripe /
+Postgres / etc., and the canvas agent is hard-sandboxed (read-only), so we skip
+their in-chat OAuth and permission modes.
+
+- Main method to list the project's queryable sources (product-analytics
+  `events`/`persons` + warehouse tables via `external_data`). Expose for an
+  `@mention` autocomplete in the chat composer.
+- The user `@`-references the sources they want (`@events`, `@stripe_invoices`);
+  ONLY those table schemas are injected into the agent context (token-cheap,
+  precise) — instead of dumping the whole warehouse manifest. With no mention,
+  fall back to a small default set (events/persons).
+- Mentioned sources are recorded on the canvas's `dataSources` field (already
+  scoped) so the board remembers what it's built on. Warehouse-backed Stat
+  refresh reuses the existing `dashboard-query` HogQL path.
 
 ### Phase 4 — Data UI
 
-- Show/choose connected sources on a canvas; **link out to PostHog** to connect
-  new ones; surface warehouse-backed refresh in the UI.
+- Surface a canvas's attached sources (from `dataSources`) and the `@mention`
+  picker in the composer; **link out to PostHog** to connect new warehouse
+  sources (no in-app OAuth); surface warehouse-backed refresh in the UI.
 
 ### Phase 5 — User-defined templates
 
