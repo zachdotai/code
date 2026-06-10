@@ -1,14 +1,16 @@
 import type { AuthService } from "@posthog/core/auth/auth";
+import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
+import {
+  ROOT_LOGGER,
+  type RootLogger,
+  type ScopedLogger,
+} from "@posthog/di/logger";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import { logger } from "../../utils/logger";
 import type {
   DashboardQuery,
   DashboardQueryResult,
   DashboardQueryRunInput,
-} from "./schemas";
-
-const log = logger.scope("dashboard-query");
+} from "./querySchemas";
 
 // Run at most this many HogQL queries at once so a wide dashboard doesn't
 // hammer the query endpoint.
@@ -24,10 +26,16 @@ interface HogQLResponse {
 // single scalar value per point. Used by the dashboard refresh flow.
 @injectable()
 export class DashboardQueryService {
+  private readonly log: ScopedLogger;
+
   constructor(
-    @inject(MAIN_TOKENS.AuthService)
+    @inject(AUTH_SERVICE)
     private readonly authService: AuthService,
-  ) {}
+    @inject(ROOT_LOGGER)
+    rootLogger: RootLogger,
+  ) {
+    this.log = rootLogger.scope("dashboard-query");
+  }
 
   async run(input: DashboardQueryRunInput): Promise<DashboardQueryResult[]> {
     const { queries } = input;
@@ -36,7 +44,7 @@ export class DashboardQueryService {
     const { apiHost } = await this.authService.getValidAccessToken();
     const projectId = this.authService.getState().currentProjectId;
     if (projectId == null) {
-      return queries.map((q) => fail(q, "No PostHog project selected"));
+      return queries.map((q) => this.fail(q, "No PostHog project selected"));
     }
 
     const url = `${apiHost}/api/projects/${projectId}/query/`;
@@ -52,7 +60,7 @@ export class DashboardQueryService {
         results.push(
           s.status === "fulfilled"
             ? s.value
-            : fail(batch[j], errorMessage(s.reason)),
+            : this.fail(batch[j], errorMessage(s.reason)),
         );
       });
     }
@@ -71,20 +79,20 @@ export class DashboardQueryService {
     });
 
     if (!response.ok) {
-      return fail(q, `Query failed (${response.status})`);
+      return this.fail(q, `Query failed (${response.status})`);
     }
 
     const body = (await response.json()) as HogQLResponse;
-    if (body.error) return fail(q, body.error);
+    if (body.error) return this.fail(q, body.error);
 
     const rows = body.results;
     if (!Array.isArray(rows) || rows.length === 0) {
-      return fail(q, "Query returned no rows");
+      return this.fail(q, "Query returned no rows");
     }
 
     const firstRow = rows[0];
     if (!Array.isArray(firstRow)) {
-      return fail(q, "Unexpected result shape");
+      return this.fail(q, "Unexpected result shape");
     }
 
     // Read the named column if given, else the first cell of the first row.
@@ -100,17 +108,17 @@ export class DashboardQueryService {
         value: cell,
       };
     }
-    return fail(q, "Unsupported value type");
+    return this.fail(q, "Unsupported value type");
   }
-}
 
-function fail(q: DashboardQuery, error: string): DashboardQueryResult {
-  log.warn("Dashboard query failed", {
-    elementKey: q.elementKey,
-    propPath: q.propPath,
-    error,
-  });
-  return { ok: false, elementKey: q.elementKey, propPath: q.propPath, error };
+  private fail(q: DashboardQuery, error: string): DashboardQueryResult {
+    this.log.warn("Dashboard query failed", {
+      elementKey: q.elementKey,
+      propPath: q.propPath,
+      error,
+    });
+    return { ok: false, elementKey: q.elementKey, propPath: q.propPath, error };
+  }
 }
 
 function errorMessage(reason: unknown): string {

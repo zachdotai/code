@@ -18,11 +18,8 @@ import {
   AUTH_TOKEN_CIPHER,
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
-import {
-  DASHBOARD_QUERY_SERVICE as CANVAS_DASHBOARD_QUERY_SERVICE,
-  DASHBOARDS_SERVICE as CANVAS_DASHBOARDS_SERVICE,
-  CANVAS_GEN_SERVICE,
-} from "@posthog/core/canvas/identifiers";
+import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
+import { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
@@ -235,8 +232,6 @@ import {
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
 import { CanvasGenService } from "../services/canvas-gen/service";
-import { DashboardQueryService } from "../services/dashboard-query/service";
-import { DashboardsService } from "../services/dashboards/service";
 import { DeepLinkService } from "../services/deep-link/service";
 import { EncryptionService } from "../services/encryption/service";
 import { SecureStoreService } from "../services/secure-store/service";
@@ -699,15 +694,10 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
 });
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
 
-// Canvas / dashboards (project-bluebird). Bound to the @posthog/core tokens so
-// the host-router routers resolve them via ctx.container. Singletons:
-// CanvasGenService holds per-thread agent state + a forwarding loop for app life.
-container
-  .bind(CANVAS_DASHBOARD_QUERY_SERVICE)
-  .to(DashboardQueryService)
-  .inSingletonScope();
-container
-  .bind(CANVAS_DASHBOARDS_SERVICE)
-  .to(DashboardsService)
-  .inSingletonScope();
+// Canvas / dashboards (project-bluebird). The host-agnostic dashboard services
+// live in @posthog/core (bound via canvasCoreModule); CanvasGenService is the
+// desktop-bound agent surface (a singleton holding per-thread agent state + a
+// forwarding loop for app life). Both resolve through ctx.container in the
+// host-router routers.
+container.load(canvasCoreModule);
 container.bind(CANVAS_GEN_SERVICE).to(CanvasGenService).inSingletonScope();

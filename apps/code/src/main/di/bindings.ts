@@ -8,11 +8,7 @@ import type {
   AUTH_TOKEN_CIPHER,
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
-import type {
-  DASHBOARD_QUERY_SERVICE as CANVAS_DASHBOARD_QUERY_SERVICE,
-  DASHBOARDS_SERVICE as CANVAS_DASHBOARDS_SERVICE,
-  CANVAS_GEN_SERVICE,
-} from "@posthog/core/canvas/identifiers";
+import type { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
 import type {
   CLOUD_TASK_AUTH,
   ICloudTaskAuth,
@@ -228,8 +224,6 @@ import type {
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
 import type { CanvasGenService } from "../services/canvas-gen/service";
-import type { DashboardQueryService } from "../services/dashboard-query/service";
-import type { DashboardsService } from "../services/dashboards/service";
 import type { DeepLinkService } from "../services/deep-link/service";
 import type { EncryptionService } from "../services/encryption/service";
 import type { SecureStoreService } from "../services/secure-store/service";
@@ -426,8 +420,6 @@ export interface MainBindings {
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [CANVAS_GEN_SERVICE]: CanvasGenService;
-  [CANVAS_DASHBOARDS_SERVICE]: DashboardsService;
-  [CANVAS_DASHBOARD_QUERY_SERVICE]: DashboardQueryService;
 
   // ws-server git service (bound to(GitService))
   [WS_GIT_SERVICE]: GitService;

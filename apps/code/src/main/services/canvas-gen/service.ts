@@ -6,6 +6,19 @@ import {
   type MixedStreamParser,
 } from "@json-render/core";
 import type { AuthService } from "@posthog/core/auth/auth";
+import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
+import {
+  CanvasGenEvent,
+  type CanvasGenEvents,
+  type CanvasGenerateInput,
+  type CanvasStreamEvent,
+  type CanvasThreadInput,
+} from "@posthog/core/canvas/genSchemas";
+import {
+  ROOT_LOGGER,
+  type RootLogger,
+  type ScopedLogger,
+} from "@posthog/di/logger";
 import { type AcpMessage, TypedEventEmitter } from "@posthog/shared";
 import type { AgentService } from "@posthog/workspace-server/services/agent/agent";
 import { AGENT_SERVICE } from "@posthog/workspace-server/services/agent/identifiers";
@@ -14,17 +27,6 @@ import {
   type AgentSessionEventPayload,
 } from "@posthog/workspace-server/services/agent/schemas";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import { logger } from "../../utils/logger";
-import {
-  CanvasGenEvent,
-  type CanvasGenEvents,
-  type CanvasGenerateInput,
-  type CanvasStreamEvent,
-  type CanvasThreadInput,
-} from "./schemas";
-
-const log = logger.scope("canvas-gen");
 
 const TASK_RUN_PREFIX = "canvas:";
 
@@ -62,13 +64,18 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
   private readonly startedSessions = new Set<string>();
   private forwarding = false;
 
+  private readonly log: ScopedLogger;
+
   constructor(
     @inject(AGENT_SERVICE)
     private readonly agentService: AgentService,
-    @inject(MAIN_TOKENS.AuthService)
+    @inject(AUTH_SERVICE)
     private readonly authService: AuthService,
+    @inject(ROOT_LOGGER)
+    rootLogger: RootLogger,
   ) {
     super();
+    this.log = rootLogger.scope("canvas-gen");
   }
 
   async generate(input: CanvasGenerateInput): Promise<void> {
@@ -95,7 +102,7 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
       this.threads.get(threadId)?.parser.flush();
       this.emitEvent(threadId, { type: "done" });
     } catch (err) {
-      log.warn("Canvas prompt failed", { threadId, err });
+      this.log.warn("Canvas prompt failed", { threadId, err });
       this.emitEvent(threadId, {
         type: "error",
         message: err instanceof Error ? err.message : String(err),
@@ -188,7 +195,7 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
       try {
         this.handleAcp(threadId, event.payload);
       } catch (err) {
-        log.warn("Failed to handle canvas ACP frame", { threadId, err });
+        this.log.warn("Failed to handle canvas ACP frame", { threadId, err });
       }
     }
   }

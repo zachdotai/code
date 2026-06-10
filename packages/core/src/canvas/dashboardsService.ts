@@ -1,14 +1,14 @@
 import type { AuthService } from "@posthog/core/auth/auth";
-import { DASHBOARD_QUERY_SERVICE } from "@posthog/core/canvas/identifiers";
+import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../../di/tokens";
-import type { DashboardQuery } from "../dashboard-query/schemas";
-import type { DashboardQueryService } from "../dashboard-query/service";
+import type { DashboardQueryService } from "./dashboardQueryService";
 import type {
   DashboardFileMeta,
   DashboardRecord,
   DashboardSummary,
-} from "./schemas";
+} from "./dashboardSchemas";
+import { DASHBOARD_QUERY_SERVICE } from "./identifiers";
+import type { DashboardQuery } from "./querySchemas";
 
 // Desktop file-system "type" tag for a dashboard entry. Channels are `folder`
 // rows (depth 1); dashboards are these `dashboard` files nested beneath them.
@@ -35,7 +35,7 @@ interface FsEntry {
 @injectable()
 export class DashboardsService {
   constructor(
-    @inject(MAIN_TOKENS.AuthService)
+    @inject(AUTH_SERVICE)
     private readonly authService: AuthService,
     @inject(DASHBOARD_QUERY_SERVICE)
     private readonly dashboardQuery: DashboardQueryService,
