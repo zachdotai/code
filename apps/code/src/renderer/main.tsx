@@ -1,12 +1,24 @@
 import "reflect-metadata";
+// Side effect: registers the host (electron-trpc-backed) storage with @posthog/ui
+// before any persisted store hydrates.
+import "@utils/electronStorage";
+// Side effect: drives the updates subscription + toast via the core update store.
+// Resolves UPDATES_CLIENT, which renderer/di/container.ts binds (loaded via the
+// electronStorage import above).
+import "@renderer/platform-adapters/updates";
 // Side effect: attaches window focus/visibility listeners so `focused` is accurate before inbox queries mount.
-import "@stores/rendererWindowFocusStore";
+import "@posthog/ui/shell/rendererWindowFocusStore";
 import { Providers } from "@components/Providers";
 import { preloadHighlighter } from "@pierre/diffs";
-import App from "@renderer/App";
+import { boot } from "@posthog/di/contribution";
+import { ServiceProvider } from "@posthog/di/react";
+import App from "@posthog/ui/shell/App";
+import { registerDesktopContributions } from "@renderer/desktop-contributions";
+import { container } from "@renderer/di/container";
+import "@renderer/desktop-services";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "./styles/globals.css";
+import "@posthog/ui/styles/globals.css";
 
 void preloadHighlighter({
   themes: ["github-dark", "github-light"],
@@ -59,13 +71,18 @@ document.title = import.meta.env.DEV
   ? "PostHog Code (Development)"
   : "PostHog Code";
 
+registerDesktopContributions();
+void boot(container);
+
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <Providers>
-      <App />
-    </Providers>
+    <ServiceProvider container={container}>
+      <Providers>
+        <App />
+      </Providers>
+    </ServiceProvider>
   </React.StrictMode>,
 );

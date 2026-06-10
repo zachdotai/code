@@ -1,5 +1,7 @@
 import type { LocalTool, LocalToolCtx, LocalToolGateMeta } from "./registry";
 import { signedCommitTool } from "./tools/signed-commit";
+import { signedMergeTool } from "./tools/signed-merge";
+import { signedRewriteTool } from "./tools/signed-rewrite";
 
 export {
   LOCAL_TOOLS_MCP_NAME,
@@ -11,7 +13,11 @@ export {
 } from "./registry";
 
 /** Every tool the general local MCP server can expose. Add new tools here. */
-export const LOCAL_TOOLS: LocalTool[] = [signedCommitTool];
+export const LOCAL_TOOLS: LocalTool[] = [
+  signedCommitTool,
+  signedMergeTool,
+  signedRewriteTool,
+];
 
 /** Tools whose gate passes for the given context — the set to actually expose. */
 export function enabledLocalTools(

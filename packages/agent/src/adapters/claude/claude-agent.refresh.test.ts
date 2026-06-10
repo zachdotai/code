@@ -83,7 +83,14 @@ function installFakeSession(
       sessionId,
       cwd: "/tmp/repo",
       model: "claude-sonnet-4-6",
-      mcpServers: { posthog: { type: "http", url: "https://old" } },
+      mcpServers: {
+        posthog: { type: "http", url: "https://old" },
+        "posthog-code-tools": {
+          type: "sdk",
+          name: "posthog-code-tools",
+          instance: {},
+        },
+      },
       abortController,
     },
     input,
@@ -97,6 +104,7 @@ function installFakeSession(
       cachedReadTokens: 0,
       cachedWriteTokens: 0,
     },
+    sessionResources: new Set(),
     configOptions: [],
     promptRunning: false,
     pendingMessages: new Map(),
@@ -221,7 +229,8 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     expect(oldQuery.interrupt).toHaveBeenCalledTimes(1);
     expect(endSpy).toHaveBeenCalledTimes(1);
 
-    // New query was built with resume identity (not sessionId) and new servers
+    // New query: resume identity (not sessionId), http server refreshed, and
+    // the in-process local-tools server preserved.
     expect(lastQueryCall.options).toMatchObject({
       resume: "s-2",
       forkSession: false,
@@ -230,6 +239,11 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
           type: "http",
           url: "https://fresh",
           headers: { "x-foo": "bar" },
+        },
+        "posthog-code-tools": {
+          type: "sdk",
+          name: "posthog-code-tools",
+          instance: {},
         },
       },
     });
@@ -278,6 +292,29 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     );
   });
 
+  it("recovers when interrupting the old query throws Operation aborted", async () => {
+    const agent = makeAgent();
+    const { session, oldQuery, endSpy } = installFakeSession(
+      agent,
+      "s-interrupt-throws",
+    );
+    oldQuery.interrupt.mockRejectedValue(new Error("Operation aborted"));
+
+    const result = await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(result).toEqual({ refreshed: true });
+    expect(endSpy).toHaveBeenCalledTimes(1);
+    const updated = session as unknown as {
+      query: SdkQueryHandle;
+      abortController: AbortController;
+    };
+    expect(updated.query).toBe(createdQueries[0]);
+    expect(updated.query).not.toBe(oldQuery);
+    expect(updated.abortController.signal.aborted).toBe(false);
+  });
+
   it("re-fetches MCP tool metadata for the new query", async () => {
     const agent = makeAgent();
     installFakeSession(agent, "s-metadata");
@@ -288,5 +325,26 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
 
     expect(fetchMcpToolMetadataMock).toHaveBeenCalledTimes(1);
     expect(fetchMcpToolMetadataMock.mock.calls[0][0]).toBe(createdQueries[0]);
+  });
+
+  it("preserves the in-process local-tools server across refresh", async () => {
+    const agent = makeAgent();
+    installFakeSession(agent, "s-inprocess");
+
+    // freshMcpServers carries only external (http) servers, so the sdk server
+    // must be carried over from the previous session options.
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    const servers = lastQueryCall.options?.mcpServers as Record<
+      string,
+      { type?: string }
+    >;
+    expect(servers["posthog-code-tools"]).toEqual({
+      type: "sdk",
+      name: "posthog-code-tools",
+      instance: {},
+    });
   });
 });

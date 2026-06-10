@@ -32,7 +32,7 @@ if [ "${SKIP_ELECTRON_REBUILD:-}" = "1" ]; then
 else
   echo "Rebuilding native modules for Electron..."
   npx @electron/rebuild -f -m node_modules/node-pty
-  npx @electron/rebuild -f -m node_modules/better-sqlite3 || true
+  npx @electron/rebuild -f -m node_modules/better-sqlite3 || echo "⚠ better-sqlite3 electron rebuild FAILED — app DB will not load"
 fi
 
 echo "Patching Electron app name..."

@@ -201,3 +201,11 @@ export function getRtsSignalIngestionEnabled(): boolean {
 export function setRtsSignalIngestionEnabled(value: boolean): void {
   settingsStore.set("rtsSignalIngestionEnabled", value);
 }
+
+export function getPreventSleepWhileRunning(): boolean {
+  return settingsStore.get("preventSleepWhileRunning", false);
+}
+
+export function setPreventSleepWhileRunning(value: boolean): void {
+  settingsStore.set("preventSleepWhileRunning", value);
+}

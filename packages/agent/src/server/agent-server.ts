@@ -25,7 +25,11 @@ import {
   type AgentErrorClassification,
   classifyAgentError,
 } from "../adapters/error-classification";
-import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../adapters/signed-commit-shared";
+import {
+  SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
+  SIGNED_MERGE_QUALIFIED_TOOL_NAME,
+  SIGNED_REWRITE_QUALIFIED_TOOL_NAME,
+} from "../adapters/signed-commit-shared";
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
@@ -253,6 +257,7 @@ export class AgentServer {
         outcome: { outcome: "selected"; optionId: string };
         _meta?: Record<string, unknown>;
       }) => void;
+      toolCallId?: string;
     }
   >();
 
@@ -587,6 +592,44 @@ export class AgentServer {
     this.logger.debug("Agent server stopped");
   }
 
+  /**
+   * Mark the run failed after an unrecoverable crash (uncaught exception /
+   * unhandled rejection). Without this a hard death is silent: the run row
+   * stays non-terminal, the desktop client just sees the stream stop and shows
+   * a generic "Cloud stream disconnected", and the workflow only gives up after
+   * the multi-hour inactivity timeout. Best-effort and self-contained so it can
+   * run from a process-level handler with no session context.
+   */
+  async reportFatalError(error: unknown): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    this.logger.error("Fatal agent-server error; marking run failed", error);
+
+    try {
+      await this.posthogAPI.updateTaskRun(
+        this.config.taskId,
+        this.config.runId,
+        {
+          status: "failed",
+          error_message: `Agent server crashed: ${errorMessage}`,
+        },
+      );
+    } catch (updateError) {
+      this.logger.error(
+        "Failed to mark run failed after fatal error",
+        updateError,
+      );
+    }
+
+    try {
+      await this.eventStreamSender?.stop();
+    } catch (stopError) {
+      this.logger.error(
+        "Failed to flush event stream after fatal error",
+        stopError,
+      );
+    }
+  }
+
   private authenticateRequest(
     getHeader: (name: string) => string | undefined,
   ): JwtPayload {
@@ -750,6 +793,22 @@ export class AgentServer {
         const mcpServers = Array.isArray(params.mcpServers)
           ? params.mcpServers
           : [];
+        const refreshedCredentials = Array.isArray(params.refreshedCredentials)
+          ? (params.refreshedCredentials as string[])
+          : [];
+        const authorship =
+          typeof params.authorship === "string" ? params.authorship : "";
+
+        if (refreshedCredentials.length > 0) {
+          const owner = authorship ? ` (${authorship})` : "";
+          this.logger.debug(
+            `Refreshed sandbox credentials${owner}: ${refreshedCredentials.join(", ")}`,
+          );
+        }
+
+        if (mcpServers.length === 0) {
+          return { refreshed: true };
+        }
 
         this.logger.debug("Refresh session requested", {
           serverCount: mcpServers.length,
@@ -872,6 +931,7 @@ export class AgentServer {
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id,
+      taskTitle: preTask?.title,
     });
 
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
@@ -880,8 +940,16 @@ export class AgentServer {
       this.detectedPrUrl = prUrl;
     }
 
+    const slackThreadUrl = getTaskRunStateString(
+      preTaskRun,
+      "slack_thread_url",
+    );
+
     const runtimeAdapter = this.getRuntimeAdapter();
-    const sessionSystemPrompt = this.buildSessionSystemPrompt(prUrl);
+    const sessionSystemPrompt = this.buildSessionSystemPrompt(
+      prUrl,
+      slackThreadUrl,
+    );
     const codexInstructions =
       runtimeAdapter === "codex"
         ? this.buildCodexInstructions(sessionSystemPrompt)
@@ -984,6 +1052,7 @@ export class AgentServer {
         allowedDomains: this.config.allowedDomains,
         jsonSchema: preTask?.json_schema ?? null,
         permissionMode: initialPermissionMode,
+        ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
         ...(this.config.claudeCode?.plugins?.length && {
           claudeCode: {
             options: {
@@ -1558,8 +1627,9 @@ export class AgentServer {
 
   private buildSessionSystemPrompt(
     prUrl?: string | null,
+    slackThreadUrl?: string | null,
   ): string | { append: string } {
-    const cloudAppend = this.buildCloudSystemPrompt(prUrl);
+    const cloudAppend = this.buildCloudSystemPrompt(prUrl, slackThreadUrl);
     const userPrompt = this.config.claudeCode?.systemPrompt;
 
     // String override: combine user prompt with cloud instructions
@@ -1626,9 +1696,19 @@ export class AgentServer {
     );
   }
 
-  private buildCloudSystemPrompt(prUrl?: string | null): string {
+  private buildCloudSystemPrompt(
+    prUrl?: string | null,
+    slackThreadUrl?: string | null,
+  ): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
+    const isSlack = this.getCloudInteractionOrigin() === "slack";
+    const identityInstructions = isSlack
+      ? `
+# Identity
+You are the PostHog Slack app, PostHog's agent for helping users with their product data and coding tasks from Slack. When introducing yourself or referring to yourself in messages to the user, identify as "PostHog Slack app". Do NOT refer to yourself as Claude, an Anthropic assistant, or any underlying model name.
+`
+      : "";
     const signedCommitInstructions = `
 ## Committing (signed commits required)
 Commits MUST be signed. \`git commit\` and \`git push\` are blocked in this environment.
@@ -1638,6 +1718,25 @@ It creates a GitHub-signed ("Verified") commit on the branch and keeps your loca
 sync. To start a new branch, pass \`branch\` (prefixed with \`posthog-code/\`) — the tool creates
 it on the remote for you.
 
+## Updating from the base branch
+To bring the base branch into your PR branch, call the \`git_signed_merge\` tool (full name
+\`${SIGNED_MERGE_QUALIFIED_TOOL_NAME}\`) — it creates a Verified two-parent merge commit
+server-side (like GitHub's "Update branch" button). NEVER run \`git merge\` followed by
+\`git_signed_commit\`: a merge in progress is refused, because the commit API would linearize
+the merge and dump every base-branch change into your PR. If \`git_signed_merge\` reports a
+conflict, fix it with a rebase instead: \`git rebase origin/<base>\`, resolve, \`git rebase
+--continue\`, then call \`git_signed_rewrite\`.
+
+## Rewriting / force-pushing (rebases, conflict fixes)
+\`git push --force\` is also blocked. To update a branch after a local rebase or conflict
+resolution, rebase locally with normal \`git\` (resolve conflicts and finish with
+\`git rebase --continue\`, NOT \`git commit\`), then call the \`git_signed_rewrite\` tool (full
+name \`${SIGNED_REWRITE_QUALIFIED_TOOL_NAME}\`). It republishes the branch's commits as Verified
+and atomically force-updates the remote branch. This is how you fix conflicts on an existing PR.
+Histories containing merge commits are refused — rebase (which flattens merges) first.
+If a signed-git tool refuses with a "merge in progress" or "leak" error, follow its recovery
+instructions instead of retrying the same call.
+
 ## Attribution
 Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to your
 commit messages. The \`git_signed_commit\` tool automatically appends the only trailers
@@ -1645,9 +1744,14 @@ we want:
   Generated-By: PostHog Code
   Task-Id: ${taskId}`;
 
+    const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
+    const prFooter = slackThreadUrl
+      ? `*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](${slackThreadUrl})*`
+      : `*Created with [PostHog Code](https://posthog.com/code?ref=pr)*`;
+
     if (prUrl) {
       if (!shouldAutoCreatePr) {
-        return `
+        return `${identityInstructions}
 # Cloud Task Execution
 
 This task already has an open pull request: ${prUrl}
@@ -1661,7 +1765,7 @@ ${signedCommitInstructions}
 `;
       }
 
-      return `
+      return `${identityInstructions}
 # Cloud Task Execution
 
 This task already has an open pull request: ${prUrl}
@@ -1669,6 +1773,7 @@ This task already has an open pull request: ${prUrl}
 After completing the requested changes:
 1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
+   - If the branch is behind its base, call the \`git_signed_merge\` tool first — it merges the base in server-side with a Verified merge commit. Only if it reports a conflict: fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
    - Reply on the thread with a short note describing what changed (reference the commit SHA when useful) using \`gh api -X POST /repos/{owner}/{repo}/pulls/{n}/comments/{id}/replies -f body='...'\`.
    - Resolve the thread via the \`resolveReviewThread\` GraphQL mutation: \`gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread-node-id>"\`.
@@ -1693,9 +1798,12 @@ When the user explicitly asks to clone or work in a GitHub repository:
 - Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
 - Work from inside that cloned repository for follow-up code changes
 - If the user explicitly asks you to open or update a pull request, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
+- Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
+${whyContextInstruction.trimStart()}
+- End the PR description with a horizontal rule followed by this footer line: ${prFooter}
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
-      return `
+      return `${identityInstructions}
 # Cloud Task Execution — No Repository Mode
 
 You are a helpful assistant with access to PostHog via MCP tools. You can help with both code tasks and data/analytics questions.
@@ -1717,7 +1825,7 @@ ${signedCommitInstructions}
     }
 
     if (!shouldAutoCreatePr) {
-      return `
+      return `${identityInstructions}
 # Cloud Task Execution
 
 Do the requested work, but stop with local changes ready for review.
@@ -1728,20 +1836,22 @@ ${signedCommitInstructions}
 `;
     }
 
-    return `
+    return `${identityInstructions}
 # Cloud Task Execution
 
 After completing the requested changes:
 1. Pick a new branch name prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`)
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). The tool creates the branch on the remote and a signed commit on it.
 3. Before opening the PR, prepare the body:
+   - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
+${whyContextInstruction}
    - Check the repo for a PR template at \`.github/pull_request_template.md\` (also try \`.github/PULL_REQUEST_TEMPLATE.md\`, \`docs/pull_request_template.md\`, and root variants). If one exists, use its exact section headings as the PR body — do NOT fall back to a generic Summary/Test plan format.
    - If no repo-level template exists, check the org's \`.github\` repo via \`gh api /repos/<owner>/.github/contents/.github/pull_request_template.md\` (and other common paths) and use that as a fallback.
    - Search for matching open issues with \`gh issue list --state open --search '<keywords>'\` (derive keywords from the branch name, commits, and changed files; \`gh issue view <n>\` to confirm relevance). For every issue this PR would resolve, include a \`Closes #<n>\` line in the body so GitHub auto-links and auto-closes it on merge. For issues that are related but not fully resolved, use \`Refs #<n>\` instead.
 4. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and the body prepared above. Add the following footer at the end of the PR description:
 \`\`\`
 ---
-*Created with [PostHog Code](https://posthog.com/code?ref=pr)*
+${prFooter}
 \`\`\`
 
 Important:
@@ -1859,6 +1969,7 @@ ${signedCommitInstructions}
     taskId,
     taskRunId,
     taskUserId,
+    taskTitle,
   }: {
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
@@ -1866,6 +1977,7 @@ ${signedCommitInstructions}
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
+    taskTitle?: string | null;
   } = {}): void {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
@@ -1877,7 +1989,9 @@ ${signedCommitInstructions}
     // Forward task metadata as `x-posthog-property-*` headers so the gateway
     // lifts them onto the $ai_generation event. Routes through the Anthropic
     // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
-    // equivalent today.
+    // equivalent today. (The `team_id` attribution header is added downstream
+    // in the Claude session builder from POSTHOG_PROJECT_ID — see
+    // adapters/claude/session/options.ts.)
     const customHeaders = buildGatewayPropertyHeaders({
       task_origin_product: originProduct,
       task_internal: isInternal,
@@ -1885,6 +1999,7 @@ ${signedCommitInstructions}
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,
+      task_title: taskTitle,
     });
 
     Object.assign(process.env, {
@@ -2445,6 +2560,7 @@ ${signedCommitInstructions}
     _meta?: Record<string, unknown>;
   }> {
     const requestId = crypto.randomUUID();
+    const toolCallId = params.toolCall?.toolCallId as string | undefined;
 
     this.broadcastEvent({
       type: "permission_request",
@@ -2453,9 +2569,31 @@ ${signedCommitInstructions}
       toolCall: params.toolCall,
     });
 
-    return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve });
+    // Persist the request so a client that connects after the live event can
+    // recover the requestId from the log and re-surface the prompt.
+    this.persistPermissionLifecycle(POSTHOG_NOTIFICATIONS.PERMISSION_REQUEST, {
+      requestId,
+      toolCallId,
+      options: params.options,
+      toolCall: params.toolCall,
     });
+
+    return new Promise((resolve) => {
+      this.pendingPermissions.set(requestId, { resolve, toolCallId });
+    });
+  }
+
+  private persistPermissionLifecycle(
+    method: string,
+    params: Record<string, unknown>,
+  ): void {
+    if (!this.session) return;
+    // appendRawLine wraps the line in the {type, timestamp, notification}
+    // envelope, so pass the bare notification (matching broadcastTurnComplete).
+    this.session.logWriter.appendRawLine(
+      this.session.payload.run_id,
+      JSON.stringify({ jsonrpc: "2.0", method, params }),
+    );
   }
 
   private resolvePermission(
@@ -2468,6 +2606,12 @@ ${signedCommitInstructions}
     if (!pending) return false;
 
     this.pendingPermissions.delete(requestId);
+
+    this.persistPermissionLifecycle(POSTHOG_NOTIFICATIONS.PERMISSION_RESOLVED, {
+      requestId,
+      toolCallId: pending.toolCallId,
+      optionId,
+    });
 
     const meta: Record<string, unknown> = {};
     if (customInput) meta.customInput = customInput;

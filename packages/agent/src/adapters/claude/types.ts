@@ -8,6 +8,7 @@ import type {
   Query,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { PostHogProductId } from "../../posthog-products";
 import type { Pushable } from "../../utils/streams";
 import type { BaseSession } from "../base-acp-agent";
 import type { ContextBreakdownBaseline } from "./context-breakdown";
@@ -62,6 +63,11 @@ export type Session = BaseSession & {
    * `taskRunId` it forms the dedupe key for persisted usage events.
    */
   usageTurnIndex: number;
+  /** PostHog products used during this session, derived from MCP exec calls.
+   *  Accumulates for the whole session (deduped); each newly-seen product is
+   *  emitted immediately so the client can show a persistent, de-duplicated
+   *  list. Never reset between turns. */
+  sessionResources: Set<PostHogProductId>;
   /** Latest context window usage (total tokens from last assistant message) */
   contextUsed?: number;
   /** Context window size in tokens */
@@ -154,6 +160,8 @@ export type NewSessionMeta = {
   allowedDomains?: string[];
   /** Model ID to use for this session (e.g. "claude-sonnet-4-6") */
   model?: string;
+  /** Base branch of the task's repo (e.g. "master"), for the signed-git tools. */
+  baseBranch?: string;
   jsonSchema?: Record<string, unknown> | null;
   mcpToolApprovals?: McpToolApprovals;
   claudeCode?: {

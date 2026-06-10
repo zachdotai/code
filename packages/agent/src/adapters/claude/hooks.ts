@@ -176,10 +176,16 @@ export type OnModeChange = (mode: CodeExecutionMode) => Promise<void>;
 
 interface CreatePostToolUseHookParams {
   onModeChange?: OnModeChange;
+  /** Called after a PostHog MCP `call` exec executes, with the sub-tool name
+   *  and the raw command (the command embeds the SQL for execute-sql). */
+  onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
 }
 
 export const createPostToolUseHook =
-  ({ onModeChange }: CreatePostToolUseHookParams): HookCallback =>
+  ({
+    onModeChange,
+    onPostHogResourceUsed,
+  }: CreatePostToolUseHookParams): HookCallback =>
   async (
     input: HookInput,
     toolUseID: string | undefined,
@@ -189,6 +195,20 @@ export const createPostToolUseHook =
 
       if (onModeChange && toolName === "EnterPlanMode") {
         await onModeChange("plan");
+      }
+
+      // Record PostHog product usage from the MCP exec dispatcher. Only the
+      // `call <sub-tool>` verb counts as "used a resource" — extractPostHogSubTool
+      // matches that verb and ignores introspection (tools/info/schema/search).
+      if (onPostHogResourceUsed && isPostHogExecTool(toolName)) {
+        const subTool = extractPostHogSubTool(input.tool_input);
+        if (subTool) {
+          const command = (input.tool_input as { command?: unknown })?.command;
+          onPostHogResourceUsed(
+            subTool,
+            typeof command === "string" ? command : undefined,
+          );
+        }
       }
 
       if (toolUseID) {

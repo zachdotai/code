@@ -1,6 +1,6 @@
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Logger } from "../../../utils/logger";
 import { SUBAGENT_REWRITES } from "../hooks";
 import { buildSessionOptions } from "./options";
@@ -69,5 +69,120 @@ describe("buildSessionOptions", () => {
     });
 
     expect(options.agents?.["ph-explore"]).toEqual(override);
+  });
+
+  describe("CLAUDE_CODE_EXECUTABLE", () => {
+    const originalClaudeExecutable = process.env.CLAUDE_CODE_EXECUTABLE;
+
+    beforeEach(() => {
+      delete process.env.CLAUDE_CODE_EXECUTABLE;
+    });
+
+    afterEach(() => {
+      if (originalClaudeExecutable === undefined) {
+        delete process.env.CLAUDE_CODE_EXECUTABLE;
+      } else {
+        process.env.CLAUDE_CODE_EXECUTABLE = originalClaudeExecutable;
+      }
+    });
+
+    it.each([
+      {
+        executablePath: "/tmp/claude",
+        expectedPath: "/tmp/claude",
+        expectedExecutable: undefined,
+        name: "does not force node when Claude executable is a native binary",
+      },
+      {
+        executablePath: "/tmp/cli.js",
+        expectedPath: "/tmp/cli.js",
+        expectedExecutable: "node",
+        name: "uses node when Claude executable is the legacy JavaScript CLI",
+      },
+      {
+        executablePath: undefined,
+        expectedPath: undefined,
+        expectedExecutable: undefined,
+        name: "leaves executable and path unset when CLAUDE_CODE_EXECUTABLE is missing",
+      },
+      {
+        executablePath: "",
+        expectedPath: undefined,
+        expectedExecutable: undefined,
+        name: "leaves executable and path unset when CLAUDE_CODE_EXECUTABLE is empty",
+      },
+    ])("$name", ({ executablePath, expectedPath, expectedExecutable }) => {
+      if (executablePath !== undefined) {
+        process.env.CLAUDE_CODE_EXECUTABLE = executablePath;
+      }
+
+      const options = buildSessionOptions(makeParams());
+
+      expect(options.pathToClaudeCodeExecutable).toBe(expectedPath);
+      expect(options.executable).toBe(expectedExecutable);
+    });
+  });
+
+  describe("ANTHROPIC_CUSTOM_HEADERS", () => {
+    const originalProjectId = process.env.POSTHOG_PROJECT_ID;
+    const originalCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;
+
+    beforeEach(() => {
+      delete process.env.POSTHOG_PROJECT_ID;
+      delete process.env.ANTHROPIC_CUSTOM_HEADERS;
+    });
+
+    afterEach(() => {
+      for (const [key, value] of [
+        ["POSTHOG_PROJECT_ID", originalProjectId],
+        ["ANTHROPIC_CUSTOM_HEADERS", originalCustomHeaders],
+      ] as const) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    });
+
+    it.each([
+      {
+        name: "omits the team_id header when POSTHOG_PROJECT_ID is unset",
+        projectId: undefined,
+        existingHeaders: undefined,
+        expected: "x-posthog-use-bedrock-fallback: true",
+      },
+      {
+        name: "forwards POSTHOG_PROJECT_ID as the team_id attribution header",
+        projectId: "42",
+        existingHeaders: undefined,
+        expected: [
+          "x-posthog-property-team_id: 42",
+          "x-posthog-use-bedrock-fallback: true",
+        ].join("\n"),
+      },
+      {
+        name: "preserves pre-existing custom headers ahead of the team_id header",
+        projectId: "42",
+        existingHeaders: "x-posthog-property-task_id: task-abc",
+        expected: [
+          "x-posthog-property-task_id: task-abc",
+          "x-posthog-property-team_id: 42",
+          "x-posthog-use-bedrock-fallback: true",
+        ].join("\n"),
+      },
+    ])("$name", ({ projectId, existingHeaders, expected }) => {
+      if (projectId !== undefined) {
+        process.env.POSTHOG_PROJECT_ID = projectId;
+      }
+      if (existingHeaders !== undefined) {
+        process.env.ANTHROPIC_CUSTOM_HEADERS = existingHeaders;
+      }
+
+      const headers = buildSessionOptions(makeParams()).env
+        ?.ANTHROPIC_CUSTOM_HEADERS;
+
+      expect(headers).toBe(expected);
+    });
   });
 });

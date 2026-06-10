@@ -36,6 +36,9 @@ jobs:
           SKIP_ELECTRON_REBUILD: "1"
         run: pnpm install --frozen-lockfile
 
+      - name: Rebuild native modules for Node
+        run: node scripts/rebuild-better-sqlite3-node.mjs
+
       - name: Build dependencies
         run: pnpm --filter @posthog/electron-trpc build
 
@@ -97,7 +100,7 @@ jobs:
       - name: Package Electron app
         run: pnpm --filter code run package
         env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+          NODE_OPTIONS: "--max-old-space-size=6144"
 
       - name: Install Playwright
         if: steps.playwright-cache.outputs.cache-hit != 'true'

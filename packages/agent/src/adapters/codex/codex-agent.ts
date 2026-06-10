@@ -57,7 +57,8 @@ import {
   type PermissionMode,
 } from "../../execution-mode";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../../types";
-import { isCloudRun, resolveGithubToken } from "../../utils/common";
+import { isCloudRun } from "../../utils/common";
+import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import {
   nodeReadableToWebReadable,
@@ -108,6 +109,7 @@ interface NewSessionMeta {
   systemPrompt?: string;
   permissionMode?: string;
   model?: string;
+  baseBranch?: string;
   persistence?: { taskId?: string; runId?: string; logUrl?: string };
   claudeCode?: {
     options?: Record<string, unknown>;
@@ -632,6 +634,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       cwd,
       token: resolveGithubToken(),
       taskId: resolveTaskId(meta),
+      baseBranch: meta?.baseBranch,
     };
     const tools = enabledLocalTools(ctx, meta);
     if (tools.length === 0) {
