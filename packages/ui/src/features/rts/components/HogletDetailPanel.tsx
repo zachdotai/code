@@ -121,6 +121,9 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
 
     let cancelled = false;
     ensuredCloudWorkspaceForRun.current = latestRunId;
+    // Not prop-sync: this resets the failure flag as part of (re)issuing the
+    // cloud-workspace mutation below, so a retry for a new run starts clean.
+    // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change
     setCloudWorkspaceError(false);
 
     hostClient.workspace.create

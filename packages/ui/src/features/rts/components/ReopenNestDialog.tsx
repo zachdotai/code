@@ -3,7 +3,7 @@ import type { Nest } from "@posthog/host-router/rts-schemas";
 import { logger } from "@posthog/ui/shell/logger";
 import { AlertDialog, Button, Flex, Text, TextArea } from "@radix-ui/themes";
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const log = logger.scope("reopen-nest-dialog");
 
@@ -33,12 +33,17 @@ export function ReopenNestDialog({
   const [error, setError] = useState<string | null>(null);
   const submitting = reopenMutation.isPending;
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  // Reset during render (not in an effect) so the reopened dialog never
+  // paints last session's values.
+  if (prevOpen !== open) {
+    setPrevOpen(open);
     if (open) {
       setInstructions("");
       setError(null);
     }
-  }, [open]);
+  }
 
   const handleConfirm = async () => {
     if (submitting) return;

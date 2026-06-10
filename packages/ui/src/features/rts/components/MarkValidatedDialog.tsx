@@ -9,7 +9,7 @@ import {
   TextArea,
   TextField,
 } from "@radix-ui/themes";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const log = logger.scope("mark-validated-dialog");
 
@@ -45,13 +45,18 @@ export function MarkValidatedDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  // Reset during render (not in an effect) so the reopened dialog never
+  // paints last session's values.
+  if (prevOpen !== open) {
+    setPrevOpen(open);
     if (open) {
       setSummary(defaultSummary);
       setCaveats("");
       setError(null);
     }
-  }, [open, defaultSummary]);
+  }
 
   const handleConfirm = async () => {
     if (!summary.trim() || submitting) return;

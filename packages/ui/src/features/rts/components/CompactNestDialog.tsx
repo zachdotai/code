@@ -2,7 +2,7 @@ import { useHostTRPCClient } from "@posthog/host-router/react";
 import type { Nest } from "@posthog/host-router/rts-schemas";
 import { logger } from "@posthog/ui/shell/logger";
 import { AlertDialog, Button, Flex, Text, TextField } from "@radix-ui/themes";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const log = logger.scope("compact-nest-dialog");
 
@@ -28,13 +28,17 @@ export function CompactNestDialog({
   const hostClient = useHostTRPCClient();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [prevOpen, setPrevOpen] = useState(open);
 
-  useEffect(() => {
+  // Reset during render (not in an effect) so the reopened dialog never
+  // paints last session's values.
+  if (prevOpen !== open) {
+    setPrevOpen(open);
     if (open) {
       setReason("");
       setError(null);
     }
-  }, [open]);
+  }
 
   const handleConfirm = async () => {
     if (submitting) return;

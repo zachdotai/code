@@ -156,8 +156,13 @@ export function NestSprite({
       motionY.set(nest.mapY);
       return;
     }
+    // Not prop-sync: facing/isMoving mirror the framer-motion walk animation
+    // this effect starts and are cleared by its onComplete/cleanup.
+    // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change
     if (dx > 0) setFacing("right");
+    // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change
     else if (dx < 0) setFacing("left");
+    // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change
     setIsMoving(true);
     const duration = dist / RTS_CONFIG.speeds.nest;
     const xControls = animate(motionX, nest.mapX, {

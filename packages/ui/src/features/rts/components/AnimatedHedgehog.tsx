@@ -90,23 +90,29 @@ export function AnimatedHedgehog({
 }: AnimatedHedgehogProps) {
   const frames = useMemo(() => getFrames(animation), [animation]);
   const [frameIndex, setFrameIndex] = useState(0);
+  const [prevAnimation, setPrevAnimation] = useState(animation);
   const completedRef = useRef(false);
   const funMode = useSettingsStore((s) => s.funMode);
   const accessories = ACCESSORIES_BY_FUN_MODE[funMode];
   const filter = FILTER_BY_FUN_MODE[funMode];
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on animation change
-  useEffect(() => {
+  // Reset during render (not in an effect) so the new animation never paints
+  // a stale frame index.
+  if (prevAnimation !== animation) {
+    setPrevAnimation(animation);
     setFrameIndex(0);
     completedRef.current = false;
-  }, [animation]);
+  }
 
+  // sceneTicker.on() returns its unsubscribe, which this effect returns as
+  // cleanup — the subscription does not leak.
+  // react-doctor-disable-next-line react-doctor/effect-needs-cleanup
   useEffect(() => {
     if (frames.length === 0) return;
     const frameDurationMs = 1000 / fps;
     let acc = 0;
 
-    return sceneTicker.on((deltaMs) => {
+    const unsubscribe = sceneTicker.on((deltaMs) => {
       acc += deltaMs;
       while (acc >= frameDurationMs) {
         acc -= frameDurationMs;
@@ -124,6 +130,7 @@ export function AnimatedHedgehog({
         });
       }
     });
+    return unsubscribe;
   }, [frames, fps, loop, onComplete]);
 
   if (frames.length === 0) return null;
