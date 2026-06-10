@@ -54,7 +54,7 @@ jobs:
           # status inline so the report and exit code always reach the
           # comment + enforce steps.
           status=0
-          npx --yes react-doctor@0.4.2 . --blocking error --changed-files-from "$CHANGED" --json --json-compact > "$REPORT" || status=$?
+          npx --yes react-doctor@0.5.1 . --blocking error --changed-files-from "$CHANGED" --json --json-compact > "$REPORT" || status=$?
           echo "exit-code=$status" >> "$GITHUB_OUTPUT"
           echo "report=$REPORT" >> "$GITHUB_OUTPUT"
           if [ "$status" -ne 0 ]; then
