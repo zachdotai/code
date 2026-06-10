@@ -31,6 +31,7 @@ import {
   type ReasoningEffort,
 } from "@/features/tasks/composer/options";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
+import { useModels } from "@/features/tasks/hooks/useModels";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
 import {
   pendingTaskPromptStoreApi,
@@ -146,6 +147,7 @@ export default function TaskDetailScreen() {
   const composerModel = composerConfig?.model ?? DEFAULT_MODEL;
   const composerReasoning: ReasoningEffort =
     composerConfig?.reasoning ?? DEFAULT_REASONING;
+  const { models } = useModels();
 
   const { height } = useReanimatedKeyboardAnimation();
 
@@ -275,7 +277,7 @@ export default function TaskDetailScreen() {
               )
             : text;
 
-        const supportsReasoning = modelSupportsReasoning(composerModel);
+        const supportsReasoning = modelSupportsReasoning(composerModel, models);
         const updatedTask = await runTaskInCloud(taskId, {
           resumeFromRunId: task.latest_run?.id,
           pendingUserMessage,
@@ -306,6 +308,7 @@ export default function TaskDetailScreen() {
       composerMode,
       composerModel,
       composerReasoning,
+      models,
     ],
   );
 

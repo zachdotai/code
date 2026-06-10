@@ -1,3 +1,10 @@
+import {
+  fetchGatewayModels,
+  formatGatewayModelName,
+  getLlmGatewayUrl,
+  isAnthropicModel,
+  supportsReasoningEffort,
+} from "@posthog/shared";
 import { fetch } from "expo/fetch";
 import {
   authedFetch,
@@ -7,6 +14,7 @@ import {
   getProjectId,
 } from "@/lib/api";
 import { logger } from "@/lib/logger";
+import type { ModelOption } from "./composer/options";
 import type {
   CreateTaskAutomationOptions,
   CreateTaskOptions,
@@ -20,6 +28,25 @@ import type {
 } from "./types";
 
 const log = logger.scope("tasks-api");
+
+/**
+ * Download the list of available models from the LLM gateway, the same way the
+ * desktop app does (`AgentService.getPreviewConfigOptions`): hit the gateway's
+ * `/v1/models` endpoint for the current region, keep the Anthropic models, and
+ * format them for the picker. Fetching this rather than hardcoding it means new
+ * models show up without shipping a new mobile build.
+ */
+export async function getAvailableModels(): Promise<ModelOption[]> {
+  const gatewayUrl = getLlmGatewayUrl(getBaseUrl());
+  const gatewayModels = await fetchGatewayModels({ gatewayUrl });
+
+  return gatewayModels.filter(isAnthropicModel).map((model) => ({
+    value: model.id,
+    label: formatGatewayModelName(model),
+    description: `Context: ${model.context_window.toLocaleString()} tokens`,
+    supportsReasoning: supportsReasoningEffort(model.id),
+  }));
+}
 
 export class HttpError extends Error {
   readonly status: number;

@@ -50,7 +50,6 @@ import {
   DEFAULT_REASONING,
   EXECUTION_MODES,
   type ExecutionMode,
-  MODELS,
   modeLabel,
   modelLabel,
   modelSupportsReasoning,
@@ -61,6 +60,7 @@ import {
 import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
+import { useModels } from "@/features/tasks/hooks/useModels";
 import { useUserIntegrations } from "@/features/tasks/hooks/useUserIntegrations";
 import {
   generatePendingTaskKey,
@@ -126,6 +126,7 @@ export default function NewTaskScreen() {
     refetch,
     getUserIntegrationId,
   } = useUserIntegrations();
+  const { models } = useModels();
 
   const containerStyle = useAnimatedStyle(() => {
     const kbHeight = -keyboard.height.value;
@@ -333,7 +334,7 @@ export default function NewTaskScreen() {
             )
           : trimmedPrompt;
 
-      const supportsReasoning = modelSupportsReasoning(model);
+      const supportsReasoning = modelSupportsReasoning(model, models);
 
       await runTaskInCloud(task.id, {
         pendingUserMessage,
@@ -361,6 +362,7 @@ export default function NewTaskScreen() {
     creating,
     mode,
     model,
+    models,
     prompt,
     reasoning,
     router,
@@ -373,7 +375,7 @@ export default function NewTaskScreen() {
   const hasContent = !!prompt.trim() || attachments.length > 0;
   const canSubmit =
     hasContent && isRepositorySelectionComplete(selection) && !creating;
-  const showReasoningPill = modelSupportsReasoning(model);
+  const showReasoningPill = modelSupportsReasoning(model, models);
 
   if (isLoading && hasGithubIntegration === null) {
     return (
@@ -591,7 +593,7 @@ export default function NewTaskScreen() {
 
                     <Pill
                       icon={<Robot size={14} color={themeColors.gray[11]} />}
-                      label={modelLabel(model)}
+                      label={modelLabel(model, models)}
                       onPress={() => setModelSheetOpen(true)}
                     />
 
@@ -708,12 +710,12 @@ export default function NewTaskScreen() {
         value={model}
         onChange={(value) => {
           setModel(value);
-          if (!modelSupportsReasoning(value)) {
+          if (!modelSupportsReasoning(value, models)) {
             setReasoning(DEFAULT_REASONING);
           }
         }}
         onClose={() => setModelSheetOpen(false)}
-        options={MODELS.map((modelOption) => ({
+        options={models.map((modelOption) => ({
           value: modelOption.value,
           label: modelOption.label,
           description: modelOption.description,

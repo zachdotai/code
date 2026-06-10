@@ -14,6 +14,28 @@ export {
   serializeCloudPrompt,
 } from "./cloud-prompt";
 export {
+  type GatewayProduct,
+  getGatewayInvalidatePlanCacheUrl,
+  getGatewayUsageUrl,
+  getLlmGatewayUrl,
+} from "./gateway";
+export {
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_GATEWAY_MODEL,
+  type FetchGatewayModelsOptions,
+  fetchGatewayModels,
+  fetchModelsList,
+  formatGatewayModelName,
+  formatModelId,
+  type GatewayModel,
+  getProviderName,
+  isAnthropicModel,
+  isBlockedModelId,
+  isOpenAIModel,
+  type ModelInfo,
+  supportsReasoningEffort,
+} from "./gateway-models";
+export {
   ALLOWED_IMAGE_MIME_TYPES,
   buildImageDataUrl,
   CLAUDE_IMAGE_EXTENSIONS,

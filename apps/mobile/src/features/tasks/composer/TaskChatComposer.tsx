@@ -29,6 +29,7 @@ import {
   View,
 } from "react-native";
 import { useVoiceRecording } from "@/features/chat";
+import { useModels } from "@/features/tasks/hooks/useModels";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 import { AttachmentSheet } from "./attachments/AttachmentSheet";
@@ -45,7 +46,6 @@ import {
   DEFAULT_REASONING,
   EXECUTION_MODES,
   type ExecutionMode,
-  MODELS,
   modeLabel,
   modelLabel,
   modelSupportsReasoning,
@@ -156,6 +156,7 @@ export function TaskChatComposer({
   onReasoningChange,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
+  const { models } = useModels();
   const [message, setMessage] = useState(() => initialMessage ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
@@ -179,7 +180,7 @@ export function TaskChatComposer({
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
 
-  const showReasoningPill = modelSupportsReasoning(model);
+  const showReasoningPill = modelSupportsReasoning(model, models);
 
   const hasContent = message.trim().length > 0 || attachments.length > 0;
   const canSend = hasContent && !disabled && !isRecording;
@@ -302,7 +303,7 @@ export function TaskChatComposer({
 
                 <Pill
                   icon={<Robot size={14} color={themeColors.gray[11]} />}
-                  label={modelLabel(model)}
+                  label={modelLabel(model, models)}
                   onPress={() => setModelSheetOpen(true)}
                 />
 
@@ -378,12 +379,12 @@ export function TaskChatComposer({
           // If the new model doesn't support reasoning, drop the level so the
           // payload stays consistent. Default reasoning re-applies when
           // switching back to a reasoning-capable model.
-          if (!modelSupportsReasoning(v)) {
+          if (!modelSupportsReasoning(v, models)) {
             onReasoningChange(DEFAULT_REASONING);
           }
         }}
         onClose={() => setModelSheetOpen(false)}
-        options={MODELS.map((m) => ({
+        options={models.map((m) => ({
           value: m.value,
           label: m.label,
           description: m.description,

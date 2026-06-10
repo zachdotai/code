@@ -35,13 +35,13 @@ export interface ModelOption {
   supportsReasoning: boolean;
 }
 
-export const MODELS: ModelOption[] = [
-  {
-    value: "claude-fable-5",
-    label: "Claude Fable 5",
-    description: "Newest, most capable",
-    supportsReasoning: true,
-  },
+/**
+ * Last-resort model list. The real list is downloaded from the LLM gateway
+ * (see `getAvailableModels` / `useModels`), exactly like the desktop app. This
+ * only renders on a cold start before the first fetch lands, or if the gateway
+ * is unreachable, so the picker is never empty.
+ */
+export const FALLBACK_MODELS: ModelOption[] = [
   {
     value: "claude-opus-4-8",
     label: "Claude Opus 4.8",
@@ -71,8 +71,11 @@ export const DEFAULT_EXECUTION_MODE: ExecutionMode = "plan";
 export const DEFAULT_MODEL = "claude-opus-4-8";
 export const DEFAULT_REASONING: ReasoningEffort = "high";
 
-export function modelLabel(value: string): string {
-  return MODELS.find((m) => m.value === value)?.label ?? value;
+export function modelLabel(
+  value: string,
+  models: ModelOption[] = FALLBACK_MODELS,
+): string {
+  return models.find((m) => m.value === value)?.label ?? value;
 }
 
 export function modeLabel(value: ExecutionMode): string {
@@ -83,6 +86,9 @@ export function reasoningLabel(value: ReasoningEffort): string {
   return REASONING_LEVELS.find((r) => r.value === value)?.label ?? value;
 }
 
-export function modelSupportsReasoning(value: string): boolean {
-  return MODELS.find((m) => m.value === value)?.supportsReasoning ?? false;
+export function modelSupportsReasoning(
+  value: string,
+  models: ModelOption[] = FALLBACK_MODELS,
+): boolean {
+  return models.find((m) => m.value === value)?.supportsReasoning ?? false;
 }
