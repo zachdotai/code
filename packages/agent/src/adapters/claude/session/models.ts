@@ -1,3 +1,5 @@
+import { supportsReasoningEffort } from "@posthog/shared";
+
 export const DEFAULT_MODEL = "opus";
 
 const GATEWAY_TO_SDK_MODEL: Record<string, string> = {
@@ -21,21 +23,16 @@ export function supports1MContext(modelId: string): boolean {
   return MODELS_WITH_1M_CONTEXT.has(modelId);
 }
 
-const MODELS_WITH_EFFORT = new Set([
-  "claude-opus-4-7",
-  "claude-opus-4-8",
-  "claude-sonnet-4-6",
-  "claude-fable-5",
-]);
-
 const MODELS_WITH_XHIGH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-fable-5",
 ]);
 
+// Single source of truth lives in @posthog/shared so the mobile picker and the
+// desktop/agent effort options agree on which models expose an effort control.
 export function supportsEffort(modelId: string): boolean {
-  return MODELS_WITH_EFFORT.has(modelId);
+  return supportsReasoningEffort(modelId);
 }
 
 export function supportsXhighEffort(modelId: string): boolean {

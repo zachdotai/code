@@ -7,6 +7,7 @@ export {
   getGatewayUsageUrl,
   getLlmGatewayUrl,
 } from "@posthog/shared";
+
 import type { GatewayProduct } from "@posthog/shared";
 
 export function resolveGatewayProduct({

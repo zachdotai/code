@@ -217,8 +217,8 @@ export function formatModelId(modelId: string): string {
   return words.join(" ");
 }
 
-// Models that expose a reasoning-effort control. Mirrors `MODELS_WITH_EFFORT`
-// in packages/agent/src/adapters/claude/session/models.ts — keep in sync.
+// Single source of truth for which models expose a reasoning-effort control.
+// Consumed by the agent's `supportsEffort` and the mobile model picker.
 const MODELS_WITH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
