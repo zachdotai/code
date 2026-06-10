@@ -68,13 +68,13 @@ export function CanvasChat({ threadId }: { threadId: string }) {
                 <Flex direction="column" align="start" gap="1">
                   {suggestions.map((suggestion) => (
                     <Button
-                      key={suggestion}
+                      key={suggestion.label}
                       variant="outline"
                       size="sm"
                       className="max-w-full justify-start text-left"
-                      onClick={() => fillSuggestion(suggestion)}
+                      onClick={() => fillSuggestion(suggestion.prompt)}
                     >
-                      {suggestion}
+                      {suggestion.label}
                     </Button>
                   ))}
                 </Flex>
