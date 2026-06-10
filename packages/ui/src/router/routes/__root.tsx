@@ -7,6 +7,7 @@ import {
 } from "@posthog/shared";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { AppNav } from "@posthog/ui/features/canvas/components/AppNav";
+import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
@@ -31,7 +32,7 @@ import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
-import { Box, Flex } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRootRoute,
@@ -192,9 +193,31 @@ function RootLayout() {
     return (
       <Flex height="100vh">
         <AppNav />
-        <Box flexGrow="1" overflow="hidden">
-          <Outlet />
-        </Box>
+        <Flex direction="column" flexGrow="1" overflow="hidden">
+          <Flex flexGrow="1" overflow="hidden">
+            <Flex
+              direction="column"
+              className="w-[260px] shrink-0 border-gray-6 border-r bg-gray-2"
+            >
+              {/* Aligns the channel list with the outlet's breadcrumb bar (same
+                  h-10) so both columns start at the same line, like /code. */}
+              <Flex
+                align="center"
+                className="h-10 shrink-0 border-gray-6 border-b px-3"
+              >
+                <Text size="1" weight="medium" className="text-gray-12">
+                  Channels
+                </Text>
+              </Flex>
+              <Box className="min-h-0 flex-1 overflow-hidden">
+                <ChannelsList />
+              </Box>
+            </Flex>
+            <Box flexGrow="1" overflow="hidden">
+              <Outlet />
+            </Box>
+          </Flex>
+        </Flex>
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <KeyboardShortcutsSheet
           open={shortcutsSheetOpen}
