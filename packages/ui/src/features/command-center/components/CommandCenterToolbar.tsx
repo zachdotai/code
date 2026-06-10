@@ -8,10 +8,10 @@ import {
   Stop,
   Trash,
 } from "@phosphor-icons/react";
+import { useHostTRPC } from "@posthog/host-router/react";
 import { RTS_FLAG } from "@posthog/shared/constants";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { getSessionService } from "@posthog/ui/features/sessions/sessionServiceHost";
-import { useWorkspaceTRPC } from "@posthog/workspace-client/trpc";
 import { Flex, Select, Text, Tooltip } from "@radix-ui/themes";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -96,7 +96,7 @@ function StatusSummaryText({ summary }: { summary: StatusSummary }) {
 }
 
 function SignalIngestionToggle() {
-  const trpcReact = useWorkspaceTRPC();
+  const trpcReact = useHostTRPC();
   const queryClient = useQueryClient();
   const statusQueryKey = trpcReact.rts.signalIngestion.status.queryKey();
   const { data } = useQuery(

@@ -15,6 +15,8 @@ import { useTaskDeepLink } from "@posthog/ui/features/deep-links/useTaskDeepLink
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxDeepLink } from "@posthog/ui/features/inbox/hooks/useInboxDeepLink";
 import { useIntegrations } from "@posthog/ui/features/integrations/useIntegrations";
+import { RtsRoot } from "@posthog/ui/features/rts/components/RtsRoot";
+import { useRtsViewStore } from "@posthog/ui/features/rts/stores/rtsViewStore";
 import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery";
 import { MainSidebar } from "@posthog/ui/features/sidebar/components/MainSidebar";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
@@ -189,6 +191,13 @@ function RootLayout() {
   });
   const isChannelsSpace = bluebirdEnabled && onWebsitePath;
 
+  // When the Rts map enters fullscreen, hide all chrome (header, left
+  // sidebar, bottom space-switcher). The header's `app-region: drag` would
+  // otherwise capture pointer events at the top edge of the screen — even
+  // with the map portal at z-[1000] over it — and the sidebar would visually
+  // bleed under semi-transparent map UI.
+  const rtsFullscreen = useRtsViewStore((s) => s.fullscreen);
+
   // The /website (Channels) routes stay registered regardless of the flag, so a
   // stale URL or restored session could strand a flag-off user there (rendering
   // the channel layout inside the Code chrome). Once flags resolve, redirect
@@ -274,24 +283,26 @@ function RootLayout() {
     <Flex height="100vh">
       {bluebirdEnabled && <AppNav />}
       <Flex direction="column" flexGrow="1" overflow="hidden">
-        <HeaderRow />
+        {!rtsFullscreen && <HeaderRow />}
         <Flex flexGrow="1" overflow="hidden">
-          <MainSidebar />
+          {!rtsFullscreen && <MainSidebar />}
           <Box flexGrow="1" overflow="hidden">
             <Outlet />
           </Box>
         </Flex>
 
-        <SpaceSwitcher
-          tasks={visualTaskOrder}
-          activeTaskId={activeTaskId}
-          allTasks={tasks ?? []}
-          isOnNewTask={
-            view.type === "task-input" || view.type === "task-pending"
-          }
-          onNavigateToTask={openTask}
-          onNewTask={openTaskInput}
-        />
+        {!rtsFullscreen && (
+          <SpaceSwitcher
+            tasks={visualTaskOrder}
+            activeTaskId={activeTaskId}
+            allTasks={tasks ?? []}
+            isOnNewTask={
+              view.type === "task-input" || view.type === "task-pending"
+            }
+            onNavigateToTask={openTask}
+            onNewTask={openTaskInput}
+          />
+        )}
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <KeyboardShortcutsSheet
           open={shortcutsSheetOpen}
@@ -304,6 +315,7 @@ function RootLayout() {
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
         <HedgehogMode />
+        <RtsRoot />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />

@@ -7,8 +7,6 @@ import { useHostTRPCClient } from "@posthog/host-router/react";
 import { Separator } from "@posthog/quill";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import type { Task } from "@posthog/shared/types";
-import { useHogletStore } from "@posthog/ui/features/rts/stores/hogletStore";
-import { useRtsSelectionStore } from "@posthog/ui/features/rts/stores/rtsSelectionStore";
 import {
   archiveTasksImperative,
   useArchiveCacheKeys,
@@ -17,6 +15,8 @@ import {
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxReports } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useHogletStore } from "@posthog/ui/features/rts/stores/hogletStore";
+import { useRtsSelectionStore } from "@posthog/ui/features/rts/stores/rtsSelectionStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";

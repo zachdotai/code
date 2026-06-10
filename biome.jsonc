@@ -126,7 +126,7 @@
       // a specific TexturePacker layout (one compact object per frame) that
       // biome's JSON formatter will fully reflow into ~3600 different lines.
       // Treat the atlas as opaque vendor data — never format it.
-      "includes": ["apps/code/src/renderer/assets/hedgehog-mode/sprites.json"],
+      "includes": ["packages/ui/src/assets/hedgehog-mode/sprites.json"],
       "formatter": {
         "enabled": false
       }

@@ -33,5 +33,10 @@ export class InboxDemoDevContribution implements Contribution {
         registerInboxDemoConsoleCommand();
       },
     );
+    void import("@posthog/ui/features/rts/devtools/signalTriggerConsole").then(
+      ({ registerRtsSignalTriggerConsoleCommand }) => {
+        registerRtsSignalTriggerConsoleCommand();
+      },
+    );
   }
 }

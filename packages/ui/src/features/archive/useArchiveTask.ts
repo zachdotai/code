@@ -132,8 +132,13 @@ function makeOrchestrationDeps(
       resolveService<SessionService>(SESSION_SERVICE).disconnectFromTask(
         taskId,
       ),
-    archive: (taskId) =>
-      hostClient.archive.archive.mutate({ taskId }).then(() => undefined),
+    archive: async (taskId) => {
+      // Retire the task's hoglet before archiving so the RTS map drops the
+      // sprite in the same flow (the orchestration awaits disconnectFromTask
+      // before this runs). Idempotent when the task has no hoglet.
+      await hostClient.rts.hoglets.retireByTaskId.mutate({ taskId });
+      await hostClient.archive.archive.mutate({ taskId });
+    },
     logError: (message, error) => log.error(message, error),
     cache: makeCacheWriter(queryClient, keys),
   };

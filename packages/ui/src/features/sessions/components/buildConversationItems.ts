@@ -2,17 +2,14 @@ import type {
   ContentBlock,
   SessionNotification,
 } from "@agentclientprotocol/sdk";
-import {
-  extractSkillButtonId,
-  type SkillButtonId,
-} from "@posthog/ui/features/skill-buttons/prompts";
-import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/shared";
 import { extractPromptDisplayContent } from "@posthog/core/sessions/promptContent";
 import {
   type AcpMessage,
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
+  isNotification,
+  POSTHOG_NOTIFICATIONS,
   type UserShellExecuteParams,
 } from "@posthog/shared";
 import {

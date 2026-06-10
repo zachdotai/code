@@ -1,3 +1,9 @@
+export {
+  isMethod,
+  isNotification,
+  POSTHOG_METHODS,
+  POSTHOG_NOTIFICATIONS,
+} from "./acp-extensions";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
@@ -6,12 +12,6 @@ export {
   getBackoffDelay,
   sleepWithBackoff,
 } from "./backoff";
-export {
-  isMethod,
-  isNotification,
-  POSTHOG_METHODS,
-  POSTHOG_NOTIFICATIONS,
-} from "./acp-extensions";
 export {
   ARCHIVE_EXTENSIONS,
   AUDIO_VIDEO_EXTENSIONS,

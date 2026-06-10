@@ -3,7 +3,7 @@
 //
 // Reads notes/rts/voice-lines.json, calls ElevenLabs for every
 // (mode, gender, unit, intent, line, take) tuple, writes mp3 files into
-// apps/code/src/renderer/assets/sounds/voice/<mode>/<gender>/.
+// packages/ui/src/assets/sounds/voice/<mode>/<gender>/.
 // Output is mp3_22050_32 (32 kbps mono mp3 at 22 kHz) — small + ready to ship.
 //
 // Voice IDs come from voice-lines.json's generation_metadata.voices.elevenlabs
@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..", "..");
 const SCRIPT_PATH = join(REPO_ROOT, "notes/rts/voice-lines.json");
-const OUT_DIR = join(REPO_ROOT, "apps/code/src/renderer/assets/sounds/voice");
+const OUT_DIR = join(REPO_ROOT, "packages/ui/src/assets/sounds/voice");
 
 const FORCE = process.argv.includes("--force");
 const argValue = (flag) => {
@@ -173,7 +173,7 @@ function writeManifest() {
   entries.sort();
   const manifestPath = join(
     REPO_ROOT,
-    "apps/code/src/renderer/features/rts/audio/voice-manifest.json",
+    "packages/ui/src/features/rts/audio/voice-manifest.json",
   );
   writeFileSync(manifestPath, `${JSON.stringify(entries, null, 2)}\n`);
   console.log(`Manifest: ${manifestPath} (${entries.length} entries)`);
