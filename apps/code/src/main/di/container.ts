@@ -18,6 +18,11 @@ import {
   AUTH_TOKEN_CIPHER,
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
+import {
+  DASHBOARD_QUERY_SERVICE as CANVAS_DASHBOARD_QUERY_SERVICE,
+  DASHBOARDS_SERVICE as CANVAS_DASHBOARDS_SERVICE,
+  CANVAS_GEN_SERVICE,
+} from "@posthog/core/canvas/identifiers";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
@@ -694,17 +699,15 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
 });
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
 
-// Canvas / dashboards (project-bluebird). Singletons: CanvasGenService holds
-// per-thread agent state + a forwarding loop for app lifetime.
+// Canvas / dashboards (project-bluebird). Bound to the @posthog/core tokens so
+// the host-router routers resolve them via ctx.container. Singletons:
+// CanvasGenService holds per-thread agent state + a forwarding loop for app life.
 container
-  .bind(MAIN_TOKENS.DashboardQueryService)
+  .bind(CANVAS_DASHBOARD_QUERY_SERVICE)
   .to(DashboardQueryService)
   .inSingletonScope();
 container
-  .bind(MAIN_TOKENS.DashboardsService)
+  .bind(CANVAS_DASHBOARDS_SERVICE)
   .to(DashboardsService)
   .inSingletonScope();
-container
-  .bind(MAIN_TOKENS.CanvasGenService)
-  .to(CanvasGenService)
-  .inSingletonScope();
+container.bind(CANVAS_GEN_SERVICE).to(CanvasGenService).inSingletonScope();

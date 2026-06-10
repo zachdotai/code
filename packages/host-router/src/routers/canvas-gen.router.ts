@@ -1,27 +1,28 @@
-import { container } from "../../di/container";
-import { MAIN_TOKENS } from "../../di/tokens";
 import {
   CanvasGenEvent,
   canvasGenerateInput,
   canvasThreadInput,
-} from "../../services/canvas-gen/schemas";
-import type { CanvasGenService } from "../../services/canvas-gen/service";
-import { publicProcedure, router } from "../trpc";
-
-const getService = () =>
-  container.get<CanvasGenService>(MAIN_TOKENS.CanvasGenService);
+} from "@posthog/core/canvas/genSchemas";
+import { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
+import type { ICanvasGenService } from "@posthog/core/canvas/services";
+import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 
 export const canvasGenRouter = router({
   generate: publicProcedure
     .input(canvasGenerateInput)
-    .mutation(({ input }) => getService().generate(input)),
+    .mutation(({ ctx, input }) =>
+      ctx.container.get<ICanvasGenService>(CANVAS_GEN_SERVICE).generate(input),
+    ),
   reset: publicProcedure
     .input(canvasThreadInput)
-    .mutation(({ input }) => getService().reset(input)),
+    .mutation(({ ctx, input }) =>
+      ctx.container.get<ICanvasGenService>(CANVAS_GEN_SERVICE).reset(input),
+    ),
   onEvent: publicProcedure
     .input(canvasThreadInput)
     .subscription(async function* (opts) {
-      const service = getService();
+      const service =
+        opts.ctx.container.get<ICanvasGenService>(CANVAS_GEN_SERVICE);
       const iterable = service.toIterable(CanvasGenEvent.Event, {
         signal: opts.signal,
       });

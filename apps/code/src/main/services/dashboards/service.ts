@@ -1,4 +1,5 @@
 import type { AuthService } from "@posthog/core/auth/auth";
+import { DASHBOARD_QUERY_SERVICE } from "@posthog/core/canvas/identifiers";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import type { DashboardQuery } from "../dashboard-query/schemas";
@@ -36,7 +37,7 @@ export class DashboardsService {
   constructor(
     @inject(MAIN_TOKENS.AuthService)
     private readonly authService: AuthService,
-    @inject(MAIN_TOKENS.DashboardQueryService)
+    @inject(DASHBOARD_QUERY_SERVICE)
     private readonly dashboardQuery: DashboardQueryService,
   ) {}
 
