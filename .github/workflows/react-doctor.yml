@@ -48,10 +48,19 @@ jobs:
             exit 0
           fi
           REPORT="${RUNNER_TEMP}/react-doctor-report.json"
-          npx --yes react-doctor@0.4.2 . --blocking error --changed-files-from "$CHANGED" --json --json-compact > "$REPORT"
-          status=$?
+          # `shell: bash` runs with -e, which would abort the step on a nonzero
+          # npx exit BEFORE the outputs below are written — and react-doctor
+          # exits nonzero by design when it has blocking findings. Capture the
+          # status inline so the report and exit code always reach the
+          # comment + enforce steps.
+          status=0
+          npx --yes react-doctor@0.4.2 . --blocking error --changed-files-from "$CHANGED" --json --json-compact > "$REPORT" || status=$?
           echo "exit-code=$status" >> "$GITHUB_OUTPUT"
           echo "report=$REPORT" >> "$GITHUB_OUTPUT"
+          if [ "$status" -ne 0 ]; then
+            echo "react-doctor exited with status $status; report follows:" >&2
+            cat "$REPORT" >&2 || true
+          fi
 
       - name: Upsert sticky PR comment
         if: ${{ always() && steps.scan.outputs.report != '' }}
