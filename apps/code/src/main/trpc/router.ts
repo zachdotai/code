@@ -29,6 +29,7 @@ import { oauthRouter } from "@posthog/host-router/routers/oauth.router";
 import { osRouter } from "@posthog/host-router/routers/os.router";
 import { processTrackingRouter } from "@posthog/host-router/routers/process-tracking.router";
 import { provisioningRouter } from "@posthog/host-router/routers/provisioning.router";
+import { rtsRouter } from "@posthog/host-router/routers/rts.router";
 import { secureStoreRouter } from "@posthog/host-router/routers/secure-store.router";
 import { shellRouter } from "@posthog/host-router/routers/shell.router";
 import { skillsRouter } from "@posthog/host-router/routers/skills.router";
@@ -75,6 +76,7 @@ export const trpcRouter = router({
   os: osRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,
+  rts: rtsRouter,
   sleep: sleepRouter,
   suspension: suspensionRouter,
   secureStore: secureStoreRouter,

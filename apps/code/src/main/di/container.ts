@@ -175,6 +175,10 @@ import { POSTHOG_PLUGIN_SERVICE } from "@posthog/workspace-server/services/posth
 import { posthogPluginModule } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin.module";
 import { PROCESS_TRACKING_SERVICE } from "@posthog/workspace-server/services/process-tracking/identifiers";
 import { processTrackingModule } from "@posthog/workspace-server/services/process-tracking/process-tracking.module";
+import { RTS_AUTH } from "@posthog/workspace-server/services/rts/identifiers";
+import { setRtsRootLogger } from "@posthog/workspace-server/services/rts/logger";
+import { rtsModule } from "@posthog/workspace-server/services/rts/rts.module";
+import { setRtsSettings } from "@posthog/workspace-server/services/rts/settings";
 import { SECURE_STORE_SERVICE } from "@posthog/workspace-server/services/secure-store/identifiers";
 import { shellModule } from "@posthog/workspace-server/services/shell/shell.module";
 import { skillsModule } from "@posthog/workspace-server/services/skills/skills.module";
@@ -235,8 +239,15 @@ import {
 import { DeepLinkService } from "../services/deep-link/service";
 import { EncryptionService } from "../services/encryption/service";
 import { SecureStoreService } from "../services/secure-store/service";
-import { settingsStore } from "../services/settingsStore";
+import {
+  getRtsMaxTicksPerHour,
+  getRtsSignalIngestionEnabled,
+  getWorktreeLocation,
+  setRtsSignalIngestionEnabled,
+  settingsStore,
+} from "../services/settingsStore";
 import { WorkspaceServerService } from "../services/workspace-server/service";
+import { decrypt } from "../utils/encryption";
 import { getUserDataDir, isDevBuild } from "../utils/env";
 import { logger } from "../utils/logger";
 import { rendererStore } from "../utils/store";
@@ -323,6 +334,34 @@ container.bind(AGENT_MCP_APPS).toService(MCP_APPS_SERVICE);
 container.bind(AGENT_REPO_FILES).toService(MAIN_FS_SERVICE);
 container.bind(AGENT_AUTH).toService(MAIN_AUTH_SERVICE);
 container.bind(AGENT_LOGGER).toConstantValue(logger);
+container.load(rtsModule);
+container.bind(RTS_AUTH).toService(MAIN_AUTH_SERVICE);
+setRtsRootLogger(logger);
+setRtsSettings({
+  getRtsMaxTicksPerHour,
+  getRtsSignalIngestionEnabled,
+  setRtsSignalIngestionEnabled,
+  getWorktreeLocation,
+  getRendererSettingsSnapshot: () => {
+    if (!rendererStore.has("settings-storage")) return null;
+    const encrypted = rendererStore.get("settings-storage");
+    if (typeof encrypted !== "string") return null;
+    const decrypted = decrypt(encrypted);
+    if (!decrypted) return null;
+    try {
+      const parsed = JSON.parse(decrypted) as {
+        state?: {
+          lastUsedAdapter?: unknown;
+          lastUsedModel?: unknown;
+          lastUsedReasoningEffort?: unknown;
+        };
+      };
+      return parsed.state ?? null;
+    } catch {
+      return null;
+    }
+  },
+});
 container.load(osModule);
 container.bind<RootLogger>(ROOT_LOGGER).toConstantValue(logger);
 container.bind(AUTH_SESSION_STORE).to(AuthSessionPortAdapter);

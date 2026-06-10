@@ -7,6 +7,11 @@ import { DATABASE_SERVICE } from "@posthog/workspace-server/db/identifiers";
 import type { DatabaseService } from "@posthog/workspace-server/db/service";
 import { PROCESS_TRACKING_SERVICE } from "@posthog/workspace-server/services/process-tracking/identifiers";
 import type { ProcessTrackingService } from "@posthog/workspace-server/services/process-tracking/process-tracking";
+import {
+  FEEDBACK_ROUTING_SERVICE,
+  HEDGEHOG_TICK_SERVICE,
+  PR_GRAPH_SERVICE,
+} from "@posthog/workspace-server/services/rts/identifiers";
 import { SUSPENSION_SERVICE } from "@posthog/workspace-server/services/suspension/identifiers";
 import type { SuspensionService } from "@posthog/workspace-server/services/suspension/suspension";
 import type { WatcherRegistryService } from "@posthog/workspace-server/services/watcher-registry/watcher-registry";
@@ -122,6 +127,28 @@ export class AppLifecycleService {
       this.suspensionService.stopInactivityChecker();
     } catch (error) {
       log.warn("Failed to stop inactivity checker during shutdown", error);
+    }
+
+    // Stop the RTS polling services explicitly so their intervals and event
+    // subscriptions are torn down before container.unbindAll(). Otherwise a
+    // poll that fires mid-shutdown can hit unbound services and throw.
+    try {
+      container.get(HEDGEHOG_TICK_SERVICE).stop();
+    } catch (error) {
+      log.warn("Failed to stop hedgehog tick service during shutdown", error);
+    }
+    try {
+      container.get(FEEDBACK_ROUTING_SERVICE).stop();
+    } catch (error) {
+      log.warn(
+        "Failed to stop feedback routing service during shutdown",
+        error,
+      );
+    }
+    try {
+      container.get(PR_GRAPH_SERVICE).stop();
+    } catch (error) {
+      log.warn("Failed to stop PR graph service during shutdown", error);
     }
 
     try {

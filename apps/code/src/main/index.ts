@@ -41,6 +41,11 @@ import {
   type FsCapability,
 } from "@posthog/workspace-server/services/fs/identifiers";
 import type { PosthogPluginService } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin";
+import {
+  FEEDBACK_ROUTING_SERVICE,
+  HEDGEHOG_TICK_SERVICE,
+  PR_GRAPH_SERVICE,
+} from "@posthog/workspace-server/services/rts/identifiers";
 import { SUSPENSION_SERVICE } from "@posthog/workspace-server/services/suspension/identifiers";
 import type { SuspensionService } from "@posthog/workspace-server/services/suspension/suspension";
 import type { WorkspaceService } from "@posthog/workspace-server/services/workspace/workspace";
@@ -222,6 +227,17 @@ async function initializeServices(): Promise<void> {
   const suspensionService =
     container.get<SuspensionService>(SUSPENSION_SERVICE);
   suspensionService.startInactivityChecker();
+
+  // The three RTS polling services below start unconditionally. They are
+  // inert-by-design when no work exists: each `runPoll`/`runHeartbeat` opens
+  // with an early return if the relevant table is empty (no active nests, no
+  // pending PR edges, no hoglets). Steady-state cost when `rts-enabled` is
+  // off and the user never opens RTS mode: ~3 indexed SELECTs per minute, no
+  // cloud calls. Lifecycle: stopped explicitly in AppLifecycleService.doShutdown
+  // before container.unbindAll() so intervals + event listeners drain cleanly.
+  container.get(HEDGEHOG_TICK_SERVICE).start();
+  container.get(FEEDBACK_ROUTING_SERVICE).start();
+  container.get(PR_GRAPH_SERVICE).start();
 
   // Track app started event
   posthogNodeAnalytics.track(ANALYTICS_EVENTS.APP_STARTED);

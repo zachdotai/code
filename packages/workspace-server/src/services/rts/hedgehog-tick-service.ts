@@ -1,0 +1,1109 @@
+import { parseGithubUrl } from "@posthog/git/utils";
+import { normalizeRepoKey } from "@posthog/shared";
+import { inject, injectable } from "inversify";
+import {
+  FEEDBACK_EVENT_REPOSITORY,
+  HEDGEHOG_STATE_REPOSITORY,
+  OPERATOR_DECISION_REPOSITORY,
+  PR_DEPENDENCY_REPOSITORY,
+  REPOSITORY_REPOSITORY,
+  TICK_LOG_REPOSITORY,
+} from "../../db/identifiers";
+import type { RepositoryRepository } from "../../db/repositories/repository-repository";
+import type { FeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository";
+import type { HedgehogStateRepository } from "../../db/repositories/rts/hedgehog-state-repository";
+import type { OperatorDecisionRepository } from "../../db/repositories/rts/operator-decision-repository";
+import type { PrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository";
+import type {
+  TickLogRepository,
+  TickOutcome,
+} from "../../db/repositories/rts/tick-log-repository";
+import { GIT_SERVICE } from "../../di/tokens";
+import type { GitService } from "../git/service";
+import type { CloudTaskClient } from "./cloud-task-client";
+import type { HedgehogDecisionRouter } from "./hedgehog-decision-router";
+import {
+  TickBudget,
+  type TickContext,
+  type WriteNestMessageInput,
+} from "./hedgehog-handlers/types";
+import { stringifyError } from "./hedgehog-handlers/utils";
+import {
+  appendScratchpad,
+  buildUserPrompt,
+  deriveHogletLastOutput,
+  HEDGEHOG_SYSTEM_PROMPT,
+  type HogletPrState,
+  type HogletWithState,
+  type ScratchpadEntry,
+} from "./hedgehog-prompts";
+import {
+  isHogletOutputMessage,
+  latestHogletOutputAt,
+  latestOperatorMessageAt,
+  parseTimestamp,
+  prStatusFingerprint,
+} from "./hedgehog-tick-helpers";
+import { HEDGEHOG_TOOLS } from "./hedgehog-tools";
+import {
+  readUserTaskPreferences,
+  resolveHogletRuntime,
+} from "./hoglet-runtime-preferences";
+import type { HogletService } from "./hoglet-service";
+import {
+  CLOUD_TASK_CLIENT,
+  HEDGEHOG_DECISION_ROUTER,
+  HOGLET_SERVICE,
+  NEST_CHAT_SERVICE,
+  NEST_SERVICE,
+  RTS_LLM_GATEWAY,
+  USAGE_ATTRIBUTION_SERVICE,
+} from "./identifiers";
+import type { LlmGatewayService } from "./llm-gateway";
+import { logger } from "./logger";
+import type { NestChatService } from "./nest-chat-service";
+import type { NestService } from "./nest-service";
+import { parseHedgehogState, parseNestLoadout } from "./schema-parsers";
+import {
+  type ActiveHoldState,
+  DEFAULT_HOGLET_MODEL,
+  type Hoglet,
+  type HogletChangedEvent,
+  type Nest,
+  type NestChangedEvent,
+  type NestLoadout,
+  type NestMessage,
+  parseNestChatCreationBootstrapPayload,
+  RtsEvent,
+} from "./schemas";
+import { getRtsMaxTicksPerHour } from "./settings";
+import type { UsageAttributionService } from "./usage-attribution-service";
+
+const log = logger.scope("hedgehog-tick-service");
+
+const MIN_TICK_INTERVAL_MS = 30_000;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 90_000;
+const SCHEDULER_POLL_INTERVAL_MS = 60_000;
+const HEDGEHOG_MODEL = DEFAULT_HOGLET_MODEL;
+const HEDGEHOG_EFFORT = "max";
+const MAX_TOKENS = 12_000;
+const TICK_WINDOW_MS = 60 * 60_000;
+const LOCKSTEP_SILENCE_MIN_HOGLETS = 2;
+const LOCKSTEP_SILENCE_SPAWN_WINDOW_MS = 5 * 60_000;
+const LOCKSTEP_SILENCE_MIN_QUIET_MS = 30 * 60_000;
+const SILENT_HOGLET_MIN_QUIET_MS = 10 * 60_000;
+const PENDING_INJECTION_LOOKBACK = 100;
+// Safety net only: event holds should usually release via run/PR fingerprints first.
+const EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS = 10 * 60;
+
+function getHeartbeatIntervalMs(): number {
+  const envOverride = process.env.RTS_HEARTBEAT_INTERVAL_MS;
+  if (envOverride) {
+    const parsed = Number.parseInt(envOverride, 10);
+    if (!Number.isNaN(parsed) && parsed >= 60_000 && parsed <= 600_000) {
+      return parsed;
+    }
+  }
+  return DEFAULT_HEARTBEAT_INTERVAL_MS;
+}
+
+/**
+ * Slice 6 of Rts — the hedgehog. A per-nest ephemeral orchestrator that
+ * ticks on (heartbeat | new hoglet event | operator chat message), assembles
+ * fresh context from sqlite, calls Claude with the constrained tool list, and
+ * hands the response to `HedgehogDecisionRouter` for handler dispatch + free-
+ * text rendering. State persists in `rts_hedgehog_state` so force-quit
+ * mid-tick recovers cleanly.
+ *
+ * NOT a Task. NOT a long-running agent. The service singleton owns the
+ * scheduler and perception; the router owns dispatch. Each tick is a one-shot
+ * function over `(nest, hoglets, recent chat, scratchpad)`.
+ */
+@injectable()
+export class HedgehogTickService {
+  private started = false;
+  private readonly inFlight = new Set<string>();
+  private readonly lastEnqueuedAt = new Map<string, number>();
+  private readonly tickAbortControllers = new Map<string, AbortController>();
+  /**
+   * Forced ticks (nest activation) that arrived while a tick was already in
+   * flight for that nest. Drained once the running tick exits so a fast reopen
+   * mid-tick still re-engages immediately. Keyed by nestId → at most one
+   * follow-up per nest; the latest reason wins.
+   */
+  private readonly pendingForcedTick = new Map<string, string>();
+  private heartbeatHandle: ReturnType<typeof setInterval> | null = null;
+  private readonly onNestChanged = (data: NestChangedEvent): void => {
+    this.handleNestEvent(data);
+  };
+  private readonly onHogletChanged = (data: HogletChangedEvent): void => {
+    this.handleHogletEvent(data);
+  };
+
+  constructor(
+    @inject(RTS_LLM_GATEWAY)
+    private readonly llm: LlmGatewayService,
+    @inject(NEST_SERVICE)
+    private readonly nestService: NestService,
+    @inject(HOGLET_SERVICE)
+    private readonly hogletService: HogletService,
+    @inject(NEST_CHAT_SERVICE)
+    private readonly nestChat: NestChatService,
+    @inject(HEDGEHOG_STATE_REPOSITORY)
+    private readonly stateRepo: HedgehogStateRepository,
+    @inject(CLOUD_TASK_CLIENT)
+    private readonly cloudTasks: CloudTaskClient,
+    @inject(PR_DEPENDENCY_REPOSITORY)
+    private readonly prDependencies: PrDependencyRepository,
+    @inject(GIT_SERVICE)
+    private readonly git: GitService,
+    @inject(FEEDBACK_EVENT_REPOSITORY)
+    private readonly feedbackEvents: FeedbackEventRepository,
+    @inject(REPOSITORY_REPOSITORY)
+    private readonly repositoryRepo: RepositoryRepository,
+    @inject(TICK_LOG_REPOSITORY)
+    private readonly tickLog: TickLogRepository,
+    @inject(OPERATOR_DECISION_REPOSITORY)
+    private readonly operatorDecisions: OperatorDecisionRepository,
+    @inject(USAGE_ATTRIBUTION_SERVICE)
+    private readonly usageAttribution: UsageAttributionService,
+    @inject(HEDGEHOG_DECISION_ROUTER)
+    private readonly decisionRouter: HedgehogDecisionRouter,
+  ) {}
+
+  /**
+   * Idempotent. Subscribes to nest/hoglet events, starts the heartbeat, and
+   * resets any DB rows stuck in `ticking` (left over from a force-quit).
+   */
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+
+    // Reset any `ticking` rows from a previous boot so we don't render a
+    // stuck glow forever.
+    const reset = this.stateRepo.resetStuckTicks();
+    for (const row of reset) {
+      this.nestService.emitHedgehogTick(row.nestId, {
+        state: "idle",
+        lastTickAt: row.lastTickAt,
+      });
+    }
+
+    this.nestService.on(RtsEvent.NestChanged, this.onNestChanged);
+    this.hogletService.on(RtsEvent.HogletChanged, this.onHogletChanged);
+
+    this.heartbeatHandle = setInterval(() => {
+      this.runHeartbeat().catch((error) =>
+        log.error("heartbeat tick failed", { error }),
+      );
+    }, SCHEDULER_POLL_INTERVAL_MS);
+
+    log.info("HedgehogTickService started", {
+      schedulerPollIntervalMs: SCHEDULER_POLL_INTERVAL_MS,
+      defaultHeartbeatIntervalMs: getHeartbeatIntervalMs(),
+    });
+  }
+
+  stop(): void {
+    if (!this.started) return;
+    this.started = false;
+    if (this.heartbeatHandle) {
+      clearInterval(this.heartbeatHandle);
+      this.heartbeatHandle = null;
+    }
+    this.nestService.off(RtsEvent.NestChanged, this.onNestChanged);
+    this.hogletService.off(RtsEvent.HogletChanged, this.onHogletChanged);
+    for (const [nestId, controller] of this.tickAbortControllers) {
+      controller.abort();
+      this.stateRepo.upsert({ nestId, state: "idle" });
+    }
+    this.tickAbortControllers.clear();
+    this.inFlight.clear();
+    this.pendingForcedTick.clear();
+    log.info("HedgehogTickService stopped");
+  }
+
+  /**
+   * Schedule a tick for `nestId`. Debounces within `MIN_TICK_INTERVAL_MS`,
+   * no-ops if a tick is already in flight. Returns the (fire-and-forget)
+   * promise for tests and callers that want to await completion.
+   *
+   * `force` bypasses the debounce window for deliberate, infrequent lifecycle
+   * transitions (a nest going `active`) so re-engagement is immediate even when
+   * a tick was just enqueued — e.g. reopening a nest seconds after the tick
+   * that validated it. The in-flight lock is still honored so a nest never
+   * runs two concurrent ticks; a forced tick that loses that race is queued as
+   * a single follow-up and drained when the running tick exits.
+   */
+  enqueueTick(
+    nestId: string,
+    reason: string,
+    options?: { force?: boolean },
+  ): Promise<void> {
+    if (!this.started) {
+      // Allow direct calls from tests without start().
+      log.debug("enqueueTick before start()", { nestId, reason });
+    }
+    const now = Date.now();
+    const last = this.lastEnqueuedAt.get(nestId) ?? 0;
+    if (!options?.force && now - last < MIN_TICK_INTERVAL_MS) {
+      log.debug("tick debounced", {
+        nestId,
+        reason,
+        elapsedMs: now - last,
+      });
+      return Promise.resolve();
+    }
+    if (this.inFlight.has(nestId)) {
+      if (options?.force) {
+        // A forced activation (reopen / create / unarchive) racing a finishing
+        // tick must not be silently dropped — queue exactly one follow-up to
+        // fire after the current tick exits, so re-engagement doesn't wait for
+        // the next heartbeat. runTick drains this in its finally block.
+        this.pendingForcedTick.set(nestId, reason);
+        log.debug("forced tick queued behind in-flight tick", {
+          nestId,
+          reason,
+        });
+      } else {
+        log.debug("tick already in flight", { nestId, reason });
+      }
+      return Promise.resolve();
+    }
+    this.lastEnqueuedAt.set(nestId, now);
+    return this.runTick(nestId, reason).catch((error) => {
+      log.error("tick failed", { nestId, reason, error });
+    });
+  }
+
+  private handleNestEvent(data: NestChangedEvent): void {
+    const event = data.event;
+    if (event.kind === "message_appended") {
+      if (event.message.kind === "user_message") {
+        // Operator chat → trigger tick.
+        void this.enqueueTick(data.nestId, "operator_chat");
+      } else if (isHogletOutputMessage(event.message)) {
+        void this.enqueueTick(data.nestId, "hoglet_output");
+      }
+      return;
+    }
+    if (event.kind === "activated") {
+      // Real inactive→active transition (create / unarchive / reopen). Force
+      // past the debounce so a reopen that lands inside the validation tick's
+      // window re-engages now rather than waiting for the heartbeat.
+      void this.enqueueTick(data.nestId, "nest_activated", { force: true });
+      return;
+    }
+    if (event.kind === "status" && event.nest.status === "active") {
+      // Data change (e.g. operator metadata save) on an already-active nest.
+      // Debounced — repeated saves must not each spawn an immediate tick.
+      void this.enqueueTick(data.nestId, "nest_status_active");
+    }
+  }
+
+  private handleHogletEvent(data: HogletChangedEvent): void {
+    if (data.bucket.kind !== "nest") return;
+    // Adoption / release inside a nest is a good trigger.
+    void this.enqueueTick(data.bucket.nestId, "hoglet_roster_changed");
+  }
+
+  private async runHeartbeat(): Promise<void> {
+    const globalInterval = getHeartbeatIntervalMs();
+    const activeNests = this.nestService
+      .list()
+      .filter((n) => n.status === "active");
+    const activeNestIds = new Set(activeNests.map((nest) => nest.id));
+    this.pruneLastEnqueuedAt(activeNestIds);
+
+    const dueNestIds: string[] = [];
+    for (const nest of activeNests) {
+      const loadout = parseNestLoadout(nest.loadoutJson);
+      const interval = loadout.heartbeatIntervalMs ?? globalInterval;
+      const state = this.stateRepo.findByNestId(nest.id);
+      const last = state?.lastTickAt ? new Date(state.lastTickAt).getTime() : 0;
+      if (Date.now() - last < interval) continue;
+      dueNestIds.push(nest.id);
+    }
+    await Promise.all(
+      dueNestIds.map((nestId) => this.enqueueTick(nestId, "heartbeat")),
+    );
+  }
+
+  private async runTick(nestId: string, reason: string): Promise<void> {
+    if (this.inFlight.has(nestId)) return;
+    this.inFlight.add(nestId);
+    const abortController = new AbortController();
+    this.tickAbortControllers.set(nestId, abortController);
+    try {
+      await this.tick(nestId, reason, abortController.signal);
+    } finally {
+      if (this.tickAbortControllers.get(nestId) === abortController) {
+        this.tickAbortControllers.delete(nestId);
+      }
+      this.inFlight.delete(nestId);
+      // Drain a forced activation that raced this tick. Always clear the entry;
+      // only re-enqueue while running (stop() clears it, so a teardown abort
+      // can't resurrect a tick on a stopped service).
+      const pendingReason = this.pendingForcedTick.get(nestId);
+      this.pendingForcedTick.delete(nestId);
+      if (this.started && pendingReason !== undefined) {
+        void this.enqueueTick(nestId, pendingReason, { force: true });
+      }
+    }
+  }
+
+  /**
+   * The full tick lifecycle. Public for tests; production callers should use
+   * `enqueueTick` so debouncing and the in-flight lock apply.
+   */
+  async tick(
+    nestId: string,
+    reason: string,
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
+    if (abortSignal?.aborted) return;
+    const nest = (() => {
+      try {
+        return this.nestService.get({ id: nestId });
+      } catch {
+        return null;
+      }
+    })();
+    if (!nest || nest.status !== "active") {
+      log.debug("tick skipped — nest missing or inactive", { nestId });
+      return;
+    }
+
+    let releasedHoldScratchpad: ScratchpadEntry | null = null;
+    const initialPersistedState = this.loadPersistedState(nestId);
+    if (initialPersistedState.activeHold) {
+      const holdCheck = await this.evaluateActiveHold(
+        nest,
+        initialPersistedState.activeHold,
+      );
+      if (!holdCheck.released) {
+        const lastTickAt = new Date().toISOString();
+        this.stateRepo.upsert({
+          nestId,
+          state: "idle",
+          lastTickAt,
+          serializedStateJson: JSON.stringify(initialPersistedState),
+        });
+        this.nestService.emitHedgehogTick(nestId, {
+          state: "idle",
+          lastTickAt,
+        });
+        return;
+      }
+
+      releasedHoldScratchpad = {
+        ts: new Date().toISOString(),
+        kind: "observation",
+        summary: `Hold released: ${holdCheck.reason}`,
+      };
+      // Persist the release before the cap check below, which can return
+      // before the final state write runs.
+      this.stateRepo.upsert({
+        nestId,
+        serializedStateJson: JSON.stringify({
+          ...initialPersistedState,
+          activeHold: null,
+        }),
+      });
+    }
+
+    // Enforce the hourly cap before doing any work. The window is the last
+    // hour from now; `capped` rows count too so a flood of capped attempts
+    // self-quenches.
+    const cap = getRtsMaxTicksPerHour();
+    const windowStart = new Date(Date.now() - TICK_WINDOW_MS).toISOString();
+    const recentTicks = this.tickLog.countSince(nestId, windowStart);
+    if (recentTicks >= cap) {
+      this.tickLog.insert({ nestId, outcome: "capped" });
+      log.warn("hedgehog tick capped", {
+        nestId,
+        reason,
+        cap,
+        recentTicks,
+      });
+      this.writeNestMessage(nestId, {
+        kind: "audit",
+        body: `Hedgehog tick capped: ${recentTicks} ticks already in the last hour (cap=${cap}).`,
+        visibility: "summary",
+        payloadJson: {
+          type: "tick_capped",
+          tickReason: reason,
+          cap,
+          recentTicks,
+        },
+      });
+      return;
+    }
+
+    // Move state → ticking, emit so the glow turns on.
+    this.stateRepo.upsert({ nestId, state: "ticking" });
+    this.nestService.emitHedgehogTick(nestId, {
+      state: "ticking",
+      lastTickAt: this.stateRepo.findByNestId(nestId)?.lastTickAt ?? null,
+    });
+
+    const newScratchpadEntries: ScratchpadEntry[] = [];
+    if (releasedHoldScratchpad) {
+      newScratchpadEntries.push(releasedHoldScratchpad);
+    }
+    const budget = new TickBudget();
+    let outcome: TickOutcome = "completed";
+    let observedTerminalRunKeys: Record<string, string> | null = null;
+    let nextActiveHold: ActiveHoldState | null = null;
+
+    try {
+      const recentChat = this.nestChat.list({ nestId, detail: false });
+      const context = await this.buildContext(nest, budget, recentChat);
+      if (abortSignal?.aborted) {
+        outcome = "aborted";
+        return;
+      }
+      const persistedState = this.loadPersistedState(nestId);
+      observedTerminalRunKeys =
+        this.decisionRouter.emitNewTerminalHogletChanges(
+          context.hoglets,
+          persistedState.observedTerminalRunKeys,
+        );
+      const repositoryContext = this.deriveRepositoryContext(
+        nest,
+        recentChat,
+        context.hoglets,
+      );
+      const tickContext = { ...context, repositoryContext };
+      const scratchpad = persistedState.scratchpad;
+      const userPrompt = buildUserPrompt({
+        nest,
+        hoglets: tickContext.hoglets,
+        recentChat,
+        scratchpad,
+        triggerReason: reason,
+        prDependencies: tickContext.prDependencies,
+        loadout: tickContext.loadout,
+        repositoryContext,
+        nestAnomalies: tickContext.nestAnomalies,
+        operatorDecisions: tickContext.operatorDecisions,
+      });
+
+      const response = await this.llm.promptWithTools(
+        [{ role: "user", content: userPrompt }],
+        {
+          system: HEDGEHOG_SYSTEM_PROMPT,
+          maxTokens: MAX_TOKENS,
+          model: HEDGEHOG_MODEL,
+          effort: HEDGEHOG_EFFORT,
+          tools: HEDGEHOG_TOOLS,
+          toolChoice: { type: "auto" },
+          signal: abortSignal,
+        },
+      );
+      if (abortSignal?.aborted) {
+        outcome = "aborted";
+        return;
+      }
+
+      try {
+        this.usageAttribution.recordHedgehogTick({
+          nestId: nest.id,
+          model: response.model,
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+        });
+      } catch (error) {
+        log.warn("Failed to record hedgehog tick usage", {
+          nestId: nest.id,
+          error: stringifyError(error),
+        });
+      }
+
+      const dispatchResult = await this.decisionRouter.dispatch({
+        tickContext,
+        recentChat,
+        response,
+        reason,
+        abortSignal,
+      });
+      newScratchpadEntries.push(...dispatchResult.scratchpadEntries);
+      nextActiveHold = dispatchResult.nextActiveHold;
+      if (dispatchResult.aborted) {
+        outcome = "aborted";
+        return;
+      }
+    } catch (error) {
+      if (abortSignal?.aborted || isAbortError(error)) {
+        log.debug("tick aborted", { nestId, reason });
+        outcome = "aborted";
+        return;
+      }
+      outcome = "errored";
+      log.error("tick body errored", { nestId, reason, error });
+      newScratchpadEntries.push({
+        ts: new Date().toISOString(),
+        kind: "observation",
+        summary: `Tick errored: ${stringifyError(error)}`,
+      });
+      this.writeNestMessage(nestId, {
+        kind: "audit",
+        body: `Hedgehog tick errored: ${stringifyError(error)}`,
+        visibility: "summary",
+        payloadJson: { tickReason: reason, type: "tick_error" },
+      });
+    } finally {
+      try {
+        this.tickLog.insert({ nestId, outcome });
+      } catch (logError) {
+        log.warn("failed to insert tick log row", {
+          nestId,
+          outcome,
+          error: stringifyError(logError),
+        });
+      }
+      if (!abortSignal?.aborted) {
+        const persistedState = this.loadPersistedState(nestId);
+        const nextScratchpad = appendScratchpad(
+          persistedState.scratchpad,
+          newScratchpadEntries,
+        );
+        const lastTickAt = new Date().toISOString();
+        this.stateRepo.upsert({
+          nestId,
+          state: "idle",
+          lastTickAt,
+          serializedStateJson: JSON.stringify({
+            scratchpad: nextScratchpad,
+            observedTerminalRunKeys:
+              observedTerminalRunKeys ?? persistedState.observedTerminalRunKeys,
+            activeHold: nextActiveHold,
+          }),
+        });
+        this.nestService.emitHedgehogTick(nestId, {
+          state: "idle",
+          lastTickAt,
+        });
+      }
+    }
+  }
+
+  private async evaluateActiveHold(
+    nest: Nest,
+    hold: ActiveHoldState,
+  ): Promise<{ released: boolean; reason: string }> {
+    const recentChat = this.nestChat.list({ nestId: nest.id, detail: false });
+    const latestOperator = latestOperatorMessageAt(recentChat);
+    if (
+      isAfterBaseline(
+        latestOperator,
+        hold.lastOperatorMessageAt ?? hold.createdAt,
+      )
+    ) {
+      return { released: true, reason: "operator response arrived" };
+    }
+
+    const timeoutAt = holdTimeoutAt(hold);
+    if (timeoutAt && Date.now() >= Date.parse(timeoutAt)) {
+      return {
+        released: true,
+        reason:
+          hold.nextTrigger === "timeout"
+            ? "timeout fired"
+            : "hold fallback timeout fired",
+      };
+    }
+
+    if (hold.nextTrigger === "timeout") {
+      return { released: false, reason: "timeout still pending" };
+    }
+
+    if (hold.nextTrigger === "operator_response") {
+      return { released: false, reason: "awaiting operator response" };
+    }
+
+    if (hold.nextTrigger === "hoglet_output") {
+      const latest = latestHogletOutputAt(recentChat);
+      if (isAfterBaseline(latest, hold.lastHogletOutputAt ?? hold.createdAt)) {
+        return { released: true, reason: "hoglet output arrived" };
+      }
+      const context = await this.buildContext(
+        nest,
+        new TickBudget(),
+        recentChat,
+      );
+      const currentFingerprint = prStatusFingerprint(
+        context.hoglets,
+        context.prDependencies,
+      );
+      if (
+        hold.prStatusFingerprint &&
+        currentFingerprint !== hold.prStatusFingerprint
+      ) {
+        return { released: true, reason: "hoglet run state changed" };
+      }
+      return { released: false, reason: "awaiting hoglet output" };
+    }
+
+    const context = await this.buildContext(nest, new TickBudget(), recentChat);
+    const currentFingerprint = prStatusFingerprint(
+      context.hoglets,
+      context.prDependencies,
+    );
+    if (currentFingerprint !== hold.prStatusFingerprint) {
+      return { released: true, reason: "PR status changed" };
+    }
+    return { released: false, reason: "awaiting PR status change" };
+  }
+
+  private async buildContext(
+    nest: Nest,
+    budget: TickBudget,
+    recentChat: NestMessage[],
+  ): Promise<TickContext> {
+    const rawLoadout = parseNestLoadout(nest.loadoutJson);
+    const runtime = resolveHogletRuntime(rawLoadout, readUserTaskPreferences());
+    const loadout: NestLoadout = {
+      ...rawLoadout,
+      runtimeAdapter: runtime.runtimeAdapter,
+      model: runtime.model,
+      reasoningEffort: runtime.reasoningEffort,
+      environment: runtime.environment,
+    };
+    if (runtime.executionMode !== "bypassPermissions") {
+      loadout.executionMode = runtime.executionMode;
+    }
+    const hoglets = this.hogletService
+      .list({ nestId: nest.id })
+      .filter((h): h is Hoglet => !h.deletedAt);
+    const feedbackEvents = this.feedbackEvents.listForNest(
+      nest.id,
+      PENDING_INJECTION_LOOKBACK,
+    );
+    const enriched: HogletWithState[] = [];
+    const prStateCache = new Map<string, HogletPrState>();
+    const prBranchCache = new Map<
+      string,
+      { prUrl: string; prState: HogletPrState } | null
+    >();
+    for (const hoglet of hoglets) {
+      try {
+        const { task, latestRun } = await this.cloudTasks.getTaskWithLatestRun(
+          hoglet.taskId,
+        );
+        const prUrlCandidate = latestRun?.output?.pr_url;
+        let prUrl =
+          typeof prUrlCandidate === "string" && prUrlCandidate.length > 0
+            ? prUrlCandidate
+            : null;
+        let prState = prUrl
+          ? await this.resolvePrState(prUrl, prStateCache)
+          : null;
+        if (!prUrl && task.repository && latestRun?.branch) {
+          const inferred = await this.resolvePrFromBranch(
+            task.repository,
+            latestRun.branch,
+            prBranchCache,
+          );
+          if (inferred) {
+            prUrl = inferred.prUrl;
+            prState = inferred.prState;
+          }
+        }
+        const entry: Omit<HogletWithState, "pendingInjections"> = {
+          hoglet,
+          repository: task.repository ?? null,
+          taskRunStatus: latestRun?.status ?? "no_run",
+          latestRunId: latestRun?.id ?? null,
+          branch: latestRun?.branch ?? null,
+          prUrl,
+          prState,
+          latestRunCreatedAt: latestRun?.created_at ?? null,
+          latestRunCompletedAt: latestRun?.completed_at ?? null,
+          lastOutputAt: null,
+          lastOutputKind: null,
+          lastOutputPreview: null,
+        };
+        const withOutput = {
+          ...entry,
+          ...deriveHogletLastOutput(entry, recentChat),
+        };
+        enriched.push({
+          ...withOutput,
+          pendingInjections: computePendingInjections(
+            withOutput,
+            feedbackEvents,
+          ),
+        });
+      } catch (error) {
+        log.warn("could not load task state — flagging as unknown", {
+          taskId: hoglet.taskId,
+          error: stringifyError(error),
+        });
+        const entry: Omit<HogletWithState, "pendingInjections"> = {
+          hoglet,
+          repository: null,
+          taskRunStatus: "unknown",
+          latestRunId: null,
+          branch: null,
+          prUrl: null,
+          prState: null,
+          latestRunCreatedAt: null,
+          latestRunCompletedAt: null,
+          lastOutputAt: null,
+          lastOutputKind: null,
+          lastOutputPreview: null,
+        };
+        const withOutput = {
+          ...entry,
+          ...deriveHogletLastOutput(entry, recentChat),
+        };
+        enriched.push({
+          ...withOutput,
+          pendingInjections: computePendingInjections(
+            withOutput,
+            feedbackEvents,
+          ),
+        });
+      }
+    }
+    const prDeps = this.prDependencies.listForNest(nest.id);
+    const operatorDecisions = this.operatorDecisions.listForNest(nest.id);
+    return {
+      nest,
+      hoglets: enriched,
+      budget,
+      prDependencies: prDeps,
+      loadout,
+      nestAnomalies: computeNestAnomalies(enriched),
+      operatorDecisions,
+      repositoryContext: {
+        repositories: [],
+        primaryRepository: null,
+        availableRepositories: [],
+      },
+    };
+  }
+
+  private deriveRepositoryContext(
+    nest: Nest,
+    recentChat: NestMessage[],
+    hoglets: HogletWithState[],
+  ): {
+    repositories: string[];
+    primaryRepository: string | null;
+    availableRepositories: string[];
+  } {
+    const repositories = new Set<string>();
+    const grantedRepositories = new Set<string>();
+    let primaryRepository: string | null = null;
+
+    const addRepository = (value: unknown): void => {
+      if (typeof value !== "string") return;
+      const trimmed = value.trim();
+      if (trimmed.length > 0) repositories.add(trimmed);
+    };
+
+    const addRepositories = (value: unknown): void => {
+      if (!Array.isArray(value)) return;
+      for (const entry of value) addRepository(entry);
+    };
+
+    for (const message of recentChat) {
+      if (message.payloadJson) {
+        try {
+          const raw = JSON.parse(message.payloadJson) as Record<
+            string,
+            unknown
+          >;
+          if (
+            raw.type === "repository_access_granted" &&
+            typeof raw.repository === "string"
+          ) {
+            grantedRepositories.add(raw.repository.trim());
+          }
+        } catch {}
+      }
+
+      const payload = parseNestChatCreationBootstrapPayload(
+        message.payloadJson,
+      );
+      if (!payload) continue;
+      const bootstrap = payload.creationBootstrap ?? payload;
+      addRepositories(bootstrap.repositories);
+      addRepository(bootstrap.primaryRepository ?? null);
+      if (
+        !primaryRepository &&
+        typeof bootstrap.primaryRepository === "string"
+      ) {
+        const trimmed = bootstrap.primaryRepository.trim();
+        if (trimmed.length > 0) primaryRepository = trimmed;
+      }
+    }
+
+    for (const entry of hoglets) addRepository(entry.repository);
+
+    if (!primaryRepository && nest.primaryRepository) {
+      primaryRepository = nest.primaryRepository;
+    }
+
+    const list = [...repositories];
+    if (!primaryRepository && list.length === 1) {
+      primaryRepository = list[0] ?? null;
+    }
+
+    const available = new Set(this.listAvailableRepositorySlugs());
+    for (const repo of repositories) available.add(repo);
+    for (const repo of grantedRepositories) available.add(repo);
+    if (nest.primaryRepository) available.add(nest.primaryRepository);
+
+    return {
+      repositories: list,
+      primaryRepository,
+      availableRepositories: [...available].sort(),
+    };
+  }
+
+  /**
+   * Builds the list of "owner/repo" slugs the hedgehog can choose from,
+   * sourced from every PostHog Code repository row on the operator's machine.
+   * Each remoteUrl is normalised through parseGithubUrl (handles HTTPS, SSH,
+   * shorthand) and falls back to normalizeRepoKey for non-GitHub remotes.
+   */
+  private listAvailableRepositorySlugs(): string[] {
+    const slugs = new Set<string>();
+    let rows: ReturnType<RepositoryRepository["findAll"]>;
+    try {
+      rows = this.repositoryRepo.findAll();
+    } catch (error) {
+      log.warn("repositoryRepo.findAll failed; available_repositories empty", {
+        error: stringifyError(error),
+      });
+      return [];
+    }
+    for (const row of rows) {
+      const remote = row.remoteUrl;
+      if (!remote) continue;
+      const parsed = parseGithubUrl(remote);
+      if (parsed && parsed.kind === "repo") {
+        slugs.add(`${parsed.owner}/${parsed.repo}`);
+        continue;
+      }
+      const normalised = normalizeRepoKey(remote);
+      if (normalised.length > 0 && normalised.includes("/")) {
+        slugs.add(normalised);
+      }
+    }
+    return [...slugs].sort();
+  }
+
+  private async resolvePrState(
+    prUrl: string,
+    cache: Map<string, HogletPrState>,
+  ): Promise<HogletPrState> {
+    const cached = cache.get(prUrl);
+    if (cached !== undefined) return cached;
+    try {
+      const status = await this.git.getPrDetailsByUrl(prUrl);
+      const resolved: HogletPrState = status
+        ? this.prDetailsToState(status)
+        : "unknown";
+      cache.set(prUrl, resolved);
+      return resolved;
+    } catch (error) {
+      log.debug("getPrDetailsByUrl failed inside hedgehog tick", {
+        prUrl,
+        error: stringifyError(error),
+      });
+      cache.set(prUrl, "unknown");
+      return "unknown";
+    }
+  }
+
+  private async resolvePrFromBranch(
+    repository: string,
+    branch: string,
+    cache: Map<string, { prUrl: string; prState: HogletPrState } | null>,
+  ): Promise<{ prUrl: string; prState: HogletPrState } | null> {
+    const key = `${repository}:${branch}`;
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached;
+    try {
+      const status = await this.git.getPrDetailsByBranch(repository, branch);
+      const resolved = status
+        ? {
+            prUrl: status.url,
+            prState: this.prDetailsToState(status),
+          }
+        : null;
+      cache.set(key, resolved);
+      return resolved;
+    } catch (error) {
+      log.debug("getPrDetailsByBranch failed inside hedgehog tick", {
+        repository,
+        branch,
+        error: stringifyError(error),
+      });
+      cache.set(key, null);
+      return null;
+    }
+  }
+
+  private prDetailsToState(status: {
+    state: string;
+    merged: boolean;
+    draft: boolean;
+  }): HogletPrState {
+    if (status.merged) return "merged";
+    if (status.draft) return "draft";
+    if (status.state === "closed") return "closed";
+    return "open";
+  }
+
+  private loadPersistedState(nestId: string): {
+    scratchpad: ScratchpadEntry[];
+    observedTerminalRunKeys: Record<string, string>;
+    activeHold: ActiveHoldState | null;
+  } {
+    const row = this.stateRepo.findByNestId(nestId);
+    return parseHedgehogState(row?.serializedStateJson ?? null);
+  }
+
+  private writeNestMessage(nestId: string, input: WriteNestMessageInput): void {
+    this.decisionRouter.writeNestMessage(nestId, input);
+  }
+
+  private pruneLastEnqueuedAt(activeNestIds: Set<string>): void {
+    for (const nestId of this.lastEnqueuedAt.keys()) {
+      if (!activeNestIds.has(nestId) && !this.inFlight.has(nestId)) {
+        this.lastEnqueuedAt.delete(nestId);
+      }
+    }
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+}
+
+function computePendingInjections(
+  entry: Pick<HogletWithState, "hoglet" | "lastOutputAt">,
+  feedbackEvents: ReturnType<FeedbackEventRepository["listForNest"]>,
+): HogletWithState["pendingInjections"] {
+  const lastOutputMs = parseTimestamp(entry.lastOutputAt);
+  const pending = feedbackEvents.filter((event) => {
+    if (event.hogletTaskId !== entry.hoglet.taskId) return false;
+    if (event.source !== "hedgehog") return false;
+    if (event.routedOutcome !== "injected") return false;
+    const processed = event.processed ?? "unknown";
+    // Only explicit queued injections are blockers. Some cloud command
+    // responses cannot report processing state and come back as "unknown"
+    // even after delivery, so treating unknown as queued can strand the hedge.
+    if (processed !== "queued") return false;
+    const injectedMs = parseTimestamp(event.injectedAt);
+    if (injectedMs === null) return false;
+    return lastOutputMs === null || lastOutputMs <= injectedMs;
+  });
+
+  if (pending.length === 0) {
+    return { count: 0, oldestAgeMinutes: null };
+  }
+  const oldestMs = Math.min(
+    ...pending
+      .map((event) => parseTimestamp(event.injectedAt))
+      .filter((value): value is number => value !== null),
+  );
+  return {
+    count: pending.length,
+    oldestAgeMinutes: Math.max(0, Math.floor((Date.now() - oldestMs) / 60_000)),
+  };
+}
+
+function computeNestAnomalies(
+  hoglets: HogletWithState[],
+): TickContext["nestAnomalies"] {
+  const now = Date.now();
+  const anomalies: TickContext["nestAnomalies"] = {};
+  const silentActive = hoglets
+    .map((entry) => ({
+      entry,
+      runCreatedMs: parseTimestamp(entry.latestRunCreatedAt),
+    }))
+    .filter(
+      (item): item is { entry: HogletWithState; runCreatedMs: number } =>
+        item.runCreatedMs !== null &&
+        item.entry.taskRunStatus === "in_progress" &&
+        entryHasNoOutput(item.entry) &&
+        now - item.runCreatedMs >= SILENT_HOGLET_MIN_QUIET_MS,
+    )
+    .sort((a, b) => a.runCreatedMs - b.runCreatedMs);
+  if (silentActive.length > 0) {
+    const oldestMs = Math.min(...silentActive.map((item) => item.runCreatedMs));
+    anomalies.silentHoglets = {
+      hogletIds: silentActive.map((item) => item.entry.hoglet.id),
+      oldestSilentMinutes: Math.max(0, Math.floor((now - oldestMs) / 60_000)),
+    };
+  }
+
+  const silent = hoglets
+    .map((entry) => ({
+      entry,
+      createdMs: parseTimestamp(entry.hoglet.createdAt),
+    }))
+    .filter(
+      (item): item is { entry: HogletWithState; createdMs: number } =>
+        item.createdMs !== null &&
+        entryHasNoOutput(item.entry) &&
+        now - item.createdMs >= LOCKSTEP_SILENCE_MIN_QUIET_MS,
+    )
+    .sort((a, b) => a.createdMs - b.createdMs);
+
+  for (let start = 0; start < silent.length; start += 1) {
+    const group = silent.filter(
+      (item) =>
+        item.createdMs >= silent[start].createdMs &&
+        item.createdMs - silent[start].createdMs <=
+          LOCKSTEP_SILENCE_SPAWN_WINDOW_MS,
+    );
+    if (group.length >= LOCKSTEP_SILENCE_MIN_HOGLETS) {
+      const oldestMs = Math.min(...group.map((item) => item.createdMs));
+      anomalies.lockstepSilence = {
+        hogletIds: group.map((item) => item.entry.hoglet.id),
+        sinceMinutes: Math.max(0, Math.floor((now - oldestMs) / 60_000)),
+      };
+      return anomalies;
+    }
+  }
+
+  return anomalies;
+}
+
+function entryHasNoOutput(entry: HogletWithState): boolean {
+  return entry.lastOutputAt === null;
+}
+
+function isAfterBaseline(
+  value: string | null,
+  baseline: string | null,
+): boolean {
+  const valueMs = parseTimestamp(value);
+  if (valueMs === null) return false;
+  const baselineMs = parseTimestamp(baseline);
+  return baselineMs === null ? true : valueMs > baselineMs;
+}
+
+function holdTimeoutAt(hold: ActiveHoldState): string | null {
+  if (hold.nextTrigger === "timeout" && hold.timeoutAt) return hold.timeoutAt;
+  const timeoutSeconds =
+    hold.nextTrigger === "timeout"
+      ? (hold.timeoutSeconds ?? EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS)
+      : Math.min(
+          hold.timeoutSeconds ?? EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS,
+          EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS,
+        );
+  const createdMs = parseTimestamp(hold.createdAt);
+  if (createdMs === null) return null;
+  return new Date(createdMs + timeoutSeconds * 1000).toISOString();
+}

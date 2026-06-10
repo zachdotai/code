@@ -170,6 +170,15 @@ import type { MCP_PROXY_AUTH } from "@posthog/workspace-server/services/mcp-prox
 import type { McpProxyAuth } from "@posthog/workspace-server/services/mcp-proxy/ports";
 import type { PosthogPluginService } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin";
 import type { ProcessTrackingService } from "@posthog/workspace-server/services/process-tracking/process-tracking";
+import type { FeedbackRoutingService } from "@posthog/workspace-server/services/rts/feedback-routing-service";
+import type { HedgehogTickService } from "@posthog/workspace-server/services/rts/hedgehog-tick-service";
+import type {
+  FEEDBACK_ROUTING_SERVICE,
+  HEDGEHOG_TICK_SERVICE,
+  PR_GRAPH_SERVICE,
+  RTS_AUTH,
+} from "@posthog/workspace-server/services/rts/identifiers";
+import type { PrGraphService } from "@posthog/workspace-server/services/rts/pr-graph-service";
 import type {
   ISecureStoreService,
   SECURE_STORE_SERVICE,
@@ -307,6 +316,12 @@ export interface MainBindings {
   [AGENT_REPO_FILES]: unknown;
   [AGENT_AUTH]: unknown;
   [AGENT_LOGGER]: RootLogger;
+
+  // RTS host port + lifecycle services
+  [RTS_AUTH]: unknown;
+  [HEDGEHOG_TICK_SERVICE]: HedgehogTickService;
+  [FEEDBACK_ROUTING_SERVICE]: FeedbackRoutingService;
+  [PR_GRAPH_SERVICE]: PrGraphService;
 
   // Logger
   [ROOT_LOGGER]: RootLogger;

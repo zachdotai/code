@@ -14,6 +14,8 @@ export const llmGatewayRouter = router({
           system: input.system,
           maxTokens: input.maxTokens,
           model: input.model,
+          betas: input.betas,
+          effort: input.effort,
         }),
     ),
 
