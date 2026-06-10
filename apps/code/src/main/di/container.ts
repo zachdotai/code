@@ -229,6 +229,9 @@ import {
   OAuthFlowPortAdapter,
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
+import { CanvasGenService } from "../services/canvas-gen/service";
+import { DashboardQueryService } from "../services/dashboard-query/service";
+import { DashboardsService } from "../services/dashboards/service";
 import { DeepLinkService } from "../services/deep-link/service";
 import { EncryptionService } from "../services/encryption/service";
 import { SecureStoreService } from "../services/secure-store/service";
@@ -690,3 +693,18 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
   };
 });
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
+
+// Canvas / dashboards (project-bluebird). Singletons: CanvasGenService holds
+// per-thread agent state + a forwarding loop for app lifetime.
+container
+  .bind(MAIN_TOKENS.DashboardQueryService)
+  .to(DashboardQueryService)
+  .inSingletonScope();
+container
+  .bind(MAIN_TOKENS.DashboardsService)
+  .to(DashboardsService)
+  .inSingletonScope();
+container
+  .bind(MAIN_TOKENS.CanvasGenService)
+  .to(CanvasGenService)
+  .inSingletonScope();

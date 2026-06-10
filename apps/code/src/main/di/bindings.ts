@@ -222,6 +222,9 @@ import type {
   OAuthFlowPortAdapter,
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
+import type { CanvasGenService } from "../services/canvas-gen/service";
+import type { DashboardQueryService } from "../services/dashboard-query/service";
+import type { DashboardsService } from "../services/dashboards/service";
 import type { DeepLinkService } from "../services/deep-link/service";
 import type { EncryptionService } from "../services/encryption/service";
 import type { SecureStoreService } from "../services/secure-store/service";
@@ -234,8 +237,11 @@ import type {
   AUTH_PREFERENCE_REPOSITORY as MAIN_AUTH_PREFERENCE_REPOSITORY,
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
   AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
+  CANVAS_GEN_SERVICE as MAIN_CANVAS_GEN_SERVICE,
   CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
   CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
+  DASHBOARD_QUERY_SERVICE as MAIN_DASHBOARD_QUERY_SERVICE,
+  DASHBOARDS_SERVICE as MAIN_DASHBOARDS_SERVICE,
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
   DEEP_LINK_SERVICE as MAIN_DEEP_LINK_SERVICE,
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY as MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
@@ -417,6 +423,9 @@ export interface MainBindings {
   [SECURE_STORE_SERVICE]: ISecureStoreService;
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
+  [MAIN_CANVAS_GEN_SERVICE]: CanvasGenService;
+  [MAIN_DASHBOARDS_SERVICE]: DashboardsService;
+  [MAIN_DASHBOARD_QUERY_SERVICE]: DashboardQueryService;
 
   // ws-server git service (bound to(GitService))
   [WS_GIT_SERVICE]: GitService;

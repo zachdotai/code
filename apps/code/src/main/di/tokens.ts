@@ -53,6 +53,15 @@ export const DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY = Symbol.for(
 
 // Services
 export const AUTH_SERVICE = Symbol.for("posthog.host.main.auth.service");
+export const CANVAS_GEN_SERVICE = Symbol.for(
+  "posthog.host.main.canvas-gen.service",
+);
+export const DASHBOARDS_SERVICE = Symbol.for(
+  "posthog.host.main.dashboards.service",
+);
+export const DASHBOARD_QUERY_SERVICE = Symbol.for(
+  "posthog.host.main.dashboard-query.service",
+);
 export const SUSPENSION_SERVICE = Symbol.for(
   "posthog.host.main.suspension.service",
 );
@@ -132,6 +141,9 @@ export const MAIN_TOKENS = Object.freeze({
   DefaultAdditionalDirectoryRepository: DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
 
   AuthService: AUTH_SERVICE,
+  CanvasGenService: CANVAS_GEN_SERVICE,
+  DashboardsService: DASHBOARDS_SERVICE,
+  DashboardQueryService: DASHBOARD_QUERY_SERVICE,
   SuspensionService: SUSPENSION_SERVICE,
   AppLifecycleService: APP_LIFECYCLE_SERVICE,
   CloudTaskService: CLOUD_TASK_SERVICE,
