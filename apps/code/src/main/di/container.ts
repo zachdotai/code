@@ -89,6 +89,7 @@ import {
   GIT_PR_STATUS_PROVIDER,
   type IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
+import { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
 import { ANALYTICS_SERVICE } from "@posthog/platform/analytics";
 import { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import { APP_META_SERVICE } from "@posthog/platform/app-meta";
@@ -231,7 +232,6 @@ import {
   OAuthFlowPortAdapter,
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
-import { CanvasGenService } from "../services/canvas-gen/service";
 import { DeepLinkService } from "../services/deep-link/service";
 import { EncryptionService } from "../services/encryption/service";
 import { SecureStoreService } from "../services/secure-store/service";

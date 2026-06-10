@@ -94,6 +94,7 @@ import type {
   GIT_PR_STATUS_PROVIDER,
   IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
+import type { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
 import type {
   ANALYTICS_SERVICE,
   IAnalytics,
@@ -223,7 +224,6 @@ import type {
   OAuthFlowPortAdapter,
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
-import type { CanvasGenService } from "../services/canvas-gen/service";
 import type { DeepLinkService } from "../services/deep-link/service";
 import type { EncryptionService } from "../services/encryption/service";
 import type { SecureStoreService } from "../services/secure-store/service";

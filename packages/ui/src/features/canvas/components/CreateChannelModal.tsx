@@ -4,7 +4,7 @@ import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChanne
 import { toast } from "@posthog/ui/primitives/toast";
 import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 // Matches Slack's "Create a channel" naming constraint.
 const MAX_CHANNEL_NAME_LENGTH = 80;
@@ -23,9 +23,13 @@ export function CreateChannelModal({
   const [name, setName] = useState("");
 
   // Reset the field each time the modal opens so a previous draft never lingers.
-  useEffect(() => {
+  // Adjusted inline during render (prev-prop comparison) rather than in an
+  // effect, which would flash a stale value for one commit.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) setName("");
-  }, [open]);
+  }
 
   const trimmed = name.trim();
   const remaining = MAX_CHANNEL_NAME_LENGTH - name.length;

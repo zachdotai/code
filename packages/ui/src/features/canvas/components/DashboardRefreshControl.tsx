@@ -43,9 +43,18 @@ export function DashboardRefreshControl({
   const polling = intervalMs != null && !editing;
   const [secondsLeft, setSecondsLeft] = useState(0);
 
+  // Reset the countdown inline when the poll window starts or changes (a
+  // prev-prop comparison during render), rather than inside the interval effect
+  // — syncing state in the effect flashes a stale count for one commit.
+  const pollKey = polling ? intervalMs : null;
+  const [prevPollKey, setPrevPollKey] = useState(pollKey);
+  if (pollKey !== prevPollKey) {
+    setPrevPollKey(pollKey);
+    if (pollKey != null) setSecondsLeft(Math.round(pollKey / 1000));
+  }
+
   useEffect(() => {
     if (!polling || intervalMs == null) return;
-    setSecondsLeft(Math.round(intervalMs / 1000));
     const id = setInterval(() => {
       setSecondsLeft((s) => {
         if (s <= 1) {
