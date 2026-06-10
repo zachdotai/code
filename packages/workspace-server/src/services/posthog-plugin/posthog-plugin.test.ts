@@ -90,7 +90,7 @@ import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { IBundledResources } from "@posthog/platform/bundled-resources";
 import type { IStoragePaths } from "@posthog/platform/storage-paths";
 import { PosthogPluginService } from "./posthog-plugin";
-import { syncCodexSkills } from "./update-skills-saga";
+import { overlayDownloadedSkills, syncCodexSkills } from "./update-skills-saga";
 
 /** Expose private members for testing without `as any`. */
 interface TestablePluginService {
@@ -480,6 +480,74 @@ describe("PosthogPluginService", () => {
       await syncCodexSkills("/nonexistent", CODEX_SKILLS_DIR);
 
       expect(vol.existsSync(CODEX_SKILLS_DIR)).toBe(false);
+    });
+
+    it("prunes skills removed from the plugin but keeps foreign skills", async () => {
+      // First sync: plugin ships two skills.
+      vol.mkdirSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-a`, { recursive: true });
+      vol.writeFileSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-a/SKILL.md`, "# A");
+      vol.mkdirSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-b`, { recursive: true });
+      vol.writeFileSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-b/SKILL.md`, "# B");
+
+      // A skill placed in the Codex dir by another tool — must be preserved.
+      vol.mkdirSync(`${CODEX_SKILLS_DIR}/foreign-skill`, { recursive: true });
+      vol.writeFileSync(
+        `${CODEX_SKILLS_DIR}/foreign-skill/SKILL.md`,
+        "# Foreign",
+      );
+
+      await syncCodexSkills(BUNDLED_PLUGIN_DIR, CODEX_SKILLS_DIR);
+
+      expect(vol.existsSync(`${CODEX_SKILLS_DIR}/skill-a/SKILL.md`)).toBe(true);
+      expect(vol.existsSync(`${CODEX_SKILLS_DIR}/skill-b/SKILL.md`)).toBe(true);
+
+      // Second sync: skill-b has been removed from the plugin.
+      vol.rmSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-b`, { recursive: true });
+
+      await syncCodexSkills(BUNDLED_PLUGIN_DIR, CODEX_SKILLS_DIR);
+
+      expect(vol.existsSync(`${CODEX_SKILLS_DIR}/skill-a/SKILL.md`)).toBe(true);
+      // Removed from the source → pruned from the Codex dir.
+      expect(vol.existsSync(`${CODEX_SKILLS_DIR}/skill-b`)).toBe(false);
+      // Never managed by us → left untouched.
+      expect(vol.existsSync(`${CODEX_SKILLS_DIR}/foreign-skill/SKILL.md`)).toBe(
+        true,
+      );
+    });
+  });
+
+  describe("overlayDownloadedSkills", () => {
+    it("does nothing when the skills cache does not exist", async () => {
+      await overlayDownloadedSkills("/nonexistent", RUNTIME_PLUGIN_DIR);
+
+      expect(vol.existsSync(`${RUNTIME_PLUGIN_DIR}/skills`)).toBe(false);
+    });
+
+    it("prunes skills removed from the cache since the last overlay", async () => {
+      // First overlay: cache holds two skills.
+      vol.mkdirSync(`${RUNTIME_SKILLS_DIR}/skill-a`, { recursive: true });
+      vol.writeFileSync(`${RUNTIME_SKILLS_DIR}/skill-a/SKILL.md`, "# A");
+      vol.mkdirSync(`${RUNTIME_SKILLS_DIR}/skill-b`, { recursive: true });
+      vol.writeFileSync(`${RUNTIME_SKILLS_DIR}/skill-b/SKILL.md`, "# B");
+
+      await overlayDownloadedSkills(RUNTIME_SKILLS_DIR, RUNTIME_PLUGIN_DIR);
+
+      expect(
+        vol.existsSync(`${RUNTIME_PLUGIN_DIR}/skills/skill-a/SKILL.md`),
+      ).toBe(true);
+      expect(
+        vol.existsSync(`${RUNTIME_PLUGIN_DIR}/skills/skill-b/SKILL.md`),
+      ).toBe(true);
+
+      // Second overlay: skill-b was removed from the cache (atomic swap).
+      vol.rmSync(`${RUNTIME_SKILLS_DIR}/skill-b`, { recursive: true });
+
+      await overlayDownloadedSkills(RUNTIME_SKILLS_DIR, RUNTIME_PLUGIN_DIR);
+
+      expect(
+        vol.existsSync(`${RUNTIME_PLUGIN_DIR}/skills/skill-a/SKILL.md`),
+      ).toBe(true);
+      expect(vol.existsSync(`${RUNTIME_PLUGIN_DIR}/skills/skill-b`)).toBe(false);
     });
   });
 

@@ -13,8 +13,80 @@ import { Saga } from "@posthog/shared";
 import { extractZip, unzipAsync } from "./extract-zip";
 
 /**
+ * Tracks which skill directories a sync wrote into a destination, so a later
+ * sync can remove the ones that have since disappeared from the source without
+ * touching skills it never managed (e.g. skills another tool placed in the
+ * shared Codex dir). Mirrors the `.sync-manifest` approach used by the
+ * ai-plugin skill-sync workflow.
+ */
+const SYNC_MANIFEST_FILE = ".sync-manifest";
+
+async function readSyncManifest(destDir: string): Promise<string[]> {
+  try {
+    const content = await readFile(join(destDir, SYNC_MANIFEST_FILE), "utf-8");
+    return content
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function writeSyncManifest(
+  destDir: string,
+  names: string[],
+): Promise<void> {
+  const sorted = [...names].sort();
+  await writeFile(
+    join(destDir, SYNC_MANIFEST_FILE),
+    sorted.length > 0 ? `${sorted.join("\n")}\n` : "",
+  );
+}
+
+/**
+ * Mirrors the skill directories from `sourceDir` into `destDir`:
+ * - copies/overwrites each source skill into the destination, and
+ * - removes any skill this sync previously wrote (tracked in `.sync-manifest`)
+ *   that is no longer present in the source.
+ *
+ * Skills in `destDir` that were never written by a previous sync are left
+ * untouched, so this is safe to run against a directory shared with other tools.
+ */
+async function syncSkillDirs(
+  sourceDir: string,
+  destDir: string,
+): Promise<void> {
+  await mkdir(destDir, { recursive: true });
+
+  const sourceEntries = await readdir(sourceDir, { withFileTypes: true });
+  const sourceNames = sourceEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const sourceSet = new Set(sourceNames);
+
+  // Remove skills we previously synced that have since vanished from the source.
+  const previouslySynced = await readSyncManifest(destDir);
+  for (const name of previouslySynced) {
+    if (!sourceSet.has(name)) {
+      await rm(join(destDir, name), { recursive: true, force: true });
+    }
+  }
+
+  // Overlay the current source skills.
+  for (const name of sourceNames) {
+    const dest = join(destDir, name);
+    await rm(dest, { recursive: true, force: true });
+    await cp(join(sourceDir, name), dest, { recursive: true });
+  }
+
+  await writeSyncManifest(destDir, sourceNames);
+}
+
+/**
  * Overlays previously-downloaded skills on top of the runtime plugin dir.
- * Each skill directory in the cache replaces the same-named one in the plugin.
+ * Each skill directory in the cache replaces the same-named one in the plugin,
+ * and skills removed from the cache since the last overlay are pruned.
  */
 export async function overlayDownloadedSkills(
   runtimeSkillsDir: string,
@@ -24,22 +96,12 @@ export async function overlayDownloadedSkills(
     return;
   }
 
-  const destSkillsDir = join(runtimePluginDir, "skills");
-  await mkdir(destSkillsDir, { recursive: true });
-
-  const entries = await readdir(runtimeSkillsDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const src = join(runtimeSkillsDir, entry.name);
-      const dest = join(destSkillsDir, entry.name);
-      await rm(dest, { recursive: true, force: true });
-      await cp(src, dest, { recursive: true });
-    }
-  }
+  await syncSkillDirs(runtimeSkillsDir, join(runtimePluginDir, "skills"));
 }
 
 /**
- * Syncs skills from the effective plugin dir to `codexSkillsDir` for Codex.
+ * Syncs skills from the effective plugin dir to `codexSkillsDir` for Codex,
+ * pruning skills removed from the plugin since the last sync.
  */
 export async function syncCodexSkills(
   pluginPath: string,
@@ -51,17 +113,7 @@ export async function syncCodexSkills(
   }
 
   try {
-    await mkdir(codexSkillsDir, { recursive: true });
-
-    const entries = await readdir(effectiveSkillsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const src = join(effectiveSkillsDir, entry.name);
-        const dest = join(codexSkillsDir, entry.name);
-        await rm(dest, { recursive: true, force: true });
-        await cp(src, dest, { recursive: true });
-      }
-    }
+    await syncSkillDirs(effectiveSkillsDir, codexSkillsDir);
   } catch {
     // Fire-and-forget — don't block startup or updates on Codex sync
   }
