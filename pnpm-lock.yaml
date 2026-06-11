@@ -708,25 +708,14 @@ importers:
   packages/agent:
     dependencies:
       '@agentclientprotocol/sdk':
-<<<<<<< HEAD
         specifier: 0.22.1
-        version: 0.22.1(zod@4.3.6)
+        version: 0.22.1(zod@4.4.3)
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.156
-        version: 0.3.156(@anthropic-ai/sdk@0.100.1(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(zod@4.3.6)
+        version: 0.3.156(@anthropic-ai/sdk@0.100.1(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
       '@anthropic-ai/sdk':
         specifier: 0.100.1
-        version: 0.100.1(zod@4.3.6)
-=======
-        specifier: 0.25.0
-        version: 0.25.0(zod@4.4.3)
-      '@anthropic-ai/claude-agent-sdk':
-        specifier: 0.3.170
-        version: 0.3.170(@anthropic-ai/sdk@0.104.1(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
-      '@anthropic-ai/sdk':
-        specifier: 0.104.1
-        version: 0.104.1(zod@4.4.3)
->>>>>>> e9d282e8a (tidy pnpm workspace config and override comments)
+        version: 0.100.1(zod@4.4.3)
       '@hono/node-server':
         specifier: ^1.19.9
         version: 1.19.9(hono@4.11.7)
@@ -1457,11 +1446,7 @@ importers:
         version: 0.22.1(zod@4.4.3)
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.156
-<<<<<<< HEAD
-        version: 0.3.156(@anthropic-ai/sdk@0.100.1(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(zod@4.3.6)
-=======
         version: 0.3.156(@anthropic-ai/sdk@0.104.1(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
->>>>>>> e9d282e8a (tidy pnpm workspace config and override comments)
       '@hono/node-server':
         specifier: 'catalog:'
         version: 1.19.9(hono@4.11.7)
@@ -1579,14 +1564,6 @@ packages:
     peerDependencies:
       zod: 4.4.3
 
-<<<<<<< HEAD
-=======
-  '@agentclientprotocol/sdk@0.25.0':
-    resolution: {integrity: sha512-wU1VgXNtMvdVotX49txc3WJUDV+/QbLpsgjMvFhlRmp37osdLbI7L7y+iwAlQATwfjLxcv1r1p3ZxZBcXlGhcQ==}
-    peerDependencies:
-      zod: 4.4.3
-
->>>>>>> e9d282e8a (tidy pnpm workspace config and override comments)
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
@@ -1647,21 +1624,17 @@ packages:
       '@modelcontextprotocol/sdk': ^1.29.0
       zod: 4.4.3
 
-<<<<<<< HEAD
   '@anthropic-ai/sdk@0.100.1':
     resolution: {integrity: sha512-RANcEe7LpiLczkKGOwoXOTuFdPhuubS0i4xaAKOMpcqc55YO0mukgxppV7eygx3DXNjxWT6RYOLPyOy0aIAmwg==}
-=======
-  '@anthropic-ai/claude-agent-sdk@0.3.170':
-    resolution: {integrity: sha512-pAvhfk+iTodXZ6RF18Kz7BEUWFjL7EcR3tKuhUNdPpE1NAYCR3mSHGbafi72JsrNwKEDIs7FU31z3fqhwy8QzA==}
-    engines: {node: '>=18.0.0'}
+    hasBin: true
     peerDependencies:
-      '@anthropic-ai/sdk': '>=0.93.0'
-      '@modelcontextprotocol/sdk': ^1.29.0
       zod: 4.4.3
+    peerDependenciesMeta:
+      zod:
+        optional: true
 
   '@anthropic-ai/sdk@0.104.1':
     resolution: {integrity: sha512-gGACa/+IaiXzRRmF96aOhamoBgapKRBiFWbmmTFP8aMkpaEcuStF+Q61bjo4vPxBM7gqWJNZqsngslRdnLHv0Q==}
->>>>>>> e9d282e8a (tidy pnpm workspace config and override comments)
     hasBin: true
     peerDependencies:
       zod: 4.4.3
@@ -13738,13 +13711,6 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-<<<<<<< HEAD
-=======
-  '@agentclientprotocol/sdk@0.25.0(zod@4.4.3)':
-    dependencies:
-      zod: 4.4.3
-
->>>>>>> e9d282e8a (tidy pnpm workspace config and override comments)
   '@alloc/quick-lru@5.2.0': {}
 
   '@ampproject/remapping@2.3.0':
@@ -13776,22 +13742,11 @@ snapshots:
   '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.156':
     optional: true
 
-<<<<<<< HEAD
-  '@anthropic-ai/claude-agent-sdk@0.3.156(@anthropic-ai/sdk@0.100.1(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(zod@4.3.6)':
+  '@anthropic-ai/claude-agent-sdk@0.3.156(@anthropic-ai/sdk@0.100.1(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      '@anthropic-ai/sdk': 0.100.1(zod@4.3.6)
-      '@modelcontextprotocol/sdk': 1.29.0(zod@4.3.6)
-      zod: 4.3.6
-=======
-  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.170':
-    optional: true
-
-  '@anthropic-ai/claude-agent-sdk@0.3.156(@anthropic-ai/sdk@0.104.1(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)':
-    dependencies:
-      '@anthropic-ai/sdk': 0.104.1(zod@4.4.3)
+      '@anthropic-ai/sdk': 0.100.1(zod@4.4.3)
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
       zod: 4.4.3
->>>>>>> e9d282e8a (tidy pnpm workspace config and override comments)
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.156
       '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.156
@@ -13802,26 +13757,29 @@ snapshots:
       '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.156
       '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.156
 
-<<<<<<< HEAD
-  '@anthropic-ai/sdk@0.100.1(zod@4.3.6)':
-=======
-  '@anthropic-ai/claude-agent-sdk@0.3.170(@anthropic-ai/sdk@0.104.1(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)':
+  '@anthropic-ai/claude-agent-sdk@0.3.156(@anthropic-ai/sdk@0.104.1(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/sdk': 0.104.1(zod@4.4.3)
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
       zod: 4.4.3
     optionalDependencies:
-      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.170
-      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.170
-      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.170
-      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.170
-      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.170
-      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.170
-      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.170
-      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.170
+      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.156
+      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.156
+      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.156
+      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.156
+      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.156
+      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.156
+      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.156
+      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.156
+
+  '@anthropic-ai/sdk@0.100.1(zod@4.4.3)':
+    dependencies:
+      json-schema-to-ts: 3.1.1
+      standardwebhooks: 1.0.0
+    optionalDependencies:
+      zod: 4.4.3
 
   '@anthropic-ai/sdk@0.104.1(zod@4.4.3)':
->>>>>>> e9d282e8a (tidy pnpm workspace config and override comments)
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
