@@ -1,10 +1,4 @@
-import {
-  CheckIcon,
-  MagnifyingGlassIcon,
-  PlusIcon,
-  User,
-  XIcon,
-} from "@phosphor-icons/react";
+import { CheckIcon, PlusIcon, User, XIcon } from "@phosphor-icons/react";
 import type {
   AvailableSuggestedReviewer,
   SignalReport,
@@ -14,21 +8,23 @@ import type {
 } from "@posthog/shared/types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
+import { PeoplePickerList } from "@posthog/ui/features/inbox/components/PeoplePickerList";
 import { RightColumnSection } from "@posthog/ui/features/inbox/components/RightColumnSection";
 import { MeBadge } from "@posthog/ui/features/inbox/components/utils/MeBadge";
 import { SuggestedReviewerAvatar } from "@posthog/ui/features/inbox/components/utils/SuggestedReviewerAvatar";
 import {
-  buildSuggestedReviewerFilterOptions,
   getSuggestedReviewerDisplayName,
+  type SuggestedReviewerFilterOption,
 } from "@posthog/ui/features/inbox/filterOptions";
 import {
-  useInboxAvailableSuggestedReviewers,
   useInboxReportArtefacts,
   useUpdateSuggestedReviewers,
 } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useReportActionTracker } from "@posthog/ui/features/inbox/hooks/useReportActionTracker";
+import { useReviewerPickerOptions } from "@posthog/ui/features/inbox/hooks/useReviewerPickerOptions";
+import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
 import { Flex, Popover, Spinner, Text } from "@radix-ui/themes";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 function reviewerMatchesAvailable(
   reviewer: SuggestedReviewer,
@@ -85,7 +81,9 @@ function SuggestedReviewersBody({
 
   const [addOpen, setAddOpen] = useState(false);
   const [reviewerQuery, setReviewerQuery] = useState("");
-  const deferredQuery = useDeferredValue(reviewerQuery);
+  // Collapse the debounce window to 0 while the popover is closed so the next
+  // open starts from a clean query instead of replaying the last keystroke.
+  const debouncedQuery = useDebounce(reviewerQuery, addOpen ? 200 : 0);
 
   const { mutate: updateReviewers, isPending } = useUpdateSuggestedReviewers(
     report.id,
@@ -100,25 +98,10 @@ function SuggestedReviewersBody({
     return [reviewers[meIndex], ...reviewers.filter((_, i) => i !== meIndex)];
   }, [reviewers, meUuid]);
 
-  const { data: availableReviewers, isFetching } =
-    useInboxAvailableSuggestedReviewers({
-      enabled: !!client && addOpen,
-    });
-
-  const addableOptions = useMemo(() => {
-    const options = buildSuggestedReviewerFilterOptions(
-      availableReviewers?.results ?? [],
-      currentUser,
-    );
-    const q = deferredQuery.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter(
-      (option) =>
-        option.name.toLowerCase().includes(q) ||
-        option.email.toLowerCase().includes(q) ||
-        option.github_login.toLowerCase().includes(q),
-    );
-  }, [availableReviewers?.results, currentUser, deferredQuery]);
+  const { options: addableOptions, isFetching } = useReviewerPickerOptions({
+    query: debouncedQuery,
+    enabled: !!client && addOpen,
+  });
 
   const removeReviewer = (target: SuggestedReviewer) => {
     const next = reviewers.filter((r) => r !== target);
@@ -185,7 +168,6 @@ function SuggestedReviewersBody({
               reviewers.some((r) => reviewerMatchesAvailable(r, option))
             }
             onToggle={toggleReviewer}
-            hasResults={!!availableReviewers?.results?.length}
           />
         </Flex>
       }
@@ -322,18 +304,16 @@ function AddReviewerPopover({
   isPending,
   isAssigned,
   onToggle,
-  hasResults,
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   query: string;
   onQueryChange: (next: string) => void;
   isFetching: boolean;
-  options: ReturnType<typeof buildSuggestedReviewerFilterOptions>;
+  options: SuggestedReviewerFilterOption[];
   isPending: boolean;
   isAssigned: (option: AvailableSuggestedReviewer) => boolean;
   onToggle: (option: AvailableSuggestedReviewer) => void;
-  hasResults: boolean;
 }) {
   return (
     <Popover.Root modal open={open} onOpenChange={onOpenChange}>
@@ -353,78 +333,49 @@ function AddReviewerPopover({
         sideOffset={6}
         className="min-w-[280px] max-w-[320px] p-2"
       >
-        <Flex direction="column" gap="2">
-          <Flex
-            align="center"
-            gap="2"
-            px="2"
-            py="1"
-            className="rounded-(--radius-2) border border-(--gray-6) bg-(--color-background)"
-          >
-            <MagnifyingGlassIcon size={12} className="shrink-0 text-gray-10" />
-            <input
-              type="text"
-              placeholder="Filter users…"
-              value={query}
-              onChange={(e) => onQueryChange(e.target.value)}
-              className="min-w-0 flex-1 bg-transparent text-[12px] text-gray-12 outline-none placeholder:text-(--gray-9)"
-            />
-          </Flex>
-          <div className="max-h-[280px] overflow-y-auto">
-            {isFetching && !hasResults ? (
-              <Flex align="center" justify="center" py="3">
-                <Spinner size="1" />
-              </Flex>
-            ) : options.length === 0 ? (
-              <Text className="px-1 py-2 text-[12px] text-gray-10">
-                No users found.
-              </Text>
-            ) : (
-              <Flex direction="column">
-                {options.map((option) => {
-                  const assigned = isAssigned(option);
-                  const displayName = getSuggestedReviewerDisplayName(option);
-                  return (
-                    <button
-                      key={option.uuid}
-                      type="button"
-                      disabled={isPending}
-                      className="flex w-full items-start justify-between rounded-(--radius-1) px-1 py-1 text-left text-[13px] text-gray-12 transition-colors hover:bg-(--gray-3) focus-visible:bg-(--gray-3) focus-visible:outline-none disabled:opacity-60"
-                      onClick={() => onToggle(option)}
-                    >
-                      <Flex align="center" gap="2" className="min-w-0">
-                        {option.github_login ? (
-                          <SuggestedReviewerAvatar
-                            githubLogin={option.github_login}
-                            size="sm"
-                          />
-                        ) : null}
-                        <Flex direction="column" gap="0" className="min-w-0">
-                          <Text className="truncate text-[12px]">
-                            {displayName}
-                          </Text>
-                          {option.email ? (
-                            <Text className="truncate text-[11px] text-gray-10">
-                              {option.email}
-                            </Text>
-                          ) : null}
-                        </Flex>
-                      </Flex>
-                      <span
-                        className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-12"
-                        aria-hidden
-                      >
-                        {assigned ? (
-                          <CheckIcon size={12} weight="bold" />
-                        ) : null}
-                      </span>
-                    </button>
-                  );
-                })}
-              </Flex>
-            )}
-          </div>
-        </Flex>
+        <PeoplePickerList
+          searchQuery={query}
+          onSearchQueryChange={onQueryChange}
+          searchPlaceholder="Filter users…"
+          people={options}
+          isFetching={isFetching}
+          autoFocus
+          renderRow={(option) => {
+            const assigned = isAssigned(option);
+            const displayName = getSuggestedReviewerDisplayName(option);
+            return (
+              <button
+                type="button"
+                disabled={isPending}
+                className="flex w-full items-start justify-between rounded-(--radius-1) px-1 py-1 text-left text-[13px] text-gray-12 transition-colors hover:bg-(--gray-3) focus-visible:bg-(--gray-3) focus-visible:outline-none disabled:opacity-60"
+                onClick={() => onToggle(option)}
+              >
+                <Flex align="center" gap="2" className="min-w-0">
+                  {option.github_login ? (
+                    <SuggestedReviewerAvatar
+                      githubLogin={option.github_login}
+                      size="sm"
+                    />
+                  ) : null}
+                  <Flex direction="column" gap="0" className="min-w-0">
+                    <Text className="truncate text-[12px]">{displayName}</Text>
+                    {option.email ? (
+                      <Text className="truncate text-[11px] text-gray-10">
+                        {option.email}
+                      </Text>
+                    ) : null}
+                  </Flex>
+                </Flex>
+                <span
+                  className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-12"
+                  aria-hidden
+                >
+                  {assigned ? <CheckIcon size={12} weight="bold" /> : null}
+                </span>
+              </button>
+            );
+          }}
+        />
       </Popover.Content>
     </Popover.Root>
   );

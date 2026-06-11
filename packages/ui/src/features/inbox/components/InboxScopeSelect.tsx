@@ -1,56 +1,63 @@
-import { AsteriskSimpleIcon, CaretDownIcon } from "@phosphor-icons/react";
+import {
+  AsteriskSimpleIcon,
+  CaretDownIcon,
+  CheckIcon,
+} from "@phosphor-icons/react";
 import {
   INBOX_SCOPE_ENTIRE_PROJECT,
   INBOX_SCOPE_FOR_YOU,
-  type InboxScope,
-  isTeammateInboxScope,
   parseTeammateInboxScope,
   teammateInboxScope,
 } from "@posthog/core/inbox/reportMembership";
-import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from "@posthog/quill";
+import { PeoplePickerList } from "@posthog/ui/features/inbox/components/PeoplePickerList";
 import { ReviewerAvatar } from "@posthog/ui/features/inbox/components/ReviewerAvatar";
-import { getSuggestedReviewerDisplayName } from "@posthog/ui/features/inbox/filterOptions";
+import {
+  getSuggestedReviewerDisplayName,
+  type SuggestedReviewerFilterOption,
+} from "@posthog/ui/features/inbox/filterOptions";
 import { useInboxScopeOptions } from "@posthog/ui/features/inbox/hooks/useInboxScopeOptions";
+import { useReviewerPickerOptions } from "@posthog/ui/features/inbox/hooks/useReviewerPickerOptions";
 import { useInboxReviewerScopeStore } from "@posthog/ui/features/inbox/stores/inboxReviewerScopeStore";
-import { SegmentedControl } from "@radix-ui/themes";
-import { useMemo, useRef, useState } from "react";
+import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
+import { Popover, SegmentedControl } from "@radix-ui/themes";
+import { useMemo, useState } from "react";
 
 /**
  * Two-segment scope toggle. Left segment is "For you"; right segment shows
- * either "Entire project" or the currently-selected teammate's name, and
- * opens a Quill Combobox with a searchable list of "Entire project + each
- * teammate" when clicked.
+ * either "Entire project" or the currently-selected teammate's name, and opens
+ * a searchable, virtualized list of "Entire project + each teammate" when
+ * clicked.
+ *
+ * The list lives inside a Popover whose content only mounts while open, so the
+ * underlying people query re-fetches on every open (it previously stayed
+ * mounted and went stale until the 60s background refetch). Search is
+ * server-side; an empty result surfaces a hint to connect a GitHub profile.
  *
  * Segments share equal width – Radix Themes' SegmentedControl indicator is
  * hardcoded to equal-width math (`width: calc(100% / N)` + percentage
  * translate), so a fit-content override desyncs the pill from the items.
  * Keeping the default avoids a custom toggle just for this surface.
  */
-const PICKER_ENTIRE_PROJECT_VALUE = "__entire-project__";
 
 type SegmentValue = "for-you" | "entire-project";
 
 export function InboxScopeSelect() {
   const scope = useInboxReviewerScopeStore((s) => s.scope);
   const setScope = useInboxReviewerScopeStore((s) => s.setScope);
-  const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  // Base (always-on) list, used to resolve the selected teammate's name for the
+  // segment label even while the dropdown is closed.
   const { teammateOptions } = useInboxScopeOptions();
 
+  const selectedTeammateUuid = parseTeammateInboxScope(scope);
+
   const selectedTeammate = useMemo(() => {
-    const teammateUuid = parseTeammateInboxScope(scope);
-    if (!teammateUuid) return null;
+    if (!selectedTeammateUuid) return null;
     return (
-      teammateOptions.find((option) => option.uuid === teammateUuid) ?? null
+      teammateOptions.find((option) => option.uuid === selectedTeammateUuid) ??
+      null
     );
-  }, [scope, teammateOptions]);
+  }, [selectedTeammateUuid, teammateOptions]);
 
   const segmentValue: SegmentValue =
     scope === INBOX_SCOPE_FOR_YOU ? "for-you" : "entire-project";
@@ -59,18 +66,6 @@ export function InboxScopeSelect() {
     ? getSuggestedReviewerDisplayName(selectedTeammate)
     : "Entire project";
 
-  const pickerItems = useMemo(() => {
-    const items: string[] = [PICKER_ENTIRE_PROJECT_VALUE];
-    for (const teammate of teammateOptions) {
-      items.push(teammateInboxScope(teammate.uuid));
-    }
-    return items;
-  }, [teammateOptions]);
-
-  const pickerValue: string = isTeammateInboxScope(scope)
-    ? scope
-    : PICKER_ENTIRE_PROJECT_VALUE;
-
   const handleSegmentValueChange = (next: string) => {
     if (next === "for-you") {
       setScope(INBOX_SCOPE_FOR_YOU);
@@ -78,124 +73,143 @@ export function InboxScopeSelect() {
     }
   };
 
-  const handlePickerValueChange = (value: unknown) => {
-    if (typeof value !== "string") return;
-    if (value === PICKER_ENTIRE_PROJECT_VALUE) {
-      setScope(INBOX_SCOPE_ENTIRE_PROJECT);
-    } else {
-      setScope(value as InboxScope);
-    }
+  const selectEntireProject = () => {
+    setScope(INBOX_SCOPE_ENTIRE_PROJECT);
+    setOpen(false);
+  };
+
+  const selectTeammate = (teammate: SuggestedReviewerFilterOption) => {
+    setScope(teammateInboxScope(teammate.uuid));
     setOpen(false);
   };
 
   return (
-    <Combobox
-      items={pickerItems}
-      value={pickerValue}
-      onValueChange={handlePickerValueChange}
-      open={open}
-      onOpenChange={setOpen}
-    >
-      <div ref={anchorRef} className="ml-2 inline-flex">
-        <SegmentedControl.Root
-          value={segmentValue}
-          size="1"
-          onValueChange={handleSegmentValueChange}
-          aria-label="Inbox scope"
-        >
-          <SegmentedControl.Item value="for-you">For you</SegmentedControl.Item>
-          <SegmentedControl.Item
-            value="entire-project"
-            onClick={() => setOpen(true)}
-            aria-haspopup="listbox"
-            aria-expanded={open}
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Anchor>
+        <div className="ml-2 inline-flex">
+          <SegmentedControl.Root
+            value={segmentValue}
+            size="1"
+            onValueChange={handleSegmentValueChange}
+            aria-label="Inbox scope"
           >
-            <span className="inline-flex items-center gap-1.5">
-              {rightLabel}
-              <CaretDownIcon
-                size={10}
-                weight="bold"
-                className="text-muted-foreground"
-              />
-            </span>
-          </SegmentedControl.Item>
-        </SegmentedControl.Root>
-      </div>
-      <ComboboxContent
-        anchor={anchorRef}
+            <SegmentedControl.Item value="for-you">
+              For you
+            </SegmentedControl.Item>
+            <SegmentedControl.Item
+              value="entire-project"
+              onClick={() => setOpen(true)}
+              aria-haspopup="listbox"
+              aria-expanded={open}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {rightLabel}
+                <CaretDownIcon
+                  size={10}
+                  weight="bold"
+                  className="text-muted-foreground"
+                />
+              </span>
+            </SegmentedControl.Item>
+          </SegmentedControl.Root>
+        </div>
+      </Popover.Anchor>
+      <Popover.Content
         align="end"
         side="bottom"
         sideOffset={6}
-        // The segmented toggle already shows which scope is active, so the
-        // Combobox's built-in right-edge check on the selected row is just
-        // visual noise — hide it and reclaim the reserved padding.
-        className="min-w-[220px] [&_[data-slot=combobox-item]>span.absolute]:hidden [&_[data-slot=combobox-item][aria-selected=true]]:pe-2!"
+        className="min-w-[240px] max-w-[320px] p-2"
       >
-        <ComboboxInput
-          placeholder="Search people…"
-          showTrigger={false}
-          autoFocus
+        <ScopePickerContent
+          selectedTeammateUuid={selectedTeammateUuid}
+          isEntireProjectSelected={scope === INBOX_SCOPE_ENTIRE_PROJECT}
+          onSelectEntireProject={selectEntireProject}
+          onSelectTeammate={selectTeammate}
         />
-        <ComboboxEmpty>No matching people.</ComboboxEmpty>
-        <ComboboxList className="max-h-[min(16rem,calc(var(--available-height,16rem)-5rem))]">
-          {(itemValue: string) => {
-            if (itemValue === PICKER_ENTIRE_PROJECT_VALUE) {
-              return (
-                <ComboboxItem
-                  key={PICKER_ENTIRE_PROJECT_VALUE}
-                  value={PICKER_ENTIRE_PROJECT_VALUE}
-                  title="Entire project everyone team"
-                  className="gap-2"
-                >
-                  <span
-                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-(--gray-8) border-dashed text-gray-10"
-                    aria-hidden
-                  >
-                    <AsteriskSimpleIcon size={12} weight="bold" />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-left">
-                    Entire project
-                  </span>
-                </ComboboxItem>
-              );
-            }
-            const teammateUuid = parseTeammateInboxScope(
-              itemValue as InboxScope,
-            );
-            if (!teammateUuid) return null;
-            const teammate = teammateOptions.find(
-              (t) => t.uuid === teammateUuid,
-            );
-            if (!teammate) return null;
-            const displayName = getSuggestedReviewerDisplayName(teammate);
-            const searchText = [
-              displayName,
-              teammate.name,
-              teammate.email,
-              teammate.github_login,
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
-              <ComboboxItem
-                key={itemValue}
-                value={itemValue}
-                title={searchText}
-                className="gap-2"
-              >
-                <ReviewerAvatar
-                  seed={teammate.uuid}
-                  name={teammate.name}
-                  email={teammate.email}
-                />
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {displayName}
-                </span>
-              </ComboboxItem>
-            );
-          }}
-        </ComboboxList>
-      </ComboboxContent>
-    </Combobox>
+      </Popover.Content>
+    </Popover.Root>
+  );
+}
+
+function ScopePickerContent({
+  selectedTeammateUuid,
+  isEntireProjectSelected,
+  onSelectEntireProject,
+  onSelectTeammate,
+}: {
+  selectedTeammateUuid: string | null;
+  isEntireProjectSelected: boolean;
+  onSelectEntireProject: () => void;
+  onSelectTeammate: (teammate: SuggestedReviewerFilterOption) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 200);
+  const { options, isFetching } = useReviewerPickerOptions({
+    query: debouncedSearch,
+    enabled: true,
+  });
+
+  // "For you" already covers the current user, so the teammate list excludes
+  // them.
+  const teammates = useMemo(
+    () => options.filter((option) => !option.isMe),
+    [options],
+  );
+
+  return (
+    <PeoplePickerList
+      searchQuery={search}
+      onSearchQueryChange={setSearch}
+      people={teammates}
+      isFetching={isFetching}
+      autoFocus
+      leadingSlot={
+        <button
+          type="button"
+          onClick={onSelectEntireProject}
+          className="flex w-full items-center gap-2 rounded-(--radius-1) px-1 py-1 text-left text-[13px] text-gray-12 transition-colors hover:bg-(--gray-3) focus-visible:bg-(--gray-3) focus-visible:outline-none"
+        >
+          <span
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-(--gray-8) border-dashed text-gray-10"
+            aria-hidden
+          >
+            <AsteriskSimpleIcon size={12} weight="bold" />
+          </span>
+          <span className="min-w-0 flex-1 truncate">Entire project</span>
+          <span
+            className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-12"
+            aria-hidden
+          >
+            {isEntireProjectSelected ? (
+              <CheckIcon size={12} weight="bold" />
+            ) : null}
+          </span>
+        </button>
+      }
+      renderRow={(teammate) => {
+        const displayName = getSuggestedReviewerDisplayName(teammate);
+        const selected = teammate.uuid === selectedTeammateUuid;
+        return (
+          <button
+            type="button"
+            onClick={() => onSelectTeammate(teammate)}
+            className="flex w-full items-center gap-2 rounded-(--radius-1) px-1 py-1 text-left text-[13px] text-gray-12 transition-colors hover:bg-(--gray-3) focus-visible:bg-(--gray-3) focus-visible:outline-none"
+          >
+            <ReviewerAvatar
+              seed={teammate.uuid}
+              name={teammate.name}
+              email={teammate.email}
+            />
+            <span className="min-w-0 flex-1 truncate">{displayName}</span>
+            <span
+              className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-12"
+              aria-hidden
+            >
+              {selected ? <CheckIcon size={12} weight="bold" /> : null}
+            </span>
+          </button>
+        );
+      }}
+    />
   );
 }
