@@ -95,6 +95,8 @@ export async function handleIPCMessage<TRouter extends AnyTRPCRouter>({
       getRawInput: async () => input,
       type,
       signal: abortController.signal,
+      // IPC operations are never batched
+      batchIndex: 0,
     });
 
     const isIterableResult = isAsyncIterable(result) || isObservable(result);
