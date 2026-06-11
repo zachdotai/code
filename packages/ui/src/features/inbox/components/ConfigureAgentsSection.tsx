@@ -141,7 +141,7 @@ export function ConfigureAgentsSection() {
   });
 
   return (
-    <Flex direction="column" gap="8">
+    <Flex direction="column" gap="4">
       {showSetupTask ? <SetupTaskSection /> : null}
 
       <Subsection
@@ -516,7 +516,7 @@ function Subsection({ title, description, children }: SubsectionProps) {
     <Flex
       direction="column"
       gap="4"
-      className="border-(--gray-5) border-t pt-8 first:border-t-0 first:pt-0"
+      className="border-(--gray-5) border-t pt-4 first:border-t-0 first:pt-0"
     >
       <Flex direction="column" gap="1">
         <Flex align="center" gap="2" wrap="wrap">

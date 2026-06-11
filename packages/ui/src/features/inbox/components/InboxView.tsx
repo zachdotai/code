@@ -5,7 +5,6 @@ import {
   InboxOnboardingHeader,
   InboxOnboardingPane,
 } from "@posthog/ui/features/inbox/components/onboarding/InboxOnboardingPane";
-import { InboxOnboardingWelcome } from "@posthog/ui/features/inbox/components/onboarding/InboxOnboardingWelcome";
 import {
   useInboxOnboardingSessionStore,
   useInboxOnboardingState,
@@ -53,12 +52,24 @@ export function InboxView() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isDetailView = isInboxDetailPath(pathname);
   const onboarding = useInboxOnboardingState();
-  const welcomeAcknowledged = useInboxOnboardingSessionStore(
-    (s) => s.welcomeAcknowledged,
-  );
+  const active = useInboxOnboardingSessionStore((s) => s.active);
+  const finished = useInboxOnboardingSessionStore((s) => s.finished);
+  const setActive = useInboxOnboardingSessionStore((s) => s.setActive);
+
+  // Latch onboarding visibility once per session from `isComplete`. After that
+  // the user only leaves by finishing the Activate step, so completing the last
+  // step doesn't unmount the pane mid-flow.
+  useEffect(() => {
+    if (!onboarding.isLoading && active === null) {
+      setActive(!onboarding.isComplete);
+    }
+  }, [onboarding.isLoading, onboarding.isComplete, active, setActive]);
+
   const showOnboarding =
-    !isDetailView && !onboarding.isLoading && !onboarding.isComplete;
-  const showWelcome = showOnboarding && !welcomeAcknowledged;
+    !isDetailView &&
+    !onboarding.isLoading &&
+    !finished &&
+    (active === true || !onboarding.isComplete);
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -68,15 +79,7 @@ export function InboxView() {
         !isDetailView && <InboxPageHeader counts={counts} />
       )}
       <div className="min-h-0 flex-1 overflow-auto">
-        {showOnboarding ? (
-          showWelcome ? (
-            <InboxOnboardingWelcome />
-          ) : (
-            <InboxOnboardingPane />
-          )
-        ) : (
-          <Outlet />
-        )}
+        {showOnboarding ? <InboxOnboardingPane /> : <Outlet />}
       </div>
     </Flex>
   );

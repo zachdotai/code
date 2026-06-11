@@ -1,15 +1,16 @@
-import { CheckIcon, SlackLogoIcon, WarningIcon } from "@phosphor-icons/react";
-import { Button } from "@posthog/quill";
-import { formatRelativeTimeLong } from "@posthog/shared";
 import {
-  builderHog,
-  explorerHog as detectiveHog,
-  happyHog,
-} from "@posthog/ui/assets/hedgehogs";
-import mailHog from "@posthog/ui/assets/images/mail-hog.png";
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CheckIcon,
+  SlackLogoIcon,
+  WarningIcon,
+} from "@phosphor-icons/react";
+import { Button, cn } from "@posthog/quill";
+import { formatRelativeTimeLong } from "@posthog/shared";
+import { InboxWelcomeContent } from "@posthog/ui/features/inbox/components/onboarding/InboxOnboardingWelcome";
 import {
   type InboxOnboardingStep,
-  inboxOnboardingProgress,
+  type InboxOnboardingStepInfo,
   useInboxOnboardingSessionStore,
   useInboxOnboardingState,
 } from "@posthog/ui/features/inbox/components/onboarding/useInboxOnboardingState";
@@ -17,191 +18,227 @@ import {
   type Integration,
   useIntegrationSelectors,
 } from "@posthog/ui/features/integrations/store";
+import { useIntegrations } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSlackConnect } from "@posthog/ui/features/integrations/useSlackConnect";
-import { GitHubIntegrationSection } from "@posthog/ui/features/settings/components/sections/GitHubIntegrationSection";
-import { SignalDefaultChannelSettings } from "@posthog/ui/features/settings/components/sections/SignalDefaultChannelSettings";
-import { SignalSourcesSettings } from "@posthog/ui/features/settings/components/sections/SignalSourcesSettings";
-import { useIntegrations } from "@posthog/ui/hooks/useIntegrations";
-import { OnboardingHogTip } from "@posthog/ui/primitives/OnboardingHogTip";
+import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
+import { SignalDefaultChannelSettings } from "@posthog/ui/features/settings/sections/SignalDefaultChannelSettings";
+import { SignalSourcesSettings } from "@posthog/ui/features/settings/sections/SignalSourcesSettings";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
 
+const STEP_LABEL: Record<InboxOnboardingStep, string> = {
+  welcome: "Welcome",
+  github: "GitHub",
+  slack: "Slack",
+  activate: "Activate",
+};
+
 const STEP_META: Record<
-  InboxOnboardingStep,
+  Exclude<InboxOnboardingStep, "welcome">,
   { title: string; subtitle: string }
 > = {
-  slack: {
-    title: "Connect Slack",
-    subtitle:
-      "Slack is the fastest way to use your agents – kick off tasks by mentioning @PostHog, ask questions in any channel, and have inbox events land where your team already works.",
-  },
   github: {
     title: "Connect GitHub",
     subtitle:
-      "Research needs source to chase. Connect the GitHub org and pick the repo your agents should open pull requests against by default.",
+      "Point your agents at the code they'll open pull requests against. Connect your org and pick the repo to target by default.",
   },
-  sources: {
-    title: "Pick signal sources",
-    subtitle:
-      "What should your agents watch? Error tracking, session replays, support tickets, GitHub issues – anything you turn on becomes input for the inbox.",
-  },
-  notifications: {
-    title: "Pick a notification channel",
-    subtitle:
-      "Where should inbox events land in Slack? Pick a default channel; you can change this any time.",
-  },
-};
-
-const STEP_LABEL: Record<InboxOnboardingStep, string> = {
-  slack: "Slack",
-  github: "GitHub",
-  sources: "Sources",
-  notifications: "Notifications",
-};
-
-const STEP_HOG: Record<InboxOnboardingStep, { src: string; tip: string }> = {
   slack: {
-    src: happyHog,
-    tip: "Slack's where I'm most useful – mention me anywhere and I'll get to work.",
+    title: "Connect Slack",
+    subtitle:
+      "Slack is where your agents deliver reports and take requests. Connect your workspace so everything lands where your team already works.",
   },
-  github: {
-    src: builderHog,
-    tip: "Show me where the code lives and I'll start opening pull requests.",
-  },
-  sources: {
-    src: detectiveHog,
-    tip: "Tell me what to investigate, I'll dig through the rest.",
-  },
-  notifications: {
-    src: mailHog,
-    tip: "Pick a channel and I'll start dropping reports there.",
+  activate: {
+    title: "Activate agents",
+    subtitle:
+      "Choose what your agents watch and where reports land. Flip these on and self-driving starts working.",
   },
 };
 
 /**
- * Full-screen takeover shown in place of the inbox tabs until setup is done.
- * Strictly linear: each step gates the next, with Slack offering a session
- * skip for genuine non-Slack users.
+ * Full-screen onboarding takeover shown in place of the inbox tabs until setup
+ * is done. A linear-but-navigable stepper: Welcome → GitHub → Slack → Activate.
+ * The cursor lives in the session store so the user can move backward as well
+ * as forward; Continue is gated on the current step being satisfied.
  */
 export function InboxOnboardingPane() {
   const state = useInboxOnboardingState();
+  const goNext = useInboxOnboardingSessionStore((s) => s.goNext);
+  const goBack = useInboxOnboardingSessionStore((s) => s.goBack);
+  const goToStep = useInboxOnboardingSessionStore((s) => s.goToStep);
   const skipSlack = useInboxOnboardingSessionStore((s) => s.skipSlack);
-  const { slackIntegrations } = useIntegrationSelectors();
-  const slackIntegrationId = slackIntegrations[0]?.id;
+  const finish = useInboxOnboardingSessionStore((s) => s.finish);
+  const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
+  const slackIntegrationId = slackIntegrations[0]?.id ?? null;
 
-  if (state.isLoading || state.currentStep === null) return null;
+  if (state.isLoading) return null;
 
-  const currentStep = state.currentStep;
-  const meta = STEP_META[currentStep];
-  const hog = STEP_HOG[currentStep];
-  const progress = inboxOnboardingProgress(state);
-  const stepNumber = progress.doneCount + 1;
+  const { currentStep, currentIndex, currentStepDone, isLastStep, steps } =
+    state;
+  const doneByStep = Object.fromEntries(
+    steps.map((s) => [s.step, s.done]),
+  ) as Record<InboxOnboardingStep, boolean>;
+  const isWelcome = currentStep === "welcome";
+  const showSkipSlack = currentStep === "slack" && !hasSlackIntegration;
+
+  const handleSkipSlack = () => {
+    skipSlack();
+    goNext();
+  };
+  const handleContinue = () => {
+    if (isLastStep) finish();
+    else goNext();
+  };
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-6 py-12">
-      <Flex direction="column" gap="6">
-        <Stepper currentStep={currentStep} state={state} />
-
-        <Flex direction="column" gap="2" className="cursor-default select-none">
-          <Text className="text-[11px] text-gray-10 uppercase tracking-[0.08em]">
-            Step {stepNumber} of {progress.totalCount} · Self-driving setup
-          </Text>
-          <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
-            {meta.title}
-          </Text>
-          <Text className="max-w-prose text-[13px] text-gray-11 leading-relaxed">
-            {meta.subtitle}
-          </Text>
-        </Flex>
-
-        <div className="rounded-(--radius-3) border border-gray-5 bg-(--color-panel-solid) px-6 py-6">
-          {currentStep === "slack" && <SlackStepBody />}
-          {currentStep === "github" && (
-            <GitHubIntegrationSection
-              hasGithubIntegration={state.github.done}
-              showBottomBorder={false}
-            />
-          )}
-          {currentStep === "sources" && (
-            <SignalSourcesSettings showSlackNotifications={false} />
-          )}
-          {currentStep === "notifications" && (
-            <SignalDefaultChannelSettings integrationId={slackIntegrationId} />
-          )}
-        </div>
-
-        <OnboardingHogTip
-          key={currentStep}
-          hogSrc={hog.src}
-          message={hog.tip}
+    <div
+      className={cn(
+        "mx-auto w-full px-6 py-10",
+        isWelcome ? "max-w-3xl" : "max-w-2xl",
+      )}
+    >
+      <Flex direction="column" gap="8">
+        <Stepper
+          steps={steps}
+          currentIndex={currentIndex}
+          currentStepDone={currentStepDone}
+          onSelect={goToStep}
         />
 
-        {currentStep === "slack" && (
-          <button
-            type="button"
-            onClick={skipSlack}
-            className="cursor-default self-start text-[12px] text-gray-10 underline-offset-2 hover:text-gray-12 hover:underline"
-          >
-            I don't use Slack – skip for now
-          </button>
+        {isWelcome ? (
+          <InboxWelcomeContent />
+        ) : (
+          <Flex direction="column" gap="6">
+            <Flex
+              direction="column"
+              className="cursor-default select-none gap-2"
+            >
+              <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
+                {STEP_META[currentStep].title}
+              </Text>
+              <Text className="max-w-prose text-[13px] text-gray-11 leading-relaxed">
+                {STEP_META[currentStep].subtitle}
+              </Text>
+            </Flex>
+
+            <div className="rounded-(--radius-3) border border-gray-5 bg-(--color-panel-solid) px-6 py-6">
+              {currentStep === "github" && (
+                <GitHubIntegrationSection
+                  hasGithubIntegration={doneByStep.github}
+                  showBottomBorder={false}
+                />
+              )}
+              {currentStep === "slack" && <SlackStepBody />}
+              {currentStep === "activate" && (
+                <ActivateStepBody
+                  slackIntegrationId={slackIntegrationId}
+                  slackChannelApplicable={state.slackChannelApplicable}
+                />
+              )}
+            </div>
+          </Flex>
         )}
+
+        <Flex align="center" justify="between" className="pt-1">
+          <div>
+            {currentIndex > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={goBack}
+                className="gap-1.5"
+              >
+                <ArrowLeftIcon size={14} weight="bold" />
+                Back
+              </Button>
+            )}
+          </div>
+          <Flex align="center" gap="2">
+            {showSkipSlack && (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={handleSkipSlack}
+              >
+                I don't use Slack
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              onClick={handleContinue}
+              disabled={!currentStepDone}
+              className="gap-1.5"
+            >
+              {isLastStep ? "Activate agents" : "Continue"}
+              {!isLastStep && <ArrowRightIcon size={14} weight="bold" />}
+            </Button>
+          </Flex>
+        </Flex>
       </Flex>
     </div>
   );
 }
 
 function Stepper({
-  currentStep,
-  state,
+  steps,
+  currentIndex,
+  currentStepDone,
+  onSelect,
 }: {
-  currentStep: InboxOnboardingStep;
-  state: ReturnType<typeof useInboxOnboardingState>;
+  steps: InboxOnboardingStepInfo[];
+  currentIndex: number;
+  currentStepDone: boolean;
+  onSelect: (index: number) => void;
 }) {
-  const stepDone: Record<InboxOnboardingStep, boolean> = {
-    slack: state.slack.done,
-    github: state.github.done,
-    sources: state.sources.done,
-    notifications: state.notifications.done,
-  };
-  const visibleSteps: InboxOnboardingStep[] = ["slack", "github", "sources"];
-  if (state.notifications.applicable) visibleSteps.push("notifications");
-
   return (
     <Flex
       align="center"
-      gap="0"
-      className="cursor-default select-none text-[12px]"
+      className="cursor-default select-none gap-0 text-[12px]"
     >
-      {visibleSteps.map((step, idx) => {
-        const isCurrent = step === currentStep;
-        const isDone = stepDone[step];
+      {steps.map((info, idx) => {
+        const isCurrent = idx === currentIndex;
+        // Back to anything already visited; forward only one step, once the
+        // current step is satisfied.
+        const reachable =
+          idx <= currentIndex || (idx === currentIndex + 1 && currentStepDone);
         return (
-          <Flex key={step} align="center" gap="0" className="min-w-0">
+          <Flex key={info.step} align="center" className="min-w-0 gap-0">
             {idx > 0 && (
               <span
                 className={`mx-2 h-px w-6 ${
-                  isDone || isCurrent ? "bg-(--gray-7" : "bg-(--gray-5"
+                  idx <= currentIndex ? "bg-(--gray-7)" : "bg-(--gray-5)"
                 }`}
                 aria-hidden
               />
             )}
-            <Flex align="center" gap="2">
+            <button
+              type="button"
+              disabled={!reachable}
+              onClick={() => onSelect(idx)}
+              className={cn(
+                "flex items-center gap-2 rounded-(--radius-2) px-1 py-0.5",
+                reachable ? "cursor-pointer" : "cursor-default",
+              )}
+            >
               <StepBadge
                 index={idx + 1}
                 isCurrent={isCurrent}
-                isDone={isDone}
+                isDone={info.done}
               />
               <Text
                 className={
                   isCurrent
                     ? "font-semibold text-gray-12"
-                    : isDone
+                    : info.done
                       ? "text-gray-11"
                       : "text-gray-10"
                 }
               >
-                {STEP_LABEL[step]}
+                {STEP_LABEL[info.step]}
               </Text>
-            </Flex>
+            </button>
           </Flex>
         );
       })}
@@ -220,6 +257,16 @@ function StepBadge({
 }) {
   const base =
     "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold";
+  if (isCurrent) {
+    return (
+      <span
+        className={`${base} bg-(--gray-12) text-gray-1`}
+        aria-current="step"
+      >
+        {index}
+      </span>
+    );
+  }
   if (isDone) {
     return (
       <span className={`${base} bg-(--green-9) text-white`} aria-hidden>
@@ -227,16 +274,9 @@ function StepBadge({
       </span>
     );
   }
-  if (isCurrent) {
-    return (
-      <span className={`${base} bg-(--gray-12 text-gray-1`} aria-current="step">
-        {index}
-      </span>
-    );
-  }
   return (
     <span
-      className={`${base} bg-(--gray-3 text-gray-10 ring-(--gray-5 ring-1 ring-inset`}
+      className={`${base} bg-(--gray-3) text-gray-10 ring-(--gray-5) ring-1 ring-inset`}
       aria-hidden
     >
       {index}
@@ -245,10 +285,33 @@ function StepBadge({
 }
 
 /**
- * Onboarding-shaped Slack widget: just the connect handshake and the
- * connected state. Notification channel choice belongs to the dedicated
- * notifications step, so we deliberately don't pull in
- * `SlackInboxNotificationsSettings` here.
+ * Activate step: pick the signal sources the agents watch and, when Slack is
+ * connected, the default channel reports post to. Toggling these is what makes
+ * the step "done" and lights up the Activate button.
+ */
+function ActivateStepBody({
+  slackIntegrationId,
+  slackChannelApplicable,
+}: {
+  slackIntegrationId: number | null;
+  slackChannelApplicable: boolean;
+}) {
+  return (
+    <Flex direction="column" gap="5">
+      <SignalSourcesSettings showSlackNotifications={false} />
+      {slackChannelApplicable && (
+        <div className="border-gray-4 border-t pt-5">
+          <SignalDefaultChannelSettings integrationId={slackIntegrationId} />
+        </div>
+      )}
+    </Flex>
+  );
+}
+
+/**
+ * Onboarding-shaped Slack widget: just the connect handshake and the connected
+ * state. The "I don't use Slack" escape lives in the pane footer, and the
+ * notification channel choice belongs to the Activate step.
  */
 function SlackStepBody() {
   const { isLoading } = useIntegrations();
@@ -310,7 +373,7 @@ function SlackConnectedRow({ integration }: { integration: Integration }) {
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--green-2) ring-(--green-5) ring-1 ring-inset">
         <SlackLogoIcon size={18} className="text-(--green-11)" />
       </span>
-      <Flex direction="column" gap="0.5" className="min-w-0 flex-1">
+      <Flex direction="column" className="min-w-0 flex-1 gap-0.5">
         <Text className="font-medium text-[13px] text-gray-12">
           Connected to {workspaceName}
         </Text>
@@ -333,8 +396,7 @@ export function InboxOnboardingHeader() {
   return (
     <Flex
       direction="column"
-      gap="0.5"
-      className="cursor-default select-none border-gray-5 border-b px-6 pt-5 pb-5"
+      className="cursor-default select-none gap-0.5 border-gray-5 border-b px-6 pt-5 pb-5"
     >
       <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
         Inbox

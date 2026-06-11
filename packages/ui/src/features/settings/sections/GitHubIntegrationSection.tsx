@@ -130,7 +130,7 @@ export function GitHubIntegrationSection({
                   ? describeGithubConnectError(connectError)
                   : timedOut
                     ? "We didn't hear back from GitHub. Try again."
-                    : "Required for the Inbox pipeline to work"}
+                    : "Required for PostHog agents to work."}
             </Text>
           )}
         </Flex>
