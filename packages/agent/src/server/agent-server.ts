@@ -1629,7 +1629,7 @@ export class AgentServer {
     prUrl?: string | null,
     slackThreadUrl?: string | null,
   ): string | { append: string } {
-    const cloudAppend = this.buildCloudSystemPrompt(prUrl, slackThreadUrl);
+    const cloudAppend = `${this.buildCloudSystemPrompt(prUrl, slackThreadUrl)}\n${this.buildMemoryInstructions()}`;
     const userPrompt = this.config.claudeCode?.systemPrompt;
 
     // String override: combine user prompt with cloud instructions
@@ -1694,6 +1694,23 @@ export class AgentServer {
       `2. Make changes, commit, and push to that branch\n` +
       `You MUST NOT create a new branch, close the existing PR, or create a new PR.`
     );
+  }
+
+  /**
+   * Guidance for the shared, semantically-searchable PostHog memory store exposed through the
+   * `memory` MCP tool. Appended to every cloud-run system prompt so cloud agents recall durable
+   * context across runs and persist new learnings — the same memory store Max/PostHog AI uses.
+   */
+  private buildMemoryInstructions(): string {
+    return `
+# Persistent Memory
+You have access to PostHog's persistent memory through the \`memory\` MCP tool — a shared,
+semantically-searchable store of durable facts about this user, their company, product, and
+preferences (the same memories used across PostHog AI). Memories persist across runs, so:
+- Before non-trivial work, recall context with the \`memory\` tool using \`action: "query"\` (semantic search) to surface durable facts, decisions, and prior discussions.
+- When you learn something durable — product setup, conventions, definitions, preferences, decisions — store it with \`action: "create"\`. Do this pre-emptively; you don't need to be asked. Query first to avoid duplicates.
+- Use \`action: "update"\`/\`"delete"\` to keep memories accurate, and \`action: "list_metadata_keys"\` to keep metadata tags consistent.
+- Memories are for durable facts, not transient task state. New memories become searchable once their embedding is processed.`;
   }
 
   private buildCloudSystemPrompt(
