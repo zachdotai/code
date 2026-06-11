@@ -81,6 +81,9 @@ export function initializePostHog(sessionId?: string) {
 
   for (const listener of pendingFlagListeners) {
     listener.unsubscribe = posthog.onFeatureFlags(listener.callback);
+    // Fire once so pre-init subscribers pick up locally cached flag values
+    // immediately instead of waiting for the first /flags network response.
+    listener.callback();
   }
   pendingFlagListeners.clear();
 }

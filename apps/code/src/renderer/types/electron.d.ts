@@ -4,6 +4,7 @@ declare global {
   interface Window {
     electronUtils?: {
       getPathForFile: (file: File) => string;
+      posthogSessionId?: string;
     };
   }
 }

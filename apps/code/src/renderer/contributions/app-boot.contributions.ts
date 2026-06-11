@@ -12,21 +12,13 @@ const log = logger.scope("app-boot");
 @injectable()
 export class AnalyticsBootContribution implements Contribution {
   start(): void {
-    void (async () => {
-      let sessionId: string | undefined;
-      try {
-        ({ sessionId } = await trpcClient.analytics.getSessionId.query());
-      } catch (error) {
-        log.warn("Failed to fetch session id from main", { error });
-      }
-      initializePostHog(sessionId);
-      trpcClient.os.getAppVersion
-        .query()
-        .then(registerAppVersion)
-        .catch((error) => {
-          log.warn("Failed to register app version super property", { error });
-        });
-    })();
+    initializePostHog(window.electronUtils?.posthogSessionId);
+    trpcClient.os.getAppVersion
+      .query()
+      .then(registerAppVersion)
+      .catch((error) => {
+        log.warn("Failed to register app version super property", { error });
+      });
   }
 }
 

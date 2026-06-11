@@ -22,6 +22,10 @@ import {
 import { container } from "@renderer/di/container";
 
 export function registerDesktopContributions(): void {
+  // Bound first so boot() initializes PostHog synchronously before any other
+  // contribution awaits and React effects start firing analytics calls.
+  container.bind(CONTRIBUTION).to(AnalyticsBootContribution).inSingletonScope();
+
   for (const module of [
     agentUiModule,
     authUiModule,
@@ -43,6 +47,5 @@ export function registerDesktopContributions(): void {
     container.load(module);
   }
 
-  container.bind(CONTRIBUTION).to(AnalyticsBootContribution).inSingletonScope();
   container.bind(CONTRIBUTION).to(InboxDemoDevContribution).inSingletonScope();
 }

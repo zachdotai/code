@@ -13,6 +13,7 @@ import {
 import { container } from "./di/container";
 import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
+import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { trpcRouter } from "./trpc/router";
 import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
@@ -203,7 +204,10 @@ export function createWindow(): void {
       preload: path.join(__dirname, "preload.js"),
       enableBlinkFeatures: "GetDisplayMedia",
       partition: "persist:main",
-      additionalArguments: isDev ? ["--posthog-code-dev"] : [],
+      additionalArguments: [
+        ...(isDev ? ["--posthog-code-dev"] : []),
+        `--posthog-session-id=${posthogNodeAnalytics.getOrCreateSessionId()}`,
+      ],
       ...(isDev && { webSecurity: false }),
     },
   });

@@ -39,15 +39,21 @@ function useAuthSubscriptionSync(): void {
   }, [hostClient]);
 }
 
-function useAuthIdentitySync(
+export function useAuthIdentitySync(
   authIdentity: string | null,
   cloudRegion: "us" | "eu" | "dev" | null,
+  bootstrapComplete: boolean,
 ): void {
   const hostClient = useHostTRPCClient();
   useEffect(() => {
     if (!authIdentity) {
-      resetUser();
-      void hostClient.analytics.resetUser.mutate();
+      // Pre-bootstrap the identity is transiently null on every launch;
+      // resetting then would wipe the persisted PostHog distinct_id and
+      // make feature flags evaluate for an anonymous user.
+      if (bootstrapComplete) {
+        resetUser();
+        void hostClient.analytics.resetUser.mutate();
+      }
       clearAuthScopedQueries();
       if (cloudRegion) {
         useAuthUiStateStore.getState().setStaleRegion(cloudRegion);
@@ -56,7 +62,7 @@ function useAuthIdentitySync(
     }
 
     useAuthUiStateStore.getState().clearStaleRegion();
-  }, [authIdentity, cloudRegion, hostClient]);
+  }, [authIdentity, cloudRegion, hostClient, bootstrapComplete]);
 }
 
 function useAuthAnalyticsIdentity(
@@ -124,7 +130,11 @@ export function useAuthSession() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
 
   useAuthSubscriptionSync();
-  useAuthIdentitySync(authIdentity, authState.cloudRegion);
+  useAuthIdentitySync(
+    authIdentity,
+    authState.cloudRegion,
+    authState.bootstrapComplete,
+  );
   useAuthAnalyticsIdentity(authIdentity, authState, currentUser);
   useSeatSync(authIdentity, billingEnabled);
 

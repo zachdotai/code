@@ -50,6 +50,18 @@ describe("onFeatureFlagsLoaded", () => {
     expect(mockPosthog.onFeatureFlags).toHaveBeenCalledWith(cb);
   });
 
+  it("invokes buffered listener callbacks once at init to read cached flags", async () => {
+    const { initializePostHog, onFeatureFlagsLoaded } = await loadAnalytics();
+
+    const cb = vi.fn();
+    onFeatureFlagsLoaded(cb);
+    expect(cb).not.toHaveBeenCalled();
+
+    initializePostHog();
+
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
   it("does not register a buffered listener that unsubscribed before init", async () => {
     const { initializePostHog, onFeatureFlagsLoaded } = await loadAnalytics();
 
@@ -60,6 +72,7 @@ describe("onFeatureFlagsLoaded", () => {
     initializePostHog();
 
     expect(mockPosthog.onFeatureFlags).not.toHaveBeenCalled();
+    expect(cb).not.toHaveBeenCalled();
   });
 
   it("propagates unsubscribe to PostHog when called after init", async () => {
