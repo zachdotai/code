@@ -24,8 +24,9 @@ const nativeModules = new Set([
   "file-icon",
 ]);
 
-const isExternal = (id: string): boolean =>
-  nodeBuiltins.has(id) || nativeModules.has(id);
+// Rolldown (Vite 8) merges ssr.external into rollupOptions.external as one
+// array and rejects function entries, so this must stay a plain string list.
+const externalModules = [...nodeBuiltins, ...nativeModules];
 
 export default defineConfig({
   resolve: {
@@ -55,7 +56,7 @@ export default defineConfig({
       output: {
         entryFileNames: "workspace-server.js",
       },
-      external: isExternal,
+      external: externalModules,
     },
   },
 });
