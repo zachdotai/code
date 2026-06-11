@@ -29,7 +29,7 @@ const STEP_LABEL: Record<InboxOnboardingStep, string> = {
   welcome: "Welcome",
   github: "GitHub",
   slack: "Slack",
-  activate: "Activate",
+  activate: "Agents",
 };
 
 const STEP_META: Record<
@@ -47,7 +47,7 @@ const STEP_META: Record<
       "Slack is where your agents deliver reports and take requests. Connect your workspace so everything lands where your team already works.",
   },
   activate: {
-    title: "Activate agents",
+    title: "Set up agents",
     subtitle:
       "Choose what your agents watch and where reports land. Flip these on and self-driving starts working.",
   },
@@ -91,7 +91,7 @@ export function InboxOnboardingPane() {
   return (
     <div
       className={cn(
-        "mx-auto w-full px-6 py-10",
+        "mx-auto w-full px-6 pt-10",
         isWelcome ? "max-w-3xl" : "max-w-2xl",
       )}
     >
@@ -137,7 +137,11 @@ export function InboxOnboardingPane() {
           </Flex>
         )}
 
-        <Flex align="center" justify="between" className="pt-1">
+        <Flex
+          align="center"
+          justify="between"
+          className="-mx-6 sticky bottom-0 z-10 border-gray-5 border-t bg-(--color-background) px-6 py-4"
+        >
           <div>
             {currentIndex > 0 && (
               <Button

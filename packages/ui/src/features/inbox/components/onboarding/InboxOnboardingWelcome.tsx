@@ -23,21 +23,21 @@ export function InboxWelcomeContent() {
         <Beat
           index={1}
           label="Pull requests, ready to merge."
-          description="Your agents read your product data and open PRs against your repo for the work that's safe to autostart – diff, tests, the right reviewers, the lot."
+          description="Your agents read your product data and open a PR for anything safe to autostart — diff, tests, reviewers."
           preview={<PullRequestCardPreview />}
           delay={0.05}
         />
         <Beat
           index={2}
           label="Delivered straight to Slack."
-          description="Every report lands in a dedicated #posthog-inbox channel – not your existing channels, so nothing gets spammed. Skim the diff, hit Review, and the right people are tagged automatically."
+          description="Every report lands in your #posthog-inbox channel. Skim the diff, hit Review, the right people are tagged."
           preview={<SlackReportNotificationPreview />}
           delay={0.1}
         />
         <Beat
           index={3}
           label="Or just ask @PostHog."
-          description="Need a one-off? Mention @PostHog in any channel. We'll dig through your analytics, errors, replays, and code, then offer to ship the fix."
+          description="Mention @PostHog in any channel. We'll dig through your analytics, errors, and replays, then offer to ship the fix."
           preview={<SlackAskPostHogPreview />}
           delay={0.15}
         />
@@ -58,10 +58,11 @@ function Hero() {
           Welcome to self-driving for your product
         </Text>
         <Text className="max-w-prose text-[13px] text-gray-11 leading-relaxed">
-          PostHog responder agents monitor your users' experience and your
+          PostHog Scouts & Responders monitor your users' experience and your
           systems for issues. They hand you the fix as a pull request, dropped
-          into Slack so you never context-switch. And you can talk to{" "}
-          <SlackMention name="PostHog" /> like a teammate.
+          into Slack so you never context-switch. You can ask{" "}
+          <SlackMention name="PostHog" /> any time to do work for you - like a
+          teammate.
         </Text>
       </Flex>
     </motion.div>
@@ -115,11 +116,11 @@ function PullRequestCardPreview() {
   return (
     <PullRequestCardView
       priority="P1"
-      conventionalTitle={{ type: "fix", scope: "capture" }}
-      title="Stop sending duplicate $pageview events on SPA history push"
-      headline="5.4% of $pageview events were duplicates — inflated funnels and ~$1.2k/month over-billing across 2,317 customers."
+      conventionalTitle={{ type: "fix", scope: "player" }}
+      title="Resume playback from the saved position, not the start"
+      headline="8.4% of “Continue watching” resumes restart the title from 0:00 — affected sessions run 14% shorter and resume churn is up 3×."
       repoSlug="PostHog/hogflix"
-      sourceProducts={["error_tracking"]}
+      sourceProducts={["session_replay"]}
       diffSlot={<PrDiffIndicator added={12} removed={3} files={2} />}
     />
   );

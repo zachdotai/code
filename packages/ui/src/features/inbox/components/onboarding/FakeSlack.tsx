@@ -146,16 +146,16 @@ export function SlackReportNotificationPreview() {
         <Flex direction="column" className="mt-0.5 gap-2.5">
           {/* header block */}
           <Text className="font-bold text-[13.5px] text-gray-12 leading-snug">
-            Stop sending duplicate $pageview events on SPA history push
+            Resume playback from the saved position, not the start
           </Text>
           {/* section block */}
           <Flex direction="column" className="gap-1.5">
             <Text className="font-bold text-[12.5px] text-gray-12">
-              ❗ P1 · Error tracking · PostHog/hogflix
+              ❗ P1 · Session replay · PostHog/hogflix
             </Text>
             <Text className="text-[12.5px] text-gray-11 leading-relaxed">
-              5.4% of $pageview events were duplicates — inflated funnels and
-              ~$1.2k/month over-billing across 2,317 customers.
+              8.4% of “Continue watching” resumes restart the title from 0:00 —
+              affected sessions run 14% shorter and resume churn is up 3×.
             </Text>
           </Flex>
           {/* context block */}
@@ -178,20 +178,22 @@ export function SlackReportNotificationPreview() {
   );
 }
 
-// First three sentences are always shown; the rest sit behind "Show more".
-const ANSWER_VISIBLE =
-  "found it — the dashboard p75 load time jumped from 0.8s to 3.2s last Tuesday, right when we shipped PostHog/hogflix#4821 (“cache homepage rows per-user”). Session replays of the slow loads show the rows skeleton hanging 3–4s on first paint for ~22% of views, and Error tracking has a matching spike in HomeRowsTimeout over the same window. The cause is the new per-user cache key — it dropped the shared-row cache hit rate from 91% to 12%, so nearly every visit recomputes the homepage from scratch.";
+// The answer keeps the first sentence and the value-punch question, collapsing
+// the analysis in between behind an inline "[…]" toggle — enough to tease the
+// depth without dumping a wall of text into the preview.
+const ANSWER_FIRST =
+  "found it — dashboard p75 load time jumped from 0.8s to 3.2s last Tuesday, right when we shipped PostHog/hogflix#4821 (“cache homepage rows per-user”).";
 
-const ANSWER_HIDDEN =
-  "I traced it to getHomeRowsCacheKey() in src/server/cache.ts, where #4821 appends the viewer's user id to every key. The fix keeps the shared key for the non-personalized rows and only scopes the user id to the “Because you watched” row, which restores the hit rate without mixing up anyone's recommendations. I've drafted and tested it against the last week of traffic — in the replay of those sessions p75 drops back to ~0.85s.";
+const ANSWER_MIDDLE =
+  "Session replays show the rows skeleton hanging 3–4s on first paint for ~22% of views, and Error tracking has a matching spike in HomeRowsTimeout. The cause is the new per-user cache key — it dropped the shared-row hit rate from 91% to 12%, so nearly every visit recomputes the homepage. I traced it to getHomeRowsCacheKey() in src/server/cache.ts, where #4821 appends the viewer's user id to every key. The fix keeps the shared key and only scopes the user id to the “Because you watched” row; tested against the last week, p75 drops back to ~0.85s.";
 
-const ANSWER_QUESTION = "Do you want me to ship this fix as a pull request?";
+const ANSWER_LAST = "Do you want me to ship this fix as a pull request?";
 
 /**
  * Beat 3 preview: a teammate asks PostHog a one-off in a normal channel, and
  * PostHog answers — grounded in analytics, error tracking, replay, and the
- * codebase — then offers to ship the fix. The answer reveals real depth behind
- * a "Show more" toggle and ends on the value punch: a PR on request.
+ * codebase — then offers to ship the fix. The analysis collapses behind an
+ * inline "[…]" toggle, ending on the value punch: a PR on request.
  */
 export function SlackAskPostHogPreview() {
   const [expanded, setExpanded] = useState(false);
@@ -212,30 +214,19 @@ export function SlackAskPostHogPreview() {
         badge="App"
         timestamp="10:42 AM"
       >
-        <span>
-          <SlackMention name="Richard Hendricks" /> {ANSWER_VISIBLE}
-        </span>
-        {expanded && (
-          <>
-            {" "}
-            <span>{ANSWER_HIDDEN}</span>
-            <span className="mt-2 block font-medium text-gray-12">
-              {ANSWER_QUESTION}
-            </span>
-          </>
-        )}
-        {!expanded && (
-          <button
-            type="button"
-            onClick={() => {
-              playCompletionSound("meep-smol");
-              setExpanded(true);
-            }}
-            className="mt-1 block cursor-default font-medium text-(--blue-11) text-[12px] leading-none underline-offset-2 hover:underline"
-          >
-            Show more
-          </button>
-        )}
+        <SlackMention name="Richard Hendricks" /> {ANSWER_FIRST}{" "}
+        <button
+          type="button"
+          onClick={() => {
+            if (!expanded) playCompletionSound("meep-smol");
+            setExpanded((e) => !e);
+          }}
+          className="cursor-pointer font-medium text-(--blue-11) underline-offset-2 hover:underline"
+        >
+          […]
+        </button>{" "}
+        {expanded && <>{ANSWER_MIDDLE} </>}
+        <span className="mt-1.5 block">{ANSWER_LAST}</span>
       </SlackMessageRow>
     </SlackSurface>
   );
