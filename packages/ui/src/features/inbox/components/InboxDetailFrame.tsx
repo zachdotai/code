@@ -1,5 +1,6 @@
 import type { IconProps } from "@phosphor-icons/react";
 import type { SignalReport } from "@posthog/shared/types";
+import { ConnectPersonalGithubButton } from "@posthog/ui/features/inbox/components/ConnectPersonalGithubButton";
 import { DetailSection } from "@posthog/ui/features/inbox/components/DetailSection";
 import { InboxDetailPageHeader } from "@posthog/ui/features/inbox/components/InboxDetailPageHeader";
 import {
@@ -156,6 +157,7 @@ export function InboxDetailFrame({
         }
         actions={
           <Flex align="center" className="gap-2.5">
+            <ConnectPersonalGithubButton />
             {showDismiss && dismissButton}
             {primaryAction}
           </Flex>
