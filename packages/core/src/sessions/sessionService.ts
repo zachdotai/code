@@ -344,6 +344,23 @@ export function derivePendingPermissionRequests(
   return [...requests.values()].filter((r) => !resolved.has(r.requestId));
 }
 
+/**
+ * Whether a derived permission request has already been surfaced for this
+ * session. Snapshot replays re-deliver still-pending requests on every
+ * bootstrap and re-subscribe; only the first delivery should notify. A
+ * different requestId for the same tool call is a new ask and must notify.
+ */
+export function isPermissionRequestAlreadySurfaced(
+  pendingPermissions: ReadonlyMap<string, unknown>,
+  trackedRequestId: string | undefined,
+  update: DerivedPermissionRequest,
+): boolean {
+  return (
+    trackedRequestId === update.requestId &&
+    pendingPermissions.has(update.toolCall.toolCallId)
+  );
+}
+
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
@@ -1581,6 +1598,16 @@ export class SessionService {
       this.d.log.warn("Session not found for cloud permission request", {
         taskRunId,
       });
+      return;
+    }
+
+    if (
+      isPermissionRequestAlreadySurfaced(
+        session.pendingPermissions,
+        this.cloudPermissionRequestIds.get(update.toolCall.toolCallId),
+        update,
+      )
+    ) {
       return;
     }
 
@@ -3945,7 +3972,7 @@ export class SessionService {
         }
         this.d.store.appendEvents(taskRunId, newEvents, expectedCount);
         this.updatePromptStateFromEvents(taskRunId, newEvents, {
-          isLive: true,
+          isLive: update.kind === "logs",
         });
       } else {
         this.cloudLogGapReconciler.reconcile({
