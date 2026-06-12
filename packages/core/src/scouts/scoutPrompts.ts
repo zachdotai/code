@@ -34,6 +34,57 @@ Use the exploring-signals-scouts skill from the PostHog MCP to pull the most rec
 
 Group by scout, newest first. Close with a short note on overall signal quality and any scouts that look noisy or suspiciously silent. If the skill is unavailable, fall back to the signals-scout MCP tools directly (runs list with emitted filter, run emissions).`;
 
+/**
+ * Templated prompt for digging into a single finding a scout emitted, scoped to
+ * that finding plus an optional free-text question the user typed before kicking
+ * the task off (mirrors the inbox report Discuss flow).
+ */
+export function buildScoutFindingDiscussPrompt({
+  skillName,
+  displayName,
+  runId,
+  findingId,
+  description,
+  severity,
+  confidence,
+  question,
+}: {
+  skillName: string;
+  displayName: string;
+  runId: string;
+  findingId: string;
+  description: string;
+  severity: string | null;
+  confidence: number;
+  question?: string;
+}): string {
+  const trimmedQuestion = question?.trim();
+  const meta = [
+    `Scout: \`${skillName}\` (${displayName})`,
+    `Run ID: ${runId}`,
+    `Finding ID: ${findingId}`,
+    severity ? `Severity: ${severity}` : null,
+    `Confidence: ${Math.round(confidence * 100)}%`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return `I want to dig into a specific finding my ${displayName} scout emitted and work out whether it needs action.
+
+${meta}
+
+Finding:
+${description}
+
+${
+  trimmedQuestion
+    ? `Answer this first: ${trimmedQuestion}`
+    : "Give me a brief readout on what this finding means and whether it looks genuinely actionable or like noise, then ask what I want to dig into."
+}
+
+Use the exploring-signals-scouts skill from the PostHog MCP to ground your investigation: fetch this exact run's emissions (run ${runId}) for the finding's full context, pull the \`${skillName}\` scout's recent runs, cross-reference the relevant product data, and assess whether it's real and worth acting on. If the skill is unavailable, fall back to the signals-scout MCP tools directly (config list, runs list, run emissions) plus the read-data and insight tools.`;
+}
+
 /** Per-scout variant of the templated questions, scoped to one skill. */
 export function buildScoutCheckinPrompt(
   skillName: string,
