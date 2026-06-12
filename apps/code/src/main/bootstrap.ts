@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { app, crashReporter, protocol } from "electron";
 import { fixPath } from "./utils/fixPath";
+import { isHardwareAccelerationDisabled } from "./utils/gpu-recovery";
 
 const isDev = !app.isPackaged;
 
@@ -58,6 +59,16 @@ app.commandLine.appendSwitch("log-file", chromiumLogPath);
 app.commandLine.appendSwitch("log-level", "0");
 
 crashReporter.start({ uploadToServer: false });
+
+// If a prior session detected a GPU crash loop (see the child-process-gone
+// handler in index.ts), fall back to software rendering so afflicted machines
+// stop crash-looping. Must run before app.whenReady() — Electron can only
+// toggle hardware acceleration before the app is ready. The accompanying
+// stability switches keep GPU-adjacent features from re-triggering the crash.
+if (isHardwareAccelerationDisabled()) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("disable-gpu-compositing");
+}
 
 // Force IPv4 resolution when "localhost" is used so the agent hits 127.0.0.1
 // instead of ::1. This matches how the renderer already reaches the PostHog API.

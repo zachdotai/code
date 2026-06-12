@@ -61,6 +61,10 @@ import {
 } from "./utils/crash-diagnostics";
 import { ensureClaudeConfigDir } from "./utils/env";
 import {
+  isHardwareAccelerationDisabled,
+  persistDisableHardwareAcceleration,
+} from "./utils/gpu-recovery";
+import {
   getChromiumLogFilePath,
   getLogFilePath,
   readChromiumLogTail,
@@ -133,6 +137,49 @@ function isCrashLoop(): boolean {
   return recentCrashTimestamps.length >= CRASH_LOOP_THRESHOLD;
 }
 
+// A GPU child process that exits for any reason other than a clean shutdown is
+// treated as a crash for crash-loop purposes.
+const GPU_CRASH_LOOP_WINDOW_MS = 60_000;
+const GPU_CRASH_LOOP_THRESHOLD = 3;
+const recentGpuCrashTimestamps: number[] = [];
+
+function isGpuCrashLoop(): boolean {
+  const now = Date.now();
+  while (
+    recentGpuCrashTimestamps.length > 0 &&
+    now - recentGpuCrashTimestamps[0] > GPU_CRASH_LOOP_WINDOW_MS
+  ) {
+    recentGpuCrashTimestamps.shift();
+  }
+  recentGpuCrashTimestamps.push(now);
+  return recentGpuCrashTimestamps.length >= GPU_CRASH_LOOP_THRESHOLD;
+}
+
+// Rate-limit child-process-gone captures so a single crash-looping machine
+// can't dominate error volume. Beyond the cap we keep counting (and logging)
+// but stop reporting until the window clears; the count rides along on the
+// next captured exception so the suppressed volume stays visible.
+const CHILD_CAPTURE_WINDOW_MS = 60_000;
+const CHILD_CAPTURE_MAX = 5;
+const recentChildCaptureTimestamps: number[] = [];
+let suppressedChildCaptures = 0;
+
+function shouldCaptureChildCrash(): boolean {
+  const now = Date.now();
+  while (
+    recentChildCaptureTimestamps.length > 0 &&
+    now - recentChildCaptureTimestamps[0] > CHILD_CAPTURE_WINDOW_MS
+  ) {
+    recentChildCaptureTimestamps.shift();
+  }
+  if (recentChildCaptureTimestamps.length >= CHILD_CAPTURE_MAX) {
+    suppressedChildCaptures++;
+    return false;
+  }
+  recentChildCaptureTimestamps.push(now);
+  return true;
+}
+
 function crashDiagnostics() {
   return {
     appUptimeSeconds: Math.round(process.uptime()),
@@ -190,6 +237,25 @@ app.on("render-process-gone", (_event, webContents, details) => {
 });
 
 app.on("child-process-gone", (_event, details) => {
+  const isGpuCrash = details.type === "GPU" && details.reason !== "clean-exit";
+  let gpuFallbackArmed = false;
+
+  // On a repeated GPU crash, persist the software-rendering fallback so the
+  // next launch boots with hardware acceleration disabled (see bootstrap.ts).
+  // Chromium usually auto-restarts a dead GPU process, so we let it recover
+  // in-session and only break the loop across restarts.
+  if (isGpuCrash && isGpuCrashLoop() && !isHardwareAccelerationDisabled()) {
+    persistDisableHardwareAcceleration();
+    gpuFallbackArmed = true;
+    log.error(
+      "GPU crash loop detected, disabling hardware acceleration on next launch",
+      {
+        crashesInWindow: recentGpuCrashTimestamps.length,
+        windowMs: GPU_CRASH_LOOP_WINDOW_MS,
+      },
+    );
+  }
+
   const props = {
     source: "main",
     type: "child-process-gone",
@@ -201,18 +267,26 @@ app.on("child-process-gone", (_event, details) => {
     ...crashDiagnostics(),
   };
   log.error("Child process gone", props);
-  posthogNodeAnalytics.captureException(
-    new Error(`Child process gone (${details.type}): ${details.reason}`),
-    {
-      ...props,
-      $exception_fingerprint: [
-        "child-process-gone",
-        details.type,
-        details.reason,
-      ],
-    },
-  );
-  posthogNodeAnalytics.flush().catch(() => {});
+
+  // Always report when we arm the GPU fallback; otherwise rate-limit so a
+  // crash-looping host doesn't flood Error Tracking.
+  if (gpuFallbackArmed || shouldCaptureChildCrash()) {
+    posthogNodeAnalytics.captureException(
+      new Error(`Child process gone (${details.type}): ${details.reason}`),
+      {
+        ...props,
+        gpuFallbackArmed,
+        suppressedCaptures: suppressedChildCaptures,
+        $exception_fingerprint: [
+          "child-process-gone",
+          details.type,
+          details.reason,
+        ],
+      },
+    );
+    suppressedChildCaptures = 0;
+    posthogNodeAnalytics.flush().catch(() => {});
+  }
 });
 
 async function initializeServices(): Promise<void> {
