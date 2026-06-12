@@ -219,6 +219,12 @@ const config: ForgeConfig = {
         icon: "./build/app-icon.png",
         categories: ["Development"],
         bin: "PostHog Code",
+        // Declare the custom URL scheme handler in the generated .desktop file
+        // so desktop integration registers x-scheme-handler/posthog-code and
+        // OAuth callbacks (posthog-code://) can route back to the AppImage.
+        // The deb/rpm makers get this via sharedLinuxOptions; without it,
+        // AppImage users cannot complete login. See sharedLinuxOptions.mimeType.
+        mimeType: ["x-scheme-handler/posthog-code"],
       },
     }),
     new MakerDeb({

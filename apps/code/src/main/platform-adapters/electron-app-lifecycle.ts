@@ -29,6 +29,12 @@ export class ElectronAppLifecycle implements IAppLifecycle {
   }
 
   public registerDeepLinkScheme(scheme: string): void {
+    // NOTE: setAsDefaultProtocolClient's optional `path`/`args` are Windows-only
+    // and ignored on Linux/macOS. On Linux, registration relies on the packaged
+    // .desktop file declaring `MimeType=x-scheme-handler/<scheme>` so desktop
+    // integration can route the scheme — see forge.config.ts (the AppImage,
+    // deb, and rpm makers all set `mimeType`). Passing an AppImage exec path
+    // here would be a no-op, so it is intentionally omitted.
     app.setAsDefaultProtocolClient(scheme);
   }
 }
