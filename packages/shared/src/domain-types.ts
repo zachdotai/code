@@ -1,19 +1,8 @@
 import { z } from "zod";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
-import type { StoredLogEntry } from "./session-events";
-
 // Execution mode schema and type - shared between main and renderer
-export const executionModeSchema = z.enum([
-  "default",
-  "acceptEdits",
-  "plan",
-  "bypassPermissions",
-  "auto",
-  "read-only",
-  "full-access",
-]);
-
 import type { ExecutionMode } from "./exec-types";
+import type { StoredLogEntry } from "./session-events";
 export type { ExecutionMode };
 
 // Effort level schema and type - shared between main and renderer
