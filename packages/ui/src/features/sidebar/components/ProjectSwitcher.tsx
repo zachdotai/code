@@ -49,6 +49,7 @@ import {
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useProjects } from "@posthog/ui/features/projects/useProjects";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { isMac } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
@@ -65,6 +66,8 @@ export function ProjectSwitcher() {
   const selectProjectMutation = useSelectProjectMutation();
   const switchOrgMutation = useSwitchOrgMutation();
   const logoutMutation = useLogoutMutation();
+  const switchPending =
+    selectProjectMutation.isPending || switchOrgMutation.isPending;
   const { groupedProjects, currentProject, currentProjectId } = useProjects();
 
   const currentOrgGroup =
@@ -173,11 +176,19 @@ export function ProjectSwitcher() {
                 {currentProject?.name ?? "No project selected"}
               </ItemTitle>
               <ItemDescription className="text-[11px]">
-                {currentUser?.email ?? "No email"}
+                {currentUser ? (
+                  currentUser.email
+                ) : (
+                  <span className="my-0.5 inline-block h-3 w-32 animate-pulse rounded bg-gray-5 align-middle" />
+                )}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
-              <ChevronRightIcon className="size-4 rotate-270 group-aria-expanded/item:rotate-90" />
+              {switchPending ? (
+                <DotsCircleSpinner size={16} className="text-gray-10" />
+              ) : (
+                <ChevronRightIcon className="size-4 rotate-270 group-aria-expanded/item:rotate-90" />
+              )}
             </ItemActions>
           </Item>
         }

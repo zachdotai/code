@@ -1,6 +1,6 @@
 import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import { getAuthIdentity } from "@posthog/core/auth/authIdentity";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useAuthStateValue } from "./store";
 
 export const AUTH_SCOPED_QUERY_META = {
@@ -33,6 +33,13 @@ export function useCurrentUser(options?: {
     },
     enabled: !!client && !!authIdentity && (options?.enabled ?? true),
     staleTime: 5 * 60 * 1000,
+    // The query key carries currentProjectId, so a project/org switch re-keys
+    // to a fresh, dataless entry. Paint the last-confirmed user while the new
+    // identity refetches instead of flashing the empty state. Gated on being
+    // signed in so the placeholder dies with the session (logout → no stale
+    // user). Anything org-specific on the user (e.g. membership_level) must
+    // treat isPlaceholderData as unknown rather than trusting it.
+    placeholderData: authIdentity ? keepPreviousData : undefined,
     refetchOnWindowFocus: options?.refetchOnWindowFocus,
     meta: AUTH_SCOPED_QUERY_META,
   });
