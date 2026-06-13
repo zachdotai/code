@@ -35,9 +35,6 @@ export const updateStore = createStore<UpdateState>((set) => ({
 }));
 
 export const getUpdateUiStatus = () => updateStore.getState().status;
-export const getUpdateVersion = () => updateStore.getState().version;
-export const getMenuCheckPending = () =>
-  updateStore.getState().menuCheckPending;
 
 export interface UpdateStatusUpdate {
   status?: UpdateUiStatus;

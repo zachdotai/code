@@ -36,15 +36,6 @@ export function isTeammateInboxScope(
   return parseTeammateInboxScope(scope) != null;
 }
 
-export function inboxScopeTriggerLabel(
-  scope: InboxScope,
-  teammateName?: string | null,
-): string {
-  if (scope === INBOX_SCOPE_FOR_YOU) return "For you";
-  if (scope === INBOX_SCOPE_ENTIRE_PROJECT) return "Entire project";
-  return teammateName?.trim() || "Teammate";
-}
-
 export function matchesInboxScope(
   report: SignalReport,
   scope: InboxScope,

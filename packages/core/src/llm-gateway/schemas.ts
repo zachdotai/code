@@ -13,9 +13,6 @@ export const promptInput = z.object({
   maxTokens: z.number().optional(),
   model: z.string().optional(),
 });
-
-export type PromptInput = z.infer<typeof promptInput>;
-
 export const promptOutput = z.object({
   content: z.string(),
   model: z.string(),

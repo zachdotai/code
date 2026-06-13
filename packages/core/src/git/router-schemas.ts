@@ -31,9 +31,6 @@ export const gitFileStatusSchema = z.enum([
   "renamed",
   "untracked",
 ]);
-
-export type GitFileStatus = z.infer<typeof gitFileStatusSchema>;
-
 export const changedFileSchema = z.object({
   path: z.string(),
   status: gitFileStatusSchema,
@@ -43,9 +40,6 @@ export const changedFileSchema = z.object({
   staged: z.boolean().optional(),
   patch: z.string().optional(),
 });
-
-export type ChangedFile = z.infer<typeof changedFileSchema>;
-
 export const diffStatsSchema = z.object({
   filesChanged: z.number(),
   linesAdded: z.number(),
@@ -62,9 +56,6 @@ export const gitSyncStatusSchema = z.object({
   currentBranch: z.string().nullable(),
   isFeatureBranch: z.boolean(),
 });
-
-export type GitSyncStatus = z.infer<typeof gitSyncStatusSchema>;
-
 export const gitCommitInfoSchema = z.object({
   sha: z.string(),
   shortSha: z.string(),
@@ -72,9 +63,6 @@ export const gitCommitInfoSchema = z.object({
   author: z.string(),
   date: z.string(),
 });
-
-export type GitCommitInfo = z.infer<typeof gitCommitInfoSchema>;
-
 export const gitRepoInfoSchema = z.object({
   organization: z.string(),
   repository: z.string(),
@@ -82,9 +70,6 @@ export const gitRepoInfoSchema = z.object({
   defaultBranch: z.string(),
   compareUrl: z.string().nullable(),
 });
-
-export type GitRepoInfo = z.infer<typeof gitRepoInfoSchema>;
-
 export const detectRepoInput = z.object({
   directoryPath: z.string(),
 });
@@ -97,10 +82,6 @@ export const detectRepoOutput = z
     branch: z.string().optional(),
   })
   .nullable();
-
-export type DetectRepoInput = z.infer<typeof detectRepoInput>;
-export type DetectRepoResult = z.infer<typeof detectRepoOutput>;
-
 export const validateRepoInput = z.object({
   directoryPath: z.string(),
 });
@@ -193,8 +174,6 @@ export const discardFileChangesInput = z.object({
   filePath: z.string(),
   fileStatus: gitFileStatusSchema,
 });
-
-export const getGitSyncStatusInput = directoryPathInput;
 export const getGitSyncStatusOutput = gitSyncStatusSchema;
 
 export const getLatestCommitInput = directoryPathInput;
@@ -209,17 +188,11 @@ export const pushInput = z.object({
   branch: z.string().optional(),
   setUpstream: z.boolean().default(false),
 });
-
-export type PushInput = z.infer<typeof pushInput>;
-
 export const pullInput = z.object({
   directoryPath: z.string(),
   remote: z.string().default("origin"),
   branch: z.string().optional(),
 });
-
-export type PullInput = z.infer<typeof pullInput>;
-
 export const commitInput = z.object({
   directoryPath: z.string(),
   message: z.string(),
@@ -228,16 +201,10 @@ export const commitInput = z.object({
   stagedOnly: z.boolean().optional(),
   taskId: z.string().optional(),
 });
-
-export type CommitInput = z.infer<typeof commitInput>;
-
 export const gitStatusOutput = z.object({
   installed: z.boolean(),
   version: z.string().nullable(),
 });
-
-export type GitStatusOutput = z.infer<typeof gitStatusOutput>;
-
 export const ghStatusOutput = z.object({
   installed: z.boolean(),
   version: z.string().nullable(),
@@ -245,17 +212,11 @@ export const ghStatusOutput = z.object({
   username: z.string().nullable(),
   error: z.string().nullable(),
 });
-
-export type GhStatusOutput = z.infer<typeof ghStatusOutput>;
-
 export const ghAuthTokenOutput = z.object({
   success: z.boolean(),
   token: z.string().nullable(),
   error: z.string().nullable(),
 });
-
-export type GhAuthTokenOutput = z.infer<typeof ghAuthTokenOutput>;
-
 export const prStatusInput = directoryPathInput;
 export const prStatusOutput = z.object({
   hasRemote: z.boolean(),
@@ -270,19 +231,11 @@ export const prStatusOutput = z.object({
   isDraft: z.boolean().nullable(),
   error: z.string().nullable(),
 });
-
-export type PrStatusInput = z.infer<typeof prStatusInput>;
-export type PrStatusOutput = z.infer<typeof prStatusOutput>;
-
 export const getPrUrlForBranchInput = z.object({
   directoryPath: z.string(),
   branchName: z.string(),
 });
 export const getPrUrlForBranchOutput = z.string().nullable();
-
-export type GetPrUrlForBranchInput = z.infer<typeof getPrUrlForBranchInput>;
-export type GetPrUrlForBranchOutput = z.infer<typeof getPrUrlForBranchOutput>;
-
 export const createPrInput = z.object({
   directoryPath: z.string(),
   flowId: z.string(),
@@ -304,33 +257,22 @@ export const openPrOutput = z.object({
   message: z.string(),
   prUrl: z.string().nullable(),
 });
-
-export type OpenPrInput = z.infer<typeof openPrInput>;
 export type OpenPrOutput = z.infer<typeof openPrOutput>;
 
 export const publishInput = z.object({
   directoryPath: z.string(),
   remote: z.string().default("origin"),
 });
-
-export type PublishInput = z.infer<typeof publishInput>;
-
 export const syncInput = z.object({
   directoryPath: z.string(),
   remote: z.string().default("origin"),
 });
-
-export type SyncInput = z.infer<typeof syncInput>;
-
 export const getPrTemplateInput = directoryPathInput;
 
 export const getPrTemplateOutput = z.object({
   template: z.string().nullable(),
   templatePath: z.string().nullable(),
 });
-
-export type GetPrTemplateOutput = z.infer<typeof getPrTemplateOutput>;
-
 export const getCommitConventionsInput = z.object({
   directoryPath: z.string(),
   sampleSize: z.number().default(20),
@@ -341,11 +283,6 @@ export const getCommitConventionsOutput = z.object({
   commonPrefixes: z.array(z.string()),
   sampleMessages: z.array(z.string()),
 });
-
-export type GetCommitConventionsOutput = z.infer<
-  typeof getCommitConventionsOutput
->;
-
 export const getPrChangedFilesInput = z.object({
   prUrl: z.string(),
 });
@@ -384,8 +321,6 @@ export const getPrDetailsByUrlOutput = z.object({
   merged: z.boolean(),
   draft: z.boolean(),
 });
-export type PrDetailsByUrlOutput = z.infer<typeof getPrDetailsByUrlOutput>;
-
 export {
   prActionTypeSchema,
   prReviewCommentSchema,
@@ -408,10 +343,6 @@ export const resolveReviewThreadOutput = z.object({
   success: z.boolean(),
   isResolved: z.boolean(),
 });
-export type ResolveReviewThreadOutput = z.infer<
-  typeof resolveReviewThreadOutput
->;
-
 export const replyToPrCommentInput = z.object({
   prUrl: z.string(),
   commentId: z.number(),
@@ -421,8 +352,6 @@ export const replyToPrCommentOutput = z.object({
   success: z.boolean(),
   comment: prReviewCommentSchema.nullable(),
 });
-export type ReplyToPrCommentOutput = z.infer<typeof replyToPrCommentOutput>;
-
 export const updatePrByUrlInput = z.object({
   prUrl: z.string(),
   action: prActionTypeSchema,
@@ -431,8 +360,6 @@ export const updatePrByUrlOutput = z.object({
   success: z.boolean(),
   message: z.string(),
 });
-export type UpdatePrByUrlOutput = z.infer<typeof updatePrByUrlOutput>;
-
 export const getBranchChangedFilesInput = z.object({
   repo: z.string(),
   branch: z.string(),
@@ -498,9 +425,6 @@ export const pullOutput = z.object({
   updatedFiles: z.number().optional(),
   state: gitStateSnapshotSchema.optional(),
 });
-
-export type PullOutput = z.infer<typeof pullOutput>;
-
 export const publishOutput = z.object({
   success: z.boolean(),
   message: z.string(),
@@ -544,9 +468,6 @@ export const discardFileChangesOutput = z.object({
   success: z.boolean(),
   state: gitStateSnapshotSchema.optional(),
 });
-
-export type DiscardFileChangesOutput = z.infer<typeof discardFileChangesOutput>;
-
 export {
   githubIssueSchema,
   githubIssueStateSchema,

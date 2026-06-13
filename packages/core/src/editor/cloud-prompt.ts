@@ -73,10 +73,6 @@ function isTextAttachment(filePath: string): boolean {
   return TEXT_FILENAMES.has(fileName) || TEXT_EXTENSIONS.has(ext);
 }
 
-export function isSupportedCloudTextAttachment(filePath: string): boolean {
-  return isTextAttachment(filePath);
-}
-
 function estimateBase64Bytes(base64: string): number {
   const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
   return Math.floor((base64.length * 3) / 4) - padding;

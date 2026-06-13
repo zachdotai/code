@@ -5,8 +5,6 @@ import { z } from "zod";
 // (docs/workflow-architecture.md §5).
 
 export const prSnapshotState = z.enum(["open", "draft", "merged", "closed"]);
-export type PrSnapshotState = z.infer<typeof prSnapshotState>;
-
 export const prCiStatus = z.enum(["passing", "failing", "pending", "none"]);
 export type PrCiStatus = z.infer<typeof prCiStatus>;
 
@@ -15,8 +13,6 @@ export const prReviewDecision = z.enum([
   "changes_requested",
   "review_required",
 ]);
-export type PrReviewDecision = z.infer<typeof prReviewDecision>;
-
 export const prSnapshot = z
   .object({
     url: z.string(),

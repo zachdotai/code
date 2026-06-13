@@ -2,8 +2,6 @@ import { z } from "zod";
 import { cloudRegion, type oAuthTokenResponse } from "./oauth.schemas";
 
 export const authStatusSchema = z.enum(["anonymous", "authenticated"]);
-export type AuthStatus = z.infer<typeof authStatusSchema>;
-
 export const orgProjectsSchema = z.object({
   orgName: z.string(),
   projects: z.array(z.object({ id: z.number(), name: z.string() })),
@@ -82,13 +80,9 @@ export type AuthState = z.infer<typeof authStateSchema>;
 export const loginInput = z.object({
   region: cloudRegion,
 });
-export type LoginInput = z.infer<typeof loginInput>;
-
 export const loginOutput = z.object({
   state: authStateSchema,
 });
-export type LoginOutput = z.infer<typeof loginOutput>;
-
 export const redeemInviteCodeInput = z.object({
   code: z.string().min(1),
 });
@@ -100,8 +94,6 @@ export const selectProjectInput = z.object({
 export const switchOrgInput = z.object({
   orgId: z.string().min(1),
 });
-export type SwitchOrgInput = z.infer<typeof switchOrgInput>;
-
 export const validAccessTokenOutput = z.object({
   accessToken: z.string(),
   apiHost: z.string(),

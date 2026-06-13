@@ -21,8 +21,6 @@ export const thresholdCrossedEvent = z.object({
 export type ThresholdCrossedEvent = z.infer<typeof thresholdCrossedEvent>;
 
 export const usageSnapshotOutput = usageOutput.nullable();
-export type UsageSnapshot = UsageOutput | null;
-
 export const UsageMonitorEvent = {
   ThresholdCrossed: "threshold-crossed",
   UsageUpdated: "usage-updated",

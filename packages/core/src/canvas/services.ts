@@ -5,10 +5,6 @@ import type {
   CanvasGenerateInput,
   CanvasThreadInput,
 } from "./genSchemas";
-import type {
-  DashboardQueryResult,
-  DashboardQueryRunInput,
-} from "./querySchemas";
 import type { CanvasTemplate, CanvasTemplateSummary } from "./templateSchemas";
 
 // Structural service interfaces the host-router routers depend on. The concrete
@@ -55,10 +51,6 @@ export interface IDashboardsService {
     updated: number;
     failures: { elementKey: string; error: string }[];
   }>;
-}
-
-export interface IDashboardQueryService {
-  run(input: DashboardQueryRunInput): Promise<DashboardQueryResult[]>;
 }
 
 export interface IChannelTasksService {

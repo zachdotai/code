@@ -36,13 +36,6 @@ export function computeActiveSteps(
   });
 }
 
-export function stepIndexOf(
-  activeSteps: OnboardingStep[],
-  step: OnboardingStep,
-): number {
-  return activeSteps.indexOf(step);
-}
-
 export function isFirstStep(currentIndex: number): boolean {
   return currentIndex === 0;
 }

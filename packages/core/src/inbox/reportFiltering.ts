@@ -2,7 +2,6 @@ import type {
   SignalReport,
   SignalReportOrderingField,
   SignalReportPriority,
-  SignalReportStatus,
 } from "@posthog/shared/types";
 
 /**
@@ -47,13 +46,6 @@ export function filterReportsBySearch(
       report.summary?.toLowerCase().includes(lower) ||
       report.id.toLowerCase().includes(lower),
   );
-}
-
-/**
- * Build a comma-separated status filter string for the API from an array of statuses.
- */
-export function buildStatusFilterParam(statuses: SignalReportStatus[]): string {
-  return statuses.join(",");
 }
 
 /**
