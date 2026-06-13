@@ -58,8 +58,6 @@ log.transports.ipc.level = level;
 log.transports.otel = initOtelTransport(level);
 
 export const logger = log;
-export type Logger = typeof logger;
-export type ScopedLogger = ReturnType<typeof logger.scope>;
 
 export function getLogFilePath(): string {
   return join(LOG_DIR, LOG_FILE);

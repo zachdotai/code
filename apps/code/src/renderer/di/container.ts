@@ -355,7 +355,3 @@ container.bind(TITLE_GENERATOR_FILE_READ_CLIENT).toConstantValue({
 container
   .bind(TITLE_GENERATOR_LOGGER)
   .toConstantValue(logger.scope("title-generator"));
-
-export function get<T>(token: symbol): T {
-  return container.get<T>(token);
-}
