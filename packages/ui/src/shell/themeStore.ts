@@ -25,13 +25,6 @@ export function resolveIsDarkMode(theme: ThemePreference): boolean {
 }
 
 const THEME_CYCLE: ThemePreference[] = ["dark", "light", "system"];
-
-export const THEME_CYCLE_LABELS: Record<ThemePreference, string> = {
-  dark: "Switch to light mode",
-  light: "Switch to system theme",
-  system: "Switch to dark mode",
-};
-
 export const useThemeStore = create<ThemeStore>()(
   persist(
     (set) => ({

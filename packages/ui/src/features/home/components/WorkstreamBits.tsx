@@ -45,16 +45,6 @@ export function StatusGlyph({
   );
 }
 
-export function StatusDot({ sid }: { sid: SituationId }) {
-  const c = situationCss(SITUATION_VISUAL[sid].color);
-  return (
-    <span
-      className="inline-block h-2 w-2 shrink-0 rounded-full"
-      style={{ backgroundColor: c.solid }}
-    />
-  );
-}
-
 /** Compact CI signal – icon-only by default, optional inline label. */
 export function CiIndicator({
   status,

@@ -2,7 +2,6 @@ import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/setti
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
 import * as nav from "@posthog/ui/router/navigationBridge";
 import { useRouterState } from "@tanstack/react-router";
-import { useCallback } from "react";
 
 interface SettingsContext {
   repoPath?: string;
@@ -42,10 +41,6 @@ export function closeSettings(): void {
   } else {
     nav.navigateToCode();
   }
-}
-
-export function useCloseSettings(): typeof closeSettings {
-  return useCallback(closeSettings, []);
 }
 
 /**

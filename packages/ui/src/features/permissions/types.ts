@@ -42,14 +42,7 @@ export {
   type DiffContent,
   findDiffContent,
 } from "@posthog/ui/features/sessions/components/session-update/toolCallUtils";
-export type TerminalContent = Extract<ToolCallContent, { type: "terminal" }>;
 export type StandardContent = Extract<ToolCallContent, { type: "content" }>;
-
-export function findTerminalContent(
-  content: ToolCallContent[] | null | undefined,
-): TerminalContent | undefined {
-  return content?.find((c): c is TerminalContent => c.type === "terminal");
-}
 
 export function findTextContent(
   content: ToolCallContent[] | null | undefined,

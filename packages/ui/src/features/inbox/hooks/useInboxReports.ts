@@ -4,7 +4,6 @@ import {
 } from "@posthog/core/inbox/inboxQuery";
 import type {
   AvailableSuggestedReviewersResponse,
-  SignalProcessingStateResponse,
   SignalReport,
   SignalReportArtefactsResponse,
   SignalReportSignalsResponse,
@@ -142,19 +141,6 @@ export function useInboxAvailableSuggestedReviewers(options?: {
   ]);
 
   return query;
-}
-
-export function useInboxSignalProcessingState(options?: {
-  enabled?: boolean;
-  refetchInterval?: number | false | (() => number | false | undefined);
-  refetchIntervalInBackground?: boolean;
-  staleTime?: number;
-}) {
-  return useAuthenticatedQuery<SignalProcessingStateResponse>(
-    reportKeys.signalProcessingState,
-    (client) => client.getSignalProcessingState(),
-    options,
-  );
 }
 
 export function useInboxReportById(

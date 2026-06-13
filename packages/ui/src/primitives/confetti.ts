@@ -41,21 +41,3 @@ export function shipIt(): void {
   };
   fire();
 }
-
-export function fireFrom(
-  element: HTMLElement,
-  options?: confetti.Options,
-): void {
-  if (reducedMotion()) return;
-  const rect = element.getBoundingClientRect();
-  const x = (rect.left + rect.width / 2) / window.innerWidth;
-  const y = (rect.top + rect.height / 2) / window.innerHeight;
-  confetti({
-    particleCount: 40,
-    spread: 60,
-    startVelocity: 35,
-    origin: { x, y },
-    colors: POSTHOG_COLORS,
-    ...options,
-  });
-}

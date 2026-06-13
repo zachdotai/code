@@ -28,7 +28,3 @@ export interface ToolCall {
 }
 
 export type Plan = Extract<SessionUpdate, { sessionUpdate: "plan" }>;
-export type ConfigOptionUpdate = Extract<
-  SessionUpdate,
-  { sessionUpdate: "config_option_update" }
->;

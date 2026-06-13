@@ -5,8 +5,6 @@ import type {
   MentionChip,
 } from "@posthog/core/message-editor/content";
 import type { GithubRefKind, GithubRefState } from "@posthog/shared";
-
-export type GithubIssueState = GithubRefState;
 export type { GithubRefKind, GithubRefState };
 
 export interface EditorHandle {
@@ -53,11 +51,4 @@ export interface IssueSuggestionItem extends SuggestionItem {
   state: GithubRefState;
   labels: string[];
   isDraft?: boolean;
-}
-
-export type SuggestionLoadingState = "idle" | "loading" | "error" | "success";
-
-export interface SuggestionPosition {
-  x: number;
-  y: number;
 }

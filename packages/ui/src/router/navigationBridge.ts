@@ -172,13 +172,3 @@ export function goForwardInHistory(): void {
 export function getCurrentMatches() {
   return getRouterOrNull()?.state.matches ?? [];
 }
-
-export function getCurrentLocation() {
-  return getRouterOrNull()?.state.location ?? null;
-}
-
-export function subscribeToRouterResolved(handler: () => void): () => void {
-  const router = getRouterOrNull();
-  if (!router) return () => {};
-  return router.subscribe("onResolved", handler);
-}

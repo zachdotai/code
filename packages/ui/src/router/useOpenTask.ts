@@ -12,7 +12,6 @@ import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "@posthog/ui/shell/queryClient";
-import { useCallback } from "react";
 import * as nav from "./navigationBridge";
 
 /**
@@ -41,11 +40,6 @@ export async function openTask(task: Task): Promise<void> {
   if (result?.staleFolderId) {
     nav.navigateToFolderSettings(result.staleFolderId);
   }
-}
-
-/** React hook wrapper returning a stable `openTask` callback. */
-export function useOpenTask(): (task: Task) => Promise<void> {
-  return useCallback(openTask, []);
 }
 
 export interface TaskInputNavigationOptions {
@@ -98,8 +92,4 @@ export function openTaskInput(
   } else {
     nav.navigateToCode();
   }
-}
-
-export function useOpenTaskInput(): typeof openTaskInput {
-  return useCallback(openTaskInput, []);
 }

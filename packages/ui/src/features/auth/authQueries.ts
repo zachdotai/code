@@ -32,10 +32,6 @@ export async function fetchAuthState(): Promise<AuthState> {
   return await hostClient().auth.getState.query();
 }
 
-export function getCachedAuthState(): AuthState {
-  return useAuthStore.getState().authState;
-}
-
 export async function refreshAuthStateQuery(): Promise<void> {
   const state = await fetchAuthState();
   useAuthStore.getState().setAuthState(state);

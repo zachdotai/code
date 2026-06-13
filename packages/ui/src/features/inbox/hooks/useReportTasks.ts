@@ -54,8 +54,3 @@ export function useReportTasks(
     },
   );
 }
-
-export function getTaskPrUrl(task: Task): string | null {
-  const prUrl = task.latest_run?.output?.pr_url;
-  return typeof prUrl === "string" && prUrl.length > 0 ? prUrl : null;
-}
