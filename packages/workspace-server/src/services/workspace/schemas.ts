@@ -119,43 +119,7 @@ export const linkBranchInput = z.object({
 export const unlinkBranchInput = z.object({
   taskId: z.string(),
 });
-
-export const localBackgroundedPayload = z.object({
-  mainRepoPath: z.string(),
-  localWorktreePath: z.string(),
-  branch: z.string(),
-});
-
-export const localForegroundedPayload = z.object({
-  mainRepoPath: z.string(),
-});
-
 // Input/output schemas for local workspace backgrounding
-export const isLocalBackgroundedInput = z.object({
-  mainRepoPath: z.string(),
-});
-
-export const isLocalBackgroundedOutput = z.boolean();
-
-export const getLocalWorktreePathInput = z.object({
-  mainRepoPath: z.string(),
-});
-
-export const getLocalWorktreePathOutput = z.string();
-
-export const backgroundLocalWorkspaceInput = z.object({
-  mainRepoPath: z.string(),
-  branch: z.string(),
-});
-
-export const backgroundLocalWorkspaceOutput = z.string().nullable();
-
-export const foregroundLocalWorkspaceInput = z.object({
-  mainRepoPath: z.string(),
-});
-
-export const foregroundLocalWorkspaceOutput = z.boolean();
-
 export const getLocalTasksInput = z.object({
   mainRepoPath: z.string(),
 });
@@ -267,11 +231,8 @@ export const taskPrStatusOutput = z.object({
   prState: sidebarPrStateSchema,
   hasDiff: z.boolean(),
 });
-
-export type TaskPrStatusInput = z.infer<typeof taskPrStatusInput>;
 export type SidebarPrState = z.infer<typeof sidebarPrStateSchema>;
 export type TaskPrStatus = z.infer<typeof taskPrStatusOutput>;
-export type CachedPrUrlInput = z.infer<typeof cachedPrUrlInput>;
 export type CachedPrUrlOutput = z.infer<typeof cachedPrUrlOutput>;
 
 // Type exports
@@ -287,18 +248,9 @@ export type CheckWorktreeBranchInput = z.infer<typeof checkWorktreeBranchInput>;
 export type CheckWorktreeBranchOutput = z.infer<
   typeof checkWorktreeBranchOutput
 >;
-export type ReconcileCloudWorkspacesInput = z.infer<
-  typeof reconcileCloudWorkspacesInput
->;
 export type ReconcileCloudWorkspacesOutput = z.infer<
   typeof reconcileCloudWorkspacesOutput
 >;
-export type DeleteWorkspaceInput = z.infer<typeof deleteWorkspaceInput>;
-export type VerifyWorkspaceInput = z.infer<typeof verifyWorkspaceInput>;
-export type GetWorkspaceInfoInput = z.infer<typeof getWorkspaceInfoInput>;
-export type ListGitWorktreesInput = z.infer<typeof listGitWorktreesInput>;
-export type GetWorktreeSizeInput = z.infer<typeof getWorktreeSizeInput>;
-export type DeleteWorktreeInput = z.infer<typeof deleteWorktreeInput>;
 export type WorkspaceErrorPayload = z.infer<typeof workspaceErrorPayload>;
 export type WorkspaceWarningPayload = z.infer<typeof workspaceWarningPayload>;
 export type WorkspacePromotedPayload = z.infer<typeof workspacePromotedPayload>;
@@ -307,11 +259,3 @@ export type LinkedBranchChangedPayload = z.infer<
   typeof linkedBranchChangedPayload
 >;
 export type TaskPrInfoChangedPayload = z.infer<typeof taskPrInfoChangedPayload>;
-export type LinkBranchInput = z.infer<typeof linkBranchInput>;
-export type UnlinkBranchInput = z.infer<typeof unlinkBranchInput>;
-export type LocalBackgroundedPayload = z.infer<typeof localBackgroundedPayload>;
-export type LocalForegroundedPayload = z.infer<typeof localForegroundedPayload>;
-export type IsLocalBackgroundedInput = z.infer<typeof isLocalBackgroundedInput>;
-export type GetLocalWorktreePathInput = z.infer<
-  typeof getLocalWorktreePathInput
->;

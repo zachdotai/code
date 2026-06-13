@@ -5,9 +5,6 @@ export const suspensionReasonSchema = z.enum([
   "inactivity",
   "manual",
 ]);
-
-export type SuspensionReason = z.infer<typeof suspensionReasonSchema>;
-
 export const suspendedTaskSchema = z.object({
   taskId: z.string(),
   suspendedAt: z.string(),
@@ -26,23 +23,14 @@ export const suspensionSettingsSchema = z.object({
   maxActiveWorktrees: z.number().min(1),
   autoSuspendAfterDays: z.number().min(1),
 });
-
-export type SuspensionSettings = z.infer<typeof suspensionSettingsSchema>;
-
 export const suspendTaskInput = z.object({
   taskId: z.string(),
   reason: suspensionReasonSchema.optional().default("manual"),
 });
-
-export type SuspendTaskInput = z.infer<typeof suspendTaskInput>;
-
 export const restoreTaskInput = z.object({
   taskId: z.string(),
   recreateBranch: z.boolean().optional(),
 });
-
-export type RestoreTaskInput = z.infer<typeof restoreTaskInput>;
-
 export const suspendTaskOutput = suspendedTaskSchema;
 
 export const restoreTaskOutput = z.object({

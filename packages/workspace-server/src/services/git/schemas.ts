@@ -200,9 +200,6 @@ export const commitInput = z.object({
   // resolved in the host process where AgentService runs and passed through.
   env: z.record(z.string(), z.string()).optional(),
 });
-
-export type CommitInput = z.infer<typeof commitInput>;
-
 export const commitOutput = z.object({
   success: z.boolean(),
   message: z.string(),

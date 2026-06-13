@@ -1,7 +1,4 @@
-import type {
-  RequestPermissionRequest,
-  PermissionOption as SdkPermissionOption,
-} from "@agentclientprotocol/sdk";
+import type { RequestPermissionRequest } from "@agentclientprotocol/sdk";
 import { effortLevelSchema } from "@posthog/shared/domain-types";
 import { z } from "zod";
 
@@ -17,23 +14,6 @@ export const credentialsSchema = z.object({
 export type Credentials = z.infer<typeof credentialsSchema>;
 
 // Session config schema
-export const sessionConfigSchema = z.object({
-  taskId: z.string(),
-  taskRunId: z.string(),
-  repoPath: z.string(),
-  credentials: credentialsSchema,
-  logUrl: z.string().optional(),
-  /** The agent's session ID (for resume - SDK session ID for Claude, Codex's session ID for Codex) */
-  sessionId: z.string().optional(),
-  adapter: z.enum(["claude", "codex"]).optional(),
-  /** Additional directories Claude can access beyond cwd (for worktree support) */
-  additionalDirectories: z.array(z.string()).optional(),
-  /** Permission mode to use for the session (e.g. "default", "acceptEdits", "plan", "bypassPermissions") */
-  permissionMode: z.string().optional(),
-});
-
-export type SessionConfig = z.infer<typeof sessionConfigSchema>;
-
 // Start session input/output
 
 export const startSessionInput = z.object({
@@ -73,9 +53,6 @@ export const modelOptionSchema = z.object({
   description: z.string().nullish(),
   provider: z.string().optional(),
 });
-
-export type ModelOption = z.infer<typeof modelOptionSchema>;
-
 const sessionConfigSelectOptionSchema = z.looseObject({
   value: z.string(),
   name: z.string(),
@@ -117,9 +94,6 @@ export const sessionConfigOptionSchema = z.union([
   sessionConfigSelectSchema,
   sessionConfigBooleanSchema,
 ]);
-
-export type SessionConfigOption = z.infer<typeof sessionConfigOptionSchema>;
-
 export const sessionResponseSchema = z.object({
   sessionId: z.string(),
   channel: z.string(),
@@ -139,9 +113,6 @@ export const promptInput = z.object({
   sessionId: z.string(),
   prompt: z.array(contentBlockSchema),
 });
-
-export type PromptInput = z.infer<typeof promptInput>;
-
 export const promptOutput = z.object({
   stopReason: z.string(),
   _meta: z
@@ -224,7 +195,6 @@ export interface AgentSessionEventPayload {
   payload: unknown;
 }
 
-export type PermissionOption = SdkPermissionOption;
 export type PermissionRequestPayload = Omit<
   RequestPermissionRequest,
   "sessionId"
@@ -261,17 +231,11 @@ export const respondToPermissionInput = z.object({
   // For multi-question flows: all answers keyed by question text
   answers: z.record(z.string(), z.string()).optional(),
 });
-
-export type RespondToPermissionInput = z.infer<typeof respondToPermissionInput>;
-
 // Permission cancellation input for tRPC
 export const cancelPermissionInput = z.object({
   taskRunId: z.string(),
   toolCallId: z.string(),
 });
-
-export type CancelPermissionInput = z.infer<typeof cancelPermissionInput>;
-
 export const listSessionsInput = z.object({
   taskId: z.string(),
 });
@@ -290,11 +254,6 @@ export const notifySessionContextInput = z.object({
   sessionId: z.string(),
   context: sessionContextChangeSchema,
 });
-
-export type NotifySessionContextInput = z.infer<
-  typeof notifySessionContextInput
->;
-
 export const sessionInfoSchema = z.object({
   taskRunId: z.string(),
   repoPath: z.string(),

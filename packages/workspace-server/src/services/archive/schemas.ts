@@ -22,9 +22,6 @@ export const unarchiveTaskInput = z.object({
   taskId: z.string(),
   recreateBranch: z.boolean().optional(),
 });
-
-export type UnarchiveTaskInput = z.infer<typeof unarchiveTaskInput>;
-
 export const archiveTaskOutput = archivedTaskSchema;
 
 export const unarchiveTaskOutput = z.object({

@@ -119,7 +119,6 @@ export type ExportedSkill = z.infer<typeof exportSkillOutput>;
 export type InstallTeamSkillInput = z.infer<typeof installTeamSkillInput>;
 
 export type SkillInfo = z.infer<typeof skillInfo>;
-export type SkillScope = z.infer<typeof skillScope>;
 export type CreateSkillInput = z.infer<typeof createSkillInput>;
 export type SkillSource = z.infer<typeof skillSource>;
 export type SkillFileEntry = z.infer<typeof skillFileEntry>;
