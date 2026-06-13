@@ -4,6 +4,7 @@ import type { CloudRegion } from "@posthog/shared";
 import { useMutation } from "@tanstack/react-query";
 import { clearAuthScopedQueries, refreshAuthStateQuery } from "./authQueries";
 import { AUTH_SIDE_EFFECTS, type IAuthSideEffects } from "./identifiers";
+import { ANONYMOUS_AUTH_STATE, useAuthStore } from "./store";
 
 export function useLoginMutation() {
   const hostClient = useHostTRPCClient();
@@ -71,6 +72,18 @@ export function useLogoutMutation() {
       await hostClient.auth.logout.mutate();
       return previous;
     },
-    onSuccess: (previous) => fx.onLogout(previous.cloudRegion),
+    onSuccess: (previous) => {
+      fx.onLogout(previous.cloudRegion);
+      // The renderer auth store otherwise only flips to anonymous when the
+      // tRPC subscription pushes, one IPC round trip later, during which the
+      // authenticated shell renders with drained caches before AuthScreen.
+      // Paint the confirmed signed-out state synchronously so the transition
+      // goes straight to the auth screen. bootstrapComplete stays true so
+      // App.tsx renders AuthScreen, not the boot spinner. The later
+      // subscription push delivers the same anonymous state (idempotent).
+      useAuthStore
+        .getState()
+        .setAuthState({ ...ANONYMOUS_AUTH_STATE, bootstrapComplete: true });
+    },
   });
 }
