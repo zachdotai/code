@@ -51,9 +51,6 @@ export const jsonRpcRequestSchema = z.object({
   params: z.record(z.string(), z.unknown()).optional(),
   id: z.union([z.string(), z.number()]).optional(),
 });
-
-export type JsonRpcRequest = z.infer<typeof jsonRpcRequestSchema>;
-
 export const userMessageParamsSchema = z
   .object({
     content: z

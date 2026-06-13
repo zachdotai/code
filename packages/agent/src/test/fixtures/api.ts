@@ -4,9 +4,6 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { vi } from "vitest";
-import type { PostHogAPIClient } from "../../posthog-api";
-import type { TaskRun } from "../../types";
 
 const execFileAsync = promisify(execFile);
 
@@ -61,39 +58,5 @@ export async function createTestRepo(prefix = "test-repo"): Promise<TestRepo> {
     exists: (relativePath: string) => {
       return existsSync(join(repoPath, relativePath));
     },
-  };
-}
-
-export function createMockApiClient(
-  overrides: Partial<PostHogAPIClient> = {},
-): PostHogAPIClient {
-  return {
-    uploadTaskArtifacts: vi
-      .fn()
-      .mockResolvedValue([{ storage_path: "gs://bucket/handoff/test.pack" }]),
-    downloadArtifact: vi.fn(),
-    getTaskRun: vi.fn(),
-    fetchTaskRunLogs: vi.fn(),
-    ...overrides,
-  } as unknown as PostHogAPIClient;
-}
-
-export function createTaskRun(overrides: Partial<TaskRun> = {}): TaskRun {
-  return {
-    id: "run-1",
-    task: "task-1",
-    team: 1,
-    branch: null,
-    stage: null,
-    environment: "local",
-    status: "in_progress",
-    log_url: "https://logs.example.com/run-1",
-    error_message: null,
-    output: null,
-    state: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    completed_at: null,
-    ...overrides,
   };
 }

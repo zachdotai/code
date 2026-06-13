@@ -108,13 +108,6 @@ export interface DeviceInfo {
 export type AgentMode = "interactive" | "background";
 
 // Git file status codes
-export type FileStatus = "A" | "M" | "D";
-
-export interface FileChange {
-  path: string;
-  status: FileStatus;
-}
-
 export type HandoffLocalGitState = GitHandoffLocalGitState;
 
 export interface GitCheckpoint extends GitHandoffCheckpoint {
@@ -125,11 +118,3 @@ export interface GitCheckpoint extends GitHandoffCheckpoint {
 export interface GitCheckpointEvent extends GitCheckpoint {
   device?: DeviceInfo;
 }
-
-/**
- * Keeps the emitted `@posthog/agent/types` entrypoint as a runtime ESM module.
- *
- * `export {}` is stripped by tsup in this package, which leaves `dist/types.js`
- * empty and breaks downstream type resolution for the exported subpath.
- */
-export const AGENT_TYPES_MODULE = true;

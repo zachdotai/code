@@ -96,18 +96,6 @@ export async function resumeFromLog(
   };
 }
 
-/**
- * Convert resumed conversation back to API format for continuation.
- */
-export function conversationToPromptHistory(
-  conversation: ConversationTurn[],
-): Array<{ role: "user" | "assistant"; content: ContentBlock[] }> {
-  return conversation.map((turn) => ({
-    role: turn.role,
-    content: turn.content,
-  }));
-}
-
 const RESUME_HISTORY_TOKEN_BUDGET = 50_000;
 const TOOL_RESULT_MAX_CHARS = 2000;
 
