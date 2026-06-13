@@ -166,12 +166,3 @@ export function getGitOperationManager(): GitOperationManagerImpl {
   }
   return instance;
 }
-
-export function resetGitOperationManager(): void {
-  if (instance) {
-    instance.destroy();
-    instance = null;
-  }
-}
-
-export type GitOperationManager = GitOperationManagerImpl;
