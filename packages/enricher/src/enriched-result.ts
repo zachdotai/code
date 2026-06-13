@@ -103,7 +103,6 @@ export class EnrichedResult {
 
   toList(): EnrichedListItem[] {
     const baseList = this.parsed.toList();
-    const _experiments = this.context.experiments ?? [];
 
     const flagLookup = new Map<string, EnrichedFlag>();
     for (const f of this.flags) {
