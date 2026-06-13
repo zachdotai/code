@@ -1,6 +1,6 @@
 import type { createApiClient } from "./generated";
 
-export type ApiFetcherConfig = {
+type ApiFetcherConfig = {
   getAccessToken: () => Promise<string>;
   refreshAccessToken: () => Promise<string>;
   appVersion: string;
