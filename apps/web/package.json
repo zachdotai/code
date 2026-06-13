@@ -24,6 +24,7 @@
     "inversify": "^7.10.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-hotkeys-hook": "^4.4.4",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
