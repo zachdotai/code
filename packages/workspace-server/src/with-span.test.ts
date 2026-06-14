@@ -19,6 +19,29 @@ describe("withSpan", () => {
     ).rejects.toThrow("boom");
   });
 
+  it("returns the value and ends the span on success", async () => {
+    const span = {
+      recordException: vi.fn(),
+      setStatus: vi.fn(),
+      end: vi.fn(),
+    };
+    const tracer = {
+      startActiveSpan: (
+        _name: string,
+        _opts: unknown,
+        fn: (s: unknown) => unknown,
+      ) => fn(span),
+    } as never;
+
+    await expect(
+      withSpan(tracer, "op", { a: 1 }, async () => "done"),
+    ).resolves.toBe("done");
+
+    expect(span.end).toHaveBeenCalled();
+    expect(span.recordException).not.toHaveBeenCalled();
+    expect(span.setStatus).not.toHaveBeenCalled();
+  });
+
   it("records exceptions and ends the span on error", async () => {
     const span = {
       recordException: vi.fn(),
