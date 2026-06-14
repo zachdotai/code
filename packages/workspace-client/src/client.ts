@@ -10,7 +10,7 @@ import superjson from "superjson";
 
 const SECRET_HEADER = "x-workspace-secret";
 
-export function tracePropagationHeaders(
+function tracePropagationHeaders(
   base: Record<string, string>,
 ): Record<string, string> {
   const carrier: Record<string, string> = { ...base };
