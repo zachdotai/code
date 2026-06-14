@@ -3,6 +3,7 @@ import {
   initNodeTracing,
   type NodeTracing,
 } from "@posthog/workspace-server/node-tracing";
+import log from "electron-log/main";
 import { getAppVersion } from "./env";
 
 let current: NodeTracing | null = null;
@@ -17,6 +18,11 @@ export function initOtelTracing(): Tracer | null {
       "process.runtime.version": process.versions.electron,
     },
   });
+  log
+    .scope("otel")
+    .info(
+      `tracing ${current ? "enabled" : "disabled (missing/invalid VITE_POSTHOG_API_KEY/HOST)"}`,
+    );
   return current?.tracer ?? null;
 }
 

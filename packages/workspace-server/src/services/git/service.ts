@@ -46,6 +46,7 @@ import { StashPushSaga } from "@posthog/git/sagas/stash";
 import { parseGithubUrl } from "@posthog/git/utils";
 import { TypedEventEmitter } from "@posthog/shared";
 import { injectable } from "inversify";
+import { getWorkspaceServerTracer } from "../../otel-trace";
 import { withSpan } from "../../with-span";
 import type { SidebarPrState } from "../workspace/schemas";
 import type {
@@ -686,7 +687,9 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     remote = "origin",
     signal?: AbortSignal,
   ): Promise<SyncOutput> {
+    const tracer = getWorkspaceServerTracer();
     const pullResult = await withSpan(
+      tracer,
       "git.sync.pull",
       { "git.remote": remote },
       () => this.pull(directoryPath, remote, undefined, signal),
@@ -700,12 +703,13 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     }
 
     const pushResult = await withSpan(
+      tracer,
       "git.sync.push",
       { "git.remote": remote },
       () => this.push(directoryPath, remote, undefined, false, signal),
     );
 
-    const state = await withSpan("git.sync.snapshot", {}, () =>
+    const state = await withSpan(tracer, "git.sync.snapshot", {}, () =>
       this.getStateSnapshot(directoryPath),
     );
 

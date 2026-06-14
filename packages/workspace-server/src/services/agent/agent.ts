@@ -60,6 +60,7 @@ import {
 import { inject, injectable, preDestroy } from "inversify";
 import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
+import { getWorkspaceServerTracer } from "../../otel-trace";
 import { withSpan } from "../../with-span";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
@@ -685,6 +686,7 @@ When creating pull requests, add the following footer at the end of the PR descr
       );
 
       const acpConnection = await withSpan(
+        getWorkspaceServerTracer(),
         "agent.run.start",
         {
           "task.id": taskId,

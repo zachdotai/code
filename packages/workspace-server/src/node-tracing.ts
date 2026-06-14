@@ -16,7 +16,11 @@ import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
 } from "@opentelemetry/semantic-conventions";
-import { OTEL_TRACE_SAMPLE_RATIO } from "@posthog/shared/constants";
+import {
+  buildTracesEndpoint,
+  OTEL_BATCH_DELAY_MS,
+  OTEL_TRACE_SAMPLE_RATIO,
+} from "@posthog/shared/constants";
 import type { TRPCError } from "@trpc/server";
 
 export interface NodeTracingOptions {
@@ -40,10 +44,8 @@ export function initNodeTracing(
     return null;
   }
 
-  const url = `${apiHost}/i/v1/traces`;
-  try {
-    new URL(url);
-  } catch {
+  const url = buildTracesEndpoint(apiHost);
+  if (!url) {
     return null;
   }
 
@@ -64,7 +66,7 @@ export function initNodeTracing(
           url,
           headers: { Authorization: `Bearer ${apiKey}` },
         }),
-        { scheduledDelayMillis: 2000 },
+        { scheduledDelayMillis: OTEL_BATCH_DELAY_MS },
       ),
     ],
   });

@@ -11,3 +11,21 @@ export const SELF_DRIVING_SETUP_TASK_FLAG =
 export const BRANCH_PREFIX = "posthog-code/";
 
 export const OTEL_TRACE_SAMPLE_RATIO = 0.02;
+
+export const OTEL_BATCH_DELAY_MS = 2000;
+
+export function buildTracesEndpoint(apiHost: string): string | null {
+  const url = `${apiHost.replace(/\/+$/, "")}/i/v1/traces`;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const isLocalhost =
+    parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  if (parsed.protocol !== "https:" && !isLocalhost) {
+    return null;
+  }
+  return url;
+}

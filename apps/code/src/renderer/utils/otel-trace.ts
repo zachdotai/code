@@ -11,7 +11,12 @@ import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
 } from "@opentelemetry/semantic-conventions";
-import { OTEL_TRACE_SAMPLE_RATIO } from "@posthog/shared/constants";
+import {
+  buildTracesEndpoint,
+  OTEL_BATCH_DELAY_MS,
+  OTEL_TRACE_SAMPLE_RATIO,
+} from "@posthog/shared/constants";
+import { logger } from "@renderer/utils/logger";
 import type { AnyRouter } from "@tanstack/react-router";
 import type { ProfilerOnRenderCallback } from "react";
 
@@ -22,17 +27,13 @@ let tracer: Tracer | null = null;
 
 export function initOtelTracing(): Tracer | null {
   const apiKey = import.meta.env.VITE_POSTHOG_API_KEY;
-  const apiHost =
-    import.meta.env.VITE_POSTHOG_API_HOST || "https://internal-c.posthog.com";
+  const apiHost = import.meta.env.VITE_POSTHOG_API_HOST;
 
-  if (!apiKey) {
-    return null;
-  }
-
-  const url = `${apiHost}/i/v1/traces`;
-  try {
-    new URL(url);
-  } catch {
+  const url = apiKey && apiHost ? buildTracesEndpoint(apiHost) : null;
+  if (!url) {
+    logger
+      .scope("otel")
+      .info("tracing disabled (missing/invalid VITE_POSTHOG_API_KEY/HOST)");
     return null;
   }
 
@@ -52,7 +53,9 @@ export function initOtelTracing(): Tracer | null {
       root: new TraceIdRatioBasedSampler(OTEL_TRACE_SAMPLE_RATIO),
     }),
     spanProcessors: [
-      new BatchSpanProcessor(exporter, { scheduledDelayMillis: 2000 }),
+      new BatchSpanProcessor(exporter, {
+        scheduledDelayMillis: OTEL_BATCH_DELAY_MS,
+      }),
     ],
   });
 
@@ -63,6 +66,7 @@ export function initOtelTracing(): Tracer | null {
   observeLongTasks();
   flushOnUnload();
 
+  logger.scope("otel").info("tracing enabled");
   return tracer;
 }
 
@@ -124,7 +128,11 @@ function observeLongTasks(): void {
 
 function flushOnUnload(): void {
   if (typeof window === "undefined") return;
-  window.addEventListener("pagehide", () => {
+  const flush = () => {
     void tracerProvider?.forceFlush();
+  };
+  window.addEventListener("pagehide", flush);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flush();
   });
 }

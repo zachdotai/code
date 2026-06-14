@@ -1,12 +1,15 @@
-import { type Attributes, SpanStatusCode } from "@opentelemetry/api";
-import { getWorkspaceServerTracer } from "./otel-trace";
+import {
+  type Attributes,
+  SpanStatusCode,
+  type Tracer,
+} from "@opentelemetry/api";
 
 export async function withSpan<T>(
+  tracer: Tracer | null,
   name: string,
   attributes: Attributes,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const tracer = getWorkspaceServerTracer();
   if (!tracer) {
     return fn();
   }

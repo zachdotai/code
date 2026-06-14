@@ -32,14 +32,14 @@ const app = createApp({ sharedSecret });
 
 let server: ReturnType<typeof serve> | null = null;
 let shuttingDown = false;
-const shutdown = (reason: string) => {
+const shutdown = async (reason: string) => {
   if (shuttingDown) return;
   shuttingDown = true;
   process.stdout.write(`[workspace-server] shutdown (${reason})\n`);
-  void shutdownOtelTracing();
-  if (!server) process.exit(0);
-  server.close();
   setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS).unref();
+  server?.close();
+  await shutdownOtelTracing().catch(() => {});
+  process.exit(0);
 };
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));

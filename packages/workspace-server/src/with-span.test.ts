@@ -1,34 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const mockGetTracer = vi.fn();
-
-vi.mock("./otel-trace", () => ({
-  getWorkspaceServerTracer: () => mockGetTracer(),
-}));
+import { describe, expect, it, vi } from "vitest";
+import { withSpan } from "./with-span";
 
 describe("withSpan", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it.each([
     ["resolves the wrapped value", 42, 42],
     ["resolves objects", { ok: true }, { ok: true }],
   ])("passes through when no tracer (%s)", async (_case, value, expected) => {
-    mockGetTracer.mockReturnValue(null);
-    const { withSpan } = await import("./with-span");
-
-    await expect(withSpan("op", {}, async () => value)).resolves.toEqual(
+    await expect(withSpan(null, "op", {}, async () => value)).resolves.toEqual(
       expected,
     );
   });
 
   it("propagates errors when no tracer", async () => {
-    mockGetTracer.mockReturnValue(null);
-    const { withSpan } = await import("./with-span");
-
     await expect(
-      withSpan("op", {}, async () => {
+      withSpan(null, "op", {}, async () => {
         throw new Error("boom");
       }),
     ).rejects.toThrow("boom");
@@ -40,17 +25,16 @@ describe("withSpan", () => {
       setStatus: vi.fn(),
       end: vi.fn(),
     };
-    mockGetTracer.mockReturnValue({
+    const tracer = {
       startActiveSpan: (
         _name: string,
         _opts: unknown,
         fn: (s: unknown) => unknown,
       ) => fn(span),
-    });
-    const { withSpan } = await import("./with-span");
+    } as never;
 
     await expect(
-      withSpan("op", { a: 1 }, async () => {
+      withSpan(tracer, "op", { a: 1 }, async () => {
         throw new Error("boom");
       }),
     ).rejects.toThrow("boom");

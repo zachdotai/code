@@ -12,6 +12,9 @@ export function initOtelTracing(): Tracer | null {
       "process.runtime.version": process.versions.node,
     },
   });
+  process.stdout.write(
+    `[workspace-server] otel tracing ${current ? "enabled" : "disabled (missing/invalid VITE_POSTHOG_API_KEY/HOST)"}\n`,
+  );
   return current?.tracer ?? null;
 }
 
