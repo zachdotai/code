@@ -15,7 +15,11 @@ export const OTEL_TRACE_SAMPLE_RATIO = 0.02;
 export const OTEL_BATCH_DELAY_MS = 2000;
 
 export function buildTracesEndpoint(apiHost: string): string | null {
-  const url = `${apiHost.replace(/\/+$/, "")}/i/v1/traces`;
+  let host = apiHost;
+  while (host.endsWith("/")) {
+    host = host.slice(0, -1);
+  }
+  const url = `${host}/i/v1/traces`;
   let parsed: URL;
   try {
     parsed = new URL(url);
