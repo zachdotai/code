@@ -135,6 +135,20 @@ vi.mock(
   () => mockSessionConfigStore,
 );
 
+const mockPendingPromptStore = vi.hoisted(() => ({
+  pendingPromptStore: {
+    save: vi.fn(),
+    get: vi.fn(() => undefined),
+    remove: vi.fn(),
+    list: vi.fn(() => []),
+  },
+}));
+
+vi.mock(
+  "@posthog/ui/features/sessions/pendingPromptStore",
+  () => mockPendingPromptStore,
+);
+
 const mockAdapterFns = vi.hoisted(() => ({
   setAdapter: vi.fn(),
   getAdapter: vi.fn(),

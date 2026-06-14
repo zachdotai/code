@@ -24,6 +24,7 @@ import { fetchAuthState } from "@posthog/ui/features/auth/authQueries";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { useAddDirectoryDialogStore } from "@posthog/ui/features/folder-picker/addDirectoryDialogStore";
 import { TaskNotificationService } from "@posthog/ui/features/notifications/notifications";
+import { pendingPromptStore } from "@posthog/ui/features/sessions/pendingPromptStore";
 import { useSessionAdapterStore } from "@posthog/ui/features/sessions/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
@@ -106,6 +107,7 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       removeAdapter: (taskRunId) =>
         useSessionAdapterStore.getState().removeAdapter(taskRunId),
     },
+    pendingPrompts: pendingPromptStore,
     get settings() {
       return useSettingsStore.getState();
     },

@@ -57,6 +57,7 @@ import {
   OFFLINE_SESSION_MESSAGE,
   routeLocalConnect,
 } from "./connectRouting";
+import type { PendingPromptStore } from "./pendingPrompt";
 import {
   type PermissionSelectionPlan,
   planPermissionResponse,
@@ -252,6 +253,11 @@ export interface SessionServiceDeps {
     setAdapter(taskRunId: string, adapter: Adapter): void;
     removeAdapter(taskRunId: string): void;
   };
+  /**
+   * Durable, write-ahead storage for the prompt a local task run is starting
+   * with, so session-init timeouts or app restarts can never lose it.
+   */
+  pendingPrompts: PendingPromptStore;
   readonly settings: { customInstructions?: string | null };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -1060,6 +1066,41 @@ export class SessionService {
     model?: string,
     reasoningLevel?: string,
   ): Promise<void> {
+    // Recover a previously written-ahead prompt when this connect didn't
+    // carry one itself: a persisted record means an earlier attempt for this
+    // task saved a prompt and never delivered it (init timed out, or the app
+    // was restarted before delivery). Adopt its prompt and the settings the
+    // user originally chose, unless the caller overrode them.
+    const recovered = initialPrompt?.length
+      ? undefined
+      : this.d.pendingPrompts.get(taskId);
+    const effectivePrompt = initialPrompt?.length
+      ? initialPrompt
+      : recovered?.initialPrompt;
+    const effectiveExecutionMode = executionMode ?? recovered?.executionMode;
+    const effectiveAdapter = adapter ?? recovered?.adapter;
+    const effectiveModel = model ?? recovered?.model;
+    const effectiveReasoningLevel = reasoningLevel ?? recovered?.reasoningLevel;
+
+    // Write-ahead the prompt BEFORE any session/agent work. This is the one
+    // step that makes losing it impossible: everything below (run creation,
+    // the 30s-bounded agent.start, prompt delivery) can throw or be killed by
+    // an app restart, and the prompt still survives on disk to be recovered on
+    // the next connect. Cleared only once it has actually been delivered.
+    if (effectivePrompt?.length) {
+      this.d.pendingPrompts.save({
+        taskId,
+        taskTitle,
+        repoPath,
+        initialPrompt: effectivePrompt,
+        executionMode: effectiveExecutionMode,
+        adapter: effectiveAdapter,
+        model: effectiveModel,
+        reasoningLevel: effectiveReasoningLevel,
+        createdAt: recovered?.createdAt ?? Date.now(),
+      });
+    }
+
     const { client } = auth;
     if (!client) {
       throw new Error("Unable to reach server. Please check your connection.");
@@ -1070,19 +1111,37 @@ export class SessionService {
       throw new Error("Failed to create task run. Please try again.");
     }
 
+    // Record the run id on the write-ahead entry so it points at the run the
+    // prompt is being delivered to (a server-side reconciler can use this to
+    // re-drive an orphaned run).
+    if (effectivePrompt?.length) {
+      this.d.pendingPrompts.save({
+        taskId,
+        taskTitle,
+        repoPath,
+        initialPrompt: effectivePrompt,
+        taskRunId: taskRun.id,
+        executionMode: effectiveExecutionMode,
+        adapter: effectiveAdapter,
+        model: effectiveModel,
+        reasoningLevel: effectiveReasoningLevel,
+        createdAt: recovered?.createdAt ?? Date.now(),
+      });
+    }
+
     const { customInstructions: startCustomInstructions } = this.d.settings;
-    const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
+    const preferredModel = effectiveModel ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
       taskRunId: taskRun.id,
       repoPath,
       apiHost: auth.apiHost,
       projectId: auth.projectId,
-      permissionMode: executionMode,
-      adapter,
+      permissionMode: effectiveExecutionMode,
+      adapter: effectiveAdapter,
       customInstructions: startCustomInstructions || undefined,
-      effort: effortLevelSchema.safeParse(reasoningLevel).success
-        ? (reasoningLevel as EffortLevel)
+      effort: effortLevelSchema.safeParse(effectiveReasoningLevel).success
+        ? (effectiveReasoningLevel as EffortLevel)
         : undefined,
       model: preferredModel,
     });
@@ -1090,7 +1149,7 @@ export class SessionService {
     const session = createBaseSession(taskRun.id, taskId, taskTitle);
     session.channel = result.channel;
     session.status = "connected";
-    session.adapter = adapter;
+    session.adapter = effectiveAdapter;
     const configOptions = result.configOptions as
       | SessionConfigOption[]
       | undefined;
@@ -1102,15 +1161,15 @@ export class SessionService {
     }
 
     // Persist the adapter
-    if (adapter) {
-      this.d.adapterStore.setAdapter(taskRun.id, adapter);
+    if (effectiveAdapter) {
+      this.d.adapterStore.setAdapter(taskRun.id, effectiveAdapter);
     }
 
     // Store the initial prompt on the session so retry/reset flows can
     // re-send it if the session errors after this point (e.g. subscription
     // error, agent crash, or prompt failure).
-    if (initialPrompt?.length) {
-      session.initialPrompt = initialPrompt;
+    if (effectivePrompt?.length) {
+      session.initialPrompt = effectivePrompt;
     }
 
     this.d.store.setSession(session);
@@ -1119,12 +1178,15 @@ export class SessionService {
     this.d.track(ANALYTICS_EVENTS.TASK_RUN_STARTED, {
       task_id: taskId,
       execution_type: "local",
-      initial_mode: executionMode,
-      adapter,
+      initial_mode: effectiveExecutionMode,
+      adapter: effectiveAdapter,
     });
 
-    if (initialPrompt?.length) {
-      await this.sendPrompt(taskId, initialPrompt);
+    if (effectivePrompt?.length) {
+      await this.sendPrompt(taskId, effectivePrompt);
+      // Delivered: the prompt now lives in the run's session log, so the
+      // write-ahead copy is no longer the only record of it and can be cleared.
+      this.d.pendingPrompts.remove(taskId);
     }
   }
 
