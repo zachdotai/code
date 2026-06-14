@@ -1186,10 +1186,16 @@ export class SessionService {
     });
 
     if (effectivePrompt?.length) {
-      await this.sendPrompt(taskId, effectivePrompt);
-      // Delivered: the prompt now lives in the run's session log, so the
-      // write-ahead copy is no longer the only record of it and can be cleared.
-      this.d.pendingPrompts.remove(taskId);
+      const { stopReason } = await this.sendPrompt(taskId, effectivePrompt);
+      // Clear only once the prompt was actually handed to the agent. sendPrompt
+      // can resolve WITHOUT delivering — "queued" (session busy) or
+      // "rate_limited" (usage limit swallowed by sendLocalPrompt) — and in
+      // those cases the write-ahead copy must survive so the prompt isn't lost.
+      // On real delivery it now lives in the run's session log, so clearing the
+      // only-other-copy here is safe.
+      if (stopReason !== "queued" && stopReason !== "rate_limited") {
+        this.d.pendingPrompts.remove(taskId);
+      }
     }
   }
 
