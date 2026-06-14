@@ -15,10 +15,16 @@ import { Providers } from "@components/Providers";
 import { preloadHighlighter } from "@pierre/diffs";
 import { boot } from "@posthog/di/contribution";
 import { ServiceProvider } from "@posthog/di/react";
+import { router } from "@posthog/ui/router/router";
 import App from "@posthog/ui/shell/App";
 import { initializePostHog } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { registerDesktopContributions } from "@renderer/desktop-contributions";
 import { container } from "@renderer/di/container";
+import {
+  initOtelTracing,
+  onAppRender,
+  traceNavigations,
+} from "@renderer/utils/otel-trace";
 import "@renderer/desktop-services";
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -80,6 +86,10 @@ if (bootstrapSessionId) {
   initializePostHog(bootstrapSessionId);
 }
 
+if (initOtelTracing()) {
+  traceNavigations(router);
+}
+
 registerDesktopContributions();
 void boot(container);
 
@@ -88,10 +98,12 @@ if (!rootElement) throw new Error("Root element not found");
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <ServiceProvider container={container}>
-      <Providers>
-        <App />
-      </Providers>
-    </ServiceProvider>
+    <React.Profiler id="app" onRender={onAppRender}>
+      <ServiceProvider container={container}>
+        <Providers>
+          <App />
+        </Providers>
+      </ServiceProvider>
+    </React.Profiler>
   </React.StrictMode>,
 );

@@ -17,6 +17,7 @@ import { posthogNodeAnalytics } from "../../platform-adapters/posthog-analytics"
 import { withTimeout } from "../../utils/async";
 import { logger } from "../../utils/logger";
 import { shutdownOtelTransport } from "../../utils/otel-log-transport";
+import { shutdownOtelTracing } from "../../utils/otel-trace";
 
 const log = logger.scope("app-lifecycle");
 
@@ -142,6 +143,12 @@ export class AppLifecycleService {
       await shutdownOtelTransport();
     } catch (error) {
       log.warn("Failed to shutdown OTEL log transport", error);
+    }
+
+    try {
+      await shutdownOtelTracing();
+    } catch (error) {
+      log.warn("Failed to shutdown OTEL trace exporter", error);
     }
 
     try {

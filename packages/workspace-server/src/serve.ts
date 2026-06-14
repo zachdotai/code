@@ -1,8 +1,11 @@
 import "reflect-metadata";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
+import { initOtelTracing, shutdownOtelTracing } from "./otel-trace";
 
 const SHUTDOWN_GRACE_MS = 3_000;
+
+initOtelTracing();
 const WATCHDOG_INTERVAL_MS = 2_000;
 
 function isParentAlive(parentPid: number): boolean {
@@ -33,6 +36,7 @@ const shutdown = (reason: string) => {
   if (shuttingDown) return;
   shuttingDown = true;
   process.stdout.write(`[workspace-server] shutdown (${reason})\n`);
+  void shutdownOtelTracing();
   if (!server) process.exit(0);
   server.close();
   setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS).unref();

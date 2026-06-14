@@ -3,6 +3,8 @@ import superjson from "superjson";
 import { z } from "zod";
 import { container } from "./di/container";
 import { TOKENS } from "./di/tokens";
+import { traceTrpcCall } from "./node-tracing";
+import { getWorkspaceServerTracer } from "./otel-trace";
 import { connectivityStatusOutput } from "./services/connectivity/schemas";
 import type { ConnectivityService } from "./services/connectivity/service";
 import {
@@ -148,6 +150,12 @@ import type { WatcherService } from "./services/watcher/service";
 
 const t = initTRPC.create({ transformer: superjson });
 
+const tracingMiddleware = t.middleware(({ path, type, next }) =>
+  traceTrpcCall(getWorkspaceServerTracer(), path, type, next),
+);
+
+const tracedProcedure = t.procedure.use(tracingMiddleware);
+
 const focusService = () => container.get<FocusService>(TOKENS.FocusService);
 const focusSyncService = () =>
   container.get<FocusSyncService>(TOKENS.FocusSyncService);
@@ -182,106 +190,106 @@ export {
 
 export const appRouter = t.router({
   focus: t.router({
-    getSession: t.procedure
+    getSession: tracedProcedure
       .input(mainRepoPathInput)
       .output(focusSessionSchema.nullable())
       .query(({ input }) => focusService().getSession(input.mainRepoPath)),
 
-    saveSession: t.procedure
+    saveSession: tracedProcedure
       .input(focusSessionSchema)
       .mutation(({ input }) => focusService().saveSession(input)),
 
-    deleteSession: t.procedure
+    deleteSession: tracedProcedure
       .input(mainRepoPathInput)
       .mutation(({ input }) =>
         focusService().deleteSession(input.mainRepoPath),
       ),
 
-    isFocusActive: t.procedure
+    isFocusActive: tracedProcedure
       .input(mainRepoPathInput)
       .output(z.boolean())
       .query(({ input }) => focusService().isFocusActive(input.mainRepoPath)),
 
-    isDirty: t.procedure
+    isDirty: tracedProcedure
       .input(repoPathInput)
       .output(z.boolean())
       .query(({ input }) => focusService().isDirty(input.repoPath)),
 
-    getCommitSha: t.procedure
+    getCommitSha: tracedProcedure
       .input(repoPathInput)
       .output(z.string())
       .query(({ input }) => focusService().getCommitSha(input.repoPath)),
 
-    findWorktreeByBranch: t.procedure
+    findWorktreeByBranch: tracedProcedure
       .input(findWorktreeInput)
       .output(z.string().nullable())
       .query(({ input }) =>
         focusService().findWorktreeByBranch(input.mainRepoPath, input.branch),
       ),
 
-    stash: t.procedure
+    stash: tracedProcedure
       .input(stashInput)
       .output(stashResultSchema)
       .mutation(({ input }) =>
         focusService().stash(input.repoPath, input.message),
       ),
 
-    stashPop: t.procedure
+    stashPop: tracedProcedure
       .input(repoPathInput)
       .output(focusResultSchema)
       .mutation(({ input }) => focusService().stashPop(input.repoPath)),
 
-    stashApply: t.procedure
+    stashApply: tracedProcedure
       .input(z.object({ repoPath: z.string(), stashRef: z.string() }))
       .output(focusResultSchema)
       .mutation(({ input }) =>
         focusService().stashApply(input.repoPath, input.stashRef),
       ),
 
-    checkout: t.procedure
+    checkout: tracedProcedure
       .input(checkoutInput)
       .output(focusResultSchema)
       .mutation(({ input }) =>
         focusService().checkout(input.repoPath, input.branch),
       ),
 
-    detachWorktree: t.procedure
+    detachWorktree: tracedProcedure
       .input(worktreeInput)
       .output(focusResultSchema)
       .mutation(({ input }) =>
         focusService().detachWorktree(input.worktreePath),
       ),
 
-    reattachWorktree: t.procedure
+    reattachWorktree: tracedProcedure
       .input(reattachInput)
       .output(focusResultSchema)
       .mutation(({ input }) =>
         focusService().reattachWorktree(input.worktreePath, input.branch),
       ),
 
-    cleanWorkingTree: t.procedure
+    cleanWorkingTree: tracedProcedure
       .input(repoPathInput)
       .mutation(({ input }) => focusService().cleanWorkingTree(input.repoPath)),
 
-    startSync: t.procedure
+    startSync: tracedProcedure
       .input(syncInput)
       .mutation(({ input }) =>
         focusSyncService().startSync(input.mainRepoPath, input.worktreePath),
       ),
 
-    stopSync: t.procedure.mutation(() => focusSyncService().stopSync()),
+    stopSync: tracedProcedure.mutation(() => focusSyncService().stopSync()),
 
-    startWatchingMainRepo: t.procedure
+    startWatchingMainRepo: tracedProcedure
       .input(mainRepoPathInput)
       .mutation(({ input }) =>
         focusService().startWatchingMainRepo(input.mainRepoPath),
       ),
 
-    stopWatchingMainRepo: t.procedure.mutation(() =>
+    stopWatchingMainRepo: tracedProcedure.mutation(() =>
       focusService().stopWatchingMainRepo(),
     ),
 
-    onBranchRenamed: t.procedure.subscription(async function* (opts) {
+    onBranchRenamed: tracedProcedure.subscription(async function* (opts) {
       for await (const event of focusService().branchRenamedEvents(
         opts.signal,
       )) {
@@ -289,64 +297,66 @@ export const appRouter = t.router({
       }
     }),
 
-    onForeignBranchCheckout: t.procedure.subscription(async function* (opts) {
-      for await (const event of focusService().foreignBranchCheckoutEvents(
-        opts.signal,
-      )) {
-        yield event;
-      }
-    }),
+    onForeignBranchCheckout: tracedProcedure.subscription(
+      async function* (opts) {
+        for await (const event of focusService().foreignBranchCheckoutEvents(
+          opts.signal,
+        )) {
+          yield event;
+        }
+      },
+    ),
   }),
   git: t.router({
-    detectRepo: t.procedure
+    detectRepo: tracedProcedure
       .input(directoryPathInput)
       .output(detectRepoResultSchema)
       .query(({ input }) => gitService().detectRepo(input.directoryPath)),
 
-    validateRepo: t.procedure
+    validateRepo: tracedProcedure
       .input(directoryPathInput)
       .output(z.boolean())
       .query(({ input }) => gitService().validateRepo(input.directoryPath)),
 
-    getRemoteUrl: t.procedure
+    getRemoteUrl: tracedProcedure
       .input(directoryPathInput)
       .output(stringNullableOutput)
       .query(({ input }) => gitService().getRemoteUrl(input.directoryPath)),
 
-    getCurrentBranch: t.procedure
+    getCurrentBranch: tracedProcedure
       .input(directoryPathInput)
       .output(stringNullableOutput)
       .query(({ input, signal }) =>
         gitService().getCurrentBranch(input.directoryPath, signal),
       ),
 
-    getDefaultBranch: t.procedure
+    getDefaultBranch: tracedProcedure
       .input(directoryPathInput)
       .output(stringOutput)
       .query(({ input }) => gitService().getDefaultBranch(input.directoryPath)),
 
-    getAllBranches: t.procedure
+    getAllBranches: tracedProcedure
       .input(directoryPathInput)
       .output(stringArrayOutput)
       .query(({ input, signal }) =>
         gitService().getAllBranches(input.directoryPath, signal),
       ),
 
-    getChangedFilesHead: t.procedure
+    getChangedFilesHead: tracedProcedure
       .input(directoryPathInput)
       .output(changedFilesOutput)
       .query(({ input, signal }) =>
         gitService().getChangedFilesHead(input.directoryPath, signal),
       ),
 
-    getFileAtHead: t.procedure
+    getFileAtHead: tracedProcedure
       .input(filePathInput)
       .output(stringNullableOutput)
       .query(({ input, signal }) =>
         gitService().getFileAtHead(input.directoryPath, input.filePath, signal),
       ),
 
-    getDiffHead: t.procedure
+    getDiffHead: tracedProcedure
       .input(diffInput)
       .output(stringOutput)
       .query(({ input, signal }) =>
@@ -357,7 +367,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    getDiffCached: t.procedure
+    getDiffCached: tracedProcedure
       .input(diffInput)
       .output(stringOutput)
       .query(({ input, signal }) =>
@@ -368,7 +378,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    getDiffUnstaged: t.procedure
+    getDiffUnstaged: tracedProcedure
       .input(diffInput)
       .output(stringOutput)
       .query(({ input, signal }) =>
@@ -379,60 +389,60 @@ export const appRouter = t.router({
         ),
       ),
 
-    getLatestCommit: t.procedure
+    getLatestCommit: tracedProcedure
       .input(directoryPathInput)
       .output(gitCommitInfoNullableOutput)
       .query(({ input, signal }) =>
         gitService().getLatestCommit(input.directoryPath, signal),
       ),
 
-    getGitRepoInfo: t.procedure
+    getGitRepoInfo: tracedProcedure
       .input(directoryPathInput)
       .output(gitRepoInfoNullableOutput)
       .query(({ input }) => gitService().getGitRepoInfo(input.directoryPath)),
 
-    getGitBusyState: t.procedure
+    getGitBusyState: tracedProcedure
       .input(gitBusyStateInput)
       .output(gitBusyStateSchema)
       .query(({ input, signal }) =>
         gitService().getGitBusyState(input.directoryPath, signal),
       ),
 
-    getGitSyncStatus: t.procedure
+    getGitSyncStatus: tracedProcedure
       .input(getGitSyncStatusInput)
       .output(gitSyncStatusSchema)
       .query(({ input }) =>
         gitService().getGitSyncStatus(input.directoryPath, input.forceRefresh),
       ),
 
-    createBranch: t.procedure
+    createBranch: tracedProcedure
       .input(createBranchInput)
       .mutation(({ input }) =>
         gitService().createBranch(input.directoryPath, input.branchName),
       ),
 
-    checkoutBranch: t.procedure
+    checkoutBranch: tracedProcedure
       .input(checkoutBranchInput)
       .output(checkoutBranchOutput)
       .mutation(({ input }) =>
         gitService().checkoutBranch(input.directoryPath, input.branchName),
       ),
 
-    stageFiles: t.procedure
+    stageFiles: tracedProcedure
       .input(stageFilesInput)
       .output(gitStateSnapshotSchema)
       .mutation(({ input }) =>
         gitService().stageFiles(input.directoryPath, input.paths),
       ),
 
-    unstageFiles: t.procedure
+    unstageFiles: tracedProcedure
       .input(stageFilesInput)
       .output(gitStateSnapshotSchema)
       .mutation(({ input }) =>
         gitService().unstageFiles(input.directoryPath, input.paths),
       ),
 
-    discardFileChanges: t.procedure
+    discardFileChanges: tracedProcedure
       .input(discardFileChangesInput)
       .output(discardFileChangesOutput)
       .mutation(({ input }) =>
@@ -443,7 +453,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    push: t.procedure
+    push: tracedProcedure
       .input(pushInput)
       .output(pushOutput)
       .mutation(({ input, signal }) =>
@@ -457,7 +467,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    commit: t.procedure
+    commit: tracedProcedure
       .input(commitInput)
       .output(commitOutput)
       .mutation(({ input }) =>
@@ -469,7 +479,7 @@ export const appRouter = t.router({
         }),
       ),
 
-    pull: t.procedure
+    pull: tracedProcedure
       .input(pullInput)
       .output(pullOutput)
       .mutation(({ input, signal }) =>
@@ -481,7 +491,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    publish: t.procedure
+    publish: tracedProcedure
       .input(publishInput)
       .output(publishOutput)
       .mutation(({ input, signal }) =>
@@ -493,61 +503,61 @@ export const appRouter = t.router({
         ),
       ),
 
-    sync: t.procedure
+    sync: tracedProcedure
       .input(gitSyncInput)
       .output(gitSyncOutput)
       .mutation(({ input, signal }) =>
         gitService().sync(input.directoryPath, input.remote, signal),
       ),
 
-    getGhStatus: t.procedure
+    getGhStatus: tracedProcedure
       .output(ghStatusOutput)
       .query(() => gitService().getGhStatus()),
 
-    getGhAuthToken: t.procedure
+    getGhAuthToken: tracedProcedure
       .output(ghAuthTokenOutput)
       .query(() => gitService().getGhAuthToken()),
 
-    getPrStatus: t.procedure
+    getPrStatus: tracedProcedure
       .input(directoryPathInput)
       .output(prStatusOutput)
       .query(({ input }) => gitService().getPrStatus(input.directoryPath)),
 
-    getPrUrlForBranch: t.procedure
+    getPrUrlForBranch: tracedProcedure
       .input(getPrUrlForBranchInput)
       .output(getPrUrlForBranchOutput)
       .query(({ input }) =>
         gitService().getPrUrlForBranch(input.directoryPath, input.branchName),
       ),
 
-    openPr: t.procedure
+    openPr: tracedProcedure
       .input(openPrInput)
       .output(openPrOutput)
       .mutation(({ input }) => gitService().openPr(input.directoryPath)),
 
-    getPrDetailsByUrl: t.procedure
+    getPrDetailsByUrl: tracedProcedure
       .input(getPrDetailsByUrlInput)
       .output(getPrDetailsByUrlOutput.nullable())
       .query(({ input }) => gitService().getPrDetailsByUrl(input.prUrl)),
 
-    getPrChangedFiles: t.procedure
+    getPrChangedFiles: tracedProcedure
       .input(getPrChangedFilesInput)
       .output(changedFilesOutput)
       .query(({ input }) => gitService().getPrChangedFiles(input.prUrl)),
 
-    getPrDiffStatsBatch: t.procedure
+    getPrDiffStatsBatch: tracedProcedure
       .input(getPrDiffStatsBatchInput)
       .output(getPrDiffStatsBatchOutput)
       .query(({ input }) => gitService().getPrDiffStatsBatch(input.prUrls)),
 
-    getBranchChangedFiles: t.procedure
+    getBranchChangedFiles: tracedProcedure
       .input(getBranchChangedFilesInput)
       .output(changedFilesOutput)
       .query(({ input }) =>
         gitService().getBranchChangedFiles(input.repo, input.branch),
       ),
 
-    getLocalBranchChangedFiles: t.procedure
+    getLocalBranchChangedFiles: tracedProcedure
       .input(getLocalBranchChangedFilesInput)
       .output(changedFilesOutput)
       .query(({ input }) =>
@@ -557,38 +567,38 @@ export const appRouter = t.router({
         ),
       ),
 
-    updatePrByUrl: t.procedure
+    updatePrByUrl: tracedProcedure
       .input(updatePrByUrlInput)
       .output(updatePrByUrlOutput)
       .mutation(({ input }) =>
         gitService().updatePrByUrl(input.prUrl, input.action),
       ),
 
-    getPrReviewComments: t.procedure
+    getPrReviewComments: tracedProcedure
       .input(getPrReviewCommentsInput)
       .output(getPrReviewCommentsOutput)
       .query(({ input }) => gitService().getPrReviewComments(input.prUrl)),
 
-    resolveReviewThread: t.procedure
+    resolveReviewThread: tracedProcedure
       .input(resolveReviewThreadInput)
       .output(resolveReviewThreadOutput)
       .mutation(({ input }) =>
         gitService().resolveReviewThread(input.threadNodeId, input.resolved),
       ),
 
-    replyToPrComment: t.procedure
+    replyToPrComment: tracedProcedure
       .input(replyToPrCommentInput)
       .output(replyToPrCommentOutput)
       .mutation(({ input }) =>
         gitService().replyToPrComment(input.prUrl, input.commentId, input.body),
       ),
 
-    getPrTemplate: t.procedure
+    getPrTemplate: tracedProcedure
       .input(getPrTemplateInput)
       .output(getPrTemplateOutput)
       .query(({ input }) => gitService().getPrTemplate(input.directoryPath)),
 
-    getCommitConventions: t.procedure
+    getCommitConventions: tracedProcedure
       .input(getCommitConventionsInput)
       .output(getCommitConventionsOutput)
       .query(({ input }) =>
@@ -598,7 +608,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    searchGithubRefs: t.procedure
+    searchGithubRefs: tracedProcedure
       .input(searchGithubRefsInput)
       .output(searchGithubRefsOutput)
       .query(({ input }) =>
@@ -610,14 +620,14 @@ export const appRouter = t.router({
         ),
       ),
 
-    getGithubIssue: t.procedure
+    getGithubIssue: tracedProcedure
       .input(getGithubIssueInput)
       .output(getGithubIssueOutput)
       .query(({ input }) =>
         gitService().getGithubIssue(input.owner, input.repo, input.number),
       ),
 
-    getGithubPullRequest: t.procedure
+    getGithubPullRequest: tracedProcedure
       .input(getGithubPullRequestInput)
       .output(getGithubPullRequestOutput)
       .query(({ input }) =>
@@ -628,14 +638,14 @@ export const appRouter = t.router({
         ),
       ),
 
-    readHandoffLocalGitState: t.procedure
+    readHandoffLocalGitState: tracedProcedure
       .input(readHandoffLocalGitStateInput)
       .output(readHandoffLocalGitStateOutput)
       .query(({ input }) =>
         gitService().readHandoffLocalGitState(input.directoryPath),
       ),
 
-    cleanupAfterCloudHandoff: t.procedure
+    cleanupAfterCloudHandoff: tracedProcedure
       .input(cleanupAfterCloudHandoffInput)
       .output(cleanupAfterCloudHandoffOutput)
       .mutation(({ input }) =>
@@ -645,21 +655,21 @@ export const appRouter = t.router({
         ),
       ),
 
-    getDiffStats: t.procedure
+    getDiffStats: tracedProcedure
       .input(diffStatsInput)
       .output(diffStatsSchema)
       .query(({ input }) => gitService().getDiffStats(input.directoryPath)),
 
-    getGitStatus: t.procedure
+    getGitStatus: tracedProcedure
       .output(gitStatusOutput)
       .query(() => gitService().getGitStatus()),
 
-    getHeadSha: t.procedure
+    getHeadSha: tracedProcedure
       .input(directoryPathInput)
       .output(getHeadShaOutput)
       .query(({ input }) => gitService().getHeadSha(input.directoryPath)),
 
-    getDiffAgainstRemote: t.procedure
+    getDiffAgainstRemote: tracedProcedure
       .input(getDiffAgainstRemoteInput)
       .output(stringOutput)
       .query(({ input }) =>
@@ -669,7 +679,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    getCommitsBetweenBranches: t.procedure
+    getCommitsBetweenBranches: tracedProcedure
       .input(getCommitsBetweenBranchesInput)
       .output(getCommitsBetweenBranchesOutput)
       .query(({ input }) =>
@@ -681,13 +691,13 @@ export const appRouter = t.router({
         ),
       ),
 
-    resetSoft: t.procedure
+    resetSoft: tracedProcedure
       .input(resetSoftInput)
       .mutation(({ input }) =>
         gitService().resetSoft(input.directoryPath, input.sha),
       ),
 
-    createPrViaGh: t.procedure
+    createPrViaGh: tracedProcedure
       .input(createPrViaGhInput)
       .output(createPrViaGhOutput)
       .mutation(({ input }) =>
@@ -700,7 +710,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    cloneRepository: t.procedure
+    cloneRepository: tracedProcedure
       .input(cloneRepositoryInput)
       .output(cloneRepositoryOutput)
       .mutation(({ input }) =>
@@ -711,7 +721,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    onCloneProgress: t.procedure.subscription(async function* (opts) {
+    onCloneProgress: tracedProcedure.subscription(async function* (opts) {
       for await (const data of gitService().toIterable("cloneProgress", {
         signal: opts.signal,
       })) {
@@ -720,39 +730,39 @@ export const appRouter = t.router({
     }),
   }),
   diffStats: t.router({
-    getDiffStats: t.procedure
+    getDiffStats: tracedProcedure
       .input(diffStatsInput)
       .output(diffStatsSchema)
       .query(({ input }) => gitService().getDiffStats(input.directoryPath)),
   }),
   fs: t.router({
-    listDirectory: t.procedure
+    listDirectory: tracedProcedure
       .input(listDirectoryInput)
       .output(listDirectoryOutput)
       .query(({ input }) => fsService().listDirectory(input.dirPath)),
 
-    listRepoFiles: t.procedure
+    listRepoFiles: tracedProcedure
       .input(listRepoFilesInput)
       .output(listRepoFilesOutput)
       .query(({ input }) =>
         fsService().listRepoFiles(input.repoPath, input.query, input.limit),
       ),
 
-    readRepoFile: t.procedure
+    readRepoFile: tracedProcedure
       .input(readRepoFileInput)
       .output(readRepoFileOutput)
       .query(({ input }) =>
         fsService().readRepoFile(input.repoPath, input.filePath),
       ),
 
-    readRepoFiles: t.procedure
+    readRepoFiles: tracedProcedure
       .input(readRepoFilesInput)
       .output(readRepoFilesOutput)
       .query(({ input }) =>
         fsService().readRepoFiles(input.repoPath, input.filePaths),
       ),
 
-    readRepoFileBounded: t.procedure
+    readRepoFileBounded: tracedProcedure
       .input(readRepoFileBoundedInput)
       .output(boundedReadResult)
       .query(({ input }) =>
@@ -763,7 +773,7 @@ export const appRouter = t.router({
         ),
       ),
 
-    readRepoFilesBounded: t.procedure
+    readRepoFilesBounded: tracedProcedure
       .input(readRepoFilesBoundedInput)
       .output(readRepoFilesBoundedOutput)
       .query(({ input }) =>
@@ -774,17 +784,17 @@ export const appRouter = t.router({
         ),
       ),
 
-    readAbsoluteFile: t.procedure
+    readAbsoluteFile: tracedProcedure
       .input(readAbsoluteFileInput)
       .output(readRepoFileOutput)
       .query(({ input }) => fsService().readAbsoluteFile(input.filePath)),
 
-    readFileAsBase64: t.procedure
+    readFileAsBase64: tracedProcedure
       .input(readAbsoluteFileInput)
       .output(readRepoFileOutput)
       .query(({ input }) => fsService().readFileAsBase64(input.filePath)),
 
-    writeRepoFile: t.procedure
+    writeRepoFile: tracedProcedure
       .input(writeRepoFileInput)
       .mutation(({ input }) =>
         fsService().writeRepoFile(
@@ -795,65 +805,65 @@ export const appRouter = t.router({
       ),
   }),
   watcher: t.router({
-    resolveGitDirs: t.procedure
+    resolveGitDirs: tracedProcedure
       .input(resolveGitDirsInput)
       .output(resolveGitDirsOutput)
       .query(({ input }) => watcherService().resolveGitDirs(input.repoPath)),
 
-    watch: t.procedure
+    watch: tracedProcedure
       .input(watchInput)
       .subscription(({ input, signal }) =>
         watcherService().watch(input.dirPath, { ignore: input.ignore }, signal),
       ),
   }),
   fileWatcher: t.router({
-    watch: t.procedure
+    watch: tracedProcedure
       .input(watchRepoInput)
       .subscription(({ input, signal }) =>
         watcherService().watchRepo(input.repoPath, signal),
       ),
   }),
   localLogs: t.router({
-    read: t.procedure
+    read: tracedProcedure
       .input(readLocalLogsInput)
       .output(readLocalLogsOutput)
       .query(({ input }) => localLogsService().readLocalLogs(input.taskRunId)),
 
-    write: t.procedure
+    write: tracedProcedure
       .input(writeLocalLogsInput)
       .mutation(({ input }) =>
         localLogsService().writeLocalLogs(input.taskRunId, input.content),
       ),
 
-    seed: t.procedure
+    seed: tracedProcedure
       .input(seedLocalLogsInput)
       .mutation(({ input }) =>
         localLogsService().seedLocalLogs(input.taskRunId, input.content),
       ),
 
-    count: t.procedure
+    count: tracedProcedure
       .input(countLocalLogEntriesInput)
       .output(countLocalLogEntriesOutput)
       .query(({ input }) =>
         localLogsService().countLocalLogEntries(input.taskRunId),
       ),
 
-    delete: t.procedure
+    delete: tracedProcedure
       .input(deleteLocalLogCacheInput)
       .mutation(({ input }) =>
         localLogsService().deleteLocalLogCache(input.taskRunId),
       ),
   }),
   connectivity: t.router({
-    getStatus: t.procedure
+    getStatus: tracedProcedure
       .output(connectivityStatusOutput)
       .query(() => connectivityService().getStatus()),
 
-    checkNow: t.procedure
+    checkNow: tracedProcedure
       .output(connectivityStatusOutput)
       .mutation(() => connectivityService().checkNow()),
 
-    onStatusChange: t.procedure.subscription(async function* (opts) {
+    onStatusChange: tracedProcedure.subscription(async function* (opts) {
       for await (const status of connectivityService().statusChangeEvents(
         opts.signal,
       )) {
@@ -862,21 +872,21 @@ export const appRouter = t.router({
     }),
   }),
   environment: t.router({
-    list: t.procedure
+    list: tracedProcedure
       .input(listEnvironmentsInput)
       .output(environmentSchema.array())
       .query(({ input }) =>
         environmentService().listEnvironments(input.repoPath),
       ),
 
-    get: t.procedure
+    get: tracedProcedure
       .input(getEnvironmentInput)
       .output(environmentSchema.nullable())
       .query(({ input }) =>
         environmentService().getEnvironment(input.repoPath, input.id),
       ),
 
-    create: t.procedure
+    create: tracedProcedure
       .input(createEnvironmentInput)
       .output(environmentSchema)
       .mutation(({ input }) => {
@@ -884,7 +894,7 @@ export const appRouter = t.router({
         return environmentService().createEnvironment(rest, repoPath);
       }),
 
-    update: t.procedure
+    update: tracedProcedure
       .input(updateEnvironmentInput)
       .output(environmentSchema)
       .mutation(({ input }) => {
@@ -892,7 +902,7 @@ export const appRouter = t.router({
         return environmentService().updateEnvironment(rest, repoPath);
       }),
 
-    delete: t.procedure
+    delete: tracedProcedure
       .input(deleteEnvironmentInput)
       .mutation(({ input }) =>
         environmentService().deleteEnvironment(input.repoPath, input.id),

@@ -15,6 +15,7 @@
     "clean": "node ../../scripts/rimraf.mjs .turbo"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "@trpc/client": "catalog:",
     "superjson": "catalog:"
   },

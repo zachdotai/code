@@ -1,11 +1,17 @@
 import { timingSafeEqual } from "node:crypto";
 import { trpcServer } from "@hono/trpc-server";
+import { context, propagation, type TextMapGetter } from "@opentelemetry/api";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { appRouter } from "./trpc";
 
 const SECRET_HEADER = "x-workspace-secret";
+
+const headersGetter: TextMapGetter<Headers> = {
+  get: (carrier, key) => carrier.get(key) ?? undefined,
+  keys: (carrier) => [...carrier.keys()],
+};
 
 export interface CreateAppOptions {
   sharedSecret: string;
@@ -33,7 +39,17 @@ export function createApp(options: CreateAppOptions): Hono {
     await next();
   });
 
+  const extractTraceContext = createMiddleware(async (c, next) => {
+    const active = propagation.extract(
+      context.active(),
+      c.req.raw.headers,
+      headersGetter,
+    );
+    await context.with(active, next);
+  });
+
   app.use("/trpc/*", requireSecret);
+  app.use("/trpc/*", extractTraceContext);
   app.use("/trpc/*", trpcServer({ router: appRouter }));
 
   return app;

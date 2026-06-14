@@ -1,3 +1,4 @@
+import { context, propagation } from "@opentelemetry/api";
 import type { AppRouter } from "@posthog/workspace-server/trpc";
 import {
   createTRPCClient,
@@ -8,6 +9,14 @@ import {
 import superjson from "superjson";
 
 const SECRET_HEADER = "x-workspace-secret";
+
+function tracePropagationHeaders(
+  base: Record<string, string>,
+): Record<string, string> {
+  const carrier: Record<string, string> = { ...base };
+  propagation.inject(context.active(), carrier);
+  return carrier;
+}
 
 export interface WorkspaceConnection {
   url: string;
@@ -32,7 +41,7 @@ export function createWorkspaceClient(connection: WorkspaceConnection) {
         false: httpBatchLink({
           url,
           transformer: superjson,
-          headers: () => headers,
+          headers: () => tracePropagationHeaders(headers),
         }),
       }),
     ],

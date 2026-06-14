@@ -66,6 +66,7 @@ import {
   readChromiumLogTail,
 } from "./utils/logger";
 import { isMacosPackagedUnsafeBundleLocation } from "./utils/macos-packaged-install-guard";
+import { initOtelTracing } from "./utils/otel-trace";
 import { createWindow } from "./window";
 
 type FileWatcherEventsByKind = {
@@ -100,6 +101,8 @@ export class FileWatcherBridge extends TypedEventEmitter<FileWatcherEventsByKind
     this.subs.delete(repoPath);
   }
 }
+
+initOtelTracing();
 
 // Single instance lock must be acquired FIRST before any other app setup
 const additionalData = process.defaultApp ? { argv: process.argv } : undefined;

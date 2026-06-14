@@ -46,6 +46,7 @@ import { StashPushSaga } from "@posthog/git/sagas/stash";
 import { parseGithubUrl } from "@posthog/git/utils";
 import { TypedEventEmitter } from "@posthog/shared";
 import { injectable } from "inversify";
+import { withSpan } from "../../with-span";
 import type { SidebarPrState } from "../workspace/schemas";
 import type {
   ChangedFile,
@@ -685,11 +686,10 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     remote = "origin",
     signal?: AbortSignal,
   ): Promise<SyncOutput> {
-    const pullResult = await this.pull(
-      directoryPath,
-      remote,
-      undefined,
-      signal,
+    const pullResult = await withSpan(
+      "git.sync.pull",
+      { "git.remote": remote },
+      () => this.pull(directoryPath, remote, undefined, signal),
     );
     if (!pullResult.success) {
       return {
@@ -699,15 +699,15 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       };
     }
 
-    const pushResult = await this.push(
-      directoryPath,
-      remote,
-      undefined,
-      false,
-      signal,
+    const pushResult = await withSpan(
+      "git.sync.push",
+      { "git.remote": remote },
+      () => this.push(directoryPath, remote, undefined, false, signal),
     );
 
-    const state = await this.getStateSnapshot(directoryPath);
+    const state = await withSpan("git.sync.snapshot", {}, () =>
+      this.getStateSnapshot(directoryPath),
+    );
 
     return {
       success: pushResult.success,

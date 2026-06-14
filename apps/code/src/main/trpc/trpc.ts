@@ -1,8 +1,10 @@
+import { getMainTracer } from "@main/utils/otel-trace";
 import {
   publicProcedure as baseProcedure,
   router as baseRouter,
   middleware,
 } from "@posthog/host-trpc/trpc";
+import { traceTrpcCall } from "@posthog/workspace-server/node-tracing";
 import log from "electron-log/main";
 
 const CALL_RATE_WINDOW_MS = 2000;
@@ -55,6 +57,12 @@ const callRateMonitor = middleware(async ({ path, next, type }) => {
   return result;
 });
 
+const tracingMonitor = middleware(({ path, next, type }) =>
+  traceTrpcCall(getMainTracer(), path, type, next),
+);
+
 export const router = baseRouter;
-export const publicProcedure = baseProcedure.use(callRateMonitor);
+export const publicProcedure = baseProcedure
+  .use(callRateMonitor)
+  .use(tracingMonitor);
 export { middleware };

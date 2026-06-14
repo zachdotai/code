@@ -60,6 +60,7 @@ import {
 import { inject, injectable, preDestroy } from "inversify";
 import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
+import { withSpan } from "../../with-span";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
@@ -683,49 +684,64 @@ When creating pull requests, add the following footer at the end of the PR descr
         systemPromptOverride,
       );
 
-      const acpConnection = await agent.run(taskId, taskRunId, {
-        adapter,
-        gatewayUrl: proxyUrl,
-        codexBinaryPath:
-          adapter === "codex" ? this.getCodexBinaryPath() : undefined,
-        model,
-        instructions: adapter === "codex" ? systemPrompt.append : undefined,
-        additionalDirectories:
-          adapter === "codex" ? additionalDirectories : undefined,
-        onStructuredOutput: jsonSchema
-          ? async (output) => {
-              const posthogAPI = agent.getPosthogAPI();
-              if (posthogAPI) {
-                await posthogAPI.updateTaskRun(taskId, taskRunId, { output });
-              }
-            }
-          : undefined,
-        processCallbacks: {
-          onProcessSpawned: (info) => {
-            this.processTracking.register(
-              info.pid,
-              "agent",
-              `agent:${taskRunId}`,
-              {
-                taskRunId,
-                taskId,
-                command: info.command,
-              },
-              taskId,
-            );
-          },
-          onProcessExited: (pid) => {
-            this.processTracking.unregister(pid, "agent-exited");
-          },
-          onMcpServersReady: (serverNames) => {
-            this.mcpAppsService.handleDiscovery(serverNames).catch((err) => {
-              this.log.warn("MCP Apps discovery failed", {
-                error: err instanceof Error ? err.message : String(err),
-              });
-            });
-          },
+      const acpConnection = await withSpan(
+        "agent.run.start",
+        {
+          "task.id": taskId,
+          "task.run_id": taskRunId,
+          "agent.adapter": adapter,
+          "agent.model": model ?? "",
+          "agent.preview": isPreview,
         },
-      });
+        () =>
+          agent.run(taskId, taskRunId, {
+            adapter,
+            gatewayUrl: proxyUrl,
+            codexBinaryPath:
+              adapter === "codex" ? this.getCodexBinaryPath() : undefined,
+            model,
+            instructions: adapter === "codex" ? systemPrompt.append : undefined,
+            additionalDirectories:
+              adapter === "codex" ? additionalDirectories : undefined,
+            onStructuredOutput: jsonSchema
+              ? async (output) => {
+                  const posthogAPI = agent.getPosthogAPI();
+                  if (posthogAPI) {
+                    await posthogAPI.updateTaskRun(taskId, taskRunId, {
+                      output,
+                    });
+                  }
+                }
+              : undefined,
+            processCallbacks: {
+              onProcessSpawned: (info) => {
+                this.processTracking.register(
+                  info.pid,
+                  "agent",
+                  `agent:${taskRunId}`,
+                  {
+                    taskRunId,
+                    taskId,
+                    command: info.command,
+                  },
+                  taskId,
+                );
+              },
+              onProcessExited: (pid) => {
+                this.processTracking.unregister(pid, "agent-exited");
+              },
+              onMcpServersReady: (serverNames) => {
+                this.mcpAppsService
+                  .handleDiscovery(serverNames)
+                  .catch((err) => {
+                    this.log.warn("MCP Apps discovery failed", {
+                      error: err instanceof Error ? err.message : String(err),
+                    });
+                  });
+              },
+            },
+          }),
+      );
       const { clientStreams } = acpConnection;
 
       const connection = this.createClientConnection(
