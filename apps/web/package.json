@@ -11,13 +11,10 @@
   },
   "dependencies": {
     "@inversifyjs/strongly-typed": "2.2.0",
-    "@posthog/core": "workspace:*",
     "@posthog/di": "workspace:*",
     "@posthog/host-router": "workspace:*",
-    "@posthog/platform": "workspace:*",
     "@posthog/shared": "workspace:*",
     "@posthog/ui": "workspace:*",
-    "@posthog/workspace-client": "workspace:*",
     "@tanstack/react-query": "^5.90.2",
     "@trpc/client": "^11.12.0",
     "@trpc/tanstack-react-query": "^11.12.0",
