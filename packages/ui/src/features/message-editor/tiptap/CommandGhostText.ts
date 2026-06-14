@@ -14,8 +14,6 @@ interface PluginState {
   dismissedAt: number | null;
 }
 
-type GhostMeta = { type: "dismiss" } | { type: "reset" };
-
 const pluginKey = new PluginKey<PluginState>("commandGhostText");
 const _SLASH_QUERY_REGEX = /(?:^|\s)\/([^\s/]+)$/;
 
