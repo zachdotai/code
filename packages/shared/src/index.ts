@@ -24,6 +24,7 @@ export {
 } from "./cloud-prompt";
 export {
   buildInboxDeeplink,
+  buildScoutDeeplink,
   DEEPLINK_PROTOCOL_DEVELOPMENT,
   DEEPLINK_PROTOCOL_PRODUCTION,
   decodePlanBase64,
@@ -118,6 +119,7 @@ export {
   type SagaResult,
   type SagaStep,
 } from "./saga";
+export { scoutSkillNameFromSlug, scoutSkillSlug } from "./scout-naming";
 export {
   isProPlan,
   PLAN_FREE,
