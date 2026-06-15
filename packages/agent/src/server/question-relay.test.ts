@@ -279,15 +279,53 @@ describe("Question relay", () => {
         delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
       });
 
-      it("auto-approves question tools (no Slack relay)", async () => {
-        const client = server.createCloudClient(TEST_PAYLOAD);
+      it("relays question tools and waits for an answer even before a desktop connects", async () => {
+        // Regression: questions used to auto-approve (silently picking the
+        // first option) when the desktop SSE stream had not yet attached,
+        // which surfaced as questions being auto-dismissed/answered. They must
+        // instead relay and wait, exactly like plan approvals.
+        const appendRawLine = vi.fn();
+        const srv = server as TestableAgentServer & {
+          resolvePermission: (requestId: string, optionId: string) => boolean;
+          session: {
+            payload: typeof TEST_PAYLOAD;
+            sseController: null;
+            hasDesktopConnected: boolean;
+            logWriter: { appendRawLine: typeof appendRawLine };
+          };
+        };
+        srv.session = {
+          payload: TEST_PAYLOAD,
+          sseController: null,
+          hasDesktopConnected: false,
+          logWriter: { appendRawLine },
+        };
 
-        const result = await client.requestPermission({
+        const client = srv.createCloudClient(TEST_PAYLOAD);
+        const promise = client.requestPermission({
           options: ALLOW_OPTIONS,
-          toolCall: { _meta: QUESTION_META },
+          toolCall: { toolCallId: "q-1", _meta: QUESTION_META },
         });
 
-        expect(result.outcome.outcome).toBe("selected");
+        // It must not resolve on its own — no auto-answer.
+        let settled = false;
+        void promise.then(() => {
+          settled = true;
+        });
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        // The request was relayed/persisted with a requestId we can answer.
+        const request = appendRawLine.mock.calls
+          .map(([, line]) => JSON.parse(line))
+          .find((n) => n?.method === "_posthog/permission_request");
+        expect(request).toBeTruthy();
+        const requestId = request.params.requestId as string;
+
+        expect(srv.resolvePermission(requestId, "allow")).toBe(true);
+        await expect(promise).resolves.toMatchObject({
+          outcome: { outcome: "selected", optionId: "allow" },
+        });
       });
 
       it("keeps auto-approving permissions after SSE send failures", async () => {

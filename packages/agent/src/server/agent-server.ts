@@ -2146,19 +2146,24 @@ ${signedCommitInstructions}
         // Relay permission requests to the desktop app when:
         // - Plan approvals: always relay because they gate autonomy changes
         //   that require human confirmation (buffered until desktop connects)
-        // - Questions: relay when desktop is connected
-        // - Edit/bash in "default" mode: relay for manual approval
+        // - Questions: always relay because they explicitly solicit a human
+        //   answer. Like plan approvals, the request is buffered and replayed
+        //   when the desktop connects, so a question fired before the SSE
+        //   stream attaches is never silently auto-answered.
+        // - Edit/bash in "default" mode: relay for manual approval, but only
+        //   when a desktop is connected — otherwise auto-approve.
         // Other modes auto-approve. No client connected → auto-approve
-        // (except plan approvals, which wait for a desktop).
+        // (except plan approvals and questions, which wait for a desktop).
         {
           const isQuestion = codeToolKind === "question";
           const sessionPermissionMode = this.getSessionPermissionMode();
-          const needsDesktopApproval =
-            isQuestion ||
-            this.shouldRelayPermissionToClient(sessionPermissionMode);
+          const needsDesktopApproval = this.shouldRelayPermissionToClient(
+            sessionPermissionMode,
+          );
 
           if (
             isPlanApproval ||
+            isQuestion ||
             (needsDesktopApproval && this.session?.hasDesktopConnected)
           ) {
             this.logger.debug("Relaying permission request", {
