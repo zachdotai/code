@@ -24,6 +24,7 @@ const SOURCE_TYPE_MAP: Record<
   zendesk: "ticket",
   conversations: "ticket",
   pganalyze: "issue",
+  health_checks: "health_issue",
 };
 
 const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
@@ -40,6 +41,7 @@ const SOURCE_LABELS: Record<keyof SignalSourceValues, string> = {
   zendesk: "Zendesk Tickets",
   conversations: "PostHog Support",
   pganalyze: "pganalyze",
+  health_checks: "Health checks",
 };
 
 const DATA_WAREHOUSE_SOURCES: Record<
@@ -60,6 +62,7 @@ const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
   "zendesk",
   "conversations",
   "pganalyze",
+  "health_checks",
 ];
 
 function isSetupSourceProduct(
@@ -79,6 +82,7 @@ function computeValues(
     zendesk: false,
     conversations: false,
     pganalyze: false,
+    health_checks: false,
   };
   if (!configs?.length) return result;
   for (const product of ALL_SOURCE_PRODUCTS) {
