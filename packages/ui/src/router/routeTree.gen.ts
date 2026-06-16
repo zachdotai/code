@@ -46,7 +46,9 @@ import { Route as CodeInboxRunsReportIdRouteImport } from './routes/code/inbox/r
 import { Route as CodeInboxReportsReportIdRouteImport } from './routes/code/inbox/reports.$reportId'
 import { Route as CodeInboxPullsReportIdRouteImport } from './routes/code/inbox/pulls.$reportId'
 import { Route as CodeAgentsScoutsSkillNameRouteImport } from './routes/code/agents/scouts.$skillName'
+import { Route as CodeAgentsApplicationsIdOrSlugRouteImport } from './routes/code/agents/applications/$idOrSlug'
 import { Route as CodeAgentsScoutsSkillNameIndexRouteImport } from './routes/code/agents/scouts.$skillName.index'
+import { Route as CodeAgentsApplicationsIdOrSlugIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/index'
 
 const WebsiteRoute = WebsiteRouteImport.update({
   id: '/website',
@@ -238,11 +240,23 @@ const CodeAgentsScoutsSkillNameRoute =
     path: '/$skillName',
     getParentRoute: () => CodeAgentsScoutsRoute,
   } as any)
+const CodeAgentsApplicationsIdOrSlugRoute =
+  CodeAgentsApplicationsIdOrSlugRouteImport.update({
+    id: '/$idOrSlug',
+    path: '/$idOrSlug',
+    getParentRoute: () => CodeAgentsApplicationsRoute,
+  } as any)
 const CodeAgentsScoutsSkillNameIndexRoute =
   CodeAgentsScoutsSkillNameIndexRouteImport.update({
     id: '/',
     path: '/',
     getParentRoute: () => CodeAgentsScoutsSkillNameRoute,
+  } as any)
+const CodeAgentsApplicationsIdOrSlugIndexRoute =
+  CodeAgentsApplicationsIdOrSlugIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -272,6 +286,7 @@ export interface FileRoutesByFullPath {
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
+  '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
@@ -283,6 +298,7 @@ export interface FileRoutesByFullPath {
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
+  '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
 }
 export interface FileRoutesByTo {
@@ -315,6 +331,7 @@ export interface FileRoutesByTo {
   '/code/inbox/pulls': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
+  '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameIndexRoute
 }
 export interface FileRoutesById {
@@ -345,6 +362,7 @@ export interface FileRoutesById {
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
+  '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
@@ -356,6 +374,7 @@ export interface FileRoutesById {
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
+  '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
 }
 export interface FileRouteTypes {
@@ -387,6 +406,7 @@ export interface FileRouteTypes {
     | '/code/agents/'
     | '/code/inbox/'
     | '/website/$channelId/'
+    | '/code/agents/applications/$idOrSlug'
     | '/code/agents/scouts/$skillName'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
@@ -398,6 +418,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
+    | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -430,6 +451,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
+    | '/code/agents/applications/$idOrSlug'
     | '/code/agents/scouts/$skillName'
   id:
     | '__root__'
@@ -459,6 +481,7 @@ export interface FileRouteTypes {
     | '/code/agents/'
     | '/code/inbox/'
     | '/website/$channelId/'
+    | '/code/agents/applications/$idOrSlug'
     | '/code/agents/scouts/$skillName'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
@@ -470,6 +493,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
+    | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
   fileRoutesById: FileRoutesById
 }
@@ -752,12 +776,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsScoutsSkillNameRouteImport
       parentRoute: typeof CodeAgentsScoutsRoute
     }
+    '/code/agents/applications/$idOrSlug': {
+      id: '/code/agents/applications/$idOrSlug'
+      path: '/$idOrSlug'
+      fullPath: '/code/agents/applications/$idOrSlug'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugRouteImport
+      parentRoute: typeof CodeAgentsApplicationsRoute
+    }
     '/code/agents/scouts/$skillName/': {
       id: '/code/agents/scouts/$skillName/'
       path: '/'
       fullPath: '/code/agents/scouts/$skillName/'
       preLoaderRoute: typeof CodeAgentsScoutsSkillNameIndexRouteImport
       parentRoute: typeof CodeAgentsScoutsSkillNameRoute
+    }
+    '/code/agents/applications/$idOrSlug/': {
+      id: '/code/agents/applications/$idOrSlug/'
+      path: '/'
+      fullPath: '/code/agents/applications/$idOrSlug/'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugIndexRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
     }
   }
 }
@@ -784,12 +822,30 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
 const WebsiteRouteWithChildren =
   WebsiteRoute._addFileChildren(WebsiteRouteChildren)
 
+interface CodeAgentsApplicationsIdOrSlugRouteChildren {
+  CodeAgentsApplicationsIdOrSlugIndexRoute: typeof CodeAgentsApplicationsIdOrSlugIndexRoute
+}
+
+const CodeAgentsApplicationsIdOrSlugRouteChildren: CodeAgentsApplicationsIdOrSlugRouteChildren =
+  {
+    CodeAgentsApplicationsIdOrSlugIndexRoute:
+      CodeAgentsApplicationsIdOrSlugIndexRoute,
+  }
+
+const CodeAgentsApplicationsIdOrSlugRouteWithChildren =
+  CodeAgentsApplicationsIdOrSlugRoute._addFileChildren(
+    CodeAgentsApplicationsIdOrSlugRouteChildren,
+  )
+
 interface CodeAgentsApplicationsRouteChildren {
+  CodeAgentsApplicationsIdOrSlugRoute: typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
   CodeAgentsApplicationsIndexRoute: typeof CodeAgentsApplicationsIndexRoute
 }
 
 const CodeAgentsApplicationsRouteChildren: CodeAgentsApplicationsRouteChildren =
   {
+    CodeAgentsApplicationsIdOrSlugRoute:
+      CodeAgentsApplicationsIdOrSlugRouteWithChildren,
     CodeAgentsApplicationsIndexRoute: CodeAgentsApplicationsIndexRoute,
   }
 
