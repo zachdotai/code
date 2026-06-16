@@ -96,7 +96,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const closeSettingsDialog = closeSettings;
   const { folders } = useFolders();
   const { channels } = useChannels();
-  const taskChannelMap = useTaskChannelMap({ enabled: open });
+  const taskChannelMap = useTaskChannelMap(channels, { enabled: open });
   const { theme, setTheme } = useThemeStore();
   const toggleLeftSidebar = useSidebarStore((state) => state.toggle);
   const view = useAppView();

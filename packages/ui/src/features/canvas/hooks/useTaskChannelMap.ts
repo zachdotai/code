@@ -1,8 +1,5 @@
 import { useHostTRPC } from "@posthog/host-router/react";
-import {
-  type Channel,
-  useChannels,
-} from "@posthog/ui/features/canvas/hooks/useChannels";
+import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 
@@ -12,12 +9,15 @@ import { useMemo } from "react";
  * the mapping is unambiguous. Fans out one `channelTasks.list` query per
  * channel; results are shared with the channel sidebar's per-section queries
  * through the react-query cache.
+ *
+ * Takes the already-fetched `channels` rather than subscribing to `useChannels`
+ * itself, so the caller owns the single subscription and a stable reference.
  */
-export function useTaskChannelMap(options?: {
-  enabled?: boolean;
-}): Map<string, Channel> {
+export function useTaskChannelMap(
+  channels: Channel[],
+  options?: { enabled?: boolean },
+): Map<string, Channel> {
   const enabled = options?.enabled ?? true;
-  const { channels } = useChannels({ enabled });
   const trpc = useHostTRPC();
   const results = useQueries({
     queries: channels.map((channel) =>
