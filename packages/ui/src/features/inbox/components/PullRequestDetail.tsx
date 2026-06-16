@@ -14,6 +14,7 @@ import { PrDiffStats } from "@posthog/ui/features/inbox/components/PrDiffStats";
 import { ReportDetailActions } from "@posthog/ui/features/inbox/components/ReportDetailActions";
 import { ReportTasksSection } from "@posthog/ui/features/inbox/components/ReportTasksSection";
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
+import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { Text } from "@radix-ui/themes";
 
@@ -64,6 +65,10 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
         report.implementation_pr_url ? (
           <>
             <InboxMetaSeparator />
+            <ReportImplementationPrLink
+              prUrl={report.implementation_pr_url}
+              size="md"
+            />
             <PrDiffStats
               prUrl={report.implementation_pr_url}
               hideWhileLoading

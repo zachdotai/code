@@ -1,4 +1,4 @@
-import { GitMerge, GitPullRequestIcon } from "@phosphor-icons/react";
+import { GitMergeIcon, GitPullRequestIcon } from "@phosphor-icons/react";
 import { cn } from "@posthog/quill";
 import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
 import { Tooltip } from "@radix-ui/themes";
@@ -46,18 +46,22 @@ export function ReportImplementationPrLink({
   onLinkClick,
 }: ReportImplementationPrLinkProps) {
   const {
-    meta: { state, merged, isLoading },
+    meta: { state, merged, draft, isLoading },
   } = usePrDetails(prUrl);
 
   const isSm = size === "sm";
 
+  // A draft PR is still `state === "open"` on GitHub, so check `draft` before
+  // falling through to the open (green) styling.
   const colorClass = isLoading
     ? "bg-gray-4 text-gray-11 hover:bg-gray-5"
     : merged
       ? "bg-violet-4 text-violet-11 hover:bg-violet-5"
       : state === "closed"
         ? "bg-red-4 text-red-11 hover:bg-red-5"
-        : "bg-green-4 text-green-11 hover:bg-green-5";
+        : draft
+          ? "bg-gray-4 text-gray-11 hover:bg-gray-5"
+          : "bg-green-4 text-green-11 hover:bg-green-5";
 
   const { reference: prReference, prNumber } = parseGitHubPrReference(prUrl);
 
@@ -65,7 +69,9 @@ export function ReportImplementationPrLink({
     ? `Merged – ${prReference}`
     : state === "closed"
       ? `Closed – ${prReference}`
-      : prReference;
+      : draft
+        ? `Draft – ${prReference}`
+        : `Open – ${prReference}`;
 
   const iconSize = isSm ? 10 : 12;
 
@@ -88,7 +94,7 @@ export function ReportImplementationPrLink({
         )}
       >
         {merged ? (
-          <GitMerge size={iconSize} weight="bold" />
+          <GitMergeIcon size={iconSize} weight="bold" />
         ) : (
           <GitPullRequestIcon size={iconSize} weight="bold" />
         )}
