@@ -32,6 +32,13 @@ export function navigateToTaskPending(key: string): void {
   });
 }
 
+export function navigateToChannel(channelId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/website/$channelId",
+    params: { channelId },
+  });
+}
+
 export function navigateToFolderSettings(folderId: string): void {
   void getRouterOrNull()?.navigate({
     to: "/folders/$folderId",

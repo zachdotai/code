@@ -57,7 +57,7 @@ import { toast } from "@posthog/ui/primitives/toast";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { hostClient } from "../hostClient";
 
 function NavButton({
@@ -338,8 +338,14 @@ function ChannelSection({
   const { data: tasks } = useTasks();
   const { tasks: filedTasks } = useChannelTasks(channel.id);
   const base = `/website/${channel.id}`;
-  // Channels always start collapsed on load; expansion is session-only.
-  const [open, setOpen] = useState(false);
+  const isActive = pathname === base || pathname.startsWith(`${base}/`);
+  // Channels start collapsed; expansion is session-only. Navigating into a
+  // channel (sidebar, cmd-k, deep link) auto-expands it so the active channel
+  // is always open, while leaving manual collapse/expand intact afterward.
+  const [open, setOpen] = useState(isActive);
+  useEffect(() => {
+    if (isActive) setOpen(true);
+  }, [isActive]);
 
   return (
     <Box className="group/chan relative">
