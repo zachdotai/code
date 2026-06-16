@@ -11,6 +11,7 @@ import {
   Dialog,
   DialogContent,
 } from "@posthog/quill";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
   type CommandMenuAction,
@@ -20,6 +21,7 @@ import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import {
   closeSettings,
@@ -95,8 +97,16 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const openSettingsDialog = openSettings;
   const closeSettingsDialog = closeSettings;
   const { folders } = useFolders();
-  const { channels } = useChannels();
-  const taskChannelMap = useTaskChannelMap(channels, { enabled: open });
+  // Channels (and the task→channel detail) are a Project Bluebird feature. Gate
+  // the channel fetches behind the flag so they never reach ungated users.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const { channels } = useChannels({ enabled: bluebirdEnabled });
+  const taskChannelMap = useTaskChannelMap(channels, {
+    enabled: open && bluebirdEnabled,
+  });
   const { theme, setTheme } = useThemeStore();
   const toggleLeftSidebar = useSidebarStore((state) => state.toggle);
   const view = useAppView();
@@ -348,7 +358,11 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           }}
         >
           <AutocompleteInput
-            placeholder="Search commands, channels, and tasks…"
+            placeholder={
+              bluebirdEnabled
+                ? "Search commands, channels, and tasks…"
+                : "Search commands and tasks…"
+            }
             autoFocus
             showClear
           />
