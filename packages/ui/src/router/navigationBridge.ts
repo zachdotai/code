@@ -95,6 +95,29 @@ export function navigateToMcpServers(): void {
   void getRouterOrNull()?.navigate({ to: "/mcp-servers" });
 }
 
+// Channels-space mirrors. These render the same shared views as their /code (or
+// top-level) counterparts but under /website, so navigating from the channels
+// sidebar keeps the channels chrome instead of switching back to Code. The
+// SidebarNavSection picks the right variant based on the active space.
+
+export function navigateToWebsiteHome(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/home" });
+}
+
+export function navigateToWebsiteSkills(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/skills" });
+}
+
+export function navigateToWebsiteMcpServers(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/mcp-servers" });
+}
+
+export function navigateToWebsiteCommandCenter(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/command-center" });
+  // Parity with navigateToCommandCenter's analytics tracking.
+  track(ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED);
+}
+
 export function navigateToSettings(
   category: SettingsCategory,
   options?: { replace?: boolean },

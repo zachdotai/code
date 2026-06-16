@@ -16,12 +16,17 @@ import {
   navigateToInbox,
   navigateToMcpServers,
   navigateToSkills,
+  navigateToWebsiteCommandCenter,
+  navigateToWebsiteHome,
+  navigateToWebsiteMcpServers,
+  navigateToWebsiteSkills,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { useRendererWindowFocusStore } from "@posthog/ui/shell/rendererWindowFocusStore";
 import { Box, Flex } from "@radix-ui/themes";
+import { useRouterState } from "@tanstack/react-router";
 import { AgentsItem } from "./items/AgentsItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { HomeItem } from "./items/HomeItem";
@@ -34,12 +39,29 @@ import { SkillsItem } from "./items/SkillsItem";
 // The sidebar navigation section shared by the Code pane (above the task list)
 // and the Channels pane. It is fully self-contained — every item's active
 // state, badge count, and click handler is wired here — so it can be dropped
-// into either layout. Items route to the code-space views; from the Channels
-// pane that switches the layout back to Code (Search opens the command menu in
-// place).
+// into either layout. In the Channels space, destinations with a /website
+// mirror (Home, Skills, MCP servers, Command Center) stay in that space;
+// Inbox, Agents and New task have no mirror yet and jump back to Code. Search
+// opens the command menu in place.
 export function SidebarNavSection() {
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
+
+  // When this section renders inside the Channels space, the destinations that
+  // have a /website mirror stay in that space; everything else (and the whole
+  // section in the Code space) uses the canonical routes. Inbox, Agents and New
+  // task have no mirror yet, so they intentionally jump back to Code.
+  const inChannels = useRouterState({
+    select: (s) => s.location.pathname.startsWith("/website"),
+  });
+  const goHome = inChannels ? navigateToWebsiteHome : navigateToHome;
+  const goSkills = inChannels ? navigateToWebsiteSkills : navigateToSkills;
+  const goMcpServers = inChannels
+    ? navigateToWebsiteMcpServers
+    : navigateToMcpServers;
+  const goCommandCenter = inChannels
+    ? navigateToWebsiteCommandCenter
+    : navigateToCommandCenter;
 
   // Active flags are pure functions of the current view — mirror what
   // useSidebarData derives, without pulling in its task-loading.
@@ -83,7 +105,7 @@ export function SidebarNavSection() {
 
       {homeTabEnabled && (
         <Box>
-          <HomeItem isActive={isHomeViewActive} onClick={navigateToHome} />
+          <HomeItem isActive={isHomeViewActive} onClick={goHome} />
         </Box>
       )}
 
@@ -104,20 +126,17 @@ export function SidebarNavSection() {
       </Box>
 
       <Box>
-        <SkillsItem isActive={isSkillsActive} onClick={navigateToSkills} />
+        <SkillsItem isActive={isSkillsActive} onClick={goSkills} />
       </Box>
 
       <Box>
-        <McpServersItem
-          isActive={isMcpServersActive}
-          onClick={navigateToMcpServers}
-        />
+        <McpServersItem isActive={isMcpServersActive} onClick={goMcpServers} />
       </Box>
 
       <Box mb="2">
         <CommandCenterItem
           isActive={isCommandCenterActive}
-          onClick={navigateToCommandCenter}
+          onClick={goCommandCenter}
           activeCount={commandCenterActiveCount}
         />
       </Box>

@@ -52,6 +52,9 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/folders/$folderId":
       return { type: "folder-settings", folderId: last.params.folderId };
     case "/code/home":
+    // Channels-space mirrors share the same view type so the sidebar's
+    // active-state highlighting works identically in either space.
+    case "/website/home":
       return { type: "home" };
     case "/code/inbox":
       return { type: "inbox" };
@@ -60,10 +63,13 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/code/archived":
       return { type: "archived" };
     case "/command-center":
+    case "/website/command-center":
       return { type: "command-center" };
     case "/skills":
+    case "/website/skills":
       return { type: "skills" };
     case "/mcp-servers":
+    case "/website/mcp-servers":
       return { type: "mcp-servers" };
     case "/settings/$category":
     case "/settings/":
