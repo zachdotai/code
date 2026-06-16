@@ -8,9 +8,12 @@ import {
 } from "@posthog/core/inbox/reportFiltering";
 import {
   computeInboxTabCounts,
+  INBOX_SCOPE_FOR_YOU,
   matchesReviewerScope,
   parseTeammateInboxScope,
 } from "@posthog/core/inbox/reportMembership";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useInboxReportsInfinite } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useInboxReviewerScopeStore } from "@posthog/ui/features/inbox/stores/inboxReviewerScopeStore";
 import { useInboxSignalsFilterStore } from "@posthog/ui/features/inbox/stores/inboxSignalsFilterStore";
@@ -52,7 +55,16 @@ export function useInboxAllReports(options?: {
   const priorityFilter = useInboxSignalsFilterStore((s) =>
     ignoreFilters ? EMPTY_FILTER_ARRAY : s.priorityFilter,
   );
+  const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client });
+
+  // Reviewer scope is applied server-side via `suggested_reviewers`: "For you"
+  // filters on the current user, a teammate scope on theirs, "Entire project"
+  // and the Runs tab (`ignoreScope`) send nothing.
+  const isForYou = !ignoreScope && scope === INBOX_SCOPE_FOR_YOU;
   const teammateUuid = ignoreScope ? null : parseTeammateInboxScope(scope);
+  const reviewerUuid =
+    teammateUuid ?? (isForYou ? (currentUser?.uuid ?? null) : null);
 
   const query = useInboxReportsInfinite(
     {
@@ -63,11 +75,16 @@ export function useInboxAllReports(options?: {
           ? sourceProductFilter.join(",")
           : undefined,
       priority: buildPriorityFilterParam(priorityFilter),
-      suggested_reviewers: teammateUuid
-        ? buildSuggestedReviewerFilterParam([teammateUuid])
+      suggested_reviewers: reviewerUuid
+        ? buildSuggestedReviewerFilterParam([reviewerUuid])
         : undefined,
     },
     {
+      // "For you" must always carry the current user's `suggested_reviewers`
+      // filter, so hold the query until that uuid resolves rather than firing a
+      // throwaway project-wide fetch first. Other scopes don't depend on the
+      // user and run immediately.
+      enabled: !isForYou || reviewerUuid != null,
       refetchInterval: INBOX_REFETCH_INTERVAL_MS,
       refetchIntervalInBackground: false,
     },
