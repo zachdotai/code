@@ -258,6 +258,11 @@ export function ConversationView({
                   ? slackThreadUrl
                   : undefined
               }
+              signalReportId={
+                item.id === firstUserMessageId
+                  ? (task?.signal_report ?? undefined)
+                  : undefined
+              }
             />
           );
         case "git_action":
@@ -286,7 +291,14 @@ export function ConversationView({
           return <UserShellExecuteView item={item} />;
       }
     },
-    [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],
+    [
+      repoPath,
+      taskId,
+      slackThreadUrl,
+      firstUserMessageId,
+      initialItemIds,
+      task?.signal_report,
+    ],
   );
 
   const getRowKey = useCallback((row: ThreadRow) => row.id, []);
