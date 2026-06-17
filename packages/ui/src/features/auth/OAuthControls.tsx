@@ -1,6 +1,6 @@
 import type { CloudRegion } from "@posthog/shared";
+import Logo from "@posthog/ui/primitives/Logo";
 import { Callout, Flex, Spinner } from "@radix-ui/themes";
-import posthogIcon from "./assets/posthog-icon.svg";
 import { RegionSelect } from "./RegionSelect";
 import { useOAuthFlow } from "./useOAuthFlow";
 
@@ -70,9 +70,9 @@ export function OAuthControls({
         {isPending ? (
           <Spinner size="1" />
         ) : (
-          <img src={posthogIcon} alt="" className="h-[20px] w-[20px]" />
+          <Logo wordmark={false} mono className="h-[20px] w-auto" />
         )}
-        {isPending ? "Cancel" : "Sign in / sign up with PostHog"}
+        {isPending ? "Cancel" : "Authenticate with PostHog"}
       </button>
     </Flex>
   );

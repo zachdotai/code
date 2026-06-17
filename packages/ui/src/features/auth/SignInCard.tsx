@@ -22,7 +22,7 @@ export function SignInCard({
     <Flex direction="column" gap="4">
       <Flex direction="column" gap="2">
         <Text className="font-bold text-(--gray-12) text-2xl">
-          Sign in / sign up with PostHog
+          Authenticate with PostHog
         </Text>
         <Text className="text-(--gray-11) text-sm">{subtitle}</Text>
       </Flex>

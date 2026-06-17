@@ -24,7 +24,7 @@ export function RegionSelect({
           PostHog region
         </Text>
         <Text className="text-(--gray-11) text-xs">
-          Pick where your data lives
+          Select your data region
         </Text>
       </Flex>
       <div className="grid w-full grid-cols-2 gap-2">
