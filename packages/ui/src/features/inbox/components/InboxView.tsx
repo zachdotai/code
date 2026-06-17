@@ -1,5 +1,6 @@
 import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { isInboxDetailPath } from "@posthog/core/inbox/reportMembership";
+import { InboxActivityHeatmap } from "@posthog/ui/features/inbox/components/InboxActivityHeatmap";
 import { InboxPageHeader } from "@posthog/ui/features/inbox/components/InboxPageHeader";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { resetReportOpenTrackerHistory } from "@posthog/ui/features/inbox/hooks/useReportOpenTracker";
@@ -48,6 +49,7 @@ export function InboxView() {
     <Flex direction="column" className="h-full min-h-0">
       {!isDetailView && <InboxPageHeader counts={counts} />}
       <div className="min-h-0 flex-1 overflow-auto">
+        {!isDetailView && <InboxActivityHeatmap />}
         <Outlet />
       </div>
     </Flex>
