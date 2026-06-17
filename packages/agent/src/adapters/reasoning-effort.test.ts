@@ -2,14 +2,11 @@ import { describe, expect, it } from "vitest";
 import { isSupportedReasoningEffort } from "./reasoning-effort";
 
 describe("isSupportedReasoningEffort", () => {
-  it("accepts xhigh for the codex gpt-5.5 family", () => {
-    expect(isSupportedReasoningEffort("codex", "gpt-5.5", "xhigh")).toBe(true);
+  it("rejects xhigh for codex models, including the gpt-5.5 family", () => {
+    expect(isSupportedReasoningEffort("codex", "gpt-5.5", "xhigh")).toBe(false);
     expect(isSupportedReasoningEffort("codex", "gpt-5.5-codex", "xhigh")).toBe(
-      true,
+      false,
     );
-  });
-
-  it("rejects xhigh for other codex models", () => {
     expect(isSupportedReasoningEffort("codex", "gpt-5.3-codex", "xhigh")).toBe(
       false,
     );

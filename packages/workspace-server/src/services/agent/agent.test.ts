@@ -323,7 +323,7 @@ describe("AgentService", () => {
       await service.startSession({
         ...baseSessionParams,
         adapter: "codex",
-        effort: "xhigh",
+        effort: "high",
       });
 
       expect(mockAgentRun).toHaveBeenCalledWith(
@@ -331,7 +331,7 @@ describe("AgentService", () => {
         "run-1",
         expect.objectContaining({
           adapter: "codex",
-          reasoningEffort: "xhigh",
+          reasoningEffort: "high",
         }),
       );
     });

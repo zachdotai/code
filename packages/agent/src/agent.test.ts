@@ -40,7 +40,7 @@ describe("Agent", () => {
     await agent.run("task-1", "run-1", {
       adapter: "codex",
       model: "gpt-5.5",
-      reasoningEffort: "xhigh",
+      reasoningEffort: "high",
       repositoryPath: "/tmp/repo",
     });
 
@@ -51,7 +51,7 @@ describe("Agent", () => {
     expect(config.codexOptions).toEqual(
       expect.objectContaining({
         model: "gpt-5.5",
-        reasoningEffort: "xhigh",
+        reasoningEffort: "high",
       }),
     );
   });
