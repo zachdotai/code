@@ -82,10 +82,11 @@ export function SidebarNavSection({
   const isMcpServersActive = view.type === "mcp-servers";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
-  // Pull requests tab shows, so the badge and the tab always agree.
-  // `ignoreFilters` keeps the badge stable against the inbox's filter chrome;
-  // scope still follows the user's For-you / project choice.
-  const { counts: inboxCounts } = useInboxAllReports({ ignoreFilters: true });
+  // Pull requests tab shows, so the badge and the tab always agree. The badge
+  // tracks the inbox's active source/priority/search filters (and the user's
+  // For-you / project scope) so it never shows a total that contradicts the
+  // filtered list the user is looking at.
+  const { counts: inboxCounts } = useInboxAllReports();
   const inboxPullRequestCount = inboxCounts.pulls;
 
   // Only subscribe to the task list when a parent hasn't already supplied the

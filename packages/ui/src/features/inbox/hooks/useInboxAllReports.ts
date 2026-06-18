@@ -113,8 +113,8 @@ export function useInboxAllReports(options?: {
       status: INBOX_PIPELINE_STATUS_FILTER,
       has_implementation_pr: true,
       // Mirror the list query's active filters so the badge matches the tab
-      // body. These are empty when `ignoreFilters` is set (sidebar usage), so
-      // the count stays scope-only there.
+      // body. These are empty when `ignoreFilters` is set (e.g. the Runs tab),
+      // so the count stays scope-only there.
       source_product:
         sourceProductFilter.length > 0
           ? sourceProductFilter.join(",")
