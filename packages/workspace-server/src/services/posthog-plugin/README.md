@@ -40,7 +40,7 @@ Vite watches `plugins/posthog/` (and `local-skills/` in dev) for hot-reload.
 **On startup:**
 1. Creates `{userData}/plugins/posthog/` (the runtime plugin dir)
 2. Assembles it: copies `plugin.json` from bundled, merges bundled skills + any previously-downloaded remote skills
-3. Syncs skills to `$HOME/.agents/skills/` for Codex
+3. Mirrors the user's own skills out to `$HOME/.agents/skills/` for Codex (see below)
 4. Starts a 30-minute interval timer
 5. Kicks off the first async download
 
@@ -49,7 +49,7 @@ Vite watches `plugins/posthog/` (and `local-skills/` in dev) for hot-reload.
 2. Extracts to a temp dir via `unzip`
 3. Atomically swaps into `{userData}/skills/`
 4. Re-assembles the runtime plugin dir
-5. Re-syncs to Codex
+5. Re-mirrors the user's own skills to Codex
 6. On failure: logs a warning, keeps existing skills, retries next interval
 
 **`getPluginPath()`** — called by `AgentService` when starting sessions:
@@ -57,9 +57,11 @@ Vite watches `plugins/posthog/` (and `local-skills/` in dev) for hot-reload.
 - Prod → `{userData}/plugins/posthog/` (with downloaded updates)
 - Fallback → bundled path
 
-### Codex Sync
+### Codex Mirror
 
-After every assembly, skills are copied to `$HOME/.agents/skills/` so that Codex sessions also pick them up.
+`$HOME/.agents/skills/` is a shared, cross-agent skills directory that other tools (e.g. Codex) also read. To avoid bloating that shared location — and inflating other agents' context — PostHog Code **only mirrors the user's own skills** (`$HOME/.claude/skills/`) there, never the bundled PostHog catalog. The bundled catalog lives in the app-private runtime plugin dir and is loaded only by PostHog Code's own sessions.
+
+`mirrorUserSkillsToCodex` (in `codex-mirror.ts`) runs on startup, after each 30-minute update, and after any user skill mutation. It is collision-safe: it tracks the names it wrote in `.posthog-mirror.json` and never overwrites a skill it didn't put there; mirrors whose source skill is deleted are removed.
 
 ## Dev Workflow
 

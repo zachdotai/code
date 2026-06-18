@@ -24,11 +24,7 @@ import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
 import { getUserSkillsDir } from "../skills/skill-discovery";
 import { getCodexSkillsDir, mirrorUserSkillsToCodex } from "./codex-mirror";
-import {
-  overlayDownloadedSkills,
-  syncCodexSkills,
-  UpdateSkillsSaga,
-} from "./update-skills-saga";
+import { overlayDownloadedSkills, UpdateSkillsSaga } from "./update-skills-saga";
 
 const SKILLS_ZIP_URL = process.env.SKILLS_ZIP_URL ?? "";
 const CONTEXT_MILL_ZIP_URL = process.env.CONTEXT_MILL_ZIP_URL ?? "";
@@ -99,7 +95,6 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
     // Overlay any previously-downloaded skills on top of the runtime plugin
     await overlayDownloadedSkills(this.runtimeSkillsDir, this.runtimePluginDir);
 
-    await syncCodexSkills(this.getPluginPath(), CODEX_SKILLS_DIR);
     await this.mirrorUserSkills();
 
     // Start periodic updates
@@ -167,8 +162,6 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
       const result = await saga.run({
         runtimeSkillsDir: this.runtimeSkillsDir,
         runtimePluginDir: this.runtimePluginDir,
-        pluginPath: this.getPluginPath(),
-        codexSkillsDir: CODEX_SKILLS_DIR,
         tempDir,
         skillsZipUrl: SKILLS_ZIP_URL,
         contextMillZipUrl: CONTEXT_MILL_ZIP_URL,
