@@ -109,6 +109,17 @@ describe("tabFilters", () => {
         ),
       ).toBe(false);
     });
+
+    it("keeps resolved PRs in the Pull requests tab (matches Cloud)", () => {
+      expect(
+        isPullRequestReport(
+          fakeReport({
+            implementation_pr_url: "https://gh/p/1",
+            status: "resolved",
+          }),
+        ),
+      ).toBe(true);
+    });
   });
 
   describe("isExcludedFromInbox", () => {
@@ -170,6 +181,14 @@ describe("tabFilters", () => {
       expect(
         isReportTabReport(
           fakeReport({ status: "pending_input", implementation_pr_url: null }),
+        ),
+      ).toBe(false);
+    });
+
+    it("excludes resolved reports (done work, only shown in the Pull requests tab)", () => {
+      expect(
+        isReportTabReport(
+          fakeReport({ status: "resolved", implementation_pr_url: null }),
         ),
       ).toBe(false);
     });

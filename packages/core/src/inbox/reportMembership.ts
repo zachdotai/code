@@ -194,6 +194,7 @@ export function orderedRunsTabReports(reports: SignalReport[]): SignalReport[] {
 export function isReportTabReport(report: SignalReport): boolean {
   if (isExcludedFromInbox(report)) return false;
   if (report.status === "failed") return false; // failed runs live in the Runs tab only
+  if (report.status === "resolved") return false; // resolved work is done; only surfaces in the Pull requests tab when it has a PR
   if (isPullRequestReport(report)) return false;
   if (isAgentRunReport(report)) return false;
   return true;

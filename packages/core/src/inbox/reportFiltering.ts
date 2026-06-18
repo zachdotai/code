@@ -7,10 +7,14 @@ import type {
 
 /**
  * Comma-separated statuses for the inbox query. We pull `failed` so the Runs
- * tab can surface failed runs in its Recently finished section.
+ * tab can surface failed runs in its Recently finished section, and `resolved`
+ * so the Pull requests tab can surface PRs that have already been merged/closed
+ * — matching the PostHog Cloud inbox, which shows every status except
+ * `suppressed`/`deleted`. The Reports tab keeps `resolved` out via its own
+ * `isReportTabReport` predicate.
  */
 export const INBOX_PIPELINE_STATUS_FILTER =
-  "potential,candidate,in_progress,ready,pending_input,failed";
+  "potential,candidate,in_progress,ready,pending_input,failed,resolved";
 
 /** Polling interval for inbox queries while the Electron window is focused. */
 export const INBOX_REFETCH_INTERVAL_MS = 3000;
