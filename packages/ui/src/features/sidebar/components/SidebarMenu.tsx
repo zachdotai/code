@@ -7,8 +7,6 @@ import {
   useArchiveTask,
 } from "@posthog/ui/features/archive/useArchiveTask";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
-import { useInboxReports } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useHogletStore } from "@posthog/ui/features/rts/stores/hogletStore";
 import { useRtsSelectionStore } from "@posthog/ui/features/rts/stores/rtsSelectionStore";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
