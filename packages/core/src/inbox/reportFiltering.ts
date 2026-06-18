@@ -12,6 +12,16 @@ import type {
 export const INBOX_PIPELINE_STATUS_FILTER =
   "potential,candidate,in_progress,ready,pending_input,failed";
 
+/**
+ * Status filter for the Archive tab. `suppressed` is the only archived status:
+ * it is the single state the archive action sets, and the only not-in-inbox
+ * state worth restoring. `deleted` is permanent and stripped server-side; snooze
+ * is a temporary `snoozed_until` timestamp, not a status, and auto-returns. See
+ * `isDismissedReport` for the full rationale. Suppressed reports are excluded
+ * from the main pipeline query, so the Archive tab fetches them explicitly.
+ */
+export const INBOX_DISMISSED_STATUS_FILTER = "suppressed";
+
 /** Polling interval for inbox queries while the Electron window is focused. */
 export const INBOX_REFETCH_INTERVAL_MS = 3000;
 
