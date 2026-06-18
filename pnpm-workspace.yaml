@@ -51,6 +51,7 @@ minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk-win32-x64'
   - '@anthropic-ai/sdk'
   - '@pierre/diffs'
+  - '@pierre/theming'
   - '@posthog/quill'
   - '@posthog/quill-charts'
   - '@posthog/quill-tokens'
