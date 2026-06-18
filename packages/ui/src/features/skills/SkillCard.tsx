@@ -1,6 +1,19 @@
-import { Folder, Package, Storefront, User } from "@phosphor-icons/react";
+import {
+  Folder,
+  Package,
+  Robot,
+  Storefront,
+  User,
+  Warning,
+} from "@phosphor-icons/react";
+import type {
+  SkillAnalysis,
+  SkillIssue,
+} from "@posthog/core/skills/analyzeSkills";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
-import { Badge, Box, Flex, Text } from "@radix-ui/themes";
+import { Badge, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { useEffect, useRef } from "react";
+import { SkillListCard } from "./SkillListCard";
 
 export const SOURCE_CONFIG: Record<
   SkillSource,
@@ -18,52 +31,70 @@ export const SOURCE_CONFIG: Record<
     label: "Marketplace",
     sectionTitle: "Marketplace",
   },
+  codex: { icon: Robot, label: "Codex", sectionTitle: "Codex" },
 };
 
 interface SkillCardProps {
   skill: SkillInfo;
   isSelected: boolean;
   onClick: () => void;
+  /** When true, scroll this card into view once (used for deep-linked skills). */
+  scrollIntoView?: boolean;
+  onScrolledIntoView?: () => void;
+  issues?: SkillIssue[];
 }
 
-export function SkillCard({ skill, isSelected, onClick }: SkillCardProps) {
+export function SkillCard({
+  skill,
+  isSelected,
+  onClick,
+  scrollIntoView,
+  onScrolledIntoView,
+  issues = [],
+}: SkillCardProps) {
   const config = SOURCE_CONFIG[skill.source];
   const Icon = config?.icon ?? Package;
 
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!scrollIntoView) return;
+    ref.current?.scrollIntoView({ block: "center" });
+    onScrolledIntoView?.();
+  }, [scrollIntoView, onScrolledIntoView]);
+
   return (
-    <Flex
-      align="center"
-      gap="2"
-      px="3"
-      py="2"
-      className={`cursor-pointer rounded-lg border transition-colors ${
-        isSelected
-          ? "border-accent-8 bg-accent-3"
-          : "border-gray-6 bg-gray-2 hover:border-gray-8 hover:bg-gray-3"
-      }`}
+    <SkillListCard
+      cardRef={ref}
+      icon={<Icon size={14} weight="duotone" className="text-gray-11" />}
+      title={skill.name}
+      subtitle={skill.description || undefined}
+      isSelected={isSelected}
       onClick={onClick}
-    >
-      <Box className="flex shrink-0 items-center justify-center rounded bg-gray-4 p-1.5">
-        <Icon size={14} weight="duotone" className="text-gray-11" />
-      </Box>
-
-      <Flex direction="column" gap="0" className="min-w-0 flex-1">
-        <Text className="truncate font-medium text-[13px] text-gray-12">
-          {skill.name}
-        </Text>
-        {skill.description && (
-          <Text className="truncate text-[12px] text-gray-10">
-            {skill.description}
-          </Text>
-        )}
-      </Flex>
-
-      {skill.repoName && (
-        <Badge size="1" variant="soft" color="gray" className="shrink-0">
-          {skill.repoName}
-        </Badge>
-      )}
-    </Flex>
+      trailing={
+        <>
+          {issues.length > 0 && (
+            <Tooltip
+              content={
+                <Flex direction="column" gap="1">
+                  {issues.map((issue) => (
+                    <Text key={issue.message} size="1">
+                      {issue.message}
+                    </Text>
+                  ))}
+                </Flex>
+              }
+            >
+              <Warning size={14} className="shrink-0 text-amber-11" />
+            </Tooltip>
+          )}
+          {skill.repoName && (
+            <Badge size="1" variant="soft" color="gray" className="shrink-0">
+              {skill.repoName}
+            </Badge>
+          )}
+        </>
+      }
+    />
   );
 }
 
@@ -72,6 +103,9 @@ interface SkillSectionProps {
   skills: SkillInfo[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  scrollToPath: string | null;
+  onScrolledIntoView: () => void;
+  analysis?: SkillAnalysis;
 }
 
 export function SkillSection({
@@ -79,6 +113,9 @@ export function SkillSection({
   skills,
   selectedPath,
   onSelect,
+  scrollToPath,
+  onScrolledIntoView,
+  analysis,
 }: SkillSectionProps) {
   return (
     <Flex direction="column" gap="1">
@@ -92,6 +129,9 @@ export function SkillSection({
             skill={skill}
             isSelected={selectedPath === skill.path}
             onClick={() => onSelect(skill.path)}
+            scrollIntoView={scrollToPath === skill.path}
+            onScrolledIntoView={onScrolledIntoView}
+            issues={analysis?.[skill.path]}
           />
         ))}
       </Flex>

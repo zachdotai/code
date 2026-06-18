@@ -305,6 +305,66 @@ describe("AuthService", () => {
     );
   });
 
+  it("completes bootstrap anonymously when the stored-session restore hangs", async () => {
+    vi.useFakeTimers();
+    try {
+      seedStoredSession({ selectedProjectId: 42 });
+      stubAuthFetch();
+      // Half-open socket: the refresh never resolves or rejects.
+      oauthFlow.refreshToken.mockReturnValue(new Promise<never>(() => {}));
+
+      const initPromise = service.initialize();
+      await vi.advanceTimersByTimeAsync(20_001);
+      await initPromise;
+
+      expect(service.getState()).toMatchObject({
+        status: "anonymous",
+        bootstrapComplete: true,
+        cloudRegion: "us",
+        currentProjectId: 42,
+      });
+      expect(sessionPort.getCurrent()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("upgrades to authenticated when the slow restore lands after the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      seedStoredSession({ selectedProjectId: 42 });
+      stubAuthFetch();
+      let resolveRefresh!: (value: unknown) => void;
+      oauthFlow.refreshToken.mockReturnValue(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+
+      const initPromise = service.initialize();
+      await vi.advanceTimersByTimeAsync(20_001);
+      await initPromise;
+
+      expect(service.getState().status).toBe("anonymous");
+
+      resolveRefresh(
+        mockTokenResponse({
+          accessToken: "late-access-token",
+          refreshToken: "late-refresh-token",
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(service.getState()).toMatchObject({
+        status: "authenticated",
+        bootstrapComplete: true,
+        currentProjectId: 42,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("forces a token refresh when explicitly requested", async () => {
     oauthFlow.startFlow.mockResolvedValue(
       mockTokenResponse({
@@ -774,6 +834,300 @@ describe("AuthService", () => {
       await service.initialize();
 
       expect(orgCallCount).toBe(1);
+    });
+  });
+
+  describe("project-less recovery", () => {
+    function stubOrgFetch(state: { succeeds: boolean; orgCalls: number }) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1" },
+              }),
+            } as unknown as Response;
+          }
+
+          if (/\/api\/organizations\/[^/]+\/$/.test(url)) {
+            state.orgCalls++;
+            if (!state.succeeds) {
+              throw new TypeError("fetch failed");
+            }
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                name: "Org 1",
+                teams: [
+                  { id: 42, name: "Project 42" },
+                  { id: 84, name: "Project 84" },
+                ],
+              }),
+            } as unknown as Response;
+          }
+
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+      );
+    }
+
+    // Let the fire-and-forget refreshOrgProjects() that syncAuthenticatedSession
+    // kicks settle (it no-ops while offline) so orgProjectsRefreshPromise is cleared
+    // before we trigger recovery explicitly.
+    const flushPostSyncKick = () => new Promise((r) => setTimeout(r, 0));
+
+    it.each([
+      {
+        trigger: "connectivity online",
+        seedProjectId: 84,
+        expectProjectId: 84,
+      },
+      {
+        trigger: "power-monitor resume",
+        seedProjectId: null,
+        expectProjectId: 42,
+      },
+    ])(
+      "authenticates without a project on transient org failure, then recovers via $trigger",
+      async ({ trigger, seedProjectId, expectProjectId }) => {
+        if (seedProjectId !== null) {
+          seedStoredSession({
+            selectedProjectId: seedProjectId,
+            scopeVersion: OAUTH_SCOPE_VERSION - 1,
+          });
+          await service.initialize();
+        }
+
+        const fetchState = { succeeds: false, orgCalls: 0 };
+        stubOrgFetch(fetchState);
+        oauthFlow.startFlow.mockResolvedValue(mockTokenResponse());
+        vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: false });
+
+        await service.login("us");
+
+        expect(service.getState()).toMatchObject({
+          status: "authenticated",
+          currentProjectId: null,
+          orgProjectsMap: { "org-1": { projects: [] } },
+        });
+
+        await flushPostSyncKick();
+
+        fetchState.succeeds = true;
+        vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: true });
+        if (trigger === "connectivity online") {
+          emitStatus(true);
+        } else {
+          getResumeHandler()();
+        }
+
+        await vi.waitFor(() => {
+          expect(service.getState().currentProjectId).toBe(expectProjectId);
+        });
+        expect(service.getState().orgProjectsMap).toMatchObject({
+          "org-1": {
+            orgName: "Org 1",
+            projects: [
+              { id: 42, name: "Project 42" },
+              { id: 84, name: "Project 84" },
+            ],
+          },
+        });
+      },
+    );
+
+    it("retries across multiple recovery passes before succeeding", async () => {
+      let orgCalls = 0;
+      let succeedFromCall = Number.POSITIVE_INFINITY;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1" },
+              }),
+            } as unknown as Response;
+          }
+          if (/\/api\/organizations\/[^/]+\/$/.test(url)) {
+            orgCalls++;
+            if (orgCalls < succeedFromCall) {
+              throw new TypeError("fetch failed");
+            }
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                name: "Org 1",
+                teams: [{ id: 42, name: "Project 42" }],
+              }),
+            } as unknown as Response;
+          }
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+      );
+      oauthFlow.startFlow.mockResolvedValue(mockTokenResponse());
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: false });
+
+      await service.login("us");
+      expect(service.getState().currentProjectId).toBeNull();
+      await flushPostSyncKick();
+
+      // Two recovery passes fail (3 org-fetch attempts each); the third succeeds.
+      orgCalls = 0;
+      succeedFromCall = 7;
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: true });
+      emitStatus(true);
+
+      await vi.waitFor(() => {
+        expect(service.getState().currentProjectId).toBe(42);
+      });
+      expect(orgCalls).toBe(7);
+    });
+
+    it("stays project-less without crashing when recovery exhausts every attempt", async () => {
+      const fetchState = { succeeds: false, orgCalls: 0 };
+      stubOrgFetch(fetchState);
+      oauthFlow.startFlow.mockResolvedValue(mockTokenResponse());
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: false });
+
+      await service.login("us");
+      await flushPostSyncKick();
+
+      fetchState.orgCalls = 0;
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: true });
+      emitStatus(true);
+
+      // 5 recovery passes x 3 org-fetch attempts each.
+      await vi.waitFor(() => {
+        expect(fetchState.orgCalls).toBe(15);
+      });
+      expect(service.getState()).toMatchObject({
+        status: "authenticated",
+        currentProjectId: null,
+      });
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        "Org/projects recovery exhausted retries",
+      );
+    });
+
+    it("collapses concurrent recovery triggers into a single run", async () => {
+      let orgCalls = 0;
+      let hangRecovery = false;
+      let releaseOrg!: () => void;
+      const orgGate = new Promise<void>((resolve) => {
+        releaseOrg = resolve;
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1" },
+              }),
+            } as unknown as Response;
+          }
+          if (/\/api\/organizations\/[^/]+\/$/.test(url)) {
+            orgCalls++;
+            if (!hangRecovery) {
+              throw new TypeError("fetch failed");
+            }
+            await orgGate;
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                name: "Org 1",
+                teams: [{ id: 42, name: "Project 42" }],
+              }),
+            } as unknown as Response;
+          }
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+      );
+      oauthFlow.startFlow.mockResolvedValue(mockTokenResponse());
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: false });
+
+      await service.login("us");
+      expect(service.getState().currentProjectId).toBeNull();
+      await flushPostSyncKick();
+
+      orgCalls = 0;
+      hangRecovery = true;
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: true });
+      emitStatus(true);
+      emitStatus(true);
+      getResumeHandler()();
+
+      await vi.waitFor(() => {
+        expect(orgCalls).toBe(1);
+      });
+      await flushPostSyncKick();
+      expect(orgCalls).toBe(1);
+
+      releaseOrg();
+      await vi.waitFor(() => {
+        expect(service.getState().currentProjectId).toBe(42);
+      });
+    });
+
+    it("preserves the stored project while project-less so recovery can restore it", async () => {
+      seedStoredSession({
+        selectedProjectId: 84,
+        scopeVersion: OAUTH_SCOPE_VERSION - 1,
+      });
+      await service.initialize();
+
+      const fetchState = { succeeds: false, orgCalls: 0 };
+      stubOrgFetch(fetchState);
+      oauthFlow.startFlow.mockResolvedValue(mockTokenResponse());
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: false });
+
+      await service.login("us");
+
+      expect(service.getState().currentProjectId).toBeNull();
+      expect(sessionPort.getCurrent()?.selectedProjectId).toBe(84);
+    });
+
+    it("does not attempt recovery when the token grants no scoped organizations", async () => {
+      const fetchState = { succeeds: true, orgCalls: 0 };
+      stubOrgFetch(fetchState);
+      oauthFlow.startFlow.mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: [] }),
+      );
+
+      await service.login("us");
+
+      expect(service.getState()).toMatchObject({
+        status: "authenticated",
+        currentProjectId: null,
+        orgProjectsMap: {},
+      });
+
+      emitStatus(true);
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(fetchState.orgCalls).toBe(0);
+      expect(service.getState().currentProjectId).toBeNull();
     });
   });
 

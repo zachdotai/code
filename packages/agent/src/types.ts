@@ -3,6 +3,7 @@ import type {
   HandoffLocalGitState as GitHandoffLocalGitState,
   PostHogAPIConfig,
 } from "@posthog/shared";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 
 export type {
   ArtifactType,
@@ -52,7 +53,12 @@ export interface TaskExecutionOptions {
   model?: string;
   gatewayUrl?: string;
   codexBinaryPath?: string;
-  instructions?: string;
+  reasoningEffort?: EffortLevel;
+  /**
+   * Codex-only. Appended on top of the model's base prompt via the Codex
+   * `developer_instructions` config key, preserving Codex's native base prompt.
+   */
+  developerInstructions?: string;
   processCallbacks?: ProcessSpawnedCallback;
   /** Callback invoked when the agent calls the create_output tool for structured output */
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;

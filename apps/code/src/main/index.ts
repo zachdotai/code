@@ -24,6 +24,7 @@ import {
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type { InboxLinkService } from "@posthog/core/links/inbox-link";
 import type { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import type { ScoutLinkService } from "@posthog/core/links/scout-link";
 import type { TaskLinkService } from "@posthog/core/links/task-link";
 import { NOTIFICATION_SERVICE } from "@posthog/core/notification/identifiers";
 import type { NotificationService } from "@posthog/core/notification/notification";
@@ -60,6 +61,10 @@ import {
   focusWorktreePaths,
 } from "./services/focus/desktop-adapters";
 import type { WorkspaceServerService } from "./services/workspace-server/service";
+import {
+  collectMemorySnapshot,
+  flattenMemorySnapshot,
+} from "./utils/crash-diagnostics";
 import { ensureClaudeConfigDir } from "./utils/env";
 import {
   getChromiumLogFilePath,
@@ -134,6 +139,14 @@ function isCrashLoop(): boolean {
   return recentCrashTimestamps.length >= CRASH_LOOP_THRESHOLD;
 }
 
+function crashDiagnostics() {
+  return {
+    appUptimeSeconds: Math.round(process.uptime()),
+    chromiumLogTail: readChromiumLogTail(),
+    ...flattenMemorySnapshot(collectMemorySnapshot(() => app.getAppMetrics())),
+  };
+}
+
 app.on("render-process-gone", (_event, webContents, details) => {
   const props = {
     source: "main",
@@ -143,14 +156,15 @@ app.on("render-process-gone", (_event, webContents, details) => {
     url: webContents.getURL(),
     title: webContents.getTitle(),
     webContentsId: String(webContents.id),
+    ...crashDiagnostics(),
   };
-  log.error("Renderer process gone", {
-    ...props,
-    chromiumLogTail: readChromiumLogTail(),
-  });
+  log.error("Renderer process gone", props);
   posthogNodeAnalytics.captureException(
     new Error(`Renderer process gone: ${details.reason}`),
-    props,
+    {
+      ...props,
+      $exception_fingerprint: ["render-process-gone", details.reason],
+    },
   );
   posthogNodeAnalytics.flush().catch(() => {});
 
@@ -190,14 +204,19 @@ app.on("child-process-gone", (_event, details) => {
     exitCode: String(details.exitCode),
     serviceName: details.serviceName ?? "",
     name: details.name ?? "",
+    ...crashDiagnostics(),
   };
-  log.error("Child process gone", {
-    ...props,
-    chromiumLogTail: readChromiumLogTail(),
-  });
+  log.error("Child process gone", props);
   posthogNodeAnalytics.captureException(
     new Error(`Child process gone (${details.type}): ${details.reason}`),
-    props,
+    {
+      ...props,
+      $exception_fingerprint: [
+        "child-process-gone",
+        details.type,
+        details.reason,
+      ],
+    },
   );
   posthogNodeAnalytics.flush().catch(() => {});
 });
@@ -210,6 +229,7 @@ async function initializeServices(): Promise<void> {
   container.get<UpdatesService>(MAIN_TOKENS.UpdatesService);
   container.get<TaskLinkService>(MAIN_TOKENS.TaskLinkService);
   container.get<InboxLinkService>(MAIN_TOKENS.InboxLinkService);
+  container.get<ScoutLinkService>(MAIN_TOKENS.ScoutLinkService);
   container.get<NewTaskLinkService>(MAIN_TOKENS.NewTaskLinkService);
   container.get<GitHubIntegrationService>(GITHUB_INTEGRATION_SERVICE);
   container.get<SlackIntegrationService>(SLACK_INTEGRATION_SERVICE);

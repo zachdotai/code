@@ -8,7 +8,10 @@ import type {
   AUTH_TOKEN_CIPHER,
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
-import type { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
+import type {
+  CANVAS_GEN_SERVICE,
+  FREEFORM_GEN_SERVICE,
+} from "@posthog/core/canvas/identifiers";
 import type {
   CLOUD_TASK_AUTH,
   ICloudTaskAuth,
@@ -48,10 +51,12 @@ import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type {
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
 } from "@posthog/core/links/identifiers";
 import type { InboxLinkService } from "@posthog/core/links/inbox-link";
 import type { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import type { ScoutLinkService } from "@posthog/core/links/scout-link";
 import type { TaskLinkService } from "@posthog/core/links/task-link";
 import type {
   LLM_GATEWAY_HOST,
@@ -95,6 +100,7 @@ import type {
   IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
 import type { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
+import type { FreeformGenService } from "@posthog/host-router/services/freeform-gen.service";
 import type {
   ANALYTICS_SERVICE,
   IAnalytics,
@@ -262,6 +268,7 @@ import type {
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
   PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
   REPOSITORY_REPOSITORY as MAIN_REPOSITORY_REPOSITORY,
+  SCOUT_LINK_SERVICE as MAIN_SCOUT_LINK_SERVICE,
   SECURE_STORE_BACKEND as MAIN_SECURE_STORE_BACKEND,
   SECURE_STORE_SERVICE as MAIN_SECURE_STORE_SERVICE,
   SETTINGS_STORE as MAIN_SETTINGS_STORE,
@@ -411,9 +418,11 @@ export interface MainBindings {
   // Links
   [MAIN_TASK_LINK_SERVICE]: TaskLinkService;
   [MAIN_INBOX_LINK_SERVICE]: InboxLinkService;
+  [MAIN_SCOUT_LINK_SERVICE]: ScoutLinkService;
   [MAIN_NEW_TASK_LINK_SERVICE]: NewTaskLinkService;
   [TASK_LINK_SERVICE]: TaskLinkService;
   [INBOX_LINK_SERVICE]: InboxLinkService;
+  [SCOUT_LINK_SERVICE]: ScoutLinkService;
   [NEW_TASK_LINK_SERVICE]: NewTaskLinkService;
 
   // Watcher registry
@@ -435,6 +444,7 @@ export interface MainBindings {
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [CANVAS_GEN_SERVICE]: CanvasGenService;
+  [FREEFORM_GEN_SERVICE]: FreeformGenService;
 
   // ws-server git service (bound to(GitService))
   [WS_GIT_SERVICE]: GitService;

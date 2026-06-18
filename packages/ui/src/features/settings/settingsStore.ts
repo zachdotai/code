@@ -1,4 +1,8 @@
 import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
+import {
+  COLLAPSE_MODE_DEFAULT,
+  type CollapseMode,
+} from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { electronStorage } from "@posthog/ui/shell/rendererStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -9,6 +13,7 @@ export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
 export type AgentAdapter = "claude" | "codex";
 export type DefaultInitialTaskMode = "plan" | "last_used";
+export type DefaultMessagingMode = "queue" | "steer";
 export type DefaultReasoningEffort =
   | "low"
   | "medium"
@@ -67,6 +72,8 @@ interface SettingsStore {
   lastUsedInitialTaskMode: ExecutionMode;
   funMode: FunMode;
   defaultReasoningEffort: DefaultReasoningEffort;
+  defaultMessagingMode: DefaultMessagingMode;
+  setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
   setLastUsedLocalWorkspaceMode: (mode: LocalWorkspaceMode) => void;
@@ -119,8 +126,14 @@ interface SettingsStore {
   // Terminal
   terminalFont: TerminalFont;
   terminalCustomFontFamily: string;
+  terminalGpuRendering: boolean;
   setTerminalFont: (font: TerminalFont) => void;
   setTerminalCustomFontFamily: (value: string) => void;
+  setTerminalGpuRendering: (enabled: boolean) => void;
+
+  // Conversation thread (new-thread)
+  conversationCollapseMode: CollapseMode;
+  setConversationCollapseMode: (mode: CollapseMode) => void;
 
   // Experimental / misc
   hedgehogMode: boolean;
@@ -134,6 +147,9 @@ interface SettingsStore {
   shouldShowHint: (key: string, max?: number) => boolean;
   recordHintShown: (key: string) => void;
   markHintLearned: (key: string) => void;
+
+  _hasHydrated: boolean;
+  setHasHydrated: (hydrated: boolean) => void;
 }
 
 // ---------- Store ----------
@@ -154,6 +170,7 @@ export const useSettingsStore = create<SettingsStore>()(
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
       defaultReasoningEffort: "last_used",
+      defaultMessagingMode: "queue",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
       setLastUsedLocalWorkspaceMode: (mode) =>
@@ -183,6 +200,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedInitialTaskMode: mode }),
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
+      setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
 
       // Notifications
       desktopNotifications: true,
@@ -225,9 +243,17 @@ export const useSettingsStore = create<SettingsStore>()(
       // Terminal
       terminalFont: "berkeley-mono",
       terminalCustomFontFamily: "",
+      terminalGpuRendering: true,
       setTerminalFont: (font) => set({ terminalFont: font }),
       setTerminalCustomFontFamily: (value) =>
         set({ terminalCustomFontFamily: value }),
+      setTerminalGpuRendering: (enabled) =>
+        set({ terminalGpuRendering: enabled }),
+
+      // Conversation thread (new-thread)
+      conversationCollapseMode: COLLAPSE_MODE_DEFAULT,
+      setConversationCollapseMode: (mode) =>
+        set({ conversationCollapseMode: mode }),
 
       // Experimental / misc
       hedgehogMode: false,
@@ -265,6 +291,9 @@ export const useSettingsStore = create<SettingsStore>()(
           };
         }),
       setFunMode: (mode) => set({ funMode: mode }),
+
+      _hasHydrated: false,
+      setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
     {
       name: "settings-storage",
@@ -283,6 +312,7 @@ export const useSettingsStore = create<SettingsStore>()(
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
+        defaultMessagingMode: state.defaultMessagingMode,
 
         // Notifications
         desktopNotifications: state.desktopNotifications,
@@ -307,6 +337,10 @@ export const useSettingsStore = create<SettingsStore>()(
         // Terminal
         terminalFont: state.terminalFont,
         terminalCustomFontFamily: state.terminalCustomFontFamily,
+        terminalGpuRendering: state.terminalGpuRendering,
+
+        // Conversation thread (new-thread)
+        conversationCollapseMode: state.conversationCollapseMode,
 
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,
@@ -316,6 +350,9 @@ export const useSettingsStore = create<SettingsStore>()(
         // Onboarding hints
         hints: state.hints,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
       merge: (persisted, current) => {
         const merged = {
           ...current,
@@ -333,3 +370,19 @@ export const useSettingsStore = create<SettingsStore>()(
     },
   ),
 );
+
+/**
+ * The repository a one-click cloud task should default to: the last-used cloud
+ * repository when it's still connected, otherwise the first connected one.
+ * `repositories` is expected to be normalized (lowercased) already.
+ */
+export function resolveDefaultCloudRepository(
+  repositories: string[],
+  lastUsedCloudRepository: string | null,
+): string | null {
+  const normalizedLastUsed = lastUsedCloudRepository?.toLowerCase() ?? null;
+  if (normalizedLastUsed && repositories.includes(normalizedLastUsed)) {
+    return normalizedLastUsed;
+  }
+  return repositories[0] ?? null;
+}

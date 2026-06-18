@@ -29,8 +29,12 @@ import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { logger } from "@posthog/ui/shell/logger";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { undoArchive } from "./undoArchive";
+import { useUnarchiveTask } from "./useUnarchiveTask";
 
 const log = logger.scope("archive-task");
+
+const UNDO_TOAST_DURATION_MS = 8000;
 
 export interface ArchiveCacheKeys {
   archivedTaskIdsQueryKey: readonly unknown[];
@@ -148,7 +152,7 @@ export async function archiveTaskImperative(
   taskId: string,
   queryClient: QueryClient,
   keys: ArchiveCacheKeys,
-  options?: { skipNavigate?: boolean },
+  options?: { skipNavigate?: boolean; optimistic?: boolean },
 ): Promise<void> {
   await archiveTask(
     taskId,
@@ -177,10 +181,26 @@ export async function archiveTasksImperative(
 export function useArchiveTask() {
   const queryClient = useQueryClient();
   const keys = useArchiveCacheKeys();
+  const { restore } = useUnarchiveTask();
 
   const archiveTask = async ({ taskId }: { taskId: string }) => {
-    await archiveTaskImperative(taskId, queryClient, keys);
-    toast.success("Task archived");
+    // Non-optimistic: keep the row in place (with a spinner) until the archive
+    // is confirmed, rather than removing it instantly and rolling back on error.
+    await archiveTaskImperative(taskId, queryClient, keys, {
+      optimistic: false,
+    });
+    const toastId = `archive-undo-${taskId}`;
+    toast.success("Task archived", {
+      id: toastId,
+      duration: UNDO_TOAST_DURATION_MS,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          toast.dismiss(toastId);
+          void undoArchive(taskId, restore);
+        },
+      },
+    });
   };
 
   return { archiveTask };

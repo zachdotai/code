@@ -2,9 +2,7 @@ import { RobotIcon } from "@phosphor-icons/react";
 import {
   INBOX_SCOPE_ENTIRE_PROJECT,
   INBOX_SCOPE_FOR_YOU,
-  isFinishedRunReport,
-  isLiveRunReport,
-  isQueuedRunReport,
+  partitionRunsTabReports,
 } from "@posthog/core/inbox/reportMembership";
 import {
   Empty,
@@ -13,7 +11,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import type { SignalReport } from "@posthog/shared/types";
 import { AgentRunCard } from "@posthog/ui/features/inbox/components/AgentRunCard";
 import { CardSkeleton } from "@posthog/ui/features/inbox/components/CardSkeleton";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
@@ -23,12 +20,6 @@ import { useMemo, useState } from "react";
 
 const RECENTLY_FINISHED_LIMIT = 10;
 const QUEUED_LIMIT = 10;
-
-function timestampMs(value: string | null | undefined): number {
-  if (!value) return 0;
-  const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? ms : 0;
-}
 
 export function RunsTab() {
   // Runs is project-wide and intentionally chrome-less. Reviewer assignment
@@ -44,20 +35,7 @@ export function RunsTab() {
   const [showAllQueued, setShowAllQueued] = useState(false);
 
   const { queuedRuns, liveRuns, finishedRuns } = useMemo(() => {
-    const queued: typeof scopedReports = [];
-    const live: typeof scopedReports = [];
-    const finished: typeof scopedReports = [];
-    for (const report of scopedReports) {
-      if (isQueuedRunReport(report)) queued.push(report);
-      else if (isLiveRunReport(report)) live.push(report);
-      else if (isFinishedRunReport(report)) finished.push(report);
-    }
-    const newestFirst = (a: SignalReport, b: SignalReport) =>
-      timestampMs(b.updated_at ?? b.created_at) -
-      timestampMs(a.updated_at ?? a.created_at);
-    queued.sort(newestFirst);
-    live.sort(newestFirst);
-    finished.sort(newestFirst);
+    const { queued, live, finished } = partitionRunsTabReports(scopedReports);
     return { queuedRuns: queued, liveRuns: live, finishedRuns: finished };
   }, [scopedReports]);
 
@@ -209,7 +187,11 @@ function RunsSection({
           <Text className="font-semibold text-[13px] text-gray-12">
             {title}
           </Text>
-          <Text className="text-[12px] text-gray-10 tabular-nums">{count}</Text>
+          {count > 0 && (
+            <Text className="text-[12px] text-gray-10 tabular-nums">
+              {count}
+            </Text>
+          )}
           {isLive && count > 0 && (
             <span
               className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-(--blue-9)"

@@ -55,8 +55,8 @@ import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
 import {
   buildGatewayPropertyHeaders,
-  getLlmGatewayUrl,
   resolveGatewayProduct,
+  resolveLlmGatewayUrl,
 } from "../utils/gateway";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
@@ -198,6 +198,15 @@ function createTappedWritableStream(
   });
 }
 
+export function isTurnCompleteNotification(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { method?: unknown }).method ===
+      POSTHOG_NOTIFICATIONS.TURN_COMPLETE
+  );
+}
+
 interface SseController {
   send: (data: unknown) => void;
   close: () => void;
@@ -241,6 +250,7 @@ export class AgentServer {
   private posthogAPI: PostHogAPIClient;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
   private questionRelayedToSlack = false;
+  private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
@@ -928,6 +938,7 @@ export class AgentServer {
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
       signalReportId: preTask?.signal_report,
+      aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id,
@@ -982,7 +993,7 @@ export class AgentServer {
               apiKey: this.config.apiKey,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
-              instructions: codexInstructions,
+              developerInstructions: codexInstructions,
             }
           : undefined,
       onStructuredOutput: async (output) => {
@@ -997,7 +1008,11 @@ export class AgentServer {
     });
 
     // Tap both streams to broadcast all ACP messages via SSE (mimics local transport)
+    this.adapterEmittedTurnComplete = false;
     const onAcpMessage = (message: unknown) => {
+      if (isTurnCompleteNotification(message)) {
+        this.adapterEmittedTurnComplete = true;
+      }
       this.broadcastEvent({
         type: "notification",
         timestamp: new Date().toISOString(),
@@ -1053,19 +1068,7 @@ export class AgentServer {
         jsonSchema: preTask?.json_schema ?? null,
         permissionMode: initialPermissionMode,
         ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
-        ...(this.config.claudeCode?.plugins?.length && {
-          claudeCode: {
-            options: {
-              ...(this.config.claudeCode?.plugins?.length && {
-                plugins: this.config.claudeCode.plugins,
-              }),
-              ...(runtimeAdapter === "claude" &&
-                this.config.reasoningEffort && {
-                  effort: this.config.reasoningEffort,
-                }),
-            },
-          },
-        }),
+        ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
       },
     });
 
@@ -1656,6 +1659,32 @@ export class AgentServer {
       : systemPrompt.append;
   }
 
+  /**
+   * Builds the optional `claudeCode` session meta. Reasoning effort and plugins
+   * are independent: effort must reach Claude even when no plugins are set, so
+   * it cannot sit behind a plugins guard.
+   */
+  private buildClaudeCodeSessionMeta(
+    runtimeAdapter: "claude" | "codex",
+  ): { claudeCode: { options: Record<string, unknown> } } | undefined {
+    const plugins = this.config.claudeCode?.plugins;
+    const effort =
+      runtimeAdapter === "claude" ? this.config.reasoningEffort : undefined;
+
+    if (!plugins?.length && !effort) {
+      return undefined;
+    }
+
+    const options: Record<string, unknown> = {};
+    if (plugins?.length) {
+      options.plugins = plugins;
+    }
+    if (effort) {
+      options.effort = effort;
+    }
+    return { claudeCode: { options } };
+  }
+
   private getCloudInteractionOrigin(): string | undefined {
     return (
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN ??
@@ -1707,6 +1736,20 @@ export class AgentServer {
       ? `
 # Identity
 You are the PostHog Slack app, PostHog's agent for helping users with their product data and coding tasks from Slack. When introducing yourself or referring to yourself in messages to the user, identify as "PostHog Slack app". Do NOT refer to yourself as Claude, an Anthropic assistant, or any underlying model name.
+
+# Response Style
+You are replying in a Slack thread. Slack readers want short, skimmable answers — be concise by default.
+- Answer simple questions in a single sentence. Keep everything else brief — a few sentences at most.
+- Lead with the answer or the outcome. Skip preamble, restating the question, and sign-offs.
+- Prefer plain prose. Treat bullet lists as the exception, not the norm, and avoid headers and tables unless they genuinely make a complex answer clearer.
+- Do not narrate your thinking or list every step you took; report what matters and the result.
+- This is a default, not a hard rule. If the user (or their saved memory) asks for more depth or a specific format, follow that instead.
+
+# Mentioning users
+To ping a Slack user, reuse a \`<@U…|displayname>\` token that already appears in the message context — copy it verbatim, including the \`U…\` ID. Do NOT construct a mention token from a name, and do NOT substitute the display name (or any other string) for the \`U…\` ID — \`<@Jane|Jane Doe>\` is not a valid mention; only the form with the real ID like \`<@U01ABCDEF23|Jane Doe>\` is. If the person you want to refer to has no \`<@U…|displayname>\` token anywhere in the thread context, write their name as plain text instead of inventing one.
+
+# Suggesting code changes
+You can also open pull requests directly from this Slack thread. When the user's question describes a problem with a plausible code-side fix — a bug visible in errors or logs, missing or broken instrumentation, a broken funnel step traceable to UI code, a stale config that lives in a repo — end your reply with a one-sentence offer to open a PR for the fix and ask if they want you to proceed. Skip the offer for pure data lookups with no actionable code change (e.g. "what was DAU yesterday?"), and skip it when the fix would clearly live outside any repo you can reach.
 `
       : "";
     const signedCommitInstructions = `
@@ -1736,6 +1779,18 @@ and atomically force-updates the remote branch. This is how you fix conflicts on
 Histories containing merge commits are refused — rebase (which flattens merges) first.
 If a signed-git tool refuses with a "merge in progress" or "leak" error, follow its recovery
 instructions instead of retrying the same call.
+
+## Re-committing to a branch with an open PR
+Before committing again to a branch that already has an open PR, fetch it first. The remote
+branch can advance between your commits — CI automation often auto-commits regenerated
+artifacts (codegen, lockfiles, formatting) onto open PR branches, and collaborators can push
+too. Committing from a stale local checkout silently reverts those commits, so
+\`git_signed_commit\` refuses when the remote branch is ahead of your checkout. If it does, or
+before your next commit, update your checkout — stash any uncommitted work across the update so
+you don't lose it: \`git stash --include-untracked\`, \`git fetch origin <branch>\`,
+\`git reset --hard origin/<branch>\`, \`git stash pop\` (resolve any conflicts), then re-stage
+and commit. A soft/mixed reset would keep your stale files and re-commit the revert, so the
+hard reset is the safe one here — your work is held in the stash.
 
 ## Attribution
 Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to your
@@ -1966,6 +2021,7 @@ ${signedCommitInstructions}
     isInternal = false,
     originProduct,
     signalReportId,
+    aiStage,
     taskId,
     taskRunId,
     taskUserId,
@@ -1974,6 +2030,7 @@ ${signedCommitInstructions}
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
+    aiStage?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -1981,8 +2038,11 @@ ${signedCommitInstructions}
   } = {}): void {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
-    const gatewayUrl =
-      process.env.LLM_GATEWAY_URL || getLlmGatewayUrl(apiUrl, product);
+    const gatewayUrl = resolveLlmGatewayUrl(
+      process.env.LLM_GATEWAY_URL,
+      apiUrl,
+      product,
+    );
     const openaiBaseUrl = gatewayUrl.endsWith("/v1")
       ? gatewayUrl
       : `${gatewayUrl}/v1`;
@@ -1996,6 +2056,7 @@ ${signedCommitInstructions}
       task_origin_product: originProduct,
       task_internal: isInternal,
       signal_report_id: signalReportId,
+      ai_stage: aiStage,
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,
@@ -2493,6 +2554,10 @@ ${signedCommitInstructions}
 
   private broadcastTurnComplete(stopReason: string): void {
     if (!this.session) return;
+    if (this.adapterEmittedTurnComplete) {
+      this.adapterEmittedTurnComplete = false;
+      return;
+    }
     const notification = {
       jsonrpc: "2.0",
       method: POSTHOG_NOTIFICATIONS.TURN_COMPLETE,

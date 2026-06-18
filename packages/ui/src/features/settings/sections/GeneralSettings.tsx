@@ -3,11 +3,16 @@ import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import {
+  COLLAPSE_MODE_OPTIONS,
+  type CollapseMode,
+} from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
   type AutoConvertLongText,
   type CompletionSound,
   type DefaultInitialTaskMode,
+  type DefaultMessagingMode,
   type DefaultReasoningEffort,
   type DiffOpenMode,
   type FunMode,
@@ -79,9 +84,11 @@ export function GeneralSettings() {
     completionVolume,
     autoConvertLongText,
     defaultInitialTaskMode,
+    defaultMessagingMode,
     defaultReasoningEffort,
     diffOpenMode,
     sendMessagesWith,
+    conversationCollapseMode,
     hedgehogMode,
     funMode,
     setDesktopNotifications,
@@ -91,9 +98,11 @@ export function GeneralSettings() {
     setCompletionVolume,
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
+    setDefaultMessagingMode,
     setDefaultReasoningEffort,
     setDiffOpenMode,
     setSendMessagesWith,
+    setConversationCollapseMode,
     setHedgehogMode,
     setFunMode,
   } = useSettingsStore();
@@ -196,6 +205,18 @@ export function GeneralSettings() {
     [defaultInitialTaskMode, setDefaultInitialTaskMode],
   );
 
+  const handleDefaultMessagingModeChange = useCallback(
+    (value: DefaultMessagingMode) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "default_messaging_mode",
+        new_value: value,
+        old_value: defaultMessagingMode,
+      });
+      setDefaultMessagingMode(value);
+    },
+    [defaultMessagingMode, setDefaultMessagingMode],
+  );
+
   const handleDefaultReasoningEffortChange = useCallback(
     (value: DefaultReasoningEffort) => {
       track(ANALYTICS_EVENTS.SETTING_CHANGED, {
@@ -206,6 +227,18 @@ export function GeneralSettings() {
       setDefaultReasoningEffort(value);
     },
     [defaultReasoningEffort, setDefaultReasoningEffort],
+  );
+
+  const handleConversationCollapseModeChange = useCallback(
+    (value: CollapseMode) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "conversation_collapse_mode",
+        new_value: value,
+        old_value: conversationCollapseMode,
+      });
+      setConversationCollapseMode(value);
+    },
+    [conversationCollapseMode, setConversationCollapseMode],
   );
 
   const handleSendMessagesWithChange = useCallback(
@@ -418,6 +451,25 @@ export function GeneralSettings() {
       </SettingRow>
 
       <SettingRow
+        label="Default messaging mode"
+        description="Mode new sessions start in. Steer applies messages mid-turn. Queue holds them until the turn ends."
+      >
+        <Select.Root
+          value={defaultMessagingMode}
+          onValueChange={(value) =>
+            handleDefaultMessagingModeChange(value as DefaultMessagingMode)
+          }
+          size="1"
+        >
+          <Select.Trigger className="min-w-[100px]" />
+          <Select.Content>
+            <Select.Item value="queue">Queue</Select.Item>
+            <Select.Item value="steer">Steer</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      <SettingRow
         label="Default effort level"
         description="Choose the default reasoning effort for new tasks, or remember your last-used level"
       >
@@ -504,6 +556,34 @@ export function GeneralSettings() {
             <Select.Item value="split">Split pane</Select.Item>
             <Select.Item value="same-pane">Same pane</Select.Item>
             <Select.Item value="last-active-pane">Last active pane</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      {/* Conversation */}
+      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Conversation
+      </Text>
+
+      <SettingRow
+        label="Collapse tool calls"
+        description="Group each turn's tool calls into a collapsible summary. Partial keeps the active turn expanded and folds completed turns."
+        noBorder
+      >
+        <Select.Root
+          value={conversationCollapseMode}
+          onValueChange={(value) =>
+            handleConversationCollapseModeChange(value as CollapseMode)
+          }
+          size="1"
+        >
+          <Select.Trigger className="min-w-[140px]" />
+          <Select.Content>
+            {COLLAPSE_MODE_OPTIONS.map((opt) => (
+              <Select.Item key={opt.value} value={opt.value}>
+                {opt.label}
+              </Select.Item>
+            ))}
           </Select.Content>
         </Select.Root>
       </SettingRow>

@@ -13,7 +13,11 @@ import {
 import { createTestRepo, type TestRepo } from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
 import type { TaskRun } from "../types";
-import { AgentServer, SSE_KEEPALIVE_INTERVAL_MS } from "./agent-server";
+import {
+  AgentServer,
+  isTurnCompleteNotification,
+  SSE_KEEPALIVE_INTERVAL_MS,
+} from "./agent-server";
 import { type JwtPayload, SANDBOX_CONNECTION_AUDIENCE } from "./jwt";
 
 const mockedClaudeSdk = vi.hoisted(() => {
@@ -209,6 +213,9 @@ interface TestableServer {
   ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
   getRuntimeAdapter(): "claude" | "codex";
+  buildClaudeCodeSessionMeta(
+    runtimeAdapter: "claude" | "codex",
+  ): { claudeCode: { options: Record<string, unknown> } } | undefined;
 }
 
 let nextTestPort = 20000;
@@ -658,6 +665,56 @@ describe("AgentServer HTTP Mode", () => {
         },
       });
     });
+
+    it("skips one broadcast after the adapter emitted its own turn_complete", () => {
+      const appendRawLine = vi.fn();
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: unknown;
+        adapterEmittedTurnComplete: boolean;
+        broadcastTurnComplete(stopReason: string): void;
+      };
+      testServer.session = {
+        acpSessionId: "session-1",
+        payload: { run_id: "run-1" },
+        logWriter: { appendRawLine },
+      };
+      testServer.adapterEmittedTurnComplete = true;
+
+      testServer.broadcastTurnComplete("end_turn");
+      expect(appendRawLine).not.toHaveBeenCalled();
+
+      testServer.broadcastTurnComplete("end_turn");
+      expect(appendRawLine).toHaveBeenCalledTimes(1);
+    });
+
+    it("recognizes adapter turn_complete notifications on the tapped stream", () => {
+      expect(
+        isTurnCompleteNotification({
+          jsonrpc: "2.0",
+          method: "_posthog/turn_complete",
+          params: { sessionId: "s", stopReason: "end_turn" },
+        }),
+      ).toBe(true);
+      expect(
+        isTurnCompleteNotification({
+          jsonrpc: "2.0",
+          method: "_posthog/usage_update",
+          params: {},
+        }),
+      ).toBe(false);
+      expect(isTurnCompleteNotification(null)).toBe(false);
+      expect(isTurnCompleteNotification("turn_complete")).toBe(false);
+    });
   });
 
   describe("GET /events", () => {
@@ -1086,6 +1143,68 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
+  describe("buildClaudeCodeSessionMeta", () => {
+    it("sends claude reasoning effort even when no plugins are configured", () => {
+      const s = createServer({ reasoningEffort: "high" });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({ effort: "high" });
+    });
+
+    it("does not send claudeCode effort for codex runs", () => {
+      const s = createServer({ reasoningEffort: "high" });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "codex",
+      );
+
+      expect(meta).toBeUndefined();
+    });
+
+    it("returns undefined when neither plugins nor effort are set", () => {
+      const s = createServer();
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta).toBeUndefined();
+    });
+
+    it("includes both plugins and effort for claude runs", () => {
+      const s = createServer({
+        reasoningEffort: "medium",
+        claudeCode: { plugins: [{ type: "local", path: "/tmp/plugin" }] },
+      });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({
+        plugins: [{ type: "local", path: "/tmp/plugin" }],
+        effort: "medium",
+      });
+    });
+
+    it("returns only plugins when effort is not set", () => {
+      const s = createServer({
+        claudeCode: { plugins: [{ type: "local", path: "/tmp/plugin" }] },
+      });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({
+        plugins: [{ type: "local", path: "/tmp/plugin" }],
+      });
+    });
+  });
+
   describe("detectedPrUrl tracking", () => {
     it("stores PR URL when gh pr create produces it", () => {
       const s = createServer();
@@ -1432,6 +1551,50 @@ describe("AgentServer HTTP Mode", () => {
         },
       );
 
+      it.each([
+        {
+          label: "no repository, no PR",
+          config: { repositoryPath: undefined },
+        },
+        { label: "repository, no PR", config: {} },
+      ])(
+        "injects concise response-style guidance for Slack-origin runs ($label)",
+        ({ config }) => {
+          process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+          const s = createServer(config);
+          const prompt = (
+            s as unknown as TestableServer
+          ).buildCloudSystemPrompt();
+          expect(prompt).toContain("# Response Style");
+          expect(prompt).toContain("be concise by default");
+          expect(prompt).toContain(
+            "Answer simple questions in a single sentence",
+          );
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        },
+      );
+
+      it.each([
+        { label: "no origin set", origin: undefined },
+        { label: "signal_report origin", origin: "signal_report" },
+        { label: "posthog_code origin", origin: "posthog_code" },
+      ])(
+        "omits response-style guidance for non-Slack runs ($label)",
+        ({ origin }) => {
+          if (origin) {
+            process.env.POSTHOG_CODE_INTERACTION_ORIGIN = origin;
+          } else {
+            delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+          }
+          const s = createServer();
+          const prompt = (
+            s as unknown as TestableServer
+          ).buildCloudSystemPrompt();
+          expect(prompt).not.toContain("# Response Style");
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        },
+      );
+
       it("injects identity for Slack-origin runs with an existing PR", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
         const s = createServer();
@@ -1481,7 +1644,7 @@ describe("AgentServer HTTP Mode", () => {
           expect(prompt).toContain(
             "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
           );
-          expect(prompt).not.toContain("Slack thread");
+          expect(prompt).not.toContain("from a [Slack thread]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }

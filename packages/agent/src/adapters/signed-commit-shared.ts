@@ -29,8 +29,9 @@ export const SIGNED_COMMIT_TOOL_DESCRIPTION =
   "blocked because all commits must be signed. The commit is created via GitHub's API and " +
   "your local checkout is kept in sync. For a new branch, pass `branch` (prefixed with " +
   "`posthog-code/`) and the tool creates it on the remote. Refuses while a merge/rebase/" +
-  "cherry-pick is in progress, and refuses staged files that copy base-branch content into " +
-  "the PR — to bring the base branch in, use `git_signed_merge` instead.";
+  "cherry-pick is in progress, refuses staged files that copy base-branch content into the PR " +
+  "(to bring the base branch in, use `git_signed_merge`), and refuses when the remote branch " +
+  "has advanced past your checkout (e.g. a CI bot pushed) — sync it first, then retry.";
 
 export const signedCommitToolSchema = {
   message: z.string().describe("Commit headline (first line)."),
@@ -139,6 +140,17 @@ async function runSignedTool<A>(
 ): Promise<SignedCommitToolResult> {
   try {
     const result = await op(ctx, args);
+    if (result.commits.length === 0) {
+      // Staged content already present on the branch — idempotent no-op, not a failure.
+      return {
+        content: [
+          {
+            type: "text",
+            text: `${result.branch} already contains the staged changes — nothing to commit.`,
+          },
+        ],
+      };
+    }
     const list = result.commits.map((c) => `- ${c.sha} ${c.url}`).join("\n");
     return { content: [{ type: "text", text: `${lead(result)}:\n${list}` }] };
   } catch (err) {

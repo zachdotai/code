@@ -12,7 +12,32 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_CLOSED: "Inbox report closed",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
   INBOX_REPORT_ACTION: "Inbox report action",
+  SIGN_IN_STARTED: "Sign in started",
+  SIGN_IN_COMPLETED: "Sign in completed",
+  SIGN_IN_FAILED: "Sign in failed",
+  PROMPT_SENT: "Prompt sent",
 } as const;
+
+export type SignInMethod = "oauth" | "dev_api_key" | "qr_scan";
+
+export type SignInFailureReason = "cancelled" | "timeout" | "error";
+
+export interface SignInStartedProperties {
+  method: SignInMethod;
+  region: string;
+}
+
+export interface SignInCompletedProperties {
+  method: SignInMethod;
+  region: string;
+}
+
+export interface SignInFailedProperties {
+  method: SignInMethod;
+  region: string;
+  reason: SignInFailureReason;
+  error_message: string;
+}
 
 export type InboxReportOpenMethod =
   | "click"
@@ -138,12 +163,25 @@ export interface InboxReportActionProperties {
   suggested_reviewer_uuid?: string;
 }
 
+export interface PromptSentProperties {
+  task_id: string;
+  is_initial: boolean;
+  execution_type: "cloud";
+  prompt_length_chars: number;
+  /** True when the message interrupted a running turn (Steer mode). */
+  is_steer: boolean;
+}
+
 export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_VIEWED]: InboxViewedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_OPENED]: InboxReportOpenedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
+  [ANALYTICS_EVENTS.SIGN_IN_STARTED]: SignInStartedProperties;
+  [ANALYTICS_EVENTS.SIGN_IN_COMPLETED]: SignInCompletedProperties;
+  [ANALYTICS_EVENTS.SIGN_IN_FAILED]: SignInFailedProperties;
+  [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
 };
 
 export interface Analytics {

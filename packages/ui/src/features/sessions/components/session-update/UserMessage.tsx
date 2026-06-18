@@ -4,14 +4,19 @@ import {
   Check,
   Copy,
   File,
+  FileText,
   SlackLogo,
 } from "@phosphor-icons/react";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { Box, Flex, IconButton } from "@radix-ui/themes";
 import { motion } from "framer-motion";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tooltip } from "../../../../primitives/Tooltip";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
+import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
+import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
+import { extractChannelContext } from "./channelContext";
 import {
   hasFileMentions,
   MentionChip,
@@ -26,6 +31,8 @@ interface UserMessageProps {
   sourceUrl?: string;
   attachments?: UserMessageAttachment[];
   animate?: boolean;
+  /** Task the message belongs to — needed to open the context file tab. */
+  taskId?: string;
 }
 
 function formatTimestamp(ts: number): string {
@@ -50,8 +57,28 @@ export const UserMessage = memo(function UserMessage({
   sourceUrl,
   attachments = [],
   animate = true,
+  taskId,
 }: UserMessageProps) {
-  const containsFileMentions = hasFileMentions(content);
+  // A channel's CONTEXT.md, if injected into this prompt, is collapsed into a
+  // clickable tag instead of rendered inline; the rest of the prompt renders
+  // normally. Clicking the tag opens the snapshot as a file tab. The clickable
+  // tag + split tab is a project-bluebird feature, but we always strip the block
+  // so the raw <channel_context> XML never leaks for flag-off viewers.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelContext = useMemo(
+    () => extractChannelContext(content),
+    [content],
+  );
+  const displayContent = channelContext ? channelContext.stripped : content;
+  const showChannelContextTag = !!channelContext && bluebirdEnabled;
+  const openChannelContextInSplit = usePanelLayoutStore(
+    (s) => s.openChannelContextInSplit,
+  );
+
+  const containsFileMentions = hasFileMentions(displayContent);
   const showAttachmentChips = attachments.length > 0 && !containsFileMentions;
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -72,11 +99,11 @@ export const UserMessage = memo(function UserMessage({
   }, []);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(content);
+    navigator.clipboard.writeText(displayContent);
     setCopied(true);
     clearTimeout(copiedTimerRef.current);
     copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
-  }, [content]);
+  }, [displayContent]);
 
   return (
     <motion.div
@@ -98,9 +125,34 @@ export const UserMessage = memo(function UserMessage({
           }
         >
           {containsFileMentions ? (
-            parseFileMentions(content)
+            parseFileMentions(displayContent)
           ) : (
-            <MarkdownRenderer content={content} />
+            <MarkdownRenderer content={displayContent} />
+          )}
+          {showChannelContextTag && channelContext && (
+            <Flex
+              wrap="wrap"
+              gap="1"
+              className={displayContent ? "mt-1.5" : ""}
+            >
+              <MentionChip
+                icon={<FileText size={12} />}
+                label={`${
+                  channelContext.mention.name
+                    ? `#${channelContext.mention.name} `
+                    : ""
+                }CONTEXT.md`}
+                onClick={
+                  taskId
+                    ? () =>
+                        openChannelContextInSplit(taskId, {
+                          channelName: channelContext.mention.name,
+                          body: channelContext.mention.body,
+                        })
+                    : undefined
+                }
+              />
+            </Flex>
           )}
           {showAttachmentChips && (
             <Flex

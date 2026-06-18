@@ -2,7 +2,7 @@ import type { Schemas } from "@posthog/api-client";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 const CHANNELS_POLL_INTERVAL_MS = 30_000;
 const CHANNELS_QUERY_KEY = ["canvas-channels"] as const;
@@ -12,11 +12,16 @@ export interface Channel {
   id: string;
   /** Display name — the channel's single-segment path. */
   name: string;
+  /**
+   * Raw file-system path of the folder. Used as the `ref` when starring the
+   * channel, so the desktop shortcut links back to this exact folder.
+   */
+  path: string;
 }
 
 function toChannel(fs: Schemas.FileSystem): Channel {
   // Top-level channels have a single-segment path; strip any leading slash.
-  return { id: fs.id, name: fs.path.replace(/^\/+/, "") };
+  return { id: fs.id, name: fs.path.replace(/^\/+/, ""), path: fs.path };
 }
 
 /** List the project's channels (top-level desktop file-system folders). */
@@ -26,16 +31,22 @@ export function useChannels(options?: { enabled?: boolean }): {
 } {
   const query = useAuthenticatedQuery<Schemas.FileSystem[]>(
     CHANNELS_QUERY_KEY,
-    (client) => client.getDesktopFileSystem(),
+    (client) => client.getDesktopFileSystemChannels(),
     {
       enabled: options?.enabled ?? true,
       refetchInterval: CHANNELS_POLL_INTERVAL_MS,
     },
   );
-  const channels = (query.data ?? [])
-    .filter((fs) => fs.type === "folder")
-    .map(toChannel)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Memoize so the array reference is stable while the underlying data is
+  // unchanged — callers depend on `channels` in their own memos/effects.
+  const channels = useMemo(
+    () =>
+      (query.data ?? [])
+        .filter((fs) => fs.type === "folder")
+        .map(toChannel)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [query.data],
+  );
   return { channels, isLoading: query.isLoading };
 }
 
@@ -56,7 +67,20 @@ export function useChannelMutations() {
       if (!client) throw new Error("Not authenticated");
       return client.createDesktopFileSystemChannel(name);
     },
-    onSuccess: invalidate,
+    onSuccess: (newFs) => {
+      // Insert the created channel into the cache immediately so the sidebar
+      // updates the instant the POST resolves, rather than waiting on the
+      // paginated refetch that `invalidate` triggers.
+      queryClient.setQueryData<Schemas.FileSystem[]>(
+        CHANNELS_QUERY_KEY,
+        (old) => {
+          if (!old) return [newFs];
+          if (old.some((fs) => fs.id === newFs.id)) return old;
+          return [...old, newFs];
+        },
+      );
+      invalidate();
+    },
   });
 
   const deleteMutation = useMutation({

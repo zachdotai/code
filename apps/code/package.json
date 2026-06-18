@@ -10,8 +10,8 @@
   },
   "scripts": {
     "setup": "bash bin/setup",
-    "dev": "electron-forge start",
-    "start": "electron-forge start",
+    "dev": "electron-forge start -- --remote-debugging-port=9222",
+    "start": "electron-forge start -- --remote-debugging-port=9222",
     "start:debug": "electron-forge start -- --inspect=5858 --remote-debugging-port=9222",
     "package": "electron-forge package",
     "package:dev": "FORCE_DEV_MODE=1 SKIP_NOTARIZE=1 electron-forge package",
@@ -69,7 +69,7 @@
     "@types/semver": "^7.7.1",
     "@vitejs/plugin-react": "^4.2.1",
     "@vitest/coverage-v8": "4.0.18",
-    "@vitest/ui": "^4.0.10",
+    "@vitest/ui": "^4.1.8",
     "adm-zip": "^0.5.16",
     "electron": "^41.0.0",
     "husky": "^9.1.7",
@@ -85,7 +85,7 @@
     "typescript": "^5.9.3",
     "vite": "^6.0.7",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^4.0.10",
+    "vitest": "^4.1.8",
     "yaml": "^2.8.1"
   },
   "dependencies": {
@@ -112,7 +112,7 @@
     "@posthog/host-router": "workspace:*",
     "@posthog/host-trpc": "workspace:*",
     "@posthog/platform": "workspace:*",
-    "@posthog/quill": "0.3.0-beta.1",
+    "@posthog/quill": "catalog:",
     "@posthog/shared": "workspace:*",
     "@posthog/ui": "workspace:*",
     "@posthog/workspace-client": "workspace:*",

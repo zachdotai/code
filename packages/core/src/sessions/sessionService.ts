@@ -344,6 +344,45 @@ export function derivePendingPermissionRequests(
   return [...requests.values()].filter((r) => !resolved.has(r.requestId));
 }
 
+/**
+ * Whether a derived permission request has already been surfaced for this
+ * session. Snapshot replays re-deliver still-pending requests on every
+ * bootstrap and re-subscribe; only the first delivery should notify. A
+ * different requestId for the same tool call is a new ask and must notify.
+ */
+export function isPermissionRequestAlreadySurfaced(
+  pendingPermissions: ReadonlyMap<string, unknown>,
+  trackedRequestId: string | undefined,
+  update: DerivedPermissionRequest,
+): boolean {
+  return (
+    trackedRequestId === update.requestId &&
+    pendingPermissions.has(update.toolCall.toolCallId)
+  );
+}
+
+function classifyTurnEventKind(
+  msg: AcpMessage["message"],
+): "text" | "output" | "other" {
+  if (!("method" in msg) || msg.method !== "session/update") return "other";
+  const update = (msg as { params?: { update?: Record<string, unknown> } })
+    .params?.update;
+  if (!update) return "other";
+  const sessionUpdate = update.sessionUpdate;
+  if (sessionUpdate === "agent_message_chunk") {
+    const content = update.content as { type?: string } | undefined;
+    return content?.type === "text" ? "text" : "output";
+  }
+  if (
+    sessionUpdate === "agent_thought_chunk" ||
+    sessionUpdate === "tool_call" ||
+    sessionUpdate === "tool_call_update"
+  ) {
+    return "output";
+  }
+  return "other";
+}
+
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
@@ -381,6 +420,10 @@ export class SessionService {
   private cloudLogGapReconciler: CloudLogGapReconciler;
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
+  private liveTurnContent = new Map<
+    string,
+    { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
+  >();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -712,6 +755,15 @@ export class SessionService {
       const persistedMode =
         modeOpt?.type === "select" ? modeOpt.currentValue : undefined;
 
+      // Resumed SDK sessions don't remember the model — without this the
+      // session silently falls back to the default model on every reconnect.
+      const modelOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        "model",
+      );
+      const persistedModel =
+        modelOpt?.type === "select" ? modelOpt.currentValue : undefined;
+
       this.d.trpc.workspace.verify
         .query({ taskId })
         .then((workspaceResult) => {
@@ -743,6 +795,7 @@ export class SessionService {
         sessionId,
         adapter: resolvedAdapter,
         permissionMode: persistedMode,
+        model: persistedModel,
         customInstructions: customInstructions || undefined,
       });
 
@@ -1193,6 +1246,7 @@ export class SessionService {
     subscription?.event.unsubscribe();
     subscription?.permission?.unsubscribe();
     this.subscriptions.delete(taskRunId);
+    this.liveTurnContent.delete(taskRunId);
   }
 
   /**
@@ -1220,12 +1274,53 @@ export class SessionService {
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
     this.cloudPermissionRequestIds.clear();
+    this.liveTurnContent.clear();
     this.cloudLogGapReconciler.clear();
     this.dispatchingCloudQueues.clear();
     this.scheduledCloudQueueFlushes.clear();
     this.cloudRunIdleTracker.clear();
     this.idleKilledSubscription?.unsubscribe();
     this.idleKilledSubscription = null;
+  }
+
+  /**
+   * A steer message rides on `session/prompt` with `_meta.steer`. It is folded
+   * into the running turn, so its request must not participate in turn-state
+   * bookkeeping (currentPromptId / isPromptPending) or the live turn would be
+   * cut short. Its response carries a foreign request id, so the currentPromptId
+   * guard ignores it without needing a marker here.
+   */
+  private isSteerMessage(msg: AcpMessage["message"]): boolean {
+    if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
+      const params = msg.params as { _meta?: { steer?: boolean } } | undefined;
+      return params?._meta?.steer === true;
+    }
+    return false;
+  }
+
+  private finalizeTurnContent(
+    taskRunId: string,
+    trigger: "stop_reason" | "turn_complete",
+    endedAtTs: number,
+  ): void {
+    const tally = this.liveTurnContent.get(taskRunId);
+    if (!tally) return;
+    this.liveTurnContent.delete(taskRunId);
+    const session = this.d.store.getSessions()[taskRunId];
+    const payload = {
+      taskRunId,
+      taskId: session?.taskId,
+      isCloud: session?.isCloud ?? false,
+      trigger,
+      agentTextChunks: tally.agentTextChunks,
+      agentOutputEvents: tally.agentOutputEvents,
+      durationMs: Math.max(0, endedAtTs - tally.startedAtTs),
+    };
+    if (tally.agentTextChunks === 0 && tally.agentOutputEvents === 0) {
+      this.d.log.warn("Turn completed with no agent output", payload);
+    } else {
+      this.d.log.debug("Turn completed", payload);
+    }
   }
 
   private updatePromptStateFromEvents(
@@ -1235,6 +1330,20 @@ export class SessionService {
   ): void {
     for (const acpMsg of events) {
       const msg = acpMsg.message;
+      // A steer is injected into the running turn, not a turn of its own. Skip
+      // its request so it never claims currentPromptId. Otherwise the steer's
+      // instant response would clear the live turn's pending state.
+      if (this.isSteerMessage(msg)) {
+        continue;
+      }
+      const turnTally = isLive
+        ? this.liveTurnContent.get(taskRunId)
+        : undefined;
+      if (turnTally) {
+        const kind = classifyTurnEventKind(msg);
+        if (kind === "text") turnTally.agentTextChunks += 1;
+        else if (kind === "output") turnTally.agentOutputEvents += 1;
+      }
       if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
         this.d.store.updateSession(taskRunId, {
           isPromptPending: true,
@@ -1242,6 +1351,13 @@ export class SessionService {
           pausedDurationMs: 0,
           currentPromptId: msg.id,
         });
+        if (isLive) {
+          this.liveTurnContent.set(taskRunId, {
+            startedAtTs: acpMsg.ts,
+            agentTextChunks: 0,
+            agentOutputEvents: 0,
+          });
+        }
         const promptSession = this.d.store.getSessions()[taskRunId];
         if (promptSession?.isCloud) {
           this.cloudRunIdleTracker.markBusy(promptSession);
@@ -1271,6 +1387,9 @@ export class SessionService {
           promptStartedAt: null,
           currentPromptId: null,
         });
+        if (isLive) {
+          this.finalizeTurnContent(taskRunId, "stop_reason", acpMsg.ts);
+        }
       }
       if (isTurnCompleteEvent(acpMsg)) {
         // Local sessions use the JSON-RPC response as the canonical turn-done
@@ -1293,6 +1412,7 @@ export class SessionService {
               );
             }
             this.d.taskViewedApi.markActivity(session.taskId);
+            this.finalizeTurnContent(taskRunId, "turn_complete", acpMsg.ts);
           }
         }
       }
@@ -1574,6 +1694,16 @@ export class SessionService {
       return;
     }
 
+    if (
+      isPermissionRequestAlreadySurfaced(
+        session.pendingPermissions,
+        this.cloudPermissionRequestIds.get(update.toolCall.toolCallId),
+        update,
+      )
+    ) {
+      return;
+    }
+
     // Store the cloud requestId so we can route the response back
     this.cloudPermissionRequestIds.set(
       update.toolCall.toolCallId,
@@ -1611,6 +1741,7 @@ export class SessionService {
   async sendPrompt(
     taskId: string,
     prompt: string | ContentBlock[],
+    options?: { steer?: boolean },
   ): Promise<{ stopReason: string }> {
     if (!this.d.getIsOnline()) {
       throw new Error(
@@ -1628,6 +1759,23 @@ export class SessionService {
       throw new Error(
         "Confirm the folder access dialog before sending your message.",
       );
+    }
+
+    // Steer: the user sent a message mid-turn and asked to fold it into the
+    // running turn rather than queue it. Native (Claude) injects at the next
+    // tool boundary; everything else interrupts the turn and resends below as a
+    // fresh prompt. Compaction always falls through to the queue.
+    if (options?.steer && session.isPromptPending && !session.isCompacting) {
+      const supportsNativeSteer =
+        !session.isCloud && session.adapter === "claude";
+      if (supportsNativeSteer) {
+        return this.sendSteerPrompt(session, prompt);
+      }
+      await this.cancelPrompt(taskId);
+      const refreshed = this.d.store.getSessionByTaskId(taskId);
+      if (refreshed) {
+        session = refreshed;
+      }
     }
 
     if (session.isCloud) {
@@ -1711,6 +1859,34 @@ export class SessionService {
 
     return this.sendLocalPrompt(session, blocks, promptText, {
       optimisticApplied: true,
+    });
+  }
+
+  /**
+   * Send a steer message: folded into the turn already running rather than
+   * queued. It renders when its `session/prompt` echo arrives and is injected
+   * by the agent at the next tool boundary. The running turn keeps ownership of
+   * the prompt lifecycle, so this never touches isPromptPending.
+   */
+  private async sendSteerPrompt(
+    session: AgentSession,
+    prompt: string | ContentBlock[],
+  ): Promise<{ stopReason: string }> {
+    const blocks = normalizePromptToBlocks(prompt);
+    const promptText = extractPromptText(prompt);
+
+    this.d.track(ANALYTICS_EVENTS.PROMPT_SENT, {
+      task_id: session.taskId,
+      is_initial: false,
+      execution_type: "local",
+      prompt_length_chars: promptText.length,
+      is_steer: true,
+    });
+
+    return this.d.trpc.agent.prompt.mutate({
+      sessionId: session.taskRunId,
+      prompt: blocks,
+      steer: true,
     });
   }
 
@@ -2904,6 +3080,24 @@ export class SessionService {
       return () => {};
     }
 
+    // An already-finished run we've already hydrated has no live stream to
+    // attach to: the snapshot in the store is the complete, final conversation.
+    // Re-watching it refetches the same logs, immediately stops again on the
+    // terminal snapshot, and that snapshot rewrites session.configOptions,
+    // which re-fires the reconcile effect and spins a start/stop loop. Skip it.
+    // Gated on no live watcher: a stale watcher for a different run still needs
+    // the stop-and-restart below.
+    if (!existingWatcher) {
+      const hydrated = this.d.store.getSessionByTaskId(taskId);
+      if (
+        hydrated?.taskRunId === taskRunId &&
+        isTerminalStatus(hydrated.cloudStatus) &&
+        hydrated.processedLineCount !== undefined
+      ) {
+        return () => {};
+      }
+    }
+
     // Different run — full cleanup of old watcher first
     if (existingWatcher) {
       this.stopCloudTaskWatch(taskId);
@@ -3935,7 +4129,7 @@ export class SessionService {
         }
         this.d.store.appendEvents(taskRunId, newEvents, expectedCount);
         this.updatePromptStateFromEvents(taskRunId, newEvents, {
-          isLive: true,
+          isLive: update.kind === "logs",
         });
       } else {
         this.cloudLogGapReconciler.reconcile({

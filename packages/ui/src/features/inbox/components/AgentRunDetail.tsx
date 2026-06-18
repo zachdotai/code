@@ -48,13 +48,13 @@ import {
 } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { useInboxReportSignals } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useReportTasks } from "@posthog/ui/features/inbox/hooks/useReportTasks";
+import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { TaskLogsPanel } from "@posthog/ui/features/task-detail/components/TaskLogsPanel";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { DropdownMenu, Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 
 export function TaskRunStatusDot({ status }: { status: TaskRunStatus }) {
   const terminal = isTerminalStatus(status);
@@ -276,14 +276,6 @@ function AgentRunDetailContent({ report }: { report: SignalReport }) {
     return hasInFlight && hasPriorTerminal;
   }, [reportTasks]);
 
-  const handleCopyLink = () => {
-    const url = `${window.location.origin}/code/inbox/runs/${report.id}`;
-    navigator.clipboard
-      .writeText(url)
-      .then(() => toast.success("Link copied"))
-      .catch(() => toast.error("Couldn't copy link"));
-  };
-
   return (
     <Flex direction="column" className="min-h-full">
       <InboxDetailPageHeader
@@ -368,7 +360,8 @@ function AgentRunDetailContent({ report }: { report: SignalReport }) {
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleCopyLink}
+              onClick={() => copyInboxReportLink(report)}
+              title="Copy a deep link to this run"
             >
               <CopyIcon size={12} />
               Copy link

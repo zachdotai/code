@@ -1,5 +1,6 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
+import { flattenConfigValues } from "@posthog/core/task-detail/configOptions";
 import {
   applyConfigChange,
   deriveInitialConfig,
@@ -49,15 +50,27 @@ export function usePreviewConfig(
   const [configOptions, setConfigOptions] = useState<SessionConfigOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
+  const hasHydrated = useSettingsStore((state) => state._hasHydrated);
 
   useEffect(() => {
     if (!apiHost) return;
+
+    // Wait for the settings store to finish its async hydration before
+    // resolving the model. Otherwise lastUsedModel and lastUsedAdapter read as
+    // their pre-hydration defaults, the restore below is skipped, and the
+    // selector silently falls back to the server default (Opus for Claude).
+    // isLoading initializes to true, so the picker stays loading until hydration
+    // lands and the fetch below resolves.
+    if (!hasHydrated) return;
 
     abortRef.current?.abort();
     const abort = new AbortController();
     abortRef.current = abort;
 
     setIsLoading(true);
+    // Drop the previous adapter's options so a stale model id can never be sent
+    // as the current selection while the new adapter's config is loading.
+    setConfigOptions([]);
 
     hostClient.agent.getPreviewConfigOptions
       .query({ apiHost, adapter }, { signal: abort.signal })
@@ -69,20 +82,47 @@ export function usePreviewConfig(
           lastUsedInitialTaskMode,
           defaultReasoningEffort,
           lastUsedReasoningEffort,
+          lastUsedModel,
         } = useSettingsStore.getState();
 
-        setConfigOptions(
-          deriveInitialConfig(
-            options,
-            {
-              defaultInitialTaskMode,
-              lastUsedInitialTaskMode,
+        let initial = deriveInitialConfig(
+          options,
+          {
+            defaultInitialTaskMode,
+            lastUsedInitialTaskMode,
+            defaultReasoningEffort,
+            lastUsedReasoningEffort,
+          },
+          adapter,
+        );
+
+        // The server always returns its default model as the current value, so
+        // without this the user's last pick (e.g. fable) is lost on every
+        // refetch/remount. Restore it through applyConfigChange so the dependent
+        // effort options are recomputed for the restored model.
+        const modelOpt = getOptionByCategory(initial, "model");
+        if (
+          lastUsedModel &&
+          modelOpt?.type === "select" &&
+          modelOpt.currentValue !== lastUsedModel &&
+          flattenConfigValues(modelOpt).includes(lastUsedModel)
+        ) {
+          initial = applyConfigChange(initial, {
+            adapter,
+            configId: modelOpt.id,
+            value: lastUsedModel,
+            effortOptions:
+              getReasoningEffortOptions(adapter, lastUsedModel) ?? undefined,
+            settings: {
+              defaultInitialTaskMode: "",
+              lastUsedInitialTaskMode: undefined,
               defaultReasoningEffort,
               lastUsedReasoningEffort,
             },
-            adapter,
-          ),
-        );
+          });
+        }
+
+        setConfigOptions(initial);
         setIsLoading(false);
       })
       .catch((error) => {
@@ -94,7 +134,7 @@ export function usePreviewConfig(
     return () => {
       abort.abort();
     };
-  }, [adapter, apiHost, hostClient]);
+  }, [adapter, apiHost, hostClient, hasHydrated]);
 
   const setConfigOption = useCallback(
     (configId: string, value: string) => {

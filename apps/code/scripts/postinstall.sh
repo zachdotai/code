@@ -30,10 +30,19 @@ cd "$REPO_ROOT"
 if [ "${SKIP_ELECTRON_REBUILD:-}" = "1" ]; then
   echo "SKIP_ELECTRON_REBUILD=1 — leaving native modules at their Node ABI"
 else
-  echo "Rebuilding native modules for Electron..."
-  npx @electron/rebuild -f -m node_modules/node-pty
-  npx @electron/rebuild -f -m node_modules/better-sqlite3 || echo "⚠ better-sqlite3 electron rebuild FAILED — app DB will not load"
+  node scripts/rebuild-better-sqlite3-electron.mjs
 fi
+
+# Restore the execute bit on node-pty's spawn-helper. pnpm extracts node-pty's
+# prebuilt binaries without preserving the executable mode, so the helper lands
+# without +x and posix_spawnp fails at runtime with "posix_spawnp failed" the
+# first time a terminal session is opened. Re-mark every prebuilt helper executable.
+for helper in "$REPO_ROOT"/node_modules/node-pty/prebuilds/*/spawn-helper; do
+  if [ -f "$helper" ] && [ ! -x "$helper" ]; then
+    echo "Restoring execute bit on $helper"
+    chmod +x "$helper"
+  fi
+done
 
 echo "Patching Electron app name..."
 bash "$SCRIPTS_DIR/patch-electron-name.sh"

@@ -98,6 +98,22 @@ describe("store", () => {
 });
 ```
 
+## Parameterised Tests
+
+Prefer a parameterised test shape when several cases exercise the same logic with different inputs and expectations. Use Vitest's `it.each` / `test.each` instead of copy-pasting near-identical `it` blocks.
+
+```ts
+it.each([
+  { input: "main", expected: true },
+  { input: "feature/x", expected: false },
+  { input: "", expected: false },
+])("isDefaultBranch($input) === $expected", ({ input, expected }) => {
+  expect(isDefaultBranch(input)).toBe(expected);
+});
+```
+
+Keep cases as separate `it` blocks when they differ in setup, assertions, or intent — parameterise repetition, not distinct behaviors.
+
 ## Mocking
 
 Hoist mocks for modules that must be mocked before import evaluation.
@@ -149,6 +165,29 @@ Keep E2E tests focused:
 - no arbitrary sleeps
 - assert visible outcomes
 - capture regression conditions explicitly
+
+## Interactive App Testing
+
+To drive the **real running app** (live tRPC, workspace-server, real data) instead of writing a spec, use [agent-browser](https://github.com/vercel-labs/agent-browser) over the Chrome DevTools Protocol. The dev app already launches with `--remote-debugging-port=9222`, so an agent can connect, snapshot the accessibility tree, click/type and screenshot the live UI.
+
+Two surfaces, pick by intent:
+
+| Goal | Tool |
+| --- | --- |
+| Verify or screenshot a change in the real app, live data | agent-browser + CDP `:9222` (`test-electron-app` skill) |
+| Regression coverage in CI | Playwright E2E (`tests/e2e/`) |
+
+Workflow:
+
+```bash
+npm i -g agent-browser && agent-browser install   # once
+pnpm dev                                            # run the app (exposes CDP on :9222)
+pnpm app:cdp                                         # preflight + connect
+agent-browser skills get electron                   # load the canonical commands
+agent-browser snapshot -i                           # then click/type/screenshot
+```
+
+This drives whatever profile is signed into `~/.posthog-code`; do not mutate production data while exploring. See the `test-electron-app` skill.
 
 ## Boundary Checks
 

@@ -86,6 +86,8 @@ function ToastComponent(props: ToastProps) {
 }
 
 export const toast = {
+  dismiss: (id?: string | number) => sonnerToast.dismiss(id),
+
   loading: (title: ReactNode, description?: string) => {
     return sonnerToast.custom((id) => (
       <ToastComponent
@@ -103,6 +105,7 @@ export const toast = {
       description?: string;
       id?: string | number;
       action?: ToastAction;
+      duration?: number;
     },
   ) => {
     return sonnerToast.custom(
@@ -115,7 +118,7 @@ export const toast = {
           action={options?.action}
         />
       ),
-      { id: options?.id },
+      { id: options?.id, duration: options?.duration },
     );
   },
 

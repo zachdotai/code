@@ -47,7 +47,8 @@ export type CommandMenuAction =
   | "toggle-theme"
   | "toggle-left-sidebar"
   | "open-review-panel"
-  | "open-task";
+  | "open-task"
+  | "open-channel";
 
 // Event property interfaces
 export interface TaskListViewProperties {
@@ -543,6 +544,13 @@ export interface InboxViewedProperties {
   actionability_requires_human_input_count: number;
   actionability_not_actionable_count: number;
   actionability_unknown_count: number;
+  /**
+   * Tab badge counts shown in the v2 inbox header on load — the actual numbers
+   * the user sees (Pull requests / Reports / Runs). Optional: only the desktop
+   * v2 shell populates these; the mobile event omits them.
+   */
+  pulls_count?: number;
+  reports_count?: number;
 }
 
 export interface InboxReportOpenedProperties {
@@ -630,10 +638,93 @@ export interface InboxReportActionProperties {
   feedback_text?: string;
 }
 
+// Scout events
+export type ScoutChatType =
+  | "fleet_overview"
+  | "recent_signals"
+  | "scout_checkin"
+  | "finding_discuss"
+  | "author_scout";
+
+export type ScoutSurface = "fleet_list" | "scout_detail" | "empty_state";
+
+export type ScoutActionType =
+  | "expand_run"
+  | "collapse_run"
+  | "expand_emission"
+  | "collapse_emission"
+  | "open_task_run"
+  | "open_skill_in_posthog"
+  | "open_helper_skill"
+  | "copy_finding_link"
+  | "open_linked_report"
+  | "show_more_emitted_runs"
+  | "filter_runs"
+  | "toggle_hide_disabled"
+  | "open_settings"
+  | "close_settings";
+
+export interface ScoutFleetViewedProperties {
+  scout_count: number;
+  enabled_count: number;
+  dry_run_count: number;
+  custom_count: number;
+  is_empty: boolean;
+}
+
+export interface ScoutDetailViewedProperties {
+  skill_name: string;
+  scout_origin: "canonical" | "custom";
+  /** False when the runs window has data but no config exists for this scout. */
+  has_config: boolean;
+  enabled: boolean | null;
+  /** Live (true) vs dry run (false); null when no config was found. */
+  emit: boolean | null;
+  run_interval_minutes: number | null;
+  /** Run stats cover the fleet runs window (currently 24h). */
+  run_count: number;
+  emitted_signal_count: number;
+  failed_run_count: number;
+}
+
+export interface ScoutConfigChangedProperties {
+  skill_name: string;
+  scout_origin: "canonical" | "custom";
+  setting: "enabled" | "emit" | "run_interval_minutes";
+  new_value: boolean | number;
+  old_value: boolean | number;
+  /** False when the server rejected the update and the change rolled back. */
+  success: boolean;
+}
+
+export interface ScoutChatStartedProperties {
+  chat_type: ScoutChatType;
+  surface: ScoutSurface;
+  /** Set for per-scout check-ins; absent for fleet-level questions. */
+  skill_name?: string;
+}
+
+export interface ScoutActionProperties {
+  action_type: ScoutActionType;
+  surface: ScoutSurface;
+  skill_name?: string;
+  run_id?: string;
+  run_status?: string;
+  emitted_count?: number;
+  severity?: string | null;
+  filter?: string;
+  filter_match_count?: number;
+  helper_skill?: string;
+  hide_disabled?: boolean;
+  /** Status of the linked inbox report, for `open_linked_report`. */
+  report_status?: string;
+}
+
 export interface SignalSourceConnectedProperties {
   source_product:
     | "session_replay"
     | "error_tracking"
+    | "signals_scout"
     | "github"
     | "linear"
     | "zendesk"
@@ -644,6 +735,33 @@ export interface SignalSourceConnectedProperties {
   is_first_connection: boolean;
   /** True when the connection went through the DataSourceSetup wizard (warehouse OAuth path). */
   via_setup_wizard: boolean;
+}
+
+// Agents page events (the `/code/agents` configuration surface)
+export type AgentsActionType =
+  | "run_setup_agent"
+  | "change_autostart_priority"
+  | "open_mcp_servers";
+
+export interface AgentsViewedProperties {
+  /** Whether code access (GitHub) is connected — gates responder configuration. */
+  has_github_integration: boolean;
+  /** Total number of responder source products on the page. */
+  responder_total_count: number;
+  /** How many of those responders are currently enabled. */
+  responder_enabled_count: number;
+  /** User's PR auto-start threshold priority (P0–P4), or null when set to "Never". */
+  autostart_priority: string | null;
+  /** Whether the agent-driven setup entry point is shown (feature-flagged). */
+  setup_task_available: boolean;
+}
+
+export interface AgentsActionProperties {
+  action_type: AgentsActionType;
+  /** New threshold for `change_autostart_priority` (P0–P4, or null for "Never"). */
+  autostart_priority?: string | null;
+  /** Whether `run_setup_agent` successfully created the setup task. */
+  success?: boolean;
 }
 
 // Subscription / billing events
@@ -792,6 +910,17 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_ACTION: "Inbox report action",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
   SIGNAL_SOURCE_CONNECTED: "Signal source connected",
+
+  // Agents page events
+  AGENTS_VIEWED: "Agents viewed",
+  AGENTS_ACTION: "Agents action",
+
+  // Scout events
+  SCOUT_FLEET_VIEWED: "Scout fleet viewed",
+  SCOUT_DETAIL_VIEWED: "Scout detail viewed",
+  SCOUT_CONFIG_CHANGED: "Scout config changed",
+  SCOUT_CHAT_STARTED: "Scout chat started",
+  SCOUT_ACTION: "Scout action",
 
   // Spend analysis events
   SPEND_ANALYSIS_TASK_OPENED: "Spend analysis task opened",
@@ -961,6 +1090,17 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
   [ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED]: SignalSourceConnectedProperties;
+
+  // Agents page events
+  [ANALYTICS_EVENTS.AGENTS_VIEWED]: AgentsViewedProperties;
+  [ANALYTICS_EVENTS.AGENTS_ACTION]: AgentsActionProperties;
+
+  // Scout events
+  [ANALYTICS_EVENTS.SCOUT_FLEET_VIEWED]: ScoutFleetViewedProperties;
+  [ANALYTICS_EVENTS.SCOUT_DETAIL_VIEWED]: ScoutDetailViewedProperties;
+  [ANALYTICS_EVENTS.SCOUT_CONFIG_CHANGED]: ScoutConfigChangedProperties;
+  [ANALYTICS_EVENTS.SCOUT_CHAT_STARTED]: ScoutChatStartedProperties;
+  [ANALYTICS_EVENTS.SCOUT_ACTION]: ScoutActionProperties;
 
   // Spend analysis events
   [ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED]: SpendAnalysisTaskOpenedProperties;

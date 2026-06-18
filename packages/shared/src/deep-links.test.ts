@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildInboxDeeplink,
+  buildScoutDeeplink,
   decodePlanBase64,
   getDeeplinkProtocol,
   isPostHogCodeDeeplink,
@@ -93,6 +94,64 @@ describe("buildInboxDeeplink", () => {
         isDevBuild: false,
       }),
     ).toBe("posthog-code://inbox/abc-123/Hello-world");
+  });
+});
+
+describe("buildScoutDeeplink", () => {
+  it.each<{
+    name: string;
+    skillName: string;
+    findingId: string | null | undefined;
+    isDevBuild: boolean;
+    expected: string;
+  }>([
+    {
+      name: "builds a bare scout link when finding is null",
+      skillName: "error-tracking",
+      findingId: null,
+      isDevBuild: false,
+      expected: "posthog-code://scout/error-tracking",
+    },
+    {
+      name: "builds a bare scout link when finding is undefined",
+      skillName: "error-tracking",
+      findingId: undefined,
+      isDevBuild: false,
+      expected: "posthog-code://scout/error-tracking",
+    },
+    {
+      name: "appends the finding id as a query param",
+      skillName: "error-tracking",
+      findingId: "abc-123",
+      isDevBuild: false,
+      expected: "posthog-code://scout/error-tracking?finding=abc-123",
+    },
+    {
+      name: "strips the signals-scout- prefix from a full skill name",
+      skillName: "signals-scout-error-tracking",
+      findingId: "f-1",
+      isDevBuild: false,
+      expected: "posthog-code://scout/error-tracking?finding=f-1",
+    },
+    {
+      name: "uses the dev scheme for dev builds",
+      skillName: "web-analytics",
+      findingId: null,
+      isDevBuild: true,
+      expected: "posthog-code-dev://scout/web-analytics",
+    },
+    {
+      name: "encodes special characters in the finding id",
+      skillName: "error-tracking",
+      findingId: "id with spaces&=",
+      isDevBuild: false,
+      expected:
+        "posthog-code://scout/error-tracking?finding=id%20with%20spaces%26%3D",
+    },
+  ])("$name", ({ skillName, findingId, isDevBuild, expected }) => {
+    expect(buildScoutDeeplink(skillName, findingId, { isDevBuild })).toBe(
+      expected,
+    );
   });
 });
 

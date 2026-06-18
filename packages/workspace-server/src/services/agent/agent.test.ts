@@ -199,6 +199,10 @@ describe("AgentService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    // The Codex MCP reachability probe hits the network; default it to "reachable"
+    // so unrelated session tests stay deterministic and offline-safe.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ body: null }));
+
     deps = createMockDependencies();
     service = new AgentService(
       deps.processTracking as never,
@@ -219,6 +223,7 @@ describe("AgentService", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe("MCP servers", () => {
@@ -273,7 +278,7 @@ describe("AgentService", () => {
       );
     });
 
-    it("passes identical MCP servers regardless of adapter", async () => {
+    it("passes identical MCP servers to both adapters when all servers are reachable", async () => {
       await service.startSession({
         ...baseSessionParams,
         taskRunId: "run-claude",
@@ -289,6 +294,46 @@ describe("AgentService", () => {
       const claudeMcp = mockNewSession.mock.calls[0][0].mcpServers;
       const codexMcp = mockNewSession.mock.calls[1][0].mcpServers;
       expect(codexMcp).toEqual(claudeMcp);
+    });
+
+    it("drops unreachable MCP servers for codex but keeps them for claude", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+      );
+
+      await service.startSession({
+        ...baseSessionParams,
+        taskRunId: "run-claude",
+        adapter: "claude",
+      });
+      await service.startSession({
+        ...baseSessionParams,
+        taskRunId: "run-codex",
+        adapter: "codex",
+      });
+
+      // Claude connects to MCP lazily, so an unreachable server is harmless.
+      expect(mockNewSession.mock.calls[0][0].mcpServers).toHaveLength(1);
+      // codex-acp dies on an unreachable server, so it must be pruned.
+      expect(mockNewSession.mock.calls[1][0].mcpServers).toHaveLength(0);
+    });
+
+    it("passes reasoning effort to local Codex startup options", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+        effort: "xhigh",
+      });
+
+      expect(mockAgentRun).toHaveBeenCalledWith(
+        "task-1",
+        "run-1",
+        expect.objectContaining({
+          adapter: "codex",
+          reasoningEffort: "xhigh",
+        }),
+      );
     });
   });
 

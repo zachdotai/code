@@ -37,12 +37,18 @@ export interface InboxCloudTaskCopy {
   signedOut: string;
   /** Error description when no model can be resolved. */
   missingModel: string;
+  /**
+   * Title for the success toast shown when `redirectOnSuccess` is false and the
+   * runner stays in place instead of navigating to the task. Defaults to
+   * "Task started".
+   */
+  successTitle?: string;
 }
 
 /** Context the variant uses to assemble the TaskCreationInput. */
 export interface InboxCloudTaskInputContext {
-  reportId: string;
-  reportTitle: string | null;
+  reportId?: string;
+  reportTitle?: string | null;
   cloudRepository: string;
   githubUserIntegrationId: string;
   adapter: "claude" | "codex";
@@ -51,8 +57,9 @@ export interface InboxCloudTaskInputContext {
 }
 
 export interface UseInboxCloudTaskRunnerOptions {
-  reportId: string;
-  reportTitle: string | null;
+  /** Backing signal report, when the task is report-scoped (Create PR, Discuss). */
+  reportId?: string;
+  reportTitle?: string | null;
   cloudRepository: string | null;
   copy: InboxCloudTaskCopy;
   /** Logger scope used for failure traces. */
@@ -61,6 +68,12 @@ export interface UseInboxCloudTaskRunnerOptions {
   buildInput: (ctx: InboxCloudTaskInputContext) => TaskCreationInput;
   /** Telemetry extras merged into the TASK_CREATED event when the run succeeds. */
   analyticsExtras?: Record<string, unknown>;
+  /**
+   * When false, the runner does not navigate to the created task. The task is
+   * still added to the sidebar via `invalidateTasks`, and a success toast with a
+   * "View task" action lets the user open it on demand. Defaults to true.
+   */
+  redirectOnSuccess?: boolean;
 }
 
 export interface UseInboxCloudTaskRunnerReturn {
@@ -71,9 +84,10 @@ export interface UseInboxCloudTaskRunnerReturn {
 }
 
 /**
- * Shared driver for the inbox-side "create a cloud task from a report" flows
- * (Create PR, Discuss). Variants supply copy, telemetry, and a `buildInput`
- * callback that assembles the per-variant prompt / branch / metadata.
+ * Shared driver for one-click "create an auto-mode cloud task" flows
+ * (Create PR, Discuss, scout fleet overview). Variants supply copy, telemetry,
+ * and a `buildInput` callback that assembles the per-variant prompt / branch /
+ * metadata; report context is optional for flows not scoped to a report.
  */
 export function useInboxCloudTaskRunner({
   reportId,
@@ -83,6 +97,7 @@ export function useInboxCloudTaskRunner({
   loggerScope,
   buildInput,
   analyticsExtras,
+  redirectOnSuccess = true,
 }: UseInboxCloudTaskRunnerOptions): UseInboxCloudTaskRunnerReturn {
   const [isRunning, setIsRunning] = useState(false);
   const { getUserIntegrationIdForRepo } = useUserRepositoryIntegration();
@@ -142,21 +157,43 @@ export function useInboxCloudTaskRunner({
     });
 
     try {
+      let createdTask: Parameters<typeof openTask>[0] | null = null;
       const result = await taskService.createTask(input, (output) => {
+        createdTask = output.task;
         invalidateTasks(output.task);
-        void openTask(output.task);
+        if (redirectOnSuccess) {
+          void openTask(output.task);
+        }
       });
 
       if (result.success) {
         sonnerToast.dismiss(toastId);
+        if (!redirectOnSuccess) {
+          const task = createdTask;
+          toast.success(copy.successTitle ?? "Task started", {
+            description: reportTitle ?? undefined,
+            action: task
+              ? {
+                  label: "View task",
+                  onClick: () => {
+                    void openTask(task);
+                  },
+                }
+              : undefined,
+          });
+        }
         track(ANALYTICS_EVENTS.TASK_CREATED, {
           auto_run: true,
           created_from: "command-menu",
           repository_provider: "github",
           workspace_mode: "cloud",
-          cloud_run_source: "signal_report",
-          cloud_pr_authorship_mode: "user",
-          signal_report_id: reportId,
+          ...(reportId
+            ? {
+                cloud_run_source: "signal_report",
+                cloud_pr_authorship_mode: "user",
+                signal_report_id: reportId,
+              }
+            : { cloud_run_source: "manual" }),
           adapter,
           ...analyticsExtras,
         });
@@ -200,6 +237,7 @@ export function useInboxCloudTaskRunner({
     analyticsExtras,
     modelResolver,
     taskService,
+    redirectOnSuccess,
   ]);
 
   return { run, isRunning };

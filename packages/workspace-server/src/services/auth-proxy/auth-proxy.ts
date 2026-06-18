@@ -4,7 +4,12 @@ import {
   type RootLogger,
   type ScopedLogger,
 } from "@posthog/di/logger";
+import { serializeError } from "@posthog/shared";
 import { inject, injectable } from "inversify";
+import {
+  type StreamProgress,
+  streamBodyToResponse,
+} from "../proxy-stream/proxy-stream";
 import { AUTH_PROXY_AUTH } from "./identifiers";
 import type { AuthProxyAuth } from "./ports";
 
@@ -144,9 +149,20 @@ export class AuthProxyService {
         headers[key] = value;
       }
     }
+    // The client connection governs the request lifetime. An explicit signal
+    // also opts out of authenticatedFetch's default timeout, which would
+    // abort streaming LLM responses that outlive it.
+    const abort = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        abort.abort();
+      }
+    });
+
     const fetchOptions: RequestInit = {
       method: req.method ?? "GET",
       headers,
+      signal: abort.signal,
     };
 
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -166,8 +182,12 @@ export class AuthProxyService {
     options: RequestInit,
     res: http.ServerResponse,
   ): Promise<void> {
+    const startedAt = Date.now();
+    const progress: StreamProgress = { bytesWritten: 0 };
+    let status = 0;
     try {
       const response = await this.auth.authenticatedFetch(url, options);
+      status = response.status;
 
       const responseHeaders: Record<string, string> = {};
       const stripHeaders = new Set([
@@ -182,28 +202,34 @@ export class AuthProxyService {
 
       res.writeHead(response.status, responseHeaders);
 
-      if (!response.body) {
-        res.end();
-        return;
-      }
+      await streamBodyToResponse(response.body, res, progress);
 
-      const reader = response.body.getReader();
-      const pump = async (): Promise<void> => {
-        const { done, value } = await reader.read();
-        if (done) {
-          res.end();
-          return;
-        }
-        const canContinue = res.write(value);
-        if (canContinue) {
-          return pump();
-        }
-        res.once("drain", () => pump());
-      };
-
-      await pump();
+      this.log.info("Auth proxy forward completed", {
+        url,
+        method: options.method,
+        status,
+        durationMs: Date.now() - startedAt,
+        bytesStreamed: progress.bytesWritten,
+      });
     } catch (err) {
-      this.log.error("Proxy forward error", { url, err });
+      if (options.signal?.aborted) {
+        this.log.debug("Upstream fetch aborted after client disconnect", {
+          url,
+          durationMs: Date.now() - startedAt,
+          bytesStreamed: progress.bytesWritten,
+        });
+      } else {
+        this.log.error("Proxy forward error", {
+          url,
+          method: options.method,
+          status,
+          headersSent: res.headersSent,
+          durationMs: Date.now() - startedAt,
+          bytesStreamed: progress.bytesWritten,
+          stack: err instanceof Error ? err.stack : undefined,
+          errorDetail: serializeError(err),
+        });
+      }
       if (!res.headersSent) {
         res.writeHead(502);
       }

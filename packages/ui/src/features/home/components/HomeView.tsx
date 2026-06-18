@@ -101,7 +101,7 @@ export function HomeView() {
               </Text>
             </Flex>
             {hasContent ? (
-              <Flex align="center" gap="3" className="text-[12px]">
+              <Flex align="center" gap="5" className="text-[12px]">
                 {needsAttention.length > 0 ? (
                   <Stat
                     color="var(--amber-9)"
@@ -229,27 +229,27 @@ function ViewModeToggle({ value, onChange }: ViewModeToggleProps) {
       title="Switch view (press v to cycle)"
     >
       <Button
-        size="xs"
+        size="sm"
         variant={value === "list" ? "primary" : "link-muted"}
         onClick={() => onChange("list")}
       >
-        <ListBullets size={12} />
+        <ListBullets size={14} />
         List
       </Button>
       <Button
-        size="xs"
+        size="sm"
         variant={value === "board" ? "primary" : "link-muted"}
         onClick={() => onChange("board")}
       >
-        <Kanban size={12} />
+        <Kanban size={14} />
         Board
       </Button>
       <Button
-        size="xs"
+        size="sm"
         variant={value === "config" ? "primary" : "link-muted"}
         onClick={() => onChange("config")}
       >
-        <Graph size={12} />
+        <Graph size={14} />
         Config
       </Button>
     </Flex>
@@ -266,7 +266,7 @@ function Stat({
   pulse?: boolean;
 }) {
   return (
-    <Flex align="center" gap="1.5">
+    <Flex align="center" gap="2">
       <span
         className={`inline-block h-2 w-2 rounded-full ${pulse ? "animate-pulse" : ""}`}
         style={{ backgroundColor: color }}
@@ -286,9 +286,11 @@ function Section({ title, count, icon, children }: SectionProps) {
       >
         {icon}
         <Text className="font-semibold text-[12px] text-gray-12">{title}</Text>
-        <Text className="rounded-full bg-(--gray-a3) px-1.5 py-px font-medium text-(--gray-11) text-[10.5px] tabular-nums">
-          {count}
-        </Text>
+        {count > 0 && (
+          <Text className="rounded-full bg-(--gray-a3) px-1.5 py-px font-medium text-(--gray-11) text-[10.5px] tabular-nums">
+            {count}
+          </Text>
+        )}
       </Flex>
       {children}
     </Box>

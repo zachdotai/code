@@ -14,6 +14,7 @@ export interface PrepareTaskInputOptions {
   githubUserIntegrationId?: string;
   workspaceMode: WorkspaceMode;
   branch?: string | null;
+  allowRemoteBranchCheckout?: boolean;
   executionMode?: ExecutionMode;
   adapter?: "claude" | "codex";
   model?: string;
@@ -24,6 +25,8 @@ export interface PrepareTaskInputOptions {
   additionalDirectories?: string[];
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
+  channelContext?: string;
+  channelName?: string;
 }
 
 export function prepareTaskInput(
@@ -44,6 +47,7 @@ export function prepareTaskInput(
     githubUserIntegrationId: options.githubUserIntegrationId,
     workspaceMode: options.workspaceMode,
     branch: options.branch,
+    allowRemoteBranchCheckout: options.allowRemoteBranchCheckout,
     executionMode: options.executionMode,
     adapter: options.adapter,
     model: options.model,
@@ -58,6 +62,8 @@ export function prepareTaskInput(
       (options.signalReportId && isCloud ? "signal_report" : undefined),
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
+    channelContext: options.channelContext,
+    channelName: options.channelName,
   };
 }
 

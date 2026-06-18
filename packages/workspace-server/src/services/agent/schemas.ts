@@ -138,6 +138,7 @@ export const contentBlockSchema = z.looseObject({
 export const promptInput = z.object({
   sessionId: z.string(),
   prompt: z.array(contentBlockSchema),
+  steer: z.boolean().optional(),
 });
 
 export type PromptInput = z.infer<typeof promptInput>;
@@ -184,6 +185,7 @@ export const reconnectSessionInput = z.object({
   /** Additional directories Claude can access beyond cwd (for worktree support) */
   additionalDirectories: z.array(z.string()).optional(),
   permissionMode: z.string().optional(),
+  model: z.string().optional(),
   customInstructions: z.string().max(2000).optional(),
   effort: effortLevelSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),

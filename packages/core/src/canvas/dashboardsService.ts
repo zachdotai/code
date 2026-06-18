@@ -3,26 +3,36 @@ import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
 import { inject, injectable } from "inversify";
 import type { DashboardQueryService } from "./dashboardQueryService";
 import type {
+  DashboardDateRange,
   DashboardFileMeta,
   DashboardRecord,
   DashboardSummary,
 } from "./dashboardSchemas";
+import {
+  DESKTOP_FS_CLIENT,
+  type DesktopFsClient,
+  type FsEntryBase,
+} from "./desktopFsClient";
+import { FREEFORM_TEMPLATE_ID, type FreeformVersion } from "./freeformSchemas";
 import { DASHBOARD_QUERY_SERVICE } from "./identifiers";
-import type { DashboardQuery } from "./querySchemas";
+import { fetchCurrentUser } from "./posthogApi";
+import type { DashboardQuery, DashboardQueryShape } from "./querySchemas";
 
 // Desktop file-system "type" tag for a dashboard entry. Channels are `folder`
 // rows (depth 1); dashboards are these `dashboard` files nested beneath them.
 const DASHBOARD_TYPE = "dashboard";
-const MAX_PAGES = 50;
 
-// The slice of a desktop file-system row we read back. Our payload rides in
+// Dashboard-specific shape on top of the shared FS row. Our payload rides in
 // `meta` — see DashboardFileMeta for what that blob holds.
-interface FsEntry {
-  id: string;
-  path: string;
-  type?: string;
+interface FsEntry extends FsEntryBase {
   meta?: DashboardFileMeta | null;
-  created_at?: string;
+  // The backend's creator user (standard PostHog UserBasic shape). Absent on
+  // rows the API returns without an expanded creator.
+  created_by?: {
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+  } | null;
 }
 
 /**
@@ -34,62 +44,69 @@ interface FsEntry {
  */
 @injectable()
 export class DashboardsService {
+  // The current user's display label, fetched once and reused (the creator is
+  // the same user for the app's lifetime). `undefined` = not fetched yet;
+  // `null` = fetched but unavailable (don't refetch on every create).
+  private userLabel: string | null | undefined;
+
   constructor(
-    @inject(AUTH_SERVICE)
-    private readonly authService: AuthService,
+    @inject(DESKTOP_FS_CLIENT)
+    private readonly fs: DesktopFsClient,
     @inject(DASHBOARD_QUERY_SERVICE)
     private readonly dashboardQuery: DashboardQueryService,
+    @inject(AUTH_SERVICE)
+    private readonly authService: AuthService,
   ) {}
 
-  // Raw fetch against this project's desktop_file_system surface. `suffix` is
-  // appended after `.../desktop_file_system/` (e.g. `<id>/` or a `?offset=` page).
-  private async fsFetch(suffix: string, init?: RequestInit): Promise<Response> {
-    const { apiHost } = await this.authService.getValidAccessToken();
-    const projectId = this.authService.getState().currentProjectId;
-    if (projectId == null) throw new Error("No PostHog project selected");
-    const url = `${apiHost}/api/projects/${projectId}/desktop_file_system/${suffix}`;
-    return this.authService.authenticatedFetch(fetch, url, init);
+  // The signed-in user's display name (or email), for stamping `created by` onto
+  // canvases. Cached after the first lookup; never throws (returns undefined).
+  private async currentUserLabel(): Promise<string | undefined> {
+    if (this.userLabel !== undefined) return this.userLabel ?? undefined;
+    const user = await fetchCurrentUser(this.authService);
+    this.userLabel = user?.label ?? null;
+    return this.userLabel ?? undefined;
   }
 
-  private async listAll(): Promise<FsEntry[]> {
-    const all: FsEntry[] = [];
-    let suffix = "";
-    for (let i = 0; i < MAX_PAGES; i++) {
-      const res = await this.fsFetch(suffix);
-      if (!res.ok) throw new Error(`Failed to list dashboards (${res.status})`);
-      const page = (await res.json()) as {
-        next: string | null;
-        results: FsEntry[];
-      };
-      all.push(...page.results);
-      if (!page.next) return all;
-      suffix = new URL(page.next).search; // carries the pagination offset
-    }
-    return all;
-  }
-
-  private async getEntry(id: string): Promise<FsEntry | null> {
-    const res = await this.fsFetch(`${encodeURIComponent(id)}/`);
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`Failed to load dashboard (${res.status})`);
-    return (await res.json()) as FsEntry;
+  private getEntry(id: string): Promise<FsEntry | null> {
+    return this.fs.getEntry<FsEntry>(id, "dashboard");
   }
 
   async list(channelId: string): Promise<DashboardSummary[]> {
-    const entries = await this.listAll();
+    // Fetch only this channel's dashboards via a server-side filter
+    // (`parent=<channelPath>&type=dashboard`) rather than walking the whole
+    // project file system and filtering client-side. Dashboards are created as
+    // direct children of the channel folder, so the parent filter matches them.
+    const channelPath = await this.channelPath(channelId);
+    const entries = await this.fs.listByQuery<FsEntry>(
+      `parent=${encodeURIComponent(channelPath)}&type=${DASHBOARD_TYPE}`,
+      "dashboards",
+    );
     return entries
-      .filter(
-        (e) => e.type === DASHBOARD_TYPE && e.meta?.channelId === channelId,
-      )
       .map((e) => toRecord(e))
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map(({ id, channelId: cid, name, updatedAt, spec }) => ({
-        id,
-        channelId: cid,
-        name,
-        updatedAt,
-        spec,
-      }));
+      .map(
+        ({
+          id,
+          channelId: cid,
+          name,
+          templateId,
+          kind,
+          createdBy,
+          updatedAt,
+          spec,
+          code,
+        }) => ({
+          id,
+          channelId: cid,
+          name,
+          templateId,
+          kind,
+          createdBy,
+          updatedAt,
+          spec,
+          code,
+        }),
+      );
   }
 
   async get(id: string): Promise<DashboardRecord | null> {
@@ -101,16 +118,23 @@ export class DashboardsService {
     channelId: string;
     name: string;
     spec: Record<string, unknown> | null;
+    templateId?: string;
   }): Promise<DashboardRecord> {
     const channelPath = await this.channelPath(input.channelId);
     const now = Date.now();
+    const templateId = input.templateId ?? "dashboard";
     const meta: DashboardFileMeta = {
       spec: input.spec,
       channelId: input.channelId,
+      templateId,
+      // Freeform canvases store React code, not a spec; tag them so the render
+      // path picks the sandboxed iframe instead of the json-render tree.
+      kind: templateId === FREEFORM_TEMPLATE_ID ? "freeform" : "json-render",
+      createdBy: await this.currentUserLabel(),
       createdAt: now,
       updatedAt: now,
     };
-    const res = await this.fsFetch("", {
+    const res = await this.fs.fetch("", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -148,7 +172,7 @@ export class DashboardsService {
       if (newPath !== entry.path) body.path = newPath;
     }
 
-    const res = await this.fsFetch(`${encodeURIComponent(input.id)}/`, {
+    const res = await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -157,8 +181,47 @@ export class DashboardsService {
     return toRecord((await res.json()) as FsEntry);
   }
 
+  // Persist a freeform canvas's source + edit history. Separate from update()
+  // because freeform stores code/versions instead of a json-render spec.
+  async saveFreeform(input: {
+    id: string;
+    name?: string;
+    code: string;
+    versions: FreeformVersion[];
+    currentVersionId?: string;
+  }): Promise<DashboardRecord> {
+    const entry = await this.getEntry(input.id);
+    const now = Date.now();
+    const prevMeta = entry?.meta ?? {};
+    const meta: DashboardFileMeta = {
+      ...prevMeta,
+      kind: "freeform",
+      code: input.code,
+      versions: input.versions,
+      currentVersionId: input.currentVersionId,
+      updatedAt: now,
+      createdAt: prevMeta.createdAt ?? toEpoch(entry?.created_at),
+    };
+
+    const body: Record<string, unknown> = { meta };
+    if (input.name && entry) {
+      const parent = parentPath(entry.path);
+      const next = sanitizeSegment(input.name);
+      const newPath = parent ? `${parent}/${next}` : next;
+      if (newPath !== entry.path) body.path = newPath;
+    }
+
+    const res = await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Failed to save canvas (${res.status})`);
+    return toRecord((await res.json()) as FsEntry);
+  }
+
   async delete(id: string): Promise<void> {
-    const res = await this.fsFetch(`${encodeURIComponent(id)}/`, {
+    const res = await this.fs.fetch(`${encodeURIComponent(id)}/`, {
       method: "DELETE",
     });
     // Already gone is a successful delete; surface anything else.
@@ -174,6 +237,8 @@ export class DashboardsService {
     id: string;
     elementKeys?: string[];
     touchUpdatedAt?: boolean;
+    dateRange?: DashboardDateRange;
+    persistRange?: boolean;
   }): Promise<{
     updated: number;
     failures: { elementKey: string; error: string }[];
@@ -182,13 +247,28 @@ export class DashboardsService {
     const spec = entry?.meta?.spec;
     if (!entry || !spec) return { updated: 0, failures: [] };
 
-    const queries = collectQueries(spec, input.elementKeys);
-    if (queries.length === 0) return { updated: 0, failures: [] };
+    // The window to query: the caller's (a rolled or freshly-picked range) wins;
+    // otherwise reuse what's stored on the spec.
+    const range = input.dateRange ?? storedRange(spec);
 
-    const results = await this.dashboardQuery.run({ queries });
+    const queries = collectQueries(spec, input.elementKeys).map((q) => ({
+      ...q,
+      query: substituteDateTokens(q.query, range),
+    }));
 
-    let nextSpec = spec;
-    let updated = 0;
+    const results =
+      queries.length > 0 ? await this.dashboardQuery.run({ queries }) : [];
+
+    // Only an explicit user pick (persistRange) rewrites the stored range — an
+    // auto-rolling refresh just substitutes, so polling doesn't churn the file.
+    // Persisting is itself a change (even if no value moved) so the board reopens
+    // on the picked window and the picker reflects it.
+    let nextSpec =
+      input.dateRange && input.persistRange
+        ? withStoredRange(spec, input.dateRange)
+        : spec;
+    let updated =
+      input.dateRange && input.persistRange && nextSpec !== spec ? 1 : 0;
     const failures: { elementKey: string; error: string }[] = [];
     for (const r of results) {
       if (r.ok) {
@@ -218,7 +298,7 @@ export class DashboardsService {
             ? (prevMeta.updatedAt ?? toEpoch(entry.created_at))
             : Date.now(),
       };
-      await this.fsFetch(`${encodeURIComponent(input.id)}/`, {
+      await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ meta }),
@@ -246,9 +326,27 @@ function toRecord(entry: FsEntry): DashboardRecord {
     channelId: meta.channelId ?? "",
     name: lastSegment(entry.path),
     spec: meta.spec ?? null,
+    templateId: meta.templateId ?? "dashboard",
+    kind: meta.kind ?? "json-render",
+    code: meta.code,
+    versions: meta.versions,
+    currentVersionId: meta.currentVersionId,
+    // Prefer our stamped meta; fall back to the FS row's creator if present.
+    createdBy: meta.createdBy ?? creatorName(entry.created_by),
     createdAt,
     updatedAt: meta.updatedAt ?? createdAt,
   };
+}
+
+// Human-readable creator from the backend's `created_by` user: full name when
+// present, else email, else undefined (we don't render an id).
+function creatorName(createdBy?: FsEntry["created_by"]): string | undefined {
+  if (!createdBy) return undefined;
+  const name = [createdBy.first_name, createdBy.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return name || createdBy.email || undefined;
 }
 
 // Path segments are "/"-separated on the backend, so a name can't contain one.
@@ -274,7 +372,77 @@ function toEpoch(iso?: string): number {
 }
 
 type SpecElements = Record<string, { children?: string[]; props?: unknown }>;
-type StoredQuery = { query?: unknown; column?: unknown };
+type StoredQuery = { query?: unknown; column?: unknown; shape?: unknown };
+
+const QUERY_SHAPES = new Set<DashboardQueryShape>([
+  "scalar",
+  "column",
+  "labels",
+  "matrix",
+  "pairs",
+  "retention",
+]);
+
+// The spec's stored time window, if any (written under state.dateRange).
+function storedRange(
+  spec: Record<string, unknown>,
+): DashboardDateRange | undefined {
+  const state = spec.state as Record<string, unknown> | undefined;
+  const r = state?.dateRange as Record<string, unknown> | undefined;
+  if (r && typeof r.from === "number" && typeof r.to === "number") {
+    return {
+      name: typeof r.name === "string" ? r.name : "Custom",
+      from: r.from,
+      to: r.to,
+    };
+  }
+  return undefined;
+}
+
+// Immutably set spec.state.dateRange (creating state if absent). No-op (same
+// ref) when the range already matches.
+function withStoredRange(
+  spec: Record<string, unknown>,
+  range: DashboardDateRange,
+): Record<string, unknown> {
+  const prev = storedRange(spec);
+  if (
+    prev &&
+    prev.name === range.name &&
+    prev.from === range.from &&
+    prev.to === range.to
+  ) {
+    return spec;
+  }
+  const state = (spec.state as Record<string, unknown> | undefined) ?? {};
+  return { ...spec, state: { ...state, dateRange: range } };
+}
+
+// Replace the window placeholders in a query with HogQL datetime literals for the
+// active window. Besides `{date_from}`/`{date_to}`, the `_prev` pair spans the
+// equal-length window immediately before it (for prior-period comparison series)
+// so the comparison tracks the window length instead of a hardcoded interval. No
+// range or no tokens → the query is returned as-is.
+function substituteDateTokens(
+  query: string,
+  range: DashboardDateRange | undefined,
+): string {
+  if (!range || !/\{date_(from|to)(_prev)?\}/.test(query)) return query;
+  const length = range.to - range.from;
+  return query
+    .replaceAll("{date_from_prev}", toHogQLDateTime(range.from - length))
+    .replaceAll("{date_to_prev}", toHogQLDateTime(range.from))
+    .replaceAll("{date_from}", toHogQLDateTime(range.from))
+    .replaceAll("{date_to}", toHogQLDateTime(range.to));
+}
+
+// An epoch-ms instant as a `toDateTime(<unix seconds>)` literal — the integer
+// form is an unambiguous UTC instant, unlike a bare 'YYYY-MM-DD HH:MM:SS' string
+// (which HogQL would parse in the PROJECT timezone, shifting the window by the
+// project's UTC offset). Drops straight into a comparison: `timestamp >= {date_from}`.
+function toHogQLDateTime(epochMs: number): string {
+  return `toDateTime(${Math.floor(epochMs / 1000)})`;
+}
 
 // Collect refreshable queries from spec.state.queries, optionally limited to the
 // subtree(s) of `elementKeys` and skipping queries whose element no longer exists.
@@ -298,11 +466,17 @@ function collectQueries(
     if (elements && !elements[elementKey]) continue; // stale key
     for (const [propPath, stored] of Object.entries(props)) {
       if (stored && typeof stored.query === "string") {
+        const shape =
+          typeof stored.shape === "string" &&
+          QUERY_SHAPES.has(stored.shape as DashboardQueryShape)
+            ? (stored.shape as DashboardQueryShape)
+            : "scalar";
         out.push({
           elementKey,
           propPath,
           query: stored.query,
           column: typeof stored.column === "string" ? stored.column : undefined,
+          shape,
         });
       }
     }
@@ -324,28 +498,85 @@ function descendantKeys(elements: SpecElements, roots: string[]): Set<string> {
   return seen;
 }
 
-// Immutably set spec.elements[elementKey].props[<propPath>]; no-op (same ref)
-// when the element is absent.
+// Immutably set a value at `propPath` (a JSON pointer, e.g. "/value" or
+// "/series/0/data") within spec.elements[elementKey].props; no-op (same ref)
+// when the element is absent or the value is unchanged. Nested paths let one
+// chart's series fill from separate queries (`/series/0/data`, `/series/1/data`).
 function patchProp(
   spec: Record<string, unknown>,
   elementKey: string,
   propPath: string,
-  value: string | number,
+  value: unknown,
 ): Record<string, unknown> {
   const elements = spec.elements as
     | Record<string, { props?: Record<string, unknown> }>
     | undefined;
   const el = elements?.[elementKey];
   if (!elements || !el) return spec;
-  const propName = propPath.replace(/^\//, "");
+  const segments = propPath.split("/").filter(Boolean);
+  if (segments.length === 0) return spec;
+  // Skip when the value is unchanged (same ref) so a poll on stable data doesn't
+  // rewrite meta.spec every tick — `refresh` only persists when something moved.
+  if (deepEqual(getAtPointer(el.props ?? {}, segments), value)) return spec;
+  const nextProps = setAtPointer(el.props ?? {}, segments, value);
   return {
     ...spec,
     elements: {
       ...elements,
-      [elementKey]: {
-        ...el,
-        props: { ...(el.props ?? {}), [propName]: value },
-      },
+      [elementKey]: { ...el, props: nextProps },
     },
   };
+}
+
+// Read the value at a pointer path, or undefined if any segment is missing.
+function getAtPointer(container: unknown, segments: string[]): unknown {
+  let cur: unknown = container;
+  for (const seg of segments) {
+    if (cur == null || typeof cur !== "object") return undefined;
+    cur = (cur as Record<string, unknown>)[seg];
+  }
+  return cur;
+}
+
+// Structural equality for the scalar/array/plain-object values refresh writes.
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b || a === null || b === null) return false;
+  if (typeof a !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+      return false;
+    }
+    return a.every((x, i) => deepEqual(x, b[i]));
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const ak = Object.keys(ao);
+  const bk = Object.keys(bo);
+  return ak.length === bk.length && ak.every((k) => deepEqual(ao[k], bo[k]));
+}
+
+// Immutable set at a pointer path, cloning containers along the way. A numeric
+// segment indexes (and grows, if needed) an array; otherwise it's an object key.
+function setAtPointer(
+  container: unknown,
+  segments: string[],
+  value: unknown,
+): Record<string, unknown> {
+  const [head, ...rest] = segments;
+  const index = /^\d+$/.test(head) ? Number(head) : null;
+
+  if (index !== null) {
+    const arr = Array.isArray(container) ? [...container] : [];
+    arr[index] =
+      rest.length === 0 ? value : setAtPointer(arr[index], rest, value);
+    return arr as unknown as Record<string, unknown>;
+  }
+
+  const obj =
+    container && typeof container === "object" && !Array.isArray(container)
+      ? { ...(container as Record<string, unknown>) }
+      : {};
+  obj[head] = rest.length === 0 ? value : setAtPointer(obj[head], rest, value);
+  return obj;
 }

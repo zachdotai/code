@@ -119,6 +119,24 @@ function toUnifiedDiffPatch(
   return `diff --git a/${oldPath} b/${filename}\n--- ${fromPath}\n+++ ${toPath}\n${rawPatch}`;
 }
 
+/**
+ * Narrow GitHub GraphQL's `PullRequestState` (OPEN | CLOSED | MERGED) to the
+ * lowercased literal the batch schema expects. Anything unexpected falls back
+ * to "open" so one odd value can never fail validation for the whole batch.
+ */
+function normalizeGraphqlPrState(
+  graphqlState: string,
+): "open" | "closed" | "merged" {
+  switch (graphqlState) {
+    case "MERGED":
+      return "merged";
+    case "CLOSED":
+      return "closed";
+    default:
+      return "open";
+  }
+}
+
 export function mapPrState(
   state: string | null,
   merged: boolean,
@@ -1087,7 +1105,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
   ): Promise<Record<string, PrDiffStats>> {
     const aliasFragments = chunk
       .map(([, { parsed }], index) => {
-        return `pr${index}: repository(owner: "${escapeGraphqlString(parsed.owner)}", name: "${escapeGraphqlString(parsed.repo)}") { pullRequest(number: ${parsed.number}) { additions deletions changedFiles } }`;
+        return `pr${index}: repository(owner: "${escapeGraphqlString(parsed.owner)}", name: "${escapeGraphqlString(parsed.repo)}") { pullRequest(number: ${parsed.number}) { additions deletions changedFiles state isDraft } }`;
       })
       .join("\n");
     const query = `query InboxPrDiffStatsBatch {\n${aliasFragments}\n}`;
@@ -1108,6 +1126,8 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
             additions: number;
             deletions: number;
             changedFiles: number;
+            state: string;
+            isDraft: boolean;
           } | null;
         } | null
       >;
@@ -1118,10 +1138,15 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       const [, { urls }] = chunk[i];
       const node = parsed.data?.[`pr${i}`]?.pullRequest;
       if (!node) continue;
+      // GraphQL `PullRequestState` is OPEN | CLOSED | MERGED; normalise to the
+      // lowercase state + merged boolean shape the badge expects.
       const stats: PrDiffStats = {
         additions: node.additions,
         deletions: node.deletions,
         changedFiles: node.changedFiles,
+        state: normalizeGraphqlPrState(node.state),
+        merged: node.state === "MERGED",
+        draft: node.isDraft,
       };
       for (const url of urls) {
         out[url] = stats;

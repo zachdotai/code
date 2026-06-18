@@ -1,4 +1,16 @@
+import type { ChannelTaskRecord } from "./channelTaskSchemas";
 import type { DashboardRecord, DashboardSummary } from "./dashboardSchemas";
+import type {
+  CanvasCaptureConfig,
+  CanvasCaptureInput,
+  CanvasCaptureResult,
+  CanvasDataQueryInput,
+  CanvasDataResult,
+  FreeformGenEventPayload,
+  FreeformGenerateInput,
+  FreeformThreadInput,
+  FreeformVersion,
+} from "./freeformSchemas";
 import type {
   CanvasGenEventPayload,
   CanvasGenerateInput,
@@ -8,6 +20,7 @@ import type {
   DashboardQueryResult,
   DashboardQueryRunInput,
 } from "./querySchemas";
+import type { CanvasTemplate, CanvasTemplateSummary } from "./templateSchemas";
 
 // Structural service interfaces the host-router routers depend on. The concrete
 // implementations live in the desktop app's main process and are bound to the
@@ -23,6 +36,22 @@ export interface ICanvasGenService {
   ): AsyncIterable<CanvasGenEventPayload>;
 }
 
+export interface IFreeformGenService {
+  generate(input: FreeformGenerateInput): Promise<void>;
+  reset(input: FreeformThreadInput): Promise<void>;
+  toIterable(
+    event: "freeform-event",
+    opts?: { signal?: AbortSignal },
+  ): AsyncIterable<FreeformGenEventPayload>;
+}
+
+export interface ICanvasTemplatesService {
+  list(): CanvasTemplateSummary[];
+  get(id: string): CanvasTemplate | undefined;
+  /** The system prompt for a template, falling back to the default template. */
+  systemPromptFor(id: string | undefined): string;
+}
+
 export interface IDashboardsService {
   list(channelId: string): Promise<DashboardSummary[]>;
   get(id: string): Promise<DashboardRecord | null>;
@@ -30,11 +59,19 @@ export interface IDashboardsService {
     channelId: string;
     name: string;
     spec: Record<string, unknown> | null;
+    templateId?: string;
   }): Promise<DashboardRecord>;
   update(input: {
     id: string;
     name?: string;
     spec: Record<string, unknown> | null;
+  }): Promise<DashboardRecord>;
+  saveFreeform(input: {
+    id: string;
+    name?: string;
+    code: string;
+    versions: FreeformVersion[];
+    currentVersionId?: string;
   }): Promise<DashboardRecord>;
   delete(id: string): Promise<void>;
   refresh(input: {
@@ -49,4 +86,20 @@ export interface IDashboardsService {
 
 export interface IDashboardQueryService {
   run(input: DashboardQueryRunInput): Promise<DashboardQueryResult[]>;
+}
+
+export interface ICanvasDataService {
+  query(input: CanvasDataQueryInput): Promise<CanvasDataResult>;
+  capture(input: CanvasCaptureInput): Promise<CanvasCaptureResult>;
+  captureConfig(): Promise<CanvasCaptureConfig>;
+}
+
+export interface IChannelTasksService {
+  list(channelId: string): Promise<ChannelTaskRecord[]>;
+  file(input: {
+    channelId: string;
+    taskId: string;
+    taskTitle: string;
+  }): Promise<ChannelTaskRecord>;
+  unfile(id: string): Promise<void>;
 }

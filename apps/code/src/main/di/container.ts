@@ -19,7 +19,10 @@ import {
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
 import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
-import { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
+import {
+  CANVAS_GEN_SERVICE,
+  FREEFORM_GEN_SERVICE,
+} from "@posthog/core/canvas/identifiers";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
@@ -50,10 +53,12 @@ import { integrationsModule } from "@posthog/core/integrations/integrations.modu
 import {
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
 } from "@posthog/core/links/identifiers";
 import { InboxLinkService } from "@posthog/core/links/inbox-link";
 import { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import { ScoutLinkService } from "@posthog/core/links/scout-link";
 import { TaskLinkService } from "@posthog/core/links/task-link";
 import {
   LLM_GATEWAY_HOST,
@@ -90,6 +95,7 @@ import {
   type IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
 import { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
+import { FreeformGenService } from "@posthog/host-router/services/freeform-gen.service";
 import { ANALYTICS_SERVICE } from "@posthog/platform/analytics";
 import { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import { APP_META_SERVICE } from "@posthog/platform/app-meta";
@@ -182,6 +188,7 @@ import { setRtsSettings } from "@posthog/workspace-server/services/rts/settings"
 import { SECURE_STORE_SERVICE } from "@posthog/workspace-server/services/secure-store/identifiers";
 import { shellModule } from "@posthog/workspace-server/services/shell/shell.module";
 import { skillsModule } from "@posthog/workspace-server/services/skills/skills.module";
+import { skillsMarketplaceModule } from "@posthog/workspace-server/services/skills-marketplace/skills-marketplace.module";
 import {
   SUSPENSION_FILE_WATCHER,
   SUSPENSION_SERVICE,
@@ -274,6 +281,7 @@ import {
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
   PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
   REPOSITORY_REPOSITORY as MAIN_REPOSITORY_REPOSITORY,
+  SCOUT_LINK_SERVICE as MAIN_SCOUT_LINK_SERVICE,
   SECURE_STORE_BACKEND as MAIN_SECURE_STORE_BACKEND,
   SECURE_STORE_SERVICE as MAIN_SECURE_STORE_SERVICE,
   SETTINGS_STORE as MAIN_SETTINGS_STORE,
@@ -613,6 +621,7 @@ container
 container.load(posthogPluginModule);
 container.bind(MAIN_POSTHOG_PLUGIN_SERVICE).toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
+container.load(skillsMarketplaceModule);
 container.load(onboardingImportModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_SLEEP_SERVICE).to(SleepService);
@@ -650,6 +659,8 @@ container.bind(MAIN_TASK_LINK_SERVICE).to(TaskLinkService);
 container.bind(TASK_LINK_SERVICE).toService(MAIN_TOKENS.TaskLinkService);
 container.bind(MAIN_INBOX_LINK_SERVICE).to(InboxLinkService);
 container.bind(INBOX_LINK_SERVICE).toService(MAIN_TOKENS.InboxLinkService);
+container.bind(MAIN_SCOUT_LINK_SERVICE).to(ScoutLinkService);
+container.bind(SCOUT_LINK_SERVICE).toService(MAIN_TOKENS.ScoutLinkService);
 container.bind(MAIN_NEW_TASK_LINK_SERVICE).to(NewTaskLinkService);
 container.bind(NEW_TASK_LINK_SERVICE).toService(MAIN_TOKENS.NewTaskLinkService);
 container.load(watcherRegistryModule);
@@ -740,3 +751,4 @@ container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
 // host-router routers.
 container.load(canvasCoreModule);
 container.bind(CANVAS_GEN_SERVICE).to(CanvasGenService).inSingletonScope();
+container.bind(FREEFORM_GEN_SERVICE).to(FreeformGenService).inSingletonScope();

@@ -10,7 +10,7 @@ import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/Inb
 import { ReportDetailActions } from "@posthog/ui/features/inbox/components/ReportDetailActions";
 import { ReportTasksSection } from "@posthog/ui/features/inbox/components/ReportTasksSection";
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
-import { toast } from "sonner";
+import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 
 interface ReportDetailProps {
   reportId: string;
@@ -35,14 +35,6 @@ export function ReportDetail({
 }
 
 function ReportDetailContent({ report }: { report: SignalReport }) {
-  const handleCopyLink = () => {
-    const url = `${window.location.origin}/code/inbox/reports/${report.id}`;
-    navigator.clipboard
-      .writeText(url)
-      .then(() => toast.success("Link copied"))
-      .catch(() => toast.error("Couldn't copy link"));
-  };
-
   return (
     <InboxDetailFrame
       report={report}
@@ -56,7 +48,7 @@ function ReportDetailContent({ report }: { report: SignalReport }) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleCopyLink}
+            onClick={() => copyInboxReportLink(report)}
             title="Copy a deep link to this report"
           >
             <CopyIcon size={12} />

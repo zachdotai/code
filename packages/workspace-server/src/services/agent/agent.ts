@@ -30,6 +30,7 @@ import {
   DEFAULT_GATEWAY_MODEL,
   fetchGatewayModels,
   formatGatewayModelName,
+  getClaudeModelRecency,
   getProviderName,
   isAnthropicModel,
   isOpenAIModel,
@@ -54,6 +55,7 @@ import {
 import {
   type AcpMessage,
   isAuthError,
+  serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
 import { inject, injectable, preDestroy } from "inversify";
@@ -688,7 +690,9 @@ When creating pull requests, add the following footer at the end of the PR descr
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
         model,
-        instructions: adapter === "codex" ? systemPrompt.append : undefined,
+        reasoningEffort: adapter === "codex" ? effort : undefined,
+        developerInstructions:
+          adapter === "codex" ? systemPrompt.append : undefined,
         additionalDirectories:
           adapter === "codex" ? additionalDirectories : undefined,
         onStructuredOutput: jsonSchema
@@ -759,6 +763,16 @@ When creating pull requests, add the following footer at the end of the PR descr
           headers: Object.fromEntries(s.headers.map((h) => [h.name, h.value])),
         })),
       );
+
+      // codex-acp connects to every MCP server eagerly during session creation
+      // and treats an unreachable one as fatal, which kills the session
+      // ("ACP connection closed") and makes the host silently fall back to a
+      // Claude/Opus session. Claude connects lazily and is unaffected, so only
+      // the Codex server list is pruned to the reachable ones.
+      const sessionMcpServers =
+        adapter === "codex"
+          ? await this.filterReachableMcpServers(mcpServers, taskRunId)
+          : mcpServers;
 
       let externalPlugins: Awaited<ReturnType<typeof discoverExternalPlugins>> =
         [];
@@ -831,7 +845,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         const resumeResponse = await connection.resumeSession({
           sessionId: existingSessionId,
           cwd: repoPath,
-          mcpServers,
+          mcpServers: sessionMcpServers,
           _meta: {
             ...(logUrl && {
               persistence: { taskId, runId: taskRunId, logUrl },
@@ -860,7 +874,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         }
         const newSessionResponse = await connection.newSession({
           cwd: repoPath,
-          mcpServers,
+          mcpServers: sessionMcpServers,
           _meta: {
             taskRunId,
             environment: "local",
@@ -920,11 +934,29 @@ When creating pull requests, add the following footer at the end of the PR descr
         );
         return this.getOrCreateSession(config, isReconnect, true);
       }
+      // When the in-process ACP layer masks a thrown error as a generic
+      // "Internal error", the real text survives in `data.details`. Surface it
+      // here (host-side, before the tRPC boundary drops `data`) so the exported
+      // log names the actual cause.
+      const maskedDetail = (err as { data?: { details?: unknown } })?.data
+        ?.details;
+      const detailSuffix =
+        typeof maskedDetail === "string" && maskedDetail
+          ? `: ${maskedDetail}`
+          : "";
+      const action = isReconnect ? "reconnect" : "create";
       this.log.error(
-        `Failed to ${isReconnect ? "reconnect" : "create"} session${
-          isRetry ? " after retry" : ""
-        }`,
-        err,
+        `Failed to ${action} session${isRetry ? " after retry" : ""}${detailSuffix}`,
+        {
+          taskRunId,
+          taskId,
+          sessionId: config.sessionId,
+          adapter: config.adapter,
+          model: config.model,
+          isRetry,
+          data: (err as { data?: unknown }).data,
+          errorDetail: serializeError(err),
+        },
       );
       // Non-auth reconnect failure on first attempt: fall back to a fresh session.
       // If this was already an auth retry (isRetry=true), we've exhausted retries
@@ -932,6 +964,8 @@ When creating pull requests, add the following footer at the end of the PR descr
       if (isReconnect && !isRetry) {
         this.log.warn("Reconnect failed, falling back to new session", {
           taskRunId,
+          taskId,
+          sessionId: config.sessionId,
         });
         config.sessionId = undefined;
         return this.getOrCreateSession(config, false, false);
@@ -941,13 +975,105 @@ When creating pull requests, add the following footer at the end of the PR descr
     }
   }
 
+  private async filterReachableMcpServers<
+    T extends {
+      name: string;
+      url: string;
+      headers: Array<{ name: string; value: string }>;
+    },
+  >(servers: T[], taskRunId: string): Promise<T[]> {
+    const probed = await Promise.all(
+      servers.map(async (server) => ({
+        server,
+        reachable: await this.isMcpServerReachable(server),
+      })),
+    );
+    const reachable: T[] = [];
+    for (const { server, reachable: ok } of probed) {
+      if (ok) {
+        reachable.push(server);
+      } else {
+        this.log.warn(
+          "Dropping unreachable MCP server from Codex session; codex-acp treats an unreachable server as a fatal startup error",
+          { taskRunId, server: server.name, url: server.url },
+        );
+      }
+    }
+    return reachable;
+  }
+
+  private async isMcpServerReachable(server: {
+    url: string;
+    headers: Array<{ name: string; value: string }>;
+  }): Promise<boolean> {
+    const PROBE_TIMEOUT_MS = 2_000;
+    try {
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      };
+      for (const header of server.headers) {
+        headers[header.name] = header.value;
+      }
+      const response = await fetch(server.url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 0,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "posthog-code", version: "1.0.0" },
+          },
+        }),
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      // Release the body without draining it. A cancel rejection (e.g. an
+      // already-disturbed stream) is a cleanup detail, not a reachability
+      // signal, so it must not flip the result to unreachable.
+      try {
+        await response.body?.cancel();
+      } catch {
+        // ignore body cleanup failures
+      }
+      // Any HTTP response means the endpoint is reachable. codex-acp only treats
+      // transport failures (connection refused, DNS, timeout) as fatal; HTTP or
+      // JSON-RPC error responses are handled gracefully.
+      return true;
+    } catch (err) {
+      this.log.debug("MCP server reachability probe failed", {
+        url: server.url,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  }
+
   async prompt(
     sessionId: string,
     prompt: ContentBlock[],
+    options?: { steer?: boolean },
   ): Promise<PromptOutput> {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    // A steer is injected into the turn that is already running, which owns the
+    // promptPending/sleep/idle lifecycle. Forward it fire-and-forget so this
+    // call does not flip that shared state out from under the live turn.
+    if (options?.steer) {
+      const result = await session.clientSideConnection.prompt({
+        sessionId: getAgentSessionId(session),
+        prompt,
+        _meta: { steer: true },
+      });
+      return {
+        stopReason: result.stopReason,
+        _meta: result._meta as PromptOutput["_meta"],
+      };
     }
 
     // Prepend pending context if present
@@ -1270,6 +1396,14 @@ For git operations while detached:
   private async cleanupSession(taskRunId: string): Promise<void> {
     const session = this.sessions.get(taskRunId);
     if (session) {
+      if (session.promptPending || session.inFlightMcpToolCalls.size > 0) {
+        this.log.warn("Cleaning up session with in-flight work", {
+          taskRunId,
+          taskId: session.taskId,
+          promptPending: session.promptPending,
+          inFlightMcpToolCalls: session.inFlightMcpToolCalls.size,
+        });
+      }
       this.cancelInFlightMcpToolCalls(session);
       this.sleepService.release(taskRunId);
       try {
@@ -1839,15 +1973,6 @@ For git operations while detached:
       provider: getProviderName(model.owned_by),
     }));
 
-    const CLAUDE_TIER_ORDER = ["opus", "sonnet", "haiku"];
-    const getModelTier = (modelId: string): number => {
-      const lowerId = modelId.toLowerCase();
-      for (let i = 0; i < CLAUDE_TIER_ORDER.length; i++) {
-        if (lowerId.includes(CLAUDE_TIER_ORDER[i])) return i;
-      }
-      return CLAUDE_TIER_ORDER.length;
-    };
-
     return mapped.sort((a, b) => {
       const providerOrder = ["Anthropic", "OpenAI", "Gemini"];
       const aProviderIdx = providerOrder.indexOf(a.provider ?? "");
@@ -1857,7 +1982,9 @@ For git operations while detached:
         const bIdx = bProviderIdx === -1 ? 999 : bProviderIdx;
         return aIdx - bIdx;
       }
-      return getModelTier(a.modelId) - getModelTier(b.modelId);
+      return (
+        getClaudeModelRecency(a.modelId) - getClaudeModelRecency(b.modelId)
+      );
     });
   }
 
@@ -1877,6 +2004,16 @@ For git operations while detached:
         name: formatGatewayModelName(model),
         description: `Context: ${model.context_window.toLocaleString()} tokens`,
       }));
+
+    // The gateway returns models in an arbitrary order. Sort Claude models
+    // oldest-to-newest so the picker is deterministic and the newest model
+    // lands at the end of the list, closest to the trigger.
+    if (adapter === "claude") {
+      modelOptions.sort(
+        (a, b) =>
+          getClaudeModelRecency(a.value) - getClaudeModelRecency(b.value),
+      );
+    }
 
     const defaultModel =
       adapter === "codex"

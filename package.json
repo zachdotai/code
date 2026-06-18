@@ -16,6 +16,7 @@
     "dev:agent": "pnpm --filter agent dev",
     "dev:git": "pnpm --filter @posthog/git dev",
     "dev:code": "pnpm --filter code start",
+    "app:cdp": "node scripts/electron-cdp.mjs",
     "build": "turbo build",
     "build:deps": "turbo build --filter=@posthog/code^...",
     "package": "turbo build && pnpm --filter code package",
@@ -25,7 +26,7 @@
     "test:e2e": "pnpm --filter code test:e2e",
     "test:e2e:headed": "pnpm --filter code test:e2e:headed",
     "rebuild:sqlite-node": "node scripts/rebuild-better-sqlite3-node.mjs",
-    "rebuild:sqlite-electron": "npx @electron/rebuild -f -m node_modules/better-sqlite3",
+    "rebuild:sqlite-electron": "node scripts/rebuild-better-sqlite3-electron.mjs",
     "typecheck": "turbo typecheck",
     "boundaries": "node scripts/check-host-boundaries.mjs",
     "lint": "biome check --write --unsafe",
@@ -59,17 +60,5 @@
       "biome check --write --unsafe --files-ignore-unknown=true --no-errors-on-unmatched",
       "bash -c 'pnpm typecheck'"
     ]
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "electron-winstaller",
-      "node-pty",
-      "better-sqlite3",
-      "@posthog/cli"
-    ],
-    "overrides": {
-      "zod": "4.3.6"
-    }
   }
 }

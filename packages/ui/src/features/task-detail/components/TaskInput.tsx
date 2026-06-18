@@ -1,4 +1,4 @@
-import { X } from "@phosphor-icons/react";
+import { FileText, X } from "@phosphor-icons/react";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
@@ -67,6 +67,10 @@ interface TaskInputProps {
   initialModel?: string;
   initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
+  /** Optional channel CONTEXT.md, appended to the initial prompt as background. */
+  channelContext?: string;
+  /** Display name of the channel the CONTEXT.md came from (for the chip). */
+  channelName?: string;
 }
 
 export function TaskInput({
@@ -78,6 +82,8 @@ export function TaskInput({
   initialModel,
   initialMode,
   reportAssociation,
+  channelContext,
+  channelName,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
@@ -116,6 +122,8 @@ export function TaskInput({
     defaultInitialTaskMode,
     lastUsedInitialTaskMode,
     setLastUsedReasoningEffort,
+    setLastUsedModel,
+    _hasHydrated: settingsHydrated,
   } = useSettingsStore();
 
   const editorRef = useRef<EditorHandle>(null);
@@ -140,6 +148,19 @@ export function TaskInput({
   const [activeReportAssociation, setActiveReportAssociation] = useState(
     reportAssociation ?? null,
   );
+
+  // Channel CONTEXT.md is included by default; the chip lets the user drop it
+  // from this task's prompt. Re-include whenever the source context changes
+  // (e.g. switching channels) so a dismissal doesn't stick across channels.
+  const [channelContextDismissed, setChannelContextDismissed] = useState(false);
+  const lastChannelContextRef = useRef(channelContext);
+  useEffect(() => {
+    if (lastChannelContextRef.current !== channelContext) {
+      lastChannelContextRef.current = channelContext;
+      setChannelContextDismissed(false);
+    }
+  }, [channelContext]);
+  const includeChannelContext = !!channelContext && !channelContextDismissed;
 
   const adapter = lastUsedAdapter;
   const prefillRequestKey = initialPromptKey ?? initialPrompt;
@@ -210,7 +231,17 @@ export function TaskInput({
     return lastUsedWorkspaceMode || "local";
   });
 
+  const didResolveWorkspaceModeRef = useRef(false);
+  useEffect(() => {
+    if (didResolveWorkspaceModeRef.current) return;
+    if (!settingsHydrated) return;
+    didResolveWorkspaceModeRef.current = true;
+    if (initialCloudRepository) return;
+    setWorkspaceModeState(lastUsedWorkspaceMode || "local");
+  }, [settingsHydrated, lastUsedWorkspaceMode, initialCloudRepository]);
+
   const setWorkspaceMode = (mode: WorkspaceMode) => {
+    didResolveWorkspaceModeRef.current = true;
     setWorkspaceModeState(mode);
     setLastUsedWorkspaceMode(mode);
     if (mode !== "cloud") {
@@ -511,6 +542,8 @@ export function TaskInput({
         ? selectedCloudEnvId
         : undefined,
     signalReportId: activeReportAssociation?.reportId,
+    channelContext: includeChannelContext ? channelContext : undefined,
+    channelName,
   });
 
   const handleModeChange = useCallback(
@@ -526,9 +559,10 @@ export function TaskInput({
     (value: string) => {
       if (modelOption) {
         setConfigOption(modelOption.id, value);
+        setLastUsedModel(value);
       }
     },
-    [modelOption, setConfigOption],
+    [modelOption, setConfigOption, setLastUsedModel],
   );
 
   const handleThoughtChange = useCallback(
@@ -774,7 +808,9 @@ export function TaskInput({
               isLoading={isCreatingTask}
               autoFocus
               clearOnSubmit={false}
-              submitDisabledExternal={!canSubmit || isCreatingTask || !isOnline}
+              submitDisabledExternal={
+                !canSubmit || isCreatingTask || !isOnline || isPreviewLoading
+              }
               tourTarget="task-input"
               repoPath={selectedDirectory}
               modeOption={modeOption}
@@ -840,6 +876,27 @@ export function TaskInput({
                     <X size={12} />
                   </button>
                 </Tooltip>
+              </div>
+            )}
+            {includeChannelContext && (
+              <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
+                <span className="shrink-0 text-gray-10">Using:</span>
+                <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
+                  <FileText size={12} />
+                  <span className="truncate">
+                    {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                  </span>
+                  <Tooltip content="Don't include this context">
+                    <button
+                      type="button"
+                      onClick={() => setChannelContextDismissed(true)}
+                      aria-label="Remove channel context from prompt"
+                      className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
+                    >
+                      <X size={12} />
+                    </button>
+                  </Tooltip>
+                </span>
               </div>
             )}
             {effectiveWorkspaceMode === "cloud" &&

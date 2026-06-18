@@ -1,7 +1,9 @@
 import { billingCoreModule } from "@posthog/core/billing/billing.module";
 import { inboxCoreModule } from "@posthog/core/inbox/inbox.module";
+import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
+import { skillsCoreModule } from "@posthog/core/skills/skills.module";
 import { CONTRIBUTION } from "@posthog/di/contribution";
 import { agentUiModule } from "@posthog/ui/features/agent/agent.module";
 import { authUiModule } from "@posthog/ui/features/auth/auth.module";
@@ -30,12 +32,14 @@ export function registerDesktopContributions(): void {
     connectivityUiModule,
     fileWatcherUiModule,
     focusUiModule,
+    githubConnectModule,
     inboxCoreModule,
     notificationsUiModule,
     onboardingModule,
     provisioningUiModule,
     setupCoreModule,
     setupUiModule,
+    skillsCoreModule,
     workspaceUiModule,
   ]) {
     container.load(module);

@@ -30,6 +30,7 @@ export {
 } from "./cloud-prompt";
 export {
   buildInboxDeeplink,
+  buildScoutDeeplink,
   DEEPLINK_PROTOCOL_DEVELOPMENT,
   DEEPLINK_PROTOCOL_PRODUCTION,
   decodePlanBase64,
@@ -54,6 +55,8 @@ export {
   isNotAuthenticatedError,
   isRateLimitError,
   NotAuthenticatedError,
+  type SerializedError,
+  serializeError,
 } from "./errors";
 export type { ExecutionMode } from "./exec-types";
 export * from "./flags";
@@ -124,6 +127,7 @@ export {
   type SagaResult,
   type SagaStep,
 } from "./saga";
+export { scoutSkillNameFromSlug, scoutSkillSlug } from "./scout-naming";
 export {
   isProPlan,
   PLAN_FREE,
@@ -165,7 +169,14 @@ export type {
   SignalReportOrderingField,
   SignalReportStatus,
 } from "./signal-types";
-export type { SkillInfo, SkillSource } from "./skills";
+export type {
+  ExportedSkill,
+  ExportedSkillFile,
+  SkillFileEntry,
+  SkillInfo,
+  SkillSource,
+} from "./skills";
+export { SKILL_EXISTS_MARKER, stripFrontmatter } from "./skills";
 export type {
   ArtifactType,
   PostHogAPIConfig,

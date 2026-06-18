@@ -42,6 +42,8 @@ import {
   type ReportModelResolver,
 } from "@posthog/core/inbox/identifiers";
 import {
+  GITHUB_CONNECT_CLIENT as INTEGRATIONS_GITHUB_CONNECT_CLIENT,
+  type GithubConnectClient as IntegrationsGithubConnectClient,
   REPOSITORIES_CLIENT,
   REPOSITORIES_SERVICE,
   type RepositoriesClient,
@@ -77,6 +79,8 @@ import {
   TITLE_GENERATOR_LOGGER,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
+import { SKILLS_WORKSPACE_CLIENT } from "@posthog/core/skills/identifiers";
+import type { SkillsWorkspaceClient } from "@posthog/core/skills/teamSkillsService";
 import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
@@ -196,10 +200,6 @@ import {
   type ImperativeQueryClient,
 } from "@posthog/ui/shell/queryClient";
 import {
-  RENDERER_STATE_STORAGE,
-  type RendererStateStorage,
-} from "@posthog/ui/shell/rendererStorage";
-import {
   FILE_PATH_RESOLVER,
   type FilePathResolver,
 } from "@posthog/ui/utils/getFilePath";
@@ -210,7 +210,7 @@ import { TASK_SERVICE as RENDERER_TASK_SERVICE, TRPC_CLIENT } from "./tokens";
  * Strongly-typed binding map for the renderer composition-root container.
  *
  * Covers every token directly bound on the renderer `container` across
- * `di/container.ts`, `desktop-services.ts`, `utils/electronStorage.ts`, and
+ * `di/container.ts`, `desktop-services.ts`, and
  * `desktop-contributions.ts`. Tokens resolved purely through plain
  * `container.load(module)` are not listed here (TypedContainer accepts plain
  * ContainerModules without typing their internal bindings).
@@ -256,6 +256,7 @@ export interface RendererBindings {
   [NEW_TASK_LINK_RESOLVER]: NewTaskLinkResolver;
   [CODE_REVIEW_WORKSPACE_CLIENT]: CodeReviewWorkspaceClient;
   [REVERT_HUNK_SERVICE]: RevertHunkService;
+  [SKILLS_WORKSPACE_CLIENT]: SkillsWorkspaceClient;
   [CLOUD_ARTIFACT_READ_FILE_AS_BASE64]: ReadFileAsBase64;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;
@@ -268,6 +269,7 @@ export interface RendererBindings {
   [REPORT_MODEL_RESOLVER]: ReportModelResolver;
   [LINEAR_OAUTH_FLOW]: LinearOAuthFlow;
   [GITHUB_CONNECT_CLIENT]: GithubConnectClient;
+  [INTEGRATIONS_GITHUB_CONNECT_CLIENT]: IntegrationsGithubConnectClient;
   [REPOSITORIES_CLIENT]: RepositoriesClient;
   [REPOSITORIES_SERVICE]: RepositoriesService;
   [HEDGEHOG_MODE_HOST]: HedgehogModeHost;
@@ -282,9 +284,6 @@ export interface RendererBindings {
   [FEATURE_FLAGS]: FeatureFlags;
   [AUTH_SIDE_EFFECTS]: IAuthSideEffects;
   [SETUP_STORE]: ISetupStore;
-
-  // --- utils/electronStorage.ts ---
-  [RENDERER_STATE_STORAGE]: RendererStateStorage;
 
   // --- desktop-contributions.ts ---
   [CONTRIBUTION]: Contribution;

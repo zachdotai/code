@@ -43,6 +43,7 @@ import { useSettingsStore } from "../../settings/settingsStore";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
 import { useTourStore } from "../../tour/tourStore";
 import { createFirstTaskTour } from "../../tour/tours/createFirstTaskTour";
+import { useRemoteBranchConfirmStore } from "../stores/remoteBranchConfirmStore";
 
 const log = logger.scope("task-creation");
 
@@ -64,6 +65,8 @@ interface UseTaskCreationOptions {
   signalReportId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
+  channelContext?: string;
+  channelName?: string;
   onTaskCreated?: (task: Task) => void;
 }
 
@@ -143,6 +146,8 @@ export function useTaskCreation({
   signalReportId,
   cloudPrAuthorshipMode,
   cloudRunSource,
+  channelContext,
+  channelName,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -185,6 +190,31 @@ export function useTaskCreation({
         return false;
       }
 
+      // If the chosen worktree branch only exists on the remote, confirm before
+      // fetching and checking it out locally. Done before the pending view so
+      // the dialog (and a cancel) don't leave a half-started task on screen.
+      let allowRemoteBranchCheckout = false;
+      if (workspaceMode === "worktree" && branch && selectedDirectory) {
+        try {
+          const { status } =
+            await hostClient.workspace.checkWorktreeBranch.query({
+              mainRepoPath: selectedDirectory,
+              branch,
+            });
+          if (status === "remote-only") {
+            const confirmed = await useRemoteBranchConfirmStore
+              .getState()
+              .confirm(branch);
+            if (!confirmed) {
+              return false;
+            }
+            allowRemoteBranchCheckout = true;
+          }
+        } catch (error) {
+          log.warn("Failed to check worktree branch availability", { error });
+        }
+      }
+
       setIsCreatingTask(true);
 
       const content = contentOverride ?? editor.getContent();
@@ -225,6 +255,7 @@ export function useTaskCreation({
           githubUserIntegrationId,
           workspaceMode,
           branch,
+          allowRemoteBranchCheckout,
           executionMode,
           adapter,
           model,
@@ -235,6 +266,8 @@ export function useTaskCreation({
           cloudPrAuthorshipMode,
           cloudRunSource,
           additionalDirectories,
+          channelContext,
+          channelName,
         });
 
         if (executionMode) {
@@ -323,6 +356,8 @@ export function useTaskCreation({
       cloudPrAuthorshipMode,
       cloudRunSource,
       additionalDirectories,
+      channelContext,
+      channelName,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,

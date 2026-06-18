@@ -1,19 +1,16 @@
 import { isNonEmptySpec } from "@json-render/core";
 import {
-  CaretRightIcon,
   FunnelIcon,
   GitForkIcon,
-  HashIcon,
   PencilSimpleIcon,
-  PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import { DashboardDateRangeControl } from "@posthog/ui/features/canvas/components/DashboardDateRangeControl";
 import { DashboardRefreshControl } from "@posthog/ui/features/canvas/components/DashboardRefreshControl";
+import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { dashboardTitleFromSpec } from "@posthog/ui/features/canvas/genui/dashboardTitle";
-import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
-  useCreateAndOpenDashboard,
   useDashboard,
   useDashboardMutations,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
@@ -25,39 +22,30 @@ import {
   useDashboardEditStore,
   useIsDashboardEditing,
 } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
-import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import {
+  useFreeformChatStore,
+  useFreeformThread,
+} from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { toast } from "@posthog/ui/primitives/toast";
-import { Box, Flex } from "@radix-ui/themes";
+import { useHeaderStore } from "@posthog/ui/shell/headerStore";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import {
   Outlet,
   useNavigate,
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
-import { Fragment, useMemo } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
 }
 
-// "New dashboard" action, shown in the top bar on the dashboards grid.
-function NewDashboardButton({ channelId }: { channelId: string }) {
-  const createAndOpen = useCreateAndOpenDashboard(channelId);
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="no-drag"
-      onClick={() => void createAndOpen()}
-    >
-      <PlusIcon size={14} />
-      New dashboard
-    </Button>
-  );
-}
+// Templates whose canvases carry the data toolbar (Filter + date range +
+// refresh) — the ones with refreshable, time-scoped queries.
+const DATA_TEMPLATES = ["dashboard", "web-analytics"];
 
 // Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
-// Lives in the top bar; refresh is a separate control in the toolbar below.
+// Sits on the right of the single canvas toolbar, beside the refresh control.
 function DashboardEditControls({
   channelId,
   dashboardId,
@@ -99,7 +87,7 @@ function DashboardEditControls({
     if (!hasSpec) return;
     try {
       const title =
-        dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Dashboard";
+        dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Canvas";
       const name = `${title} (fork)`;
       const record = await createDashboard(channelId, name, liveSpec);
       setEditing(record.id, true);
@@ -165,165 +153,225 @@ function DashboardEditControls({
   );
 }
 
-// Breadcrumb topbar + content outlet for the Website space (channel-scoped).
+// Edit toggle + autosave status + Fork for a FREEFORM canvas. Freeform
+// autosaves every turn, so the toolbar shows a saving spinner rather than a Save
+// button. When the user undoes to an older version, the autosave status is
+// replaced by Revert (adopt the viewed version, dropping newer ones) + Cancel
+// (jump back to the latest). Fork copies the current code to a new record.
+function FreeformEditControls({
+  channelId,
+  dashboardId,
+}: {
+  channelId: string;
+  dashboardId: string;
+}) {
+  const navigate = useNavigate();
+  const editing = useIsDashboardEditing(dashboardId);
+  const setEditing = useDashboardEditStore((s) => s.setEditing);
+  const { dashboard } = useDashboard(dashboardId);
+  const { forkFreeform, isCreating } = useDashboardMutations();
+
+  const threadId = threadIdFor(dashboardId);
+  const { code, versions, currentVersionId, isSaving } =
+    useFreeformThread(threadId);
+  const revert = useFreeformChatStore((s) => s.revert);
+  const goToLatest = useFreeformChatStore((s) => s.goToLatest);
+
+  const hasCode = code.length > 0;
+  // Viewing the head version (or there's no history yet) → autosave is live.
+  // Otherwise the user has undone to an older version and is browsing.
+  const onLatest =
+    versions.length === 0 || currentVersionId === versions.at(-1)?.id;
+
+  const onFork = async () => {
+    if (!code) return;
+    try {
+      const name = `${dashboard?.name ?? "Canvas"} (fork)`;
+      const record = await forkFreeform(
+        channelId,
+        name,
+        code,
+        versions,
+        currentVersionId ?? undefined,
+      );
+      setEditing(record.id, true);
+      void navigate({
+        to: "/website/$channelId/dashboards/$dashboardId",
+        params: { channelId, dashboardId: record.id },
+      });
+    } catch (error) {
+      toast.error("Couldn't fork canvas", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  return (
+    <Flex align="center" gap="2" className="no-drag">
+      {editing &&
+        hasCode &&
+        (onLatest ? (
+          // Autosave status — a non-interactive button showing a spinner while a
+          // save is in flight, "Saved" otherwise.
+          <Button variant="outline" size="sm" disabled loading={isSaving}>
+            Saved
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => revert(threadId)}
+            >
+              Revert to this version
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => goToLatest(threadId)}
+            >
+              Cancel
+            </Button>
+          </>
+        ))}
+      {editing && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!hasCode || isCreating}
+          onClick={onFork}
+        >
+          <GitForkIcon size={14} />
+          Save as fork
+        </Button>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        data-selected={editing}
+        onClick={() => setEditing(dashboardId, !editing)}
+      >
+        {editing ? (
+          <XIcon size={14} />
+        ) : (
+          <PencilSimpleIcon size={14} weight="regular" />
+        )}
+        {editing ? "Done" : "Edit"}
+      </Button>
+    </Flex>
+  );
+}
+
+// Canvas toolbar + content outlet for the Website space (channel-scoped). No
+// breadcrumb row — a single toolbar carries the data controls and actions.
 export function WebsiteLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const params = useParams({ strict: false });
-  const { data: tasks } = useTasks();
-  const { channels } = useChannels();
+
+  // App pages mirrored into the Channels space (Home, Skills, MCP servers,
+  // Command Center) are channel-less and push their title into the shared
+  // header store. With no code HeaderRow here, surface that title in this bar so
+  // the mirrored pages read the same as in Code.
+  const headerContent = useHeaderStore((s) => s.content);
 
   const channelId = params.channelId;
   const dashboardId = params.dashboardId;
-  const taskId = params.taskId;
   const base = channelId ? `/website/${channelId}` : "/website";
-  const channelName = channelId
-    ? (channels.find((c) => c.id === channelId)?.name ?? "channel")
-    : null;
 
   const isDashboardDetail = Boolean(channelId && dashboardId);
   // The dashboards grid (a channel with no sub-view selected).
   const isDashboardsGrid = Boolean(channelId) && pathname === base;
   const editing = useIsDashboardEditing(dashboardId ?? "");
-  const taskTitle = taskId
-    ? tasks?.find((t) => t.id === taskId)?.title
-    : undefined;
 
-  // The crumb row for the top bar. The Channels space has its own chrome (rail +
-  // channel list), no code HeaderRow, so this renders as the space's own bar
-  // rather than going through the header store. Controls live in the bar below.
-  const breadcrumbs = useMemo(() => {
-    if (!channelId) return null;
+  // The data controls (Filter + date range + query refresh) are data-template
+  // chrome: only the data-driven templates (Dashboard, Web analytics) have
+  // refreshable, time-scoped queries. A Blank canvas shows none of it. Legacy
+  // canvases (no templateId) default to "dashboard", so they keep the toolbar.
+  const { dashboard } = useDashboard(dashboardId ?? "");
+  const isDataTemplate = DATA_TEMPLATES.includes(
+    dashboard?.templateId ?? "dashboard",
+  );
 
-    // The channel (links to its dashboards grid), then the active sub-view.
-    const crumbs: React.ReactNode[] = [
-      <ChannelGridLink
-        key="channel"
-        channelId={channelId}
-        icon={<HashIcon size={11} weight="bold" className="text-gray-8" />}
-      >
-        {channelName}
-      </ChannelGridLink>,
-    ];
-    if (isDashboardDetail && dashboardId) {
-      // On a single dashboard, the grid is the parent: show it as a link. The
-      // dashboard's own name is the h1 below, so it isn't repeated as a crumb.
-      crumbs.push(
-        <ChannelGridLink key="dashboards" channelId={channelId}>
-          Dashboards
-        </ChannelGridLink>,
-      );
-    } else if (pathname === `${base}/new`) {
-      crumbs.push(<CrumbText key="new">New task</CrumbText>);
-    } else if (pathname.startsWith(`${base}/settings`)) {
-      crumbs.push(<CrumbText key="settings">Settings</CrumbText>);
-    } else if (taskId) {
-      crumbs.push(<CrumbText key="task">{taskTitle || "Task"}</CrumbText>);
-    } else {
-      // The dashboards grid: "Dashboards" is the current (leaf) crumb, replacing
-      // the old in-page h1.
-      crumbs.push(<CrumbText key="dashboards">Dashboards</CrumbText>);
-    }
-
-    return (
-      <Flex align="center" gap="1" className="min-w-0">
-        {crumbs.map((crumb, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: crumb order is stable
-          <Fragment key={i}>
-            {i > 0 && <CaretRightIcon size={12} className="text-gray-8" />}
-            {crumb}
-          </Fragment>
-        ))}
-      </Flex>
-    );
-  }, [
-    channelId,
-    channelName,
-    dashboardId,
-    isDashboardDetail,
-    pathname,
-    base,
-    taskId,
-    taskTitle,
-  ]);
+  // Whether the single toolbar should render: the canvases grid, or any single
+  // canvas (including Blank/Freeform, so Edit lives here too).
+  const showToolbar =
+    Boolean(channelId) && (isDashboardsGrid || isDashboardDetail);
+  // The channel's new-task screen (no header store content of its own).
+  const isNewTask = Boolean(channelId) && pathname === `${base}/new`;
+  // The left-hand data controls (Filter + date range) only apply to the grid and
+  // data-template canvases.
+  const showDataControls =
+    isDashboardsGrid || (isDashboardDetail && isDataTemplate);
 
   return (
     <Flex direction="column" height="100%" overflow="hidden">
-      {/* Top bar: breadcrumbs on the left, primary actions on the right. */}
-      <Flex
-        align="center"
-        justify="between"
-        gap="2"
-        className="h-10 shrink-0 border-gray-6 border-b px-3"
-      >
-        {breadcrumbs ?? <span />}
-        {isDashboardDetail && channelId && dashboardId ? (
-          <DashboardEditControls
-            channelId={channelId}
-            dashboardId={dashboardId}
-          />
-        ) : isDashboardsGrid && channelId ? (
-          <NewDashboardButton channelId={channelId} />
-        ) : null}
-      </Flex>
-      {/* Toolbar: a (dead) Filter on the left, refresh on the right. Only on the
-          dashboards grid and a single dashboard — not on tasks/settings. */}
-      {(isDashboardsGrid || isDashboardDetail) && (
+      {/* Title bar for non-canvas views (no breadcrumbs): channel-scoped task
+          detail and channel context push their title into the header store;
+          channel-less mirrored pages (Home, Skills, …) do too. The new-task
+          screen has no header content, so label it explicitly. Hidden when the
+          canvas toolbar is showing (grid / a single canvas). */}
+      {!showToolbar && (headerContent || isNewTask) && (
+        <Flex
+          align="center"
+          gap="2"
+          className="h-10 shrink-0 border-gray-6 border-b px-3"
+        >
+          {headerContent ?? (
+            <Text size="2" weight="medium" className="text-gray-12">
+              New task
+            </Text>
+          )}
+        </Flex>
+      )}
+
+      {/* Single canvas toolbar (no breadcrumb row): data controls on the left,
+          actions (Edit / Save / New canvas) on the right. */}
+      {showToolbar && (
         <Flex
           align="center"
           justify="between"
           gap="2"
           className="h-10 shrink-0 border-gray-6 border-b px-3"
         >
-          <Button variant="outline" size="sm">
-            <FunnelIcon size={14} />
-            Filter
-          </Button>
-          {isDashboardDetail && dashboardId && !editing && (
-            <DashboardRefreshControl dashboardId={dashboardId} />
-          )}
+          <Flex align="center" gap="2">
+            {showDataControls && (
+              // Placeholder — filtering isn't wired up yet, so keep it disabled.
+              <Button variant="outline" size="sm" disabled>
+                <FunnelIcon size={14} />
+                Filter
+              </Button>
+            )}
+            {/* Shown in edit too: changing it directs the agent's next build at
+                the chosen window (refresh in view, prompt hint in edit). */}
+            {isDashboardDetail && dashboardId && isDataTemplate && (
+              <DashboardDateRangeControl dashboardId={dashboardId} />
+            )}
+          </Flex>
+          <Flex align="center" gap="2">
+            {isDashboardDetail && dashboardId && isDataTemplate && !editing && (
+              <DashboardRefreshControl dashboardId={dashboardId} />
+            )}
+            {isDashboardDetail && channelId && dashboardId ? (
+              dashboard?.kind === "freeform" ? (
+                <FreeformEditControls
+                  channelId={channelId}
+                  dashboardId={dashboardId}
+                />
+              ) : (
+                <DashboardEditControls
+                  channelId={channelId}
+                  dashboardId={dashboardId}
+                />
+              )
+            ) : isDashboardsGrid && channelId ? (
+              <NewCanvasMenu channelId={channelId} />
+            ) : null}
+          </Flex>
         </Flex>
       )}
       <Box flexGrow="1" overflow="hidden">
         <Outlet />
       </Box>
     </Flex>
-  );
-}
-
-// A clickable breadcrumb back to the channel's dashboards grid. A quill Button
-// (default variant) so it gets the standard button hover state. `icon` (e.g. a
-// faded #) renders before the label.
-function ChannelGridLink({
-  channelId,
-  icon,
-  children,
-}: {
-  channelId: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const navigate = useNavigate();
-  return (
-    <Button
-      variant="default"
-      size="sm"
-      className="no-drag gap-0.5 font-medium text-muted-foreground"
-      onClick={() =>
-        navigate({ to: "/website/$channelId", params: { channelId } })
-      }
-    >
-      {icon}
-      {children}
-    </Button>
-  );
-}
-
-// The current (leaf) crumb: a disabled quill button so it matches the clickable
-// crumbs' shape, just non-interactive.
-function CrumbText({ children }: { children: React.ReactNode }) {
-  return (
-    <Button variant="default" size="sm" disabled className="font-medium">
-      {children}
-    </Button>
   );
 }
