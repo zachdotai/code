@@ -39,6 +39,16 @@ const WEB_ANALYTICS_COMPONENTS: CanvasComponentName[] = [
   "RetentionGrid",
 ];
 
+// AI gateway: the Dashboard palette plus rich-page blocks for the "Connect your
+// app" SDK snippets (Markdown code blocks) and the empty-state intro (Hero,
+// Section).
+const AI_GATEWAY_COMPONENTS: CanvasComponentName[] = [
+  ...DASHBOARD_COMPONENTS,
+  "Section",
+  "Markdown",
+  "Hero",
+];
+
 // Rules that apply to EVERY canvas template, regardless of its purpose.
 const BASE_RULES = [
   "Always use the PostHog MCP tools (named mcp__posthog__*) to fetch REAL data for the current project before rendering any numbers. Never fabricate metrics.",
@@ -84,6 +94,65 @@ const WEB_ANALYTICS_RULES = [
   'LAYOUT — mirror PostHog Web Analytics, top to bottom: (1) a KPI row — a `Grid` (columns 5 if they fit, else 3) of `Stat`s: Visitors, Page views, Sessions, Session duration, Bounce rate. Give each Stat a `delta` comparing to the PRIOR equal-length period (e.g. "▼ 8% vs 256K prior"). (2) A 2-col `Grid`: a `LineChart` of unique visitors over time (current period as series 0; the prior period as a second comparison series) beside a `Table` of top Paths (Path, Visitors, Views, Bounce rate). (3) A 2-col `Grid`: Sources by Channel `Table` (Channel, Visitors, Views) and Devices `Table` (Device type, Visitors, Views). (4) A Geography `Table` (Country, Visitors, Views) — prefix the country with its flag emoji in the label. (5) A `RetentionGrid` of weekly retention cohorts. (6) An active-hours `Heatmap` (rows = Mon…Sun, cols = hours 0–23, cells = unique users that hour). Optionally add Goals / Frustrating pages `Table`s if the data exists.',
   "WEB-ANALYTICS HogQL: Visitors = `uniq(person_id)`; Page views = `countIf(event = '$pageview')`; Sessions = `uniq($session_id)`; Bounce rate from single-pageview sessions; Channel = `properties.$channel_type`; Device = `properties.$device_type`; Country = `properties.$geoip_country_name`. Always scope time-based metrics with the `{date_from}` / `{date_to}` placeholders. If unsure of a column, use the PostHog MCP tools to check before querying.",
   'Store raw numeric values in Stat.value (e.g. 236000, not "236K") — the UI formats them. Percentages for RetentionGrid `values` are 0–100.',
+];
+
+// The gateway filter — preserve EXACTLY. `event = '$ai_generation' AND
+// properties.$ai_gateway = true` is what separates gateway-emitted generations
+// from SDK-emitted $ai_generation events that share the event name. The time
+// bound uses the canvas date-range placeholders (not a baked-in `INTERVAL 30
+// DAY`) so the board stays refreshable and the picker can rescope it.
+const GATEWAY_WHERE =
+  "event = '$ai_generation' AND properties.$ai_gateway = true AND timestamp >= {date_from} AND timestamp < {date_to}";
+
+// The "Connect your app" SDK snippets, baked verbatim from the Cloud page
+// (AIGatewayScene.tsx). OpenAI points its SDK at <base>/v1; the Anthropic SDK is
+// given <base> and appends /v1/messages itself. `<gateway base URL>` is a
+// placeholder — Code has no preflight to source the real host from (open
+// question), so the agent emits the placeholder for the user to replace.
+const CONNECT_SNIPPETS = [
+  "OpenAI · TypeScript →\n```ts\nimport OpenAI from 'openai'\n\nconst client = new OpenAI({\n    baseURL: '<gateway base URL>/v1',\n    apiKey: '<your phs_… project secret key with the llm_gateway:read scope>',\n})\nconst response = await client.chat.completions.create({\n    model: 'gpt-5-mini',\n    messages: [{ role: 'user', content: 'Hello' }],\n})\n```",
+  'OpenAI · Python →\n```python\nfrom openai import OpenAI\n\nclient = OpenAI(\n    base_url="<gateway base URL>/v1",\n    api_key="<your phs_… project secret key with the llm_gateway:read scope>",\n)\nclient.chat.completions.create(\n    model="gpt-5-mini",\n    messages=[{"role": "user", "content": "Hello"}],\n)\n```',
+  'OpenAI · cURL →\n```bash\ncurl <gateway base URL>/v1/chat/completions \\\n  -H "Authorization: Bearer $POSTHOG_PROJECT_SECRET_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{\n    "model": "gpt-5-mini",\n    "messages": [{"role": "user", "content": "Hello"}]\n  }\'\n```',
+  "Anthropic · TypeScript →\n```ts\nimport Anthropic from '@anthropic-ai/sdk'\n\nconst client = new Anthropic({\n    baseURL: '<gateway base URL>',\n    authToken: '<your phs_… project secret key with the llm_gateway:read scope>', // sets the Bearer header\n})\nconst message = await client.messages.create({\n    model: 'claude-sonnet-4.6',\n    max_tokens: 512,\n    messages: [{ role: 'user', content: 'Hello' }],\n})\n```",
+  'Anthropic · Python →\n```python\nfrom anthropic import Anthropic\n\nclient = Anthropic(\n    base_url="<gateway base URL>",\n    auth_token="<your phs_… project secret key with the llm_gateway:read scope>",  # sets the Bearer header\n)\nclient.messages.create(\n    model="claude-sonnet-4.6",\n    max_tokens=512,\n    messages=[{"role": "user", "content": "Hello"}],\n)\n```',
+  'Anthropic · cURL →\n```bash\ncurl <gateway base URL>/v1/messages \\\n  -H "Authorization: Bearer $POSTHOG_PROJECT_SECRET_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{\n    "model": "claude-sonnet-4.6",\n    "max_tokens": 512,\n    "messages": [{"role": "user", "content": "Hello"}]\n  }\'\n```',
+].join("\n\n");
+
+// AI gateway: a one-page usage board for traffic sent through PostHog's AI
+// gateway. Mirrors the Cloud scene (products/ai_gateway/frontend): a Usage KPI
+// row + spend-per-day chart, a By-model table, and a "Connect your app" panel
+// with a declarative provider/language snippet switch. Time-based, so it leans
+// on the date-range + refresh machinery like the web-analytics board.
+const AI_GATEWAY_RULES = [
+  'ALWAYS begin with a single h1 title: a `Heading` level 1 with the text "AI gateway" (it names the saved file). Immediately follow it with a muted `Text`: "Every major LLM through one endpoint, billed at cost."',
+  "Do NOT set the root `Page`'s `title` prop — the level-1 Heading is the ONLY title.",
+  // --- The gateway filter (the core invariant) -----------------------------
+  `GATEWAY FILTER — EVERY query MUST select ONLY gateway-emitted generations using EXACTLY this WHERE clause; never drop, rename, or weaken the \`properties.$ai_gateway = true\` predicate (it is what separates gateway traffic from SDK-emitted $ai_generation events that share the event name): \`WHERE ${GATEWAY_WHERE}\`. Keep the \`{date_from}\`/\`{date_to}\` placeholders verbatim — do NOT substitute a baked-in interval like \`now() - INTERVAL 30 DAY\`.`,
+  // --- Time window ---------------------------------------------------------
+  'TIME WINDOW: seed a top-level `state.dateRange` object: `{ "name": "Last 30 days", "from": <epoch ms>, "to": <epoch ms> }`, computing `from`/`to` from the CURRENT DATE/TIME in the prompt context ("Last 30 days" = (now − 30 days) → now). The toolbar date picker reads and drives this — do NOT render a date picker yourself. The range name MUST stay exactly "Last 30 days" (one of the rolling names) so the window keeps following the clock. If the prompt includes a `[Range]` line with the user\'s selected window, use THAT instead.',
+  // --- Refreshable queries -------------------------------------------------
+  'EVERY data point is refreshable: record the HogQL that produced it under the top-level `state.queries`, keyed by element key then prop path: `state.queries.<elementKey>.<propPath> = { "query": "<HogQL>", "shape": "<shape>" }`. Shapes: "scalar" (1 row × 1 col → a Stat `/value`), "labels" (first column of every row → a chart `/labels`), "column" (first column of every row → a chart series\' `/series/0/data`), "matrix" (every row as an array → a `Table` `/rows`).',
+  // --- Usage section -------------------------------------------------------
+  'USAGE section: a `Heading` level 2 "Usage", a muted `Text` "Last 30 days", then a `Grid` (columns 4) of four `Stat`s — labelled "Spend (USD)", "Requests", "Input tokens", "Output tokens" (the Stat formatter only adds thousands separators, so name the currency unit in the label). Each Stat\'s `/value` is a scalar query (store the RAW number; the UI formats it). Element keys + queries:',
+  `  • stat_spend — \`SELECT round(sum(toFloat(properties.$ai_total_cost_usd)), 4) FROM events WHERE ${GATEWAY_WHERE}\` (USD).`,
+  `  • stat_requests — \`SELECT count() FROM events WHERE ${GATEWAY_WHERE}\`.`,
+  `  • stat_input_tokens — \`SELECT sum(toFloat(properties.$ai_input_tokens)) FROM events WHERE ${GATEWAY_WHERE}\`.`,
+  `  • stat_output_tokens — \`SELECT sum(toFloat(properties.$ai_output_tokens)) FROM events WHERE ${GATEWAY_WHERE}\`.`,
+  // --- Spend per day chart -------------------------------------------------
+  `SPEND PER DAY: a \`Card\` titled "Spend per day" wrapping a \`BarChart\` (key chart_spend_per_day) with ONE series labelled "Spend". Set two queries on it: \`state.queries.chart_spend_per_day./labels\` = { "query": "SELECT toStartOfDay(timestamp) AS day FROM events WHERE ${GATEWAY_WHERE} GROUP BY day ORDER BY day", "shape": "labels" } and \`state.queries.chart_spend_per_day./series/0/data\` = { "query": "SELECT round(sum(toFloat(properties.$ai_total_cost_usd)), 4) FROM events WHERE ${GATEWAY_WHERE} GROUP BY toStartOfDay(timestamp) ORDER BY toStartOfDay(timestamp)", "shape": "column" }. The two queries share an identical GROUP BY/ORDER BY so the data array stays the same length as labels.`,
+  // --- By-model table ------------------------------------------------------
+  `BY MODEL section: a \`Heading\` level 2 "By model", a muted \`Text\` "Spend and tokens per model, last 30 days", then a \`Table\` (key table_by_model) with columns ["Model", "Requests", "Tokens", "Spend"]. Set \`state.queries.table_by_model./rows\` = { "query": "SELECT coalesce(nullIf(toString(properties.$ai_model), ''), 'unknown') AS model, count() AS requests, sum(toFloat(properties.$ai_input_tokens) + toFloat(properties.$ai_output_tokens)) AS tokens, round(sum(toFloat(properties.$ai_total_cost_usd)), 4) AS cost_usd FROM events WHERE ${GATEWAY_WHERE} GROUP BY model ORDER BY cost_usd DESC", "shape": "matrix" }.`,
+  // --- Connect your app (declarative provider/language switch) --------------
+  'CONNECT YOUR APP section: a `Heading` level 2 "Connect your app", a muted `Text` ("Point your app at the gateway with any project secret key carrying the llm_gateway:read scope — every request is tracked in AI observability with no SDK instrumentation."), then a declarative provider × language snippet switch. Seed `state.provider` = "openai" and `state.language` = "typescript".',
+  'SNIPPET SWITCH controls: a `Grid` (columns 2) of two provider `Button`s — "OpenAI" and "Anthropic" — each with `"on": { "click": { "action": "setState", "params": { "statePath": "/provider", "value": "openai" | "anthropic" } } }`; then a `Grid` (columns 3) of three language `Button`s — "TypeScript", "Python", "cURL" — each setting `/language` to "typescript" | "python" | "curl".',
+  `SNIPPET BLOCKS: emit SIX \`Markdown\` blocks, one per provider×language pair, each gated by a \`visible\` condition that is an ARRAY of two state conditions (implicit AND): \`"visible": [ { "$state": "/provider", "eq": "<provider>" }, { "$state": "/language", "eq": "<language>" } ]\`. The Markdown \`content\` is the matching fenced code block below (strip the "Provider · Language →" caption; keep the fenced block exactly, INCLUDING \`<gateway base URL>\` as a literal placeholder — Code has no preflight to fill the real host). Snippets:\n\n${CONNECT_SNIPPETS}`,
+  // --- Empty state ---------------------------------------------------------
+  "EMPTY STATE: before building, run `SELECT count() FROM events WHERE " +
+    GATEWAY_WHERE.replace("{date_from}", "now() - INTERVAL 30 DAY").replace(
+      " AND timestamp < {date_to}",
+      "",
+    ) +
+    '` via the MCP tools. If it returns 0 (no gateway usage in the window), do NOT build the Usage or By model sections (a zeroed-out board reads as broken). Instead emit ONLY: the h1 title + muted subtitle, a `Hero` (tone accent) titled "No gateway usage yet" whose subtitle is "One endpoint for every major LLM, billed at cost — no markup on tokens. Point your app at the gateway and PostHog tracks its usage, cost, and spend for you. Any project secret key with the llm_gateway:read scope can call it.", and the full Connect your app section.',
 ];
 
 // Blank: freeform. Build whatever the user describes from the catalog.
@@ -173,6 +242,28 @@ const BUILT_INS: BuiltInTemplate[] = [
         label: "Traffic sources",
         prompt:
           "Build a web analytics dashboard focused on traffic sources and channels.",
+      },
+    ],
+  },
+  {
+    id: "ai-gateway",
+    name: "AI gateway",
+    description:
+      "PostHog AI gateway usage: spend, requests and tokens, a spend-per-day chart, a by-model breakdown, and copy-paste SDK snippets to connect your app.",
+    system:
+      "You are PostHog Canvas, an agent that builds the AI gateway usage board — spend, requests and token KPIs, a spend-per-day chart, a by-model breakdown, and a 'Connect your app' panel of copy-paste SDK snippets — for the user's current PostHog project, driven by a selectable date range.",
+    rules: AI_GATEWAY_RULES,
+    allow: AI_GATEWAY_COMPONENTS,
+    suggestions: [
+      { label: "AI gateway", prompt: "Build the AI gateway usage board." },
+      {
+        label: "Last 30 days",
+        prompt: "Build the AI gateway usage board for the last 30 days.",
+      },
+      {
+        label: "By model",
+        prompt:
+          "Build the AI gateway usage board focused on the spend and tokens per model.",
       },
     ],
   },

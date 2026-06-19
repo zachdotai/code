@@ -42,7 +42,7 @@ function threadIdFor(dashboardId: string): string {
 
 // Templates whose canvases carry the data toolbar (Filter + date range +
 // refresh) — the ones with refreshable, time-scoped queries.
-const DATA_TEMPLATES = ["dashboard", "web-analytics"];
+const DATA_TEMPLATES = ["dashboard", "web-analytics", "ai-gateway"];
 
 // Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
 // Sits on the right of the single canvas toolbar, beside the refresh control.
