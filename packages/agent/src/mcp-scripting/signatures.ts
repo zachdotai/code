@@ -102,7 +102,9 @@ function propertyKey(name: string): string {
 }
 
 function oneLine(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+  // Collapse whitespace and neutralize `*/` so a tool description can't close
+  // the surrounding JSDoc block early and emit malformed TypeScript.
+  return text.replace(/\s+/g, " ").trim().replace(/\*\//g, "* /");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -184,6 +184,29 @@ describe("mcp-scripting", () => {
       expect(error).toMatch(/timed out/i);
     });
 
+    it("treats timeoutMs as one shared budget across sync and async phases", async () => {
+      const pool = fakePool({ servers: {} });
+      const tools = buildToolsProxy(pool, []);
+
+      // A brief synchronous spin followed by an async wait that would, on its
+      // own, fit inside timeoutMs — but combined must trip the single deadline.
+      const start = Date.now();
+      const { error } = await runScript({
+        tools,
+        timeoutMs: 200,
+        script: `
+          const until = Date.now() + 120;
+          while (Date.now() < until) {}
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        `,
+      });
+      const elapsed = Date.now() - start;
+
+      expect(error).toMatch(/timed out/i);
+      // Single budget: total stays near timeoutMs, never approaching 2×.
+      expect(elapsed).toBeLessThan(400);
+    });
+
     describe("sandbox isolation", () => {
       const pool = fakePool({ servers: {} });
       const tools = buildToolsProxy(pool, []);
@@ -296,6 +319,28 @@ describe("mcp-scripting", () => {
 
     it("reports the empty case", () => {
       expect(renderToolsetSignatures([])).toMatch(/No external MCP servers/);
+    });
+
+    it("neutralizes `*/` in a description so the JSDoc block stays valid", () => {
+      const text = renderToolsetSignatures([
+        {
+          serverName: "math",
+          tools: [
+            {
+              name: "divide",
+              description: "Computes a*/b",
+              inputSchema: { type: "object", properties: {} },
+            },
+          ],
+        },
+      ]);
+
+      // The raw `*/` must not survive, or it would close the comment early.
+      const jsdocLine = text
+        .split("\n")
+        .find((l) => l.includes("/**") && l.includes("Computes"));
+      expect(jsdocLine).toBeDefined();
+      expect(jsdocLine).toBe("    /** Computes a* /b */");
     });
   });
 });

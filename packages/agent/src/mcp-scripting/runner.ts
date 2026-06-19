@@ -93,25 +93,38 @@ export async function runScript(
     return { result: undefined, logs, error: formatError(err) };
   }
 
+  // A single wall-clock deadline governs the whole run. The synchronous
+  // `runInContext` phase and the async tool-call phase draw from the same
+  // budget: the sync `timeout` is capped at the time left, and the async race
+  // keys off the same absolute deadline. Without this, the two phases would be
+  // independent and a sync-then-async script could run for nearly 2× timeoutMs.
+  const deadline = Date.now() + timeoutMs;
+
   const run = (async (): Promise<unknown> => {
+    const syncBudget = Math.max(deadline - Date.now(), 1);
     // `timeout` here guards synchronous spin; async work is bounded by the race.
-    const completion = script.runInContext(context, { timeout: timeoutMs });
+    const completion = script.runInContext(context, { timeout: syncBudget });
     return await completion;
   })();
 
   try {
-    const result = await withTimeout(run, timeoutMs);
+    const result = await withDeadline(run, deadline, timeoutMs);
     return { result: toJsonSafe(result), logs };
   } catch (err) {
     return { result: undefined, logs, error: formatError(err) };
   }
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+function withDeadline<T>(
+  promise: Promise<T>,
+  deadline: number,
+  budgetMs: number,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    const remaining = Math.max(deadline - Date.now(), 0);
     const timer = setTimeout(() => {
-      reject(new Error(`Script timed out after ${ms}ms`));
-    }, ms);
+      reject(new Error(`Script timed out after ${budgetMs}ms`));
+    }, remaining);
     promise.then(
       (value) => {
         clearTimeout(timer);
