@@ -1,3 +1,4 @@
+export const APM_ENRICHMENT_FLAG = "posthog-code-apm-enrichment";
 export const BILLING_FLAG = "posthog-code-billing";
 export const EXPERIMENT_SUGGESTIONS_FLAG =
   "posthog-code-experiment-suggestions";

@@ -70,6 +70,10 @@ export type {
 } from "./enrich-source.js";
 export { enrichSource } from "./enrich-source.js";
 
+// ── APM (tracing-span) enrichment ──
+
+export { formatApmInlineComments } from "./apm-comment-formatter.js";
+
 // ── Serialisation (tRPC/IPC boundary) ──
 
 export type {

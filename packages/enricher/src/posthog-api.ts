@@ -1,3 +1,8 @@
+import type { SpanLineStat, SymbolStatsRow } from "@posthog/shared";
+import {
+  buildSymbolStatsQuery,
+  mapSymbolStatsResults,
+} from "./apm-breakdown.js";
 import type {
   EnricherApiConfig,
   EventDefinition,
@@ -198,5 +203,18 @@ export class PostHogApi {
       stats.set(flagKey, { evaluations, uniqueUsers, windowDays: days });
     }
     return stats;
+  }
+
+  async getApmLineStats(
+    filePath: string,
+    opts?: { dateFrom?: string },
+  ): Promise<SpanLineStat[]> {
+    const data = await this.post<{ results?: unknown }>(
+      "/tracing/spans/symbol-stats/",
+      { query: buildSymbolStatsQuery(filePath, opts) },
+    );
+    return mapSymbolStatsResults(
+      Array.isArray(data.results) ? (data.results as SymbolStatsRow[]) : [],
+    );
   }
 }

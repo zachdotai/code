@@ -1,4 +1,5 @@
 export * from "./analytics-events";
+export * from "./apm-enrichment";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
 export {

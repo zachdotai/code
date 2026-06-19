@@ -1,11 +1,5 @@
+import { commentPrefix } from "./comment-style.js";
 import type { EnrichedEvent, EnrichedFlag, EnrichedListItem } from "./types.js";
-
-function commentPrefix(languageId: string): string {
-  if (languageId === "python" || languageId === "ruby") {
-    return "#";
-  }
-  return "//";
-}
 
 function formatFlagComment(flag: EnrichedFlag): string {
   const parts: string[] = [`Flag: "${flag.flagKey}"`];
