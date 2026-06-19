@@ -53,10 +53,15 @@ export function CustomSoundRecorder() {
         type: recorder.mimeType || "audio/webm",
       });
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setCustomCompletionSound(
-          typeof reader.result === "string" ? reader.result : null,
-        );
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setCustomCompletionSound(reader.result);
+        }
+      };
+      reader.onerror = () => {
+        toast.error("Couldn't save recording", {
+          description: "Reading the recorded audio failed. Please try again.",
+        });
       };
       reader.readAsDataURL(blob);
     };

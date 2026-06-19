@@ -156,33 +156,26 @@ describe("TaskNotificationService", () => {
       );
     });
 
-    it("plays a recorded custom sound and silences the OS notification", () => {
+    it.each([
+      {
+        name: "plays a recorded custom sound and silences the OS notification",
+        customCompletionSound: "data:audio/webm;base64,AAAA",
+        expectedSilent: true,
+      },
+      {
+        name: "is not silent when custom is selected but nothing was recorded",
+        customCompletionSound: null,
+        expectedSilent: false,
+      },
+    ])("$name", ({ customCompletionSound, expectedSilent }) => {
       const { service, notify, play } = makeService({
         hasFocus: false,
-        settings: {
-          completionSound: "custom",
-          customCompletionSound: "data:audio/webm;base64,AAAA",
-        },
+        settings: { completionSound: "custom", customCompletionSound },
       });
       service.notifyPromptComplete("My task", "end_turn", TASK_ID);
-      expect(play).toHaveBeenCalledWith(
-        "custom",
-        80,
-        "data:audio/webm;base64,AAAA",
-      );
+      expect(play).toHaveBeenCalledWith("custom", 80, customCompletionSound);
       expect(notify).toHaveBeenCalledWith(
-        expect.objectContaining({ silent: true }),
-      );
-    });
-
-    it("is not silent when custom is selected but nothing was recorded", () => {
-      const { service, notify } = makeService({
-        hasFocus: false,
-        settings: { completionSound: "custom", customCompletionSound: null },
-      });
-      service.notifyPromptComplete("My task", "end_turn", TASK_ID);
-      expect(notify).toHaveBeenCalledWith(
-        expect.objectContaining({ silent: false }),
+        expect.objectContaining({ silent: expectedSilent }),
       );
     });
 

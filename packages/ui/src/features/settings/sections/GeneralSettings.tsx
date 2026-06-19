@@ -414,7 +414,7 @@ export function GeneralSettings() {
         </SettingRow>
       )}
 
-      {completionSound !== "none" && (
+      {canTestSound && (
         <SettingRow label="Sound volume" noBorder>
           <Flex align="center" gap="3">
             <Slider
