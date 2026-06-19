@@ -196,6 +196,15 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => ({
 interface TestableServer {
   getInitialPromptOverride(run: TaskRun): string | null;
   getClearedPendingUserState(run: TaskRun | null): string[] | null;
+  isAwaitingFirstUserMessage(run: TaskRun | null): boolean;
+  buildResumePromptWithMessage(
+    context: {
+      conversationSummary: string;
+      sandboxContext: string;
+      checkpointApplied: boolean;
+    },
+    userPrompt: Array<{ type: string; text?: string }>,
+  ): Array<{ type: string; text?: string }>;
   clearPendingInitialPromptState(
     payload: JwtPayload,
     run: TaskRun | null,
@@ -1096,6 +1105,56 @@ describe("AgentServer HTTP Mode", () => {
             "pending_user_message_ts",
           ],
         },
+      );
+    });
+  });
+
+  describe("warm resume defers the first turn to the user's message", () => {
+    it("treats a run with await_user_message as warm", () => {
+      const s = createServer() as unknown as TestableServer;
+      expect(
+        s.isAwaitingFirstUserMessage({
+          state: { await_user_message: true },
+        } as unknown as TaskRun),
+      ).toBe(true);
+    });
+
+    it("does not treat a normal (non-warm) run as awaiting a first message", () => {
+      const s = createServer() as unknown as TestableServer;
+      expect(
+        s.isAwaitingFirstUserMessage({
+          state: { resume_from_run_id: "prev" },
+        } as unknown as TaskRun),
+      ).toBe(false);
+      expect(s.isAwaitingFirstUserMessage({ state: {} } as TaskRun)).toBe(
+        false,
+      );
+      expect(s.isAwaitingFirstUserMessage(null)).toBe(false);
+    });
+
+    it("merges resumed history with the user's message into a single turn", () => {
+      const s = createServer() as unknown as TestableServer;
+      const blocks = s.buildResumePromptWithMessage(
+        {
+          conversationSummary: "**User**: what's my pageview count",
+          sandboxContext: "sandbox-context-sentinel",
+          checkpointApplied: false,
+        },
+        [{ type: "text", text: "break down by a country" }],
+      );
+
+      // Preamble first (so the frontend's resume-context filter hides it), the
+      // user's own message stays a distinct block, and a closing instruction.
+      expect(blocks[0].text).toMatch(
+        /^You are resuming a previous conversation\./,
+      );
+      expect(blocks[0].text).toContain("sandbox-context-sentinel");
+      expect(blocks[0].text).toContain("what's my pageview count");
+      expect(blocks.some((b) => b.text === "break down by a country")).toBe(
+        true,
+      );
+      expect(blocks[blocks.length - 1].text).toContain(
+        "Respond to the user's new message above",
       );
     });
   });
