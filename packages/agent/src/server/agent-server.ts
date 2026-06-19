@@ -2286,12 +2286,16 @@ ${signedCommitInstructions}
     // drops surface in agent logs instead of only as user reports.
     this.recordRelayTelemetry("attempt", payload);
 
+    let flushFailed = false;
     try {
       await this.session.logWriter.flush(payload.run_id, { coalesce: true });
     } catch (error) {
-      this.logger.warn("Failed to flush logs before Slack relay", {
-        taskId: payload.task_id,
-        runId: payload.run_id,
+      // Keep the flush failure inside the queryable telemetry shape: a failed
+      // flush can leave no coalesced message to relay, and without this the
+      // resulting drop would read as a bare `no_agent_message` with no upstream
+      // cause.
+      flushFailed = true;
+      this.recordRelayTelemetry("flush_failed", payload, {
         error: serializeError(error),
       });
     }
@@ -2300,6 +2304,7 @@ ${signedCommitInstructions}
     if (!message) {
       this.recordRelayTelemetry("dropped", payload, {
         reason: "no_agent_message",
+        flushFailed,
         sessionRegistered: this.session.logWriter.isRegistered(payload.run_id),
       });
       return;
@@ -2322,11 +2327,12 @@ ${signedCommitInstructions}
 
   // A single, stably-named telemetry shape for the Slack/inbox relay path so the
   // full attempt -> delivered/dropped funnel is queryable in agent logs. Drops
-  // are warn-level (always emitted, even with debug off) because a swallowed
-  // failure here is invisible to the user — the exact silent-drop class of bug
-  // this records. `attempt`/`delivered` are info so the funnel stays complete.
+  // and flush failures are warn-level (always emitted, even with debug off)
+  // because a swallowed failure here is invisible to the user — the exact
+  // silent-drop class of bug this records. `attempt`/`delivered` are info so the
+  // funnel stays complete.
   private recordRelayTelemetry(
-    outcome: "attempt" | "delivered" | "dropped",
+    outcome: "attempt" | "delivered" | "dropped" | "flush_failed",
     payload: JwtPayload,
     extra: Record<string, unknown> = {},
   ): void {
@@ -2337,8 +2343,8 @@ ${signedCommitInstructions}
       runId: payload.run_id,
       ...extra,
     };
-    if (outcome === "dropped") {
-      this.logger.warn("Slack inbox relay dropped", event);
+    if (outcome === "dropped" || outcome === "flush_failed") {
+      this.logger.warn("Slack inbox relay", event);
     } else {
       this.logger.info("Slack inbox relay", event);
     }

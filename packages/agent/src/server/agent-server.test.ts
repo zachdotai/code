@@ -1324,7 +1324,12 @@ describe("AgentServer HTTP Mode", () => {
       flush?: ReturnType<typeof vi.fn>;
     }): RelayTestServer => {
       const s = createServer() as unknown as RelayTestServer;
-      s.logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+      s.logger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      };
       s.posthogAPI = {
         relayMessage: opts.relayMessage ?? vi.fn(async () => {}),
       };
@@ -1342,40 +1347,80 @@ describe("AgentServer HTTP Mode", () => {
     const outcomesFrom = (mock: ReturnType<typeof vi.fn>) =>
       mock.mock.calls.map((c) => (c[1] as { outcome: string }).outcome);
 
-    it("records attempt then delivered on a successful relay", async () => {
-      const s = setup({ message: "hello" });
-      await s.relayAgentResponse(payload);
-      expect(s.posthogAPI.relayMessage).toHaveBeenCalledWith("t", "r", "hello");
-      expect(outcomesFrom(s.logger.info)).toEqual(["attempt", "delivered"]);
-      expect(s.logger.warn).not.toHaveBeenCalled();
-    });
-
-    it("records a warn-level dropped event when the relay request throws", async () => {
-      const relayMessage = vi.fn(async () => {
-        throw new Error("boom");
+    const throwingFn = (msg: string) =>
+      vi.fn(async () => {
+        throw new Error(msg);
       });
-      const s = setup({ message: "hello", relayMessage });
-      await s.relayAgentResponse(payload);
-      expect(s.logger.warn).toHaveBeenCalledTimes(1);
-      const event = s.logger.warn.mock.calls[0][1] as {
-        outcome: string;
-        reason: string;
-      };
-      expect(event.outcome).toBe("dropped");
-      expect(event.reason).toBe("relay_request_failed");
-    });
 
-    it("records a dropped event when there is no agent message to relay", async () => {
-      const s = setup({ message: undefined });
+    it.each([
+      {
+        name: "records attempt then delivered on a successful relay",
+        message: "hello" as string | undefined,
+        relayThrows: false,
+        relayed: true,
+        infoOutcomes: ["attempt", "delivered"],
+        warn: null as { outcome: string; reason: string } | null,
+      },
+      {
+        name: "records a warn-level dropped event when the relay request throws",
+        message: "hello" as string | undefined,
+        relayThrows: true,
+        relayed: true,
+        infoOutcomes: ["attempt"],
+        warn: { outcome: "dropped", reason: "relay_request_failed" },
+      },
+      {
+        name: "records a dropped event when there is no agent message to relay",
+        message: undefined as string | undefined,
+        relayThrows: false,
+        relayed: false,
+        infoOutcomes: ["attempt"],
+        warn: { outcome: "dropped", reason: "no_agent_message" },
+      },
+    ])(
+      "$name",
+      async ({ message, relayThrows, relayed, infoOutcomes, warn }) => {
+        const relayMessage = relayThrows
+          ? throwingFn("boom")
+          : vi.fn(async () => {});
+        const s = setup({ message, relayMessage });
+        await s.relayAgentResponse(payload);
+
+        expect(outcomesFrom(s.logger.info)).toEqual(infoOutcomes);
+        expect(s.posthogAPI.relayMessage).toHaveBeenCalledTimes(
+          relayed ? 1 : 0,
+        );
+
+        if (warn) {
+          expect(s.logger.warn).toHaveBeenCalledTimes(1);
+          const event = s.logger.warn.mock.calls[0][1] as {
+            outcome: string;
+            reason: string;
+          };
+          expect(event.outcome).toBe(warn.outcome);
+          expect(event.reason).toBe(warn.reason);
+        } else {
+          expect(s.logger.warn).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    // Separate case: a flush failure that cascades into an empty message must
+    // keep its root cause inside the telemetry shape (two warns, drop tagged
+    // flushFailed), so it does not read as a bare `no_agent_message` drop.
+    it("tags the drop with flushFailed when a flush failure leaves no message", async () => {
+      const s = setup({ message: undefined, flush: throwingFn("flush boom") });
       await s.relayAgentResponse(payload);
+
       expect(s.posthogAPI.relayMessage).not.toHaveBeenCalled();
-      expect(s.logger.warn).toHaveBeenCalledTimes(1);
-      const event = s.logger.warn.mock.calls[0][1] as {
-        outcome: string;
+      const warnOutcomes = outcomesFrom(s.logger.warn);
+      expect(warnOutcomes).toEqual(["flush_failed", "dropped"]);
+      const dropEvent = s.logger.warn.mock.calls[1][1] as {
         reason: string;
+        flushFailed: boolean;
       };
-      expect(event.outcome).toBe("dropped");
-      expect(event.reason).toBe("no_agent_message");
+      expect(dropEvent.reason).toBe("no_agent_message");
+      expect(dropEvent.flushFailed).toBe(true);
     });
   });
 
