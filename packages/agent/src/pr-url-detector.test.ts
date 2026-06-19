@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { findPrUrl, wasCreatedRecently } from "./pr-url-detector";
+import {
+  findPrUrl,
+  PR_CREATION_RECENCY_MS,
+  wasCreatedRecently,
+} from "./pr-url-detector";
 
 const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
 
@@ -58,5 +62,14 @@ describe("wasCreatedRecently", () => {
 
   it("fails closed on an unparseable createdAt", () => {
     expect(wasCreatedRecently("not-a-date", now, maxAge)).toBe(false);
+  });
+
+  it("attributes a PR created earlier in a long multi-turn run with the default window", () => {
+    // The notification path gates on attribution, so the default window must be
+    // wide enough that a PR created an hour ago (and only re-surfacing now) is
+    // still attributed. The old 15-minute default dropped these silently.
+    const oneHourAgo = new Date(now - 60 * 60 * 1000).toISOString();
+    expect(wasCreatedRecently(oneHourAgo, now)).toBe(true);
+    expect(PR_CREATION_RECENCY_MS).toBeGreaterThan(60 * 60 * 1000);
   });
 });

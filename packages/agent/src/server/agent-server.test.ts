@@ -1293,6 +1293,92 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
+  describe("Slack inbox relay telemetry", () => {
+    const payload: JwtPayload = {
+      task_id: "t",
+      run_id: "r",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "d",
+      mode: "interactive",
+    };
+
+    type FakeLogger = {
+      info: ReturnType<typeof vi.fn>;
+      warn: ReturnType<typeof vi.fn>;
+      error: ReturnType<typeof vi.fn>;
+      debug: ReturnType<typeof vi.fn>;
+    };
+
+    type RelayTestServer = {
+      relayAgentResponse(p: JwtPayload): Promise<void>;
+      session: unknown;
+      questionRelayedToSlack: boolean;
+      posthogAPI: { relayMessage: ReturnType<typeof vi.fn> };
+      logger: FakeLogger;
+    };
+
+    const setup = (opts: {
+      message?: string;
+      relayMessage?: ReturnType<typeof vi.fn>;
+      flush?: ReturnType<typeof vi.fn>;
+    }): RelayTestServer => {
+      const s = createServer() as unknown as RelayTestServer;
+      s.logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+      s.posthogAPI = {
+        relayMessage: opts.relayMessage ?? vi.fn(async () => {}),
+      };
+      s.session = {
+        logWriter: {
+          flush: opts.flush ?? vi.fn(async () => {}),
+          getFullAgentResponse: vi.fn(() => opts.message),
+          isRegistered: vi.fn(() => true),
+        },
+      };
+      s.questionRelayedToSlack = false;
+      return s;
+    };
+
+    const outcomesFrom = (mock: ReturnType<typeof vi.fn>) =>
+      mock.mock.calls.map((c) => (c[1] as { outcome: string }).outcome);
+
+    it("records attempt then delivered on a successful relay", async () => {
+      const s = setup({ message: "hello" });
+      await s.relayAgentResponse(payload);
+      expect(s.posthogAPI.relayMessage).toHaveBeenCalledWith("t", "r", "hello");
+      expect(outcomesFrom(s.logger.info)).toEqual(["attempt", "delivered"]);
+      expect(s.logger.warn).not.toHaveBeenCalled();
+    });
+
+    it("records a warn-level dropped event when the relay request throws", async () => {
+      const relayMessage = vi.fn(async () => {
+        throw new Error("boom");
+      });
+      const s = setup({ message: "hello", relayMessage });
+      await s.relayAgentResponse(payload);
+      expect(s.logger.warn).toHaveBeenCalledTimes(1);
+      const event = s.logger.warn.mock.calls[0][1] as {
+        outcome: string;
+        reason: string;
+      };
+      expect(event.outcome).toBe("dropped");
+      expect(event.reason).toBe("relay_request_failed");
+    });
+
+    it("records a dropped event when there is no agent message to relay", async () => {
+      const s = setup({ message: undefined });
+      await s.relayAgentResponse(payload);
+      expect(s.posthogAPI.relayMessage).not.toHaveBeenCalled();
+      expect(s.logger.warn).toHaveBeenCalledTimes(1);
+      const event = s.logger.warn.mock.calls[0][1] as {
+        outcome: string;
+        reason: string;
+      };
+      expect(event.outcome).toBe("dropped");
+      expect(event.reason).toBe("no_agent_message");
+    });
+  });
+
   describe("buildCloudSystemPrompt", () => {
     it("returns review-first prompt for existing PRs on non-Slack runs", () => {
       const s = createServer();

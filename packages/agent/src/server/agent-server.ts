@@ -14,6 +14,7 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
+import { serializeError } from "@posthog/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import packageJson from "../../package.json" with { type: "json" };
@@ -2279,21 +2280,26 @@ ${signedCommitInstructions}
       return;
     }
 
+    // Inbox/Slack notifications are posted server-side off this relay, so a
+    // silent drop here reads to the user as an empty inbox rather than a broken
+    // pipe. Emit attempt/outcome telemetry at a visible severity (not debug) so
+    // drops surface in agent logs instead of only as user reports.
+    this.recordRelayTelemetry("attempt", payload);
+
     try {
       await this.session.logWriter.flush(payload.run_id, { coalesce: true });
     } catch (error) {
-      this.logger.debug("Failed to flush logs before Slack relay", {
+      this.logger.warn("Failed to flush logs before Slack relay", {
         taskId: payload.task_id,
         runId: payload.run_id,
-        error,
+        error: serializeError(error),
       });
     }
 
     const message = this.session.logWriter.getFullAgentResponse(payload.run_id);
     if (!message) {
-      this.logger.debug("No agent message found for Slack relay", {
-        taskId: payload.task_id,
-        runId: payload.run_id,
+      this.recordRelayTelemetry("dropped", payload, {
+        reason: "no_agent_message",
         sessionRegistered: this.session.logWriter.isRegistered(payload.run_id),
       });
       return;
@@ -2305,12 +2311,36 @@ ${signedCommitInstructions}
         payload.run_id,
         message,
       );
+      this.recordRelayTelemetry("delivered", payload);
     } catch (error) {
-      this.logger.debug("Failed to relay initial agent response to Slack", {
-        taskId: payload.task_id,
-        runId: payload.run_id,
-        error,
+      this.recordRelayTelemetry("dropped", payload, {
+        reason: "relay_request_failed",
+        error: serializeError(error),
       });
+    }
+  }
+
+  // A single, stably-named telemetry shape for the Slack/inbox relay path so the
+  // full attempt -> delivered/dropped funnel is queryable in agent logs. Drops
+  // are warn-level (always emitted, even with debug off) because a swallowed
+  // failure here is invisible to the user — the exact silent-drop class of bug
+  // this records. `attempt`/`delivered` are info so the funnel stays complete.
+  private recordRelayTelemetry(
+    outcome: "attempt" | "delivered" | "dropped",
+    payload: JwtPayload,
+    extra: Record<string, unknown> = {},
+  ): void {
+    const event = {
+      telemetry: "slack_inbox_relay",
+      outcome,
+      taskId: payload.task_id,
+      runId: payload.run_id,
+      ...extra,
+    };
+    if (outcome === "dropped") {
+      this.logger.warn("Slack inbox relay dropped", event);
+    } else {
+      this.logger.info("Slack inbox relay", event);
     }
   }
 
