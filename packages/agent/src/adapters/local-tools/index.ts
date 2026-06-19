@@ -1,3 +1,4 @@
+import { listMcpToolsTool, runMcpScriptTool } from "../../mcp-scripting/tools";
 import type { LocalTool, LocalToolCtx, LocalToolGateMeta } from "./registry";
 import { cloneRepoTool } from "./tools/clone-repo";
 import { listReposTool } from "./tools/list-repos";
@@ -21,6 +22,8 @@ export const LOCAL_TOOLS: LocalTool[] = [
   signedRewriteTool,
   listReposTool,
   cloneRepoTool,
+  runMcpScriptTool,
+  listMcpToolsTool,
 ];
 
 /** Tools whose gate passes for the given context — the set to actually expose. */

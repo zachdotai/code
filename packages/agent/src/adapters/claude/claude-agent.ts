@@ -1656,12 +1656,24 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // needs so the session doesn't pin the whole meta object.
     const baseBranch = meta?.baseBranch;
     const environment = meta?.environment;
+    // Snapshot the external MCP servers (before the in-process local server is
+    // mixed in below) so run_mcp_script can dial them with inherited auth.
+    const externalMcpServers: Record<string, McpServerConfig> =
+      supportsMcpInjection(earlyModelId)
+        ? parseMcpServers(params, this.logger)
+        : {};
     const buildInProcessMcpServers = (): Record<
       string,
       McpSdkServerConfigWithInstance
     > => {
       const server = createLocalToolsMcpServer(
-        { cwd, token: resolveGithubToken(), taskId, baseBranch },
+        {
+          cwd,
+          token: resolveGithubToken(),
+          taskId,
+          baseBranch,
+          scriptableMcpServers: externalMcpServers,
+        },
         { environment },
       );
       return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
@@ -1676,9 +1688,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     const mcpServers: Record<string, McpServerConfig> = {
-      ...(supportsMcpInjection(earlyModelId)
-        ? parseMcpServers(params, this.logger)
-        : {}),
+      ...externalMcpServers,
       ...initialInProcess,
     };
 

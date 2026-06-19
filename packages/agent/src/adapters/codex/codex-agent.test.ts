@@ -424,16 +424,20 @@ describe("CodexAcpAgent", () => {
         _meta: { systemPrompt: string };
       };
 
-      // Existing MCP server is preserved; ours is appended.
-      expect(forwarded.mcpServers).toHaveLength(2);
+      // Existing MCP server is preserved; the structured-output server is
+      // appended. The local-tools server is also present because the existing
+      // server makes run_mcp_script/list_mcp_tools available.
       expect(forwarded.mcpServers[0].name).toBe("existing");
-      expect(forwarded.mcpServers[1].name).toBe("posthog_output");
-      expect(forwarded.mcpServers[1].command).toBe(process.execPath);
+      const outputServer = forwarded.mcpServers.find(
+        (s) => s.name === "posthog_output",
+      );
+      expect(outputServer).toBeDefined();
+      expect(outputServer?.command).toBe(process.execPath);
 
       // The schema is forwarded base64-encoded so codex-acp doesn't have
       // to escape it through a shell.
       const envEntry = (
-        forwarded.mcpServers[1].env as Array<{ name: string; value: string }>
+        outputServer?.env as Array<{ name: string; value: string }>
       ).find((e) => e.name === "POSTHOG_OUTPUT_SCHEMA");
       expect(envEntry).toBeDefined();
       const decoded = JSON.parse(

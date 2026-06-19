@@ -71,6 +71,7 @@ import {
   emptyBaseline,
   estimateTokens,
 } from "../claude/context-breakdown";
+import { parseMcpServers } from "../claude/session/mcp-config";
 import { classifyAgentError } from "../error-classification";
 import {
   enabledLocalTools,
@@ -646,6 +647,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
       token: resolveGithubToken(),
       taskId: resolveTaskId(meta),
       baseBranch: meta?.baseBranch,
+      // Reuse the ACP MCP servers so run_mcp_script can dial them (auth inherited).
+      scriptableMcpServers: parseMcpServers({
+        mcpServers: request.mcpServers ?? [],
+      }),
     };
     const tools = enabledLocalTools(ctx, meta);
     if (tools.length === 0) {

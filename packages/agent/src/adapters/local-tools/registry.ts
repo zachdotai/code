@@ -1,3 +1,4 @@
+import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import type { z } from "zod";
 
 /**
@@ -20,6 +21,15 @@ export interface LocalToolCtx {
    * back to origin/HEAD detection when unset.
    */
   baseBranch?: string;
+  /**
+   * The session's external MCP servers, keyed by name — the same
+   * `McpServerConfig` map handed to the Claude SDK `query()`. The MCP-scripting
+   * tools (`run_mcp_script` / `list_mcp_tools`) open their own clients against
+   * these configs, inheriting auth (stdio `env`, http/sse `headers`). In-process
+   * `sdk` servers are skipped — they have no transport to dial. Absent or empty
+   * means scripting tools self-disable.
+   */
+  scriptableMcpServers?: Record<string, McpServerConfig>;
 }
 
 /** Minimal session-meta shape needed to gate tools (e.g. cloud-only). */
