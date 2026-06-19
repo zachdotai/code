@@ -8,6 +8,7 @@ import {
   type CollapseMode,
 } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
+import { CustomSoundRecorder } from "@posthog/ui/features/settings/sections/CustomSoundRecorder";
 import {
   type AutoConvertLongText,
   type CompletionSound,
@@ -81,6 +82,7 @@ export function GeneralSettings() {
     dockBounceNotifications,
     completionSound,
     completionVolume,
+    customCompletionSound,
     autoConvertLongText,
     defaultInitialTaskMode,
     defaultMessagingMode,
@@ -163,8 +165,16 @@ export function GeneralSettings() {
   );
 
   const handleTestSound = useCallback(() => {
-    playCompletionSound(completionSound, completionVolume);
-  }, [completionSound, completionVolume]);
+    playCompletionSound(
+      completionSound,
+      completionVolume,
+      customCompletionSound,
+    );
+  }, [completionSound, completionVolume, customCompletionSound]);
+
+  const canTestSound =
+    completionSound !== "none" &&
+    (completionSound !== "custom" || Boolean(customCompletionSound));
 
   const handleAutoConvertLongTextChange = useCallback(
     (value: AutoConvertLongText) => {
@@ -383,15 +393,26 @@ export function GeneralSettings() {
               <Select.Item value="switch">Switch</Select.Item>
               <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
               <Select.Item value="icq">ICQ</Select.Item>
+              <Select.Item value="custom">Custom (record)</Select.Item>
             </Select.Content>
           </Select.Root>
-          {completionSound !== "none" && (
+          {canTestSound && (
             <Button variant="soft" size="1" onClick={handleTestSound}>
               Test
             </Button>
           )}
         </Flex>
       </SettingRow>
+
+      {completionSound === "custom" && (
+        <SettingRow
+          label="Custom sound"
+          description="Record up to 5 seconds from your microphone to use as your notification sound"
+          noBorder
+        >
+          <CustomSoundRecorder />
+        </SettingRow>
+      )}
 
       {completionSound !== "none" && (
         <SettingRow label="Sound volume" noBorder>

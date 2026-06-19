@@ -33,6 +33,7 @@ function makeService(overrides?: {
     dockBounceNotifications: true,
     completionSound: "meep",
     completionVolume: 80,
+    customCompletionSound: null,
     ...overrides?.settings,
   };
 
@@ -148,6 +149,36 @@ describe("TaskNotificationService", () => {
       const { service, notify } = makeService({
         hasFocus: false,
         settings: { completionSound: "none" },
+      });
+      service.notifyPromptComplete("My task", "end_turn", TASK_ID);
+      expect(notify).toHaveBeenCalledWith(
+        expect.objectContaining({ silent: false }),
+      );
+    });
+
+    it("plays a recorded custom sound and silences the OS notification", () => {
+      const { service, notify, play } = makeService({
+        hasFocus: false,
+        settings: {
+          completionSound: "custom",
+          customCompletionSound: "data:audio/webm;base64,AAAA",
+        },
+      });
+      service.notifyPromptComplete("My task", "end_turn", TASK_ID);
+      expect(play).toHaveBeenCalledWith(
+        "custom",
+        80,
+        "data:audio/webm;base64,AAAA",
+      );
+      expect(notify).toHaveBeenCalledWith(
+        expect.objectContaining({ silent: true }),
+      );
+    });
+
+    it("is not silent when custom is selected but nothing was recorded", () => {
+      const { service, notify } = makeService({
+        hasFocus: false,
+        settings: { completionSound: "custom", customCompletionSound: null },
       });
       service.notifyPromptComplete("My task", "end_turn", TASK_ID);
       expect(notify).toHaveBeenCalledWith(

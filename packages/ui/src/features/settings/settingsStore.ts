@@ -42,7 +42,8 @@ export type CompletionSound =
   | "slide"
   | "switch"
   | "wilhelm"
-  | "icq";
+  | "icq"
+  | "custom";
 
 export type TerminalFont =
   | "berkeley-mono"
@@ -100,11 +101,14 @@ interface SettingsStore {
   dockBounceNotifications: boolean;
   completionSound: CompletionSound;
   completionVolume: number;
+  /** Data URL of a user-recorded sound, played when completionSound is "custom". */
+  customCompletionSound: string | null;
   setDesktopNotifications: (enabled: boolean) => void;
   setDockBadgeNotifications: (enabled: boolean) => void;
   setDockBounceNotifications: (enabled: boolean) => void;
   setCompletionSound: (sound: CompletionSound) => void;
   setCompletionVolume: (volume: number) => void;
+  setCustomCompletionSound: (dataUrl: string | null) => void;
 
   // Composer / chat
   autoConvertLongText: AutoConvertLongText;
@@ -213,6 +217,7 @@ export const useSettingsStore = create<SettingsStore>()(
       dockBounceNotifications: false,
       completionSound: "none",
       completionVolume: 80,
+      customCompletionSound: null,
       setDesktopNotifications: (enabled) =>
         set({ desktopNotifications: enabled }),
       setDockBadgeNotifications: (enabled) =>
@@ -221,6 +226,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ dockBounceNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
+      setCustomCompletionSound: (dataUrl) =>
+        set({ customCompletionSound: dataUrl }),
 
       // Composer / chat
       autoConvertLongText: "2500",
@@ -324,6 +331,7 @@ export const useSettingsStore = create<SettingsStore>()(
         dockBounceNotifications: state.dockBounceNotifications,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
+        customCompletionSound: state.customCompletionSound,
 
         // Composer / chat
         autoConvertLongText: state.autoConvertLongText,

@@ -6,6 +6,7 @@ export interface NotificationSettings {
   dockBounceNotifications: boolean;
   completionSound: CompletionSound;
   completionVolume: number;
+  customCompletionSound: string | null;
 }
 
 export interface INotificationSettings {

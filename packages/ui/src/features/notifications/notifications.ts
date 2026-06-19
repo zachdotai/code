@@ -44,14 +44,21 @@ export class TaskNotificationService {
     if (!this.shouldNotify(taskId)) return;
 
     const settings = this.settings.get();
-    const willPlayCustomSound = settings.completionSound !== "none";
-    playCompletionSound(settings.completionSound, settings.completionVolume);
+    const willPlaySound =
+      settings.completionSound !== "none" &&
+      (settings.completionSound !== "custom" ||
+        Boolean(settings.customCompletionSound));
+    playCompletionSound(
+      settings.completionSound,
+      settings.completionVolume,
+      settings.customCompletionSound,
+    );
 
     if (settings.desktopNotifications) {
       this.notifications.notify({
         title: "PostHog Code",
         body,
-        silent: willPlayCustomSound,
+        silent: willPlaySound,
         taskId,
       });
     }

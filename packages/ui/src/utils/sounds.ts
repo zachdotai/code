@@ -14,7 +14,10 @@ import slideUrl from "../assets/sounds/slide.mp3";
 import switchUrl from "../assets/sounds/switch.mp3";
 import wilhelmUrl from "../assets/sounds/wilhelm.mp3";
 
-const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
+const SOUND_URLS: Record<
+  Exclude<CompletionSound, "none" | "custom">,
+  string
+> = {
   guitar: guitarUrl,
   danilo: daniloUrl,
   revi: reviUrl,
@@ -33,10 +36,14 @@ const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
 
 let currentAudio: HTMLAudioElement | null = null;
 
-export function playCompletionSound(sound: CompletionSound, volume = 80): void {
+export function playCompletionSound(
+  sound: CompletionSound,
+  volume = 80,
+  customSoundUrl?: string | null,
+): void {
   if (sound === "none") return;
 
-  const url = SOUND_URLS[sound];
+  const url = sound === "custom" ? customSoundUrl : SOUND_URLS[sound];
   if (!url) return;
 
   if (currentAudio) {

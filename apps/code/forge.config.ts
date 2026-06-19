@@ -173,11 +173,11 @@ const config: ForgeConfig = {
     extraResource: hasAssetsCar
       ? ["build/Assets.car", "build/app-icon.png"]
       : ["build/app-icon.png"],
-    extendInfo: hasAssetsCar
-      ? {
-          CFBundleIconName: "Icon",
-        }
-      : {},
+    extendInfo: {
+      NSMicrophoneUsageDescription:
+        "PostHog Code uses your microphone to record a custom notification sound.",
+      ...(hasAssetsCar ? { CFBundleIconName: "Icon" } : {}),
+    },
     ...(osxSignConfig
       ? {
           osxSign: osxSignConfig,

@@ -200,6 +200,7 @@ container
         dockBounceNotifications: s.dockBounceNotifications,
         completionSound: s.completionSound,
         completionVolume: s.completionVolume,
+        customCompletionSound: s.customCompletionSound,
       };
     },
   });
