@@ -25,7 +25,6 @@ interface UseReviewerPickerOptionsParams {
 export interface ReviewerPickerOptions {
   options: SuggestedReviewerFilterOption[];
   isFetching: boolean;
-  hasResults: boolean;
 }
 
 /**
@@ -68,6 +67,5 @@ export function useReviewerPickerOptions(
   return {
     options,
     isFetching,
-    hasResults: !!data?.results?.length,
   };
 }
