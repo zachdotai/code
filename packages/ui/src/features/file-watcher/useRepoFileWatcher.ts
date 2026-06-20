@@ -2,7 +2,7 @@ import { useService } from "@posthog/di/react";
 import { toRelativePath } from "@posthog/shared";
 import type { FileWatcherEvent } from "@posthog/workspace-client/types";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { logger } from "../../shell/logger";
 import {
   invalidateGitBranchQueries,
@@ -13,6 +13,7 @@ import {
   type GitCacheKeyProvider,
 } from "../git-interaction/gitCacheProvider";
 import { usePanelLayoutStore } from "../panels/panelLayoutStore";
+import { createFileWatcherCoalescer } from "./fileWatcherCoalescer";
 import { FILE_WATCHER_CLIENT, type FileWatcherClient } from "./identifiers";
 import { useFileWatcher } from "./useFileWatcher";
 
@@ -40,40 +41,58 @@ export function useRepoFileWatcher(repoPath: string | null, taskId?: string) {
     };
   }, [repoPath, control]);
 
-  const onEvent = useCallback(
-    (event: FileWatcherEvent) => {
-      if (!repoPath) return;
-      switch (event.kind) {
-        case "file-changed": {
-          const relativePath = toRelativePath(event.filePath, repoPath);
+  const coalescer = useMemo(
+    () =>
+      createFileWatcherCoalescer({
+        invalidateFile(relativePath) {
           queryClient.invalidateQueries({
             queryKey: cacheKeys.fsQueryKey("readRepoFile", {
-              repoPath,
+              repoPath: repoPath ?? "",
               filePath: relativePath,
             }),
           });
           queryClient.invalidateQueries({
             queryKey: cacheKeys.fsQueryKey("readRepoFileBounded", {
-              repoPath,
+              repoPath: repoPath ?? "",
               filePath: relativePath,
             }),
           });
+        },
+        closeTabsForFile(relativePath) {
+          if (taskId) closeTabsForFile(taskId, relativePath);
+        },
+        invalidateGitBranch() {
+          if (repoPath) invalidateGitBranchQueries(repoPath);
+        },
+        invalidateGitWorkingTree() {
+          if (repoPath) invalidateGitWorkingTreeQueries(repoPath);
+        },
+      }),
+    [repoPath, taskId, queryClient, closeTabsForFile, cacheKeys],
+  );
+
+  useEffect(() => () => coalescer.dispose(), [coalescer]);
+
+  const onEvent = useCallback(
+    (event: FileWatcherEvent) => {
+      if (!repoPath) return;
+      switch (event.kind) {
+        case "file-changed":
+          coalescer.fileChanged(toRelativePath(event.filePath, repoPath));
           return;
-        }
-        case "file-deleted": {
+        case "file-deleted":
           if (!taskId) return;
-          closeTabsForFile(taskId, toRelativePath(event.filePath, repoPath));
+          coalescer.fileDeleted(toRelativePath(event.filePath, repoPath));
           return;
-        }
         case "git-state-changed":
-          invalidateGitBranchQueries(repoPath);
+          coalescer.gitStateChanged();
           return;
         case "working-tree-changed":
-          invalidateGitWorkingTreeQueries(repoPath);
+          coalescer.workingTreeChanged();
           return;
       }
     },
-    [repoPath, taskId, queryClient, closeTabsForFile, cacheKeys],
+    [repoPath, taskId, coalescer],
   );
 
   useFileWatcher(repoPath, onEvent);
