@@ -50,6 +50,12 @@ export interface ICanvasTemplatesService {
   get(id: string): CanvasTemplate | undefined;
   /** The system prompt for a template, falling back to the default template. */
   systemPromptFor(id: string | undefined): string;
+  /**
+   * The React-tier (freeform iframe) system prompt for a template, falling back
+   * to the generic freeform sandbox. Used by the freeform gen path for canvases
+   * whose `kind` is "freeform" — distinct from the json-render `systemPromptFor`.
+   */
+  freeformSystemPromptFor(id: string | undefined): string;
 }
 
 export interface IDashboardsService {

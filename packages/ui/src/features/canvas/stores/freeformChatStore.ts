@@ -19,6 +19,12 @@ export interface FreeformThreadState {
   versions: FreeformVersion[];
   /** Which version is live (undo/redo moves this). */
   currentVersionId: string | null;
+  /** The canvas's template id, so the agent gets the matching React-tier prompt
+   * (generic sandbox vs the opinionated dashboard / web-analytics prompt). */
+  templateId: string | null;
+  /** Author-written context (markdown), prepended to every agent turn. Mirrors
+   * the live version's context; edited in the Context tab. */
+  context: string;
   isStreaming: boolean;
   /** True while an autosave is in flight (drives the toolbar's saving spinner). */
   isSaving: boolean;
@@ -36,6 +42,8 @@ export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
   code: "",
   versions: [],
   currentVersionId: null,
+  templateId: null,
+  context: "",
   isStreaming: false,
   isSaving: false,
   lastTool: null,
@@ -49,8 +57,14 @@ interface FreeformChatStore {
 
   send: (threadId: string, prompt: string) => Promise<void>;
   reset: (threadId: string) => Promise<void>;
-  /** Seed a thread from a saved record (only if the thread is still empty). */
+  /** Seed a thread from a saved record (only if the thread is still empty).
+   * The templateId is recorded regardless so the agent uses the right prompt. */
   ensureCode: (threadId: string, record: SavedFreeform) => void;
+  /** Live-update the context text as the user types (no version/save yet). */
+  setContext: (threadId: string, context: string) => void;
+  /** Commit a context edit (on blur / debounce): if it changed, snapshot a new
+   * version (coalescing consecutive context-only edits) and autosave. */
+  commitContext: (threadId: string) => void;
   undo: (threadId: string) => void;
   redo: (threadId: string) => void;
   setRuntimeError: (threadId: string, message: string | null) => void;
@@ -75,6 +89,10 @@ interface SavedFreeform {
   code?: string;
   versions?: FreeformVersion[];
   currentVersionId?: string;
+  /** The canvas's template id (drives which React-tier prompt the agent uses). */
+  templateId?: string;
+  /** Author-written context (markdown) passed to the agent. */
+  context?: string;
 }
 
 function newId(): string {
@@ -110,6 +128,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         code: t.code,
         versions: t.versions,
         currentVersionId: t.currentVersionId ?? undefined,
+        context: t.context,
       });
     } catch (error) {
       log.error("Freeform autosave failed", { error });
@@ -149,8 +168,15 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
       // at session start, so the live code rides each turn (Q7: full-file rewrite
       // means the agent must see the whole current file to rewrite it).
       const now = new Date();
+      const contextBlock = current.context.trim()
+        ? [
+            "[Canvas context] The author wrote the following context for this canvas. Treat it as authoritative requirements/notes and honor it throughout:",
+            current.context.trim(),
+          ].join("\n")
+        : "";
       const parts = [
         `[Now] ${now.toISOString()} (epoch ms ${now.getTime()}).`,
+        contextBlock,
         current.code
           ? [
               "[Context] You are editing the existing app below. Rewrite the WHOLE file with the requested change; keep everything else intact.",
@@ -167,6 +193,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
           threadId,
           prompt: parts.filter(Boolean).join("\n"),
           currentCode: current.code || null,
+          templateId: current.templateId ?? undefined,
         });
       } catch (error) {
         log.error("Freeform generate failed", { error });
@@ -186,14 +213,72 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
 
     ensureCode: (threadId, record) => {
       const cur = get().threads[threadId];
-      if (cur?.isStreaming || cur?.code) return;
+      // Record the templateId regardless (cheap metadata that picks the agent's
+      // prompt); only seed code/history when the thread is still empty.
+      if (cur?.isStreaming || cur?.code) {
+        // Record the templateId + context regardless (cheap metadata); don't
+        // touch code/history once the thread is live.
+        if (
+          (record.templateId && cur?.templateId !== record.templateId) ||
+          (record.context !== undefined && cur?.context !== record.context)
+        ) {
+          patch(threadId, (prev) => ({
+            ...prev,
+            templateId: record.templateId ?? prev.templateId,
+            context: record.context ?? prev.context,
+          }));
+        }
+        return;
+      }
       patch(threadId, (prev) => ({
         ...prev,
         code: record.code ?? "",
         versions: record.versions ?? [],
         currentVersionId:
           record.currentVersionId ?? record.versions?.at(-1)?.id ?? null,
+        templateId: record.templateId ?? prev.templateId,
+        context: record.context ?? "",
       }));
+    },
+
+    setContext: (threadId, context) => {
+      patch(threadId, (prev) => ({ ...prev, context }));
+    },
+
+    commitContext: (threadId) => {
+      const t = get().threads[threadId];
+      if (!t) return;
+      const headIdx = t.versions.findIndex((v) => v.id === t.currentVersionId);
+      const head = headIdx === -1 ? undefined : t.versions[headIdx];
+      // No-op if the context already matches the live version's snapshot.
+      if ((head?.context ?? "") === t.context) return;
+      // Coalesce consecutive context-only edits: if the head version was itself a
+      // context-only edit (no prompt) on the SAME code, update it in place rather
+      // than stacking a new version per pause. Otherwise append a fresh version.
+      const isContextOnlyHead =
+        head && !head.prompt && head.code === t.code && headIdx !== -1;
+      if (isContextOnlyHead) {
+        const versions = t.versions.map((v, i) =>
+          i === headIdx ? { ...v, context: t.context } : v,
+        );
+        patch(threadId, (prev) => ({ ...prev, versions }));
+      } else {
+        const version: FreeformVersion = {
+          id: newId(),
+          code: t.code,
+          context: t.context,
+          createdAt: Date.now(),
+        };
+        // Drop any redo tail before appending (linear history, as with code edits).
+        const base =
+          headIdx === -1 ? t.versions : t.versions.slice(0, headIdx + 1);
+        patch(threadId, (prev) => ({
+          ...prev,
+          versions: [...base, version],
+          currentVersionId: version.id,
+        }));
+      }
+      void persist(threadId);
     },
 
     undo: (threadId) => {
@@ -203,7 +288,12 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         );
         if (idx <= 0) return prev;
         const target = prev.versions[idx - 1];
-        return { ...prev, code: target.code, currentVersionId: target.id };
+        return {
+          ...prev,
+          code: target.code,
+          context: target.context ?? prev.context,
+          currentVersionId: target.id,
+        };
       });
     },
 
@@ -214,7 +304,12 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         );
         if (idx === -1 || idx >= prev.versions.length - 1) return prev;
         const target = prev.versions[idx + 1];
-        return { ...prev, code: target.code, currentVersionId: target.id };
+        return {
+          ...prev,
+          code: target.code,
+          context: target.context ?? prev.context,
+          currentVersionId: target.id,
+        };
       });
     },
 
@@ -240,7 +335,12 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
       patch(threadId, (prev) => {
         const head = prev.versions.at(-1);
         if (!head) return prev;
-        return { ...prev, code: head.code, currentVersionId: head.id };
+        return {
+          ...prev,
+          code: head.code,
+          context: head.context ?? prev.context,
+          currentVersionId: head.id,
+        };
       });
     },
 
@@ -287,6 +387,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         const version: FreeformVersion = {
           id: newId(),
           code: currentCode,
+          context: prev.context,
           prompt: prev.pendingPrompt ?? undefined,
           createdAt: Date.now(),
         };

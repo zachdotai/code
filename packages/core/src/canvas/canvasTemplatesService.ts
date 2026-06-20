@@ -3,6 +3,7 @@ import {
   BUILT_IN_TEMPLATES,
   type CanvasTemplate,
   DEFAULT_TEMPLATE_ID,
+  freeformSystemPromptFor,
 } from "./canvasTemplates";
 import type { ICanvasTemplatesService } from "./services";
 import type { CanvasTemplateSummary } from "./templateSchemas";
@@ -38,5 +39,10 @@ export class CanvasTemplatesService implements ICanvasTemplatesService {
       throw new Error("No canvas templates registered");
     }
     return template.systemPrompt;
+  }
+
+  /** The React-tier prompt for a template, falling back to the generic sandbox. */
+  freeformSystemPromptFor(id: string | undefined): string {
+    return freeformSystemPromptFor(id);
   }
 }

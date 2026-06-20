@@ -341,11 +341,15 @@ export function WebsiteLayout() {
                 Filter
               </Button>
             )}
-            {/* Shown in edit too: changing it directs the agent's next build at
-                the chosen window (refresh in view, prompt hint in edit). */}
-            {isDashboardDetail && dashboardId && isDataTemplate && (
-              <DashboardDateRangeControl dashboardId={dashboardId} />
-            )}
+            {/* Legacy json-render data canvases only: the toolbar picker drives
+                their stored queries. Freeform canvases own their date control
+                in-app (Quill DateTimePicker), so the toolbar one is hidden. */}
+            {isDashboardDetail &&
+              dashboardId &&
+              isDataTemplate &&
+              dashboard?.kind !== "freeform" && (
+                <DashboardDateRangeControl dashboardId={dashboardId} />
+              )}
           </Flex>
           <Flex align="center" gap="2">
             {isDashboardDetail && dashboardId && isDataTemplate && !editing && (

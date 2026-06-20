@@ -33,6 +33,8 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
       code: dashboard.code,
       versions: dashboard.versions,
       currentVersionId: dashboard.currentVersionId,
+      templateId: dashboard.templateId,
+      context: dashboard.context,
     });
   }, [isFreeform, dashboard, threadId, ensureCode]);
 

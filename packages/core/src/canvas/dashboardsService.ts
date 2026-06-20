@@ -13,7 +13,10 @@ import {
   type DesktopFsClient,
   type FsEntryBase,
 } from "./desktopFsClient";
-import { FREEFORM_TEMPLATE_ID, type FreeformVersion } from "./freeformSchemas";
+import {
+  type FreeformVersion,
+  REACT_TIER_TEMPLATE_IDS,
+} from "./freeformSchemas";
 import { DASHBOARD_QUERY_SERVICE } from "./identifiers";
 import { fetchCurrentUser } from "./posthogApi";
 import type { DashboardQuery, DashboardQueryShape } from "./querySchemas";
@@ -127,9 +130,13 @@ export class DashboardsService {
       spec: input.spec,
       channelId: input.channelId,
       templateId,
-      // Freeform canvases store React code, not a spec; tag them so the render
-      // path picks the sandboxed iframe instead of the json-render tree.
-      kind: templateId === FREEFORM_TEMPLATE_ID ? "freeform" : "json-render",
+      // React-tier canvases (the generic freeform sandbox + the opinionated
+      // dashboard / web-analytics templates) store React code, not a spec; tag
+      // them so the render path picks the sandboxed iframe instead of the
+      // json-render tree. Everything else stays json-render.
+      kind: REACT_TIER_TEMPLATE_IDS.has(templateId)
+        ? "freeform"
+        : "json-render",
       createdBy: await this.currentUserLabel(),
       createdAt: now,
       updatedAt: now,
@@ -189,6 +196,7 @@ export class DashboardsService {
     code: string;
     versions: FreeformVersion[];
     currentVersionId?: string;
+    context?: string;
   }): Promise<DashboardRecord> {
     const entry = await this.getEntry(input.id);
     const now = Date.now();
@@ -199,6 +207,7 @@ export class DashboardsService {
       code: input.code,
       versions: input.versions,
       currentVersionId: input.currentVersionId,
+      context: input.context,
       updatedAt: now,
       createdAt: prevMeta.createdAt ?? toEpoch(entry?.created_at),
     };
@@ -331,6 +340,7 @@ function toRecord(entry: FsEntry): DashboardRecord {
     code: meta.code,
     versions: meta.versions,
     currentVersionId: meta.currentVersionId,
+    context: meta.context,
     // Prefer our stamped meta; fall back to the FS row's creator if present.
     createdBy: meta.createdBy ?? creatorName(entry.created_by),
     createdAt,

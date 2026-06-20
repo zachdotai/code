@@ -3,6 +3,7 @@ import {
   FREEFORM_BABEL_URL,
   FREEFORM_ESM_HOST,
   FREEFORM_POSTHOG_JS_URL,
+  FREEFORM_QUILL_CSS_URLS,
 } from "@posthog/core/canvas/freeformWhitelist";
 
 // Builds the HTML document loaded into the freeform-canvas sandbox iframe.
@@ -28,6 +29,43 @@ export function buildSandboxDocument(
 ): string {
   const importMap = JSON.stringify(buildImportMap());
   const csp = contentSecurityPolicy(mode, analyticsApiHost);
+
+  // Quill components emit Tailwind utility classes (layout — `inline-flex`,
+  // `items-center` — AND token colors like `bg-card`, `text-muted-foreground`)
+  // ALONGSIDE their `.quill-*` BEM classes. The linked Quill stylesheets style
+  // the BEM half; the utilities are dead without Tailwind, so components mislay
+  // out. The sandbox has no build step, so in EDIT mode we load the Tailwind Play
+  // CDN (JIT-in-browser; a MutationObserver picks up classes as the app mounts)
+  // and map Quill's semantic color tokens to the CSS variables tokens.css defines.
+  // View/published mode forbids the CDN (locked egress) — that tier must self-host
+  // a compiled stylesheet (Phase 2).
+  const tailwind =
+    mode === "edit"
+      ? `<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+  // Preflight OFF: its UNLAYERED form reset (e.g. \`button{background-color:transparent}\`)
+  // beats Quill's component styles, which live in \`@layer components\` — unlayered always
+  // wins over layered. That stripped Quill buttons (e.g. the Select trigger) of their
+  // border/background while box-shadow-bordered Cards survived. Quill self-styles and we
+  // ship our own minimal reset, so Preflight isn't needed; utilities still generate.
+  corePlugins: { preflight: false }, theme: { extend: {
+    colors: {
+      border: "var(--border)", input: "var(--input)", ring: "var(--ring)",
+      background: "var(--background)", foreground: "var(--foreground)",
+      primary: { DEFAULT: "var(--primary)", foreground: "var(--primary-foreground)" },
+      secondary: { DEFAULT: "var(--secondary)", foreground: "var(--secondary-foreground)" },
+      destructive: { DEFAULT: "var(--destructive)", foreground: "var(--destructive-foreground)" },
+      muted: { DEFAULT: "var(--muted)", foreground: "var(--muted-foreground)" },
+      accent: { DEFAULT: "var(--accent)", foreground: "var(--accent-foreground)" },
+      popover: { DEFAULT: "var(--popover)", foreground: "var(--popover-foreground)" },
+      card: { DEFAULT: "var(--card)", foreground: "var(--card-foreground)" },
+      success: { DEFAULT: "var(--success)", foreground: "var(--success-foreground)" },
+    },
+    borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
+  } } };
+</script>`
+      : "";
 
   // The bootstrap module. It is static (no user input) so it can be inlined
   // safely. It waits for `init`, transpiles the canvas with Babel, runs it from
@@ -206,6 +244,10 @@ export function buildSandboxDocument(
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <script type="importmap">${importMap}</script>
+${tailwind}
+${FREEFORM_QUILL_CSS_URLS.map(
+  (href) => `<link rel="stylesheet" href="${href}" />`,
+).join("\n")}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -241,8 +283,10 @@ function contentSecurityPolicy(
     return [
       "default-src 'none'",
       // Inline bootstrap + esm.sh modules + the transpiled Blob module + the
-      // posthog-js recorder script.
-      `script-src 'unsafe-inline' blob: ${esm} ${ph}`,
+      // posthog-js recorder script + the Tailwind Play CDN (which JIT-compiles
+      // in-browser, so it needs 'unsafe-eval'). The CDN is edit-mode ONLY — view
+      // mode keeps egress locked and self-hosts styles instead.
+      `script-src 'unsafe-inline' 'unsafe-eval' blob: https://cdn.tailwindcss.com ${esm} ${ph}`,
       `style-src 'unsafe-inline' ${esm}`,
       `font-src data: ${esm}`,
       "img-src data: blob: https:",

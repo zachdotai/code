@@ -23,6 +23,8 @@ export const dashboardRecordSchema = z.object({
   code: z.string().optional(),
   versions: z.array(freeformVersionSchema).optional(),
   currentVersionId: z.string().optional(),
+  // Freeform only: the live author-written context (markdown) passed to the agent.
+  context: z.string().optional(),
   // Display name of whoever created the file-system row (from the backend's
   // `created_by` user). Absent for rows the API returns without a creator.
   createdBy: z.string().optional(),
@@ -49,6 +51,8 @@ export const dashboardFileMetaSchema = z.object({
   code: z.string().optional(),
   versions: z.array(freeformVersionSchema).optional(),
   currentVersionId: z.string().optional(),
+  // Freeform only: the live author-written context (markdown) passed to the agent.
+  context: z.string().optional(),
   // Display name of the creator, stamped at create time. We can't rely on the
   // FS row's `created_by` (the list endpoint doesn't expand it), so we store our
   // own. Absent on boards created before this field existed.
@@ -98,6 +102,9 @@ export const saveFreeformInput = z.object({
   code: z.string(),
   versions: z.array(freeformVersionSchema),
   currentVersionId: z.string().optional(),
+  // The live author-written context (markdown). Persisted alongside code so the
+  // Context tab survives reloads and rides into every agent turn.
+  context: z.string().optional(),
 });
 
 export const dashboardIdInput = z.object({ id: z.string().min(1) });

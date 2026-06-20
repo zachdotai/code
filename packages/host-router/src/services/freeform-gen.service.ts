@@ -3,7 +3,6 @@ import type { ContentBlock } from "@agentclientprotocol/sdk";
 import type { AuthService } from "@posthog/core/auth/auth";
 import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
 import {
-  FREEFORM_TEMPLATE_ID,
   FreeformGenEvent,
   type FreeformGenEvents,
   type FreeformGenerateInput,
@@ -31,6 +30,13 @@ import {
 import { inject, injectable } from "inversify";
 
 const TASK_RUN_PREFIX = "freeform:";
+
+// The agent throws `Session not found: <id>` (workspace-server agent.ts) when a
+// turn targets a session that's been reaped after idle — the trigger for our
+// recreate-and-retry path.
+function isSessionNotFound(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("Session not found");
+}
 
 // Same hard tool denial as the json-render canvas agent: it writes its app as
 // text in its reply, never to disk, and reads PostHog only via MCP. Everything
@@ -79,10 +85,10 @@ export class FreeformGenService extends TypedEventEmitter<FreeformGenEvents> {
   }
 
   async generate(input: FreeformGenerateInput): Promise<void> {
-    const { threadId, prompt, model } = input;
+    const { threadId, prompt, templateId, model } = input;
     const taskRunId = `${TASK_RUN_PREFIX}${threadId}`;
     const systemPrompt =
-      this.templatesService.systemPromptFor(FREEFORM_TEMPLATE_ID);
+      this.templatesService.freeformSystemPromptFor(templateId);
 
     this.ensureForwarding();
 
@@ -105,16 +111,51 @@ export class FreeformGenService extends TypedEventEmitter<FreeformGenEvents> {
 
     const promptBlocks: ContentBlock[] = [{ type: "text", text: prompt }];
     try {
-      await this.agentService.prompt(taskRunId, promptBlocks);
-      this.threads.get(threadId)?.parser.flush();
-      this.emitEvent(threadId, { type: "done" });
+      await this.promptOnce(threadId, taskRunId, promptBlocks);
+      return;
     } catch (err) {
-      this.log.warn("Freeform prompt failed", { threadId, err });
-      this.emitEvent(threadId, {
-        type: "error",
-        message: err instanceof Error ? err.message : String(err),
-      });
+      // Anything other than a reaped session is a real failure — surface it.
+      if (!isSessionNotFound(err)) {
+        this.failPrompt(threadId, err);
+        return;
+      }
+      // The ephemeral agent session is reaped after idle; the in-memory
+      // `startedSessions` flag can't know that, so `ensureSession` skipped the
+      // restart and the prompt hit a dead session. Rebuild and retry ONCE — each
+      // turn re-sends the full current file, so a fresh session loses nothing.
+      this.log.warn("Freeform session was reaped; recreating", { threadId });
     }
+
+    this.startedSessions.delete(threadId);
+    this.threads.delete(threadId);
+    await this.agentService.cancelSession(taskRunId).catch(() => {});
+    try {
+      // ensureSession installs a fresh parser; the "started" event already fired.
+      await this.ensureSession(threadId, taskRunId, systemPrompt, model);
+      await this.promptOnce(threadId, taskRunId, promptBlocks);
+    } catch (err) {
+      this.failPrompt(threadId, err);
+    }
+  }
+
+  // Run one prompt turn against an existing session, flushing the parser and
+  // signalling done on success. Throws on failure (caller decides retry/fail).
+  private async promptOnce(
+    threadId: string,
+    taskRunId: string,
+    promptBlocks: ContentBlock[],
+  ): Promise<void> {
+    await this.agentService.prompt(taskRunId, promptBlocks);
+    this.threads.get(threadId)?.parser.flush();
+    this.emitEvent(threadId, { type: "done" });
+  }
+
+  private failPrompt(threadId: string, err: unknown): void {
+    this.log.warn("Freeform prompt failed", { threadId, err });
+    this.emitEvent(threadId, {
+      type: "error",
+      message: err instanceof Error ? err.message : String(err),
+    });
   }
 
   async reset(input: FreeformThreadInput): Promise<void> {

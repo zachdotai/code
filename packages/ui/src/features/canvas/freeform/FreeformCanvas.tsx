@@ -31,6 +31,12 @@ export interface FreeformCanvasProps {
    * never crosses into the iframe.
    */
   analytics?: CanvasAnalyticsConfig;
+  /**
+   * Bump to force a full iframe reload (a fresh boot re-runs the app's data
+   * `useEffect`s = a real refresh). Folded into the srcDoc so changing it
+   * reloads the frame via the existing reload path.
+   */
+  refreshKey?: number;
 }
 
 // Renders a freeform-React canvas inside a null-origin sandboxed iframe and
@@ -43,6 +49,7 @@ export function FreeformCanvas({
   onError,
   onRendered,
   analytics,
+  refreshKey = 0,
 }: FreeformCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | null>(null);
@@ -55,10 +62,12 @@ export function FreeformCanvas({
   // for posthog-js), not on code: code is injected via `init`, so changing it
   // never reloads the iframe — it re-renders in place.
   const analyticsHost = analytics?.apiHost;
-  const srcDoc = useMemo(
-    () => buildSandboxDocument(mode, analyticsHost),
-    [mode, analyticsHost],
-  );
+  const srcDoc = useMemo(() => {
+    const doc = buildSandboxDocument(mode, analyticsHost);
+    // Append the refresh nonce as a comment so a bump changes the srcDoc string,
+    // which reloads the iframe (re-announces "ready" → re-init → fresh run).
+    return refreshKey > 0 ? `${doc}\n<!-- refresh:${refreshKey} -->` : doc;
+  }, [mode, analyticsHost, refreshKey]);
 
   // Latest props, read by the once-bound listener + the (stable) postInit.
   const latest = useRef({

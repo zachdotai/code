@@ -6,14 +6,15 @@ import {
 import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
+import { useCanvasRefreshNonce } from "@posthog/ui/features/canvas/stores/canvasRefreshStore";
 import {
   useFreeformChatStore,
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
-import { Flex, ScrollArea, Text } from "@radix-ui/themes";
+import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FreeformCanvas } from "./FreeformCanvas";
 import { FreeformChat } from "./FreeformChat";
 import { handleFreeformDataRequest } from "./freeformDataBridge";
@@ -37,6 +38,19 @@ export function FreeformCanvasView({
   const setRuntimeError = useFreeformChatStore((s) => s.setRuntimeError);
 
   useEffect(() => registerFreeformSubscription(threadId), [threadId]);
+
+  // Toolbar Refresh bumps this nonce → reloads the iframe → re-runs the app's
+  // data queries.
+  const refreshKey = useCanvasRefreshNonce(threadId);
+
+  // Freeze what's rendered during a turn. The agent streams partial code that, if
+  // rendered live, re-mounts the app and throws transient runtime errors (the
+  // flickering "Runtime error"). Hold the last good render and swap only when the
+  // turn finishes — the swooping loader bar signals progress in the meantime.
+  const [displayCode, setDisplayCode] = useState(code);
+  useEffect(() => {
+    if (!isStreaming) setDisplayCode(code);
+  }, [isStreaming, code]);
 
   // Public capture key + the signed-in user's distinct_id, so posthog-js can run
   // inside the iframe (analytics + session replay). Edit mode runs on a
@@ -119,7 +133,7 @@ export function FreeformCanvasView({
                 </Text>
               )}
             </Flex>
-            {runtimeError && (
+            {!isStreaming && runtimeError && (
               <Flex align="center" gap="2">
                 <Flex align="center" gap="1" className="text-red-11">
                   <WarningIcon size={14} />
@@ -138,38 +152,50 @@ export function FreeformCanvasView({
           </Flex>
         )}
 
-        <ScrollArea className="flex-1">
-          {code ? (
-            <ErrorBoundary name="freeform-canvas" resetKey={threadId}>
-              <FreeformCanvas
-                code={code}
-                mode="edit"
-                onDataRequest={handleFreeformDataRequest}
-                onError={onError}
-                onRendered={onRendered}
-                analytics={analytics}
-              />
-            </ErrorBoundary>
-          ) : (
-            <Flex
-              direction="column"
-              align="center"
-              justify="center"
-              height="100%"
-              gap="1"
-              className="px-6 text-center"
-            >
-              <Text size="3" weight="bold" className="text-gray-12">
-                Freeform canvas
-              </Text>
-              <Text size="2" className="text-gray-10">
-                {interactive
-                  ? "Ask the agent on the right to build a React app from your PostHog data."
-                  : "This canvas is empty. Hit Edit to build it with the agent."}
-              </Text>
-            </Flex>
-          )}
-        </ScrollArea>
+        <Box position="relative" className="min-h-0 flex-1">
+          {/* Swooping accent bar across the top of the canvas while the agent turns. */}
+          <div
+            aria-hidden
+            className={
+              isStreaming
+                ? "quill-section-loading quill-section-loading--active"
+                : "quill-section-loading"
+            }
+          />
+          <ScrollArea className="h-full">
+            {displayCode ? (
+              <ErrorBoundary name="freeform-canvas" resetKey={threadId}>
+                <FreeformCanvas
+                  code={displayCode}
+                  mode="edit"
+                  onDataRequest={handleFreeformDataRequest}
+                  onError={onError}
+                  onRendered={onRendered}
+                  analytics={analytics}
+                  refreshKey={refreshKey}
+                />
+              </ErrorBoundary>
+            ) : (
+              <Flex
+                direction="column"
+                align="center"
+                justify="center"
+                height="100%"
+                gap="1"
+                className="px-6 text-center"
+              >
+                <Text size="3" weight="bold" className="text-gray-12">
+                  Freeform canvas
+                </Text>
+                <Text size="2" className="text-gray-10">
+                  {interactive
+                    ? "Ask the agent on the right to build a React app from your PostHog data."
+                    : "This canvas is empty. Hit Edit to build it with the agent."}
+                </Text>
+              </Flex>
+            )}
+          </ScrollArea>
+        </Box>
       </Flex>
 
       {interactive && <FreeformChat threadId={threadId} />}

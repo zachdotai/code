@@ -5,6 +5,17 @@ import { z } from "zod";
 // a freeform canvas (code in an iframe) from a json-render one (spec tree).
 export const FREEFORM_TEMPLATE_ID = "freeform";
 
+// Template ids that render on the React (freeform iframe) tier rather than the
+// json-render catalog. A canvas created from one of these gets `kind: "freeform"`
+// (see dashboardsService.create), so it streams React code and renders in the
+// sandbox. The generic freeform sandbox plus the opinionated dashboard /
+// web-analytics templates (which now build React apps, not json-render specs).
+export const REACT_TIER_TEMPLATE_IDS: ReadonlySet<string> = new Set([
+  FREEFORM_TEMPLATE_ID,
+  "dashboard",
+  "web-analytics",
+]);
+
 // A single point in a freeform canvas's edit history. Every agent turn appends
 // one full-file snapshot (Q7: full-file rewrite); the user can revert to any of
 // them and the `currentVersionId` pointer is what publishes. We keep whole-file
@@ -14,7 +25,12 @@ export const freeformVersionSchema = z.object({
   id: z.string(),
   // The complete single-file React source for this version.
   code: z.string(),
-  // The user prompt that produced this version (absent for the seed/empty one).
+  // The author-written context (markdown) passed to the agent, as it stood for
+  // this version. Snapshotted so reverting restores the context too. Absent on
+  // versions saved before the Context tab existed.
+  context: z.string().optional(),
+  // The user prompt that produced this version (absent for the seed/empty one,
+  // and for a version created by a context-only edit).
   prompt: z.string().optional(),
   // Epoch ms the version was created.
   createdAt: z.number(),
@@ -33,6 +49,9 @@ export const freeformCanvasSchema = z.object({
   // Which version is live. Undo/redo moves this pointer; a new agent turn
   // truncates any "redo" tail (Q8: linear-discard) and appends.
   currentVersionId: z.string().optional(),
+  // The live author-written context (markdown), mirrors the version pointed to by
+  // currentVersionId. Prepended to every agent turn so the build is anchored to it.
+  context: z.string().default(""),
 });
 export type FreeformCanvas = z.infer<typeof freeformCanvasSchema>;
 
@@ -66,6 +85,9 @@ export const freeformGenerateInput = z.object({
   // The canvas's current source, sent each turn so the session is anchored to
   // what's on screen even after a renderer reload. Empty/absent = new canvas.
   currentCode: z.string().nullish(),
+  // The canvas's template id, so the agent gets the matching React-tier prompt
+  // (generic sandbox vs the opinionated dashboard / web-analytics prompt).
+  templateId: z.string().optional(),
   model: z.string().optional(),
 });
 export type FreeformGenerateInput = z.infer<typeof freeformGenerateInput>;
