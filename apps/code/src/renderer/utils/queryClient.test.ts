@@ -63,6 +63,14 @@ describe("getCachedTask", () => {
   });
 });
 
+describe("defaultOptions", () => {
+  it("defaults refetchOnWindowFocus to false so returning to the app does not refetch every query", () => {
+    expect(queryClient.getDefaultOptions().queries?.refetchOnWindowFocus).toBe(
+      false,
+    );
+  });
+});
+
 describe("focusManager", () => {
   it("flips focus state on window focus/blur events", () => {
     window.dispatchEvent(new Event("blur"));
