@@ -22,7 +22,7 @@ import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { Flex, Text } from "@radix-ui/themes";
 import { motion } from "framer-motion";
-import { Fragment, useCallback, useEffect, useMemo } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo } from "react";
 
 interface TaskListViewProps {
   pinnedTasks: TaskData[];
@@ -53,19 +53,19 @@ function SectionLabel({ label }: { label: string }) {
   return <MenuLabel className="flex items-center py-0">{label}</MenuLabel>;
 }
 
-function TaskRow({
+const TaskRow = memo(function TaskRow({
   task,
   isActive,
   isSelected,
   hideHoverActions,
   isEditing,
-  onClick,
-  onDoubleClick,
-  onContextMenu,
-  onArchive,
-  onTogglePin,
-  onEditSubmit,
-  onEditCancel,
+  onTaskClick,
+  onTaskDoubleClick,
+  onTaskContextMenu,
+  onTaskArchive,
+  onTaskTogglePin,
+  onTaskEditSubmit,
+  onTaskEditCancel,
   timestamp,
   depth = 0,
 }: {
@@ -74,13 +74,21 @@ function TaskRow({
   isSelected: boolean;
   hideHoverActions: boolean;
   isEditing: boolean;
-  onClick: (e: React.MouseEvent) => void;
-  onDoubleClick: () => void;
-  onContextMenu: (e: React.MouseEvent, isPinned: boolean) => void;
-  onArchive: () => void;
-  onTogglePin: () => void;
-  onEditSubmit: (newTitle: string) => void;
-  onEditCancel: () => void;
+  onTaskClick: (taskId: string, e: React.MouseEvent) => void;
+  onTaskDoubleClick: (taskId: string) => void;
+  onTaskContextMenu: (
+    taskId: string,
+    e: React.MouseEvent,
+    isPinned: boolean,
+  ) => void;
+  onTaskArchive: (taskId: string) => void;
+  onTaskTogglePin: (taskId: string) => void;
+  onTaskEditSubmit: (
+    taskId: string,
+    currentTitle: string,
+    newTitle: string,
+  ) => void;
+  onTaskEditCancel: () => void;
   timestamp: number;
   depth?: number;
 }) {
@@ -117,16 +125,18 @@ function TaskRow({
       hasDiff={hasDiff}
       prUrl={task.cloudPrUrl}
       timestamp={timestamp}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      onContextMenu={(e) => onContextMenu(e, task.isPinned)}
-      onArchive={onArchive}
-      onTogglePin={onTogglePin}
-      onEditSubmit={onEditSubmit}
-      onEditCancel={onEditCancel}
+      onClick={(e) => onTaskClick(task.id, e)}
+      onDoubleClick={() => onTaskDoubleClick(task.id)}
+      onContextMenu={(e) => onTaskContextMenu(task.id, e, task.isPinned)}
+      onArchive={() => onTaskArchive(task.id)}
+      onTogglePin={() => onTaskTogglePin(task.id)}
+      onEditSubmit={(newTitle) =>
+        onTaskEditSubmit(task.id, task.title, newTitle)
+      }
+      onEditCancel={onTaskEditCancel}
     />
   );
-}
+});
 
 export function TaskListView({
   pinnedTasks,
@@ -202,17 +212,13 @@ export function TaskListView({
               isSelected={selectedIdSet.has(task.id)}
               hideHoverActions={hasMultiSelection}
               isEditing={editingTaskId === task.id}
-              onClick={(e) => onTaskClick(task.id, e)}
-              onDoubleClick={() => onTaskDoubleClick(task.id)}
-              onContextMenu={(e, isPinned) =>
-                onTaskContextMenu(task.id, e, isPinned)
-              }
-              onArchive={() => onTaskArchive(task.id)}
-              onTogglePin={() => onTaskTogglePin(task.id)}
-              onEditSubmit={(newTitle) =>
-                onTaskEditSubmit(task.id, task.title, newTitle)
-              }
-              onEditCancel={onTaskEditCancel}
+              onTaskClick={onTaskClick}
+              onTaskDoubleClick={onTaskDoubleClick}
+              onTaskContextMenu={onTaskContextMenu}
+              onTaskArchive={onTaskArchive}
+              onTaskTogglePin={onTaskTogglePin}
+              onTaskEditSubmit={onTaskEditSubmit}
+              onTaskEditCancel={onTaskEditCancel}
               timestamp={task[timestampKey]}
             />
           ))}
@@ -307,17 +313,13 @@ export function TaskListView({
                         isSelected={selectedIdSet.has(task.id)}
                         hideHoverActions={hasMultiSelection}
                         isEditing={editingTaskId === task.id}
-                        onClick={(e) => onTaskClick(task.id, e)}
-                        onDoubleClick={() => onTaskDoubleClick(task.id)}
-                        onContextMenu={(e, isPinned) =>
-                          onTaskContextMenu(task.id, e, isPinned)
-                        }
-                        onArchive={() => onTaskArchive(task.id)}
-                        onTogglePin={() => onTaskTogglePin(task.id)}
-                        onEditSubmit={(newTitle) =>
-                          onTaskEditSubmit(task.id, task.title, newTitle)
-                        }
-                        onEditCancel={onTaskEditCancel}
+                        onTaskClick={onTaskClick}
+                        onTaskDoubleClick={onTaskDoubleClick}
+                        onTaskContextMenu={onTaskContextMenu}
+                        onTaskArchive={onTaskArchive}
+                        onTaskTogglePin={onTaskTogglePin}
+                        onTaskEditSubmit={onTaskEditSubmit}
+                        onTaskEditCancel={onTaskEditCancel}
                         timestamp={task[timestampKey]}
                         depth={1}
                       />
@@ -341,17 +343,13 @@ export function TaskListView({
                   isSelected={selectedIdSet.has(task.id)}
                   hideHoverActions={hasMultiSelection}
                   isEditing={editingTaskId === task.id}
-                  onClick={(e) => onTaskClick(task.id, e)}
-                  onDoubleClick={() => onTaskDoubleClick(task.id)}
-                  onContextMenu={(e, isPinned) =>
-                    onTaskContextMenu(task.id, e, isPinned)
-                  }
-                  onArchive={() => onTaskArchive(task.id)}
-                  onTogglePin={() => onTaskTogglePin(task.id)}
-                  onEditSubmit={(newTitle) =>
-                    onTaskEditSubmit(task.id, task.title, newTitle)
-                  }
-                  onEditCancel={onTaskEditCancel}
+                  onTaskClick={onTaskClick}
+                  onTaskDoubleClick={onTaskDoubleClick}
+                  onTaskContextMenu={onTaskContextMenu}
+                  onTaskArchive={onTaskArchive}
+                  onTaskTogglePin={onTaskTogglePin}
+                  onTaskEditSubmit={onTaskEditSubmit}
+                  onTaskEditCancel={onTaskEditCancel}
                   timestamp={task[timestampKey]}
                 />
               ))}
