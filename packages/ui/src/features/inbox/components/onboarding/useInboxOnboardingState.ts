@@ -94,7 +94,8 @@ export function useInboxOnboardingState(): InboxOnboardingState {
   // `useRepositoryIntegration` is the same signal the Agents view uses to
   // surface "Connected and active (N repos)" — gating on this keeps the
   // onboarding consistent with what the user sees over there.
-  const { hasGithubIntegration, repositories } = useRepositoryIntegration();
+  const { hasGithubIntegration, repositories, isLoadingRepos } =
+    useRepositoryIntegration();
   const { data: teamConfig, isLoading: teamConfigLoading } =
     useSignalTeamConfig();
   const { displayValues, isLoading: sourcesLoading } = useSignalSourceToggles();
@@ -128,7 +129,12 @@ export function useInboxOnboardingState(): InboxOnboardingState {
     isLastStep: currentIndex === STEP_ORDER.length - 1,
     slackChannelApplicable,
     isComplete: githubDone && slackDone && activateDone,
-    isLoading: teamConfigLoading || sourcesLoading,
+    // Include the integrations-load window: `hasGithubIntegration` /
+    // `hasSlackIntegration` read from a store that starts empty and fills in
+    // async, so without this an onboarded user could see the takeover flash
+    // before integrations resolve. `isLoadingRepos` covers both the
+    // integration-list and repos fetch windows.
+    isLoading: teamConfigLoading || sourcesLoading || isLoadingRepos,
   };
 }
 
