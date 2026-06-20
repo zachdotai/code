@@ -1,8 +1,10 @@
 import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useRefreshDashboard } from "@posthog/ui/features/canvas/hooks/useRefreshDashboard";
 import { useCanvasRefreshStore } from "@posthog/ui/features/canvas/stores/canvasRefreshStore";
+import { track } from "@posthog/ui/shell/analytics";
 import { useEffect, useRef, useState } from "react";
 
 function threadIdFor(dashboardId: string): string {
@@ -14,8 +16,10 @@ function threadIdFor(dashboardId: string): string {
 // their stored HogQL. A single button — no polling/settings.
 export function DashboardRefreshControl({
   dashboardId,
+  channelId,
 }: {
   dashboardId: string;
+  channelId?: string;
 }) {
   const { dashboard } = useDashboard(dashboardId);
   const isFreeform = dashboard?.kind === "freeform";
@@ -34,6 +38,12 @@ export function DashboardRefreshControl({
   );
 
   const onClick = () => {
+    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+      action_type: "refresh",
+      surface: "canvas",
+      channel_id: channelId,
+      dashboard_id: dashboardId,
+    });
     if (isFreeform) {
       bump(threadIdFor(dashboardId));
       setSpinning(true);

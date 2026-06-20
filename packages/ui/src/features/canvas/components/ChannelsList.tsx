@@ -37,6 +37,7 @@ import {
   MenuLabel,
   Separator,
 } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
@@ -56,16 +57,24 @@ import {
   useChannelTaskMutations,
   useChannelTasks,
 } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import {
+  useDashboardMutations,
+  useDashboards,
+} from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
-import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { track } from "@posthog/ui/shell/analytics";
+import { AlertDialog, Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
+
+// Cap how many tasks each channel shows by default; the rest hide behind a
+// "View more" button so a busy channel doesn't dominate the sidebar.
+const MAX_VISIBLE_TASKS_PER_CHANNEL = 5;
 
 // A canvas's leading icon, chosen from its template so the tree reads at a
 // glance: bar chart for dashboards, line chart for web-analytics, plain file for
@@ -133,11 +142,23 @@ function ChannelMenu({
 
       await deleteChannel(channel.id);
       removeStar();
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channel.id,
+        success: true,
+      });
       // If we're inside the channel being deleted, fall back to the index.
       if (pathname.startsWith(`/website/${channel.id}`)) {
         void navigate({ to: "/website" });
       }
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channel.id,
+        success: false,
+      });
       toast.error("Couldn't delete channel", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -169,18 +190,32 @@ function ChannelMenu({
           sideOffset={4}
           className="w-auto min-w-fit"
         >
-          <DropdownMenuItem onClick={() => toggleStar()}>
+          <DropdownMenuItem
+            onClick={() => {
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: isStarred ? "unstar" : "star",
+                surface: "sidebar",
+                channel_id: channel.id,
+              });
+              toggleStar();
+            }}
+          >
             <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
             {isStarred ? "Unstar channel" : "Star channel"}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onClick={() =>
+            onClick={() => {
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: "edit_context_open",
+                surface: "sidebar",
+                channel_id: channel.id,
+              });
               navigate({
                 to: "/website/$channelId/context",
                 params: { channelId: channel.id },
-              })
-            }
+              });
+            }}
           >
             <FileTextIcon size={14} />
             Edit CONTEXT.md
@@ -248,7 +283,8 @@ function ChildRow({
   );
 }
 
-// A single saved canvas under a channel — navigates to its detail view.
+// A single saved canvas under a channel — navigates to its detail view, with a
+// right-click menu to delete it.
 function DashboardRow({
   channelId,
   dashboard,
@@ -259,19 +295,116 @@ function DashboardRow({
   active: boolean;
 }) {
   const navigate = useNavigate();
-  return (
-    <ChildRow
-      icon={iconForTemplate(dashboard.templateId)}
-      title={dashboard.name}
-      subtitle={`updated ${relativeTime(dashboard.updatedAt)}`}
-      active={active}
-      onClick={() =>
-        navigate({
-          to: "/website/$channelId/dashboards/$dashboardId",
-          params: { channelId, dashboardId: dashboard.id },
-        })
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { deleteDashboard, isDeleting } = useDashboardMutations();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const onDelete = async () => {
+    try {
+      await deleteDashboard(dashboard.id);
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channelId,
+        dashboard_id: dashboard.id,
+        kind: dashboard.kind,
+        success: true,
+      });
+      // Deleting destroys the canvas, including any child routes under it, so
+      // match the whole subtree (mirrors ChannelMenu.onDelete).
+      if (
+        pathname.startsWith(`/website/${channelId}/dashboards/${dashboard.id}`)
+      ) {
+        void navigate({
+          to: "/website/$channelId",
+          params: { channelId },
+        });
       }
-    />
+    } catch (error) {
+      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channelId,
+        dashboard_id: dashboard.id,
+        kind: dashboard.kind,
+        success: false,
+      });
+      toast.error("Couldn't delete canvas", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  return (
+    <>
+      <ContextMenu>
+        <Tooltip content={dashboard.name} delayDuration={600}>
+          <ContextMenuTrigger
+            render={
+              <Box>
+                <ChildRow
+                  icon={iconForTemplate(dashboard.templateId)}
+                  title={dashboard.name}
+                  subtitle={`updated ${relativeTime(dashboard.updatedAt)}`}
+                  active={active}
+                  onClick={() => {
+                    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+                      action_type: "open",
+                      surface: "sidebar",
+                      channel_id: channelId,
+                      dashboard_id: dashboard.id,
+                      kind: dashboard.kind,
+                      template_id: dashboard.templateId,
+                    });
+                    navigate({
+                      to: "/website/$channelId/dashboards/$dashboardId",
+                      params: { channelId, dashboardId: dashboard.id },
+                    });
+                  }}
+                />
+              </Box>
+            }
+          />
+        </Tooltip>
+        <ContextMenuContent>
+          <ContextMenuItem
+            variant="destructive"
+            disabled={isDeleting}
+            onClick={() => setConfirmOpen(true)}
+          >
+            <TrashIcon size={14} />
+            Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      <AlertDialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialog.Content maxWidth="420px" size="2">
+          <AlertDialog.Title size="3">Delete canvas</AlertDialog.Title>
+          <AlertDialog.Description size="1">
+            "{dashboard.name}" will be permanently deleted. This can't be
+            undone.
+          </AlertDialog.Description>
+          <Flex justify="end" gap="2" mt="4">
+            <AlertDialog.Cancel>
+              <Button variant="outline" size="sm">
+                Cancel
+              </Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={isDeleting}
+                onClick={() => void onDelete()}
+              >
+                Delete
+              </Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+    </>
   );
 }
 
@@ -299,7 +432,9 @@ function TaskRow({
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { fileTask, unfileTask } = useChannelTaskMutations();
-  const { archiveTask } = useArchiveTask();
+  // Archiving from the bluebird/channels nav should return to the website
+  // new-task screen, not the Code one.
+  const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
   const taskData = useChannelTaskData(task);
   const workspace = useWorkspace(taskId);
   const workspaceMode =
@@ -339,7 +474,23 @@ function TaskRow({
   const onFileTo = async (targetChannelId: string) => {
     try {
       await fileTask(targetChannelId, taskId, title);
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "file_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        target_channel_id: targetChannelId,
+        task_id: taskId,
+        success: true,
+      });
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "file_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        target_channel_id: targetChannelId,
+        task_id: taskId,
+        success: false,
+      });
       toast.error("Couldn't file task", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -349,7 +500,21 @@ function TaskRow({
   const onArchive = async () => {
     try {
       await archiveTask({ taskId });
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "archive_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        task_id: taskId,
+        success: true,
+      });
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "archive_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        task_id: taskId,
+        success: false,
+      });
       toast.error("Couldn't archive task", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -359,6 +524,13 @@ function TaskRow({
   const onRemove = async () => {
     try {
       await unfileTask(channelTaskId);
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "unfile_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        task_id: taskId,
+        success: true,
+      });
       if (pathname === `/website/${channelId}/tasks/${taskId}`) {
         void navigate({
           to: "/website/$channelId",
@@ -366,6 +538,13 @@ function TaskRow({
         });
       }
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "unfile_task",
+        surface: "sidebar",
+        channel_id: channelId,
+        task_id: taskId,
+        success: false,
+      });
       toast.error("Couldn't remove task from channel", {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -447,9 +626,22 @@ function ChannelSection({
   const [open, setOpen] = useState(isActive);
   // Lifted so the hover button group stays visible while the menu is open.
   const [menuOpen, setMenuOpen] = useState(false);
+  // Only the first few tasks per channel show by default; "View more" reveals
+  // another batch each click so a busy channel doesn't flood the sidebar.
+  const [taskLimit, setTaskLimit] = useState(MAX_VISIBLE_TASKS_PER_CHANNEL);
   useEffect(() => {
     if (isActive) setOpen(true);
   }, [isActive]);
+  // Toggle expansion; collapsing also resets back to the first batch of tasks.
+  const toggleOpen = () => {
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: open ? "collapse_channel" : "open_channel",
+      surface: "sidebar",
+      channel_id: channel.id,
+    });
+    setOpen((o) => !o);
+    if (open) setTaskLimit(MAX_VISIBLE_TASKS_PER_CHANNEL);
+  };
 
   // Lazy: a channel's canvases and filed tasks are only fetched once it's
   // expanded, so the tree doesn't fire one query per channel on mount.
@@ -462,6 +654,13 @@ function ChannelSection({
     ({ taskId }) =>
       !archivedTaskIds.has(taskId) && tasks?.some((t) => t.id === taskId),
   );
+  const displayedFiledTasks = visibleFiledTasks.slice(0, taskLimit);
+  const hiddenTaskCount = visibleFiledTasks.length - displayedFiledTasks.length;
+  // Reveal one more batch, capped at the remaining count.
+  const nextBatchCount = Math.min(
+    hiddenTaskCount,
+    MAX_VISIBLE_TASKS_PER_CHANNEL,
+  );
 
   return (
     <Box className="group/chan relative">
@@ -473,7 +672,7 @@ function ChannelSection({
       <Button
         variant="default"
         size="default"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
         aria-expanded={open}
         className="w-full min-w-0 flex-1 justify-start gap-2 aria-expanded:bg-transparent"
       >
@@ -503,12 +702,17 @@ function ChannelSection({
               variant="outline"
               size="icon-xs"
               aria-label={`New task in ${channel.name}`}
-              onClick={() =>
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "new_task_open",
+                  surface: "sidebar",
+                  channel_id: channel.id,
+                });
                 navigate({
                   to: "/website/$channelId/new",
                   params: { channelId: channel.id },
-                })
-              }
+                });
+              }}
               className={cn(
                 "transition-opacity group-hover:border-border",
                 menuOpen
@@ -541,7 +745,7 @@ function ChannelSection({
               active={pathname === `${base}/dashboards/${d.id}`}
             />
           ))}
-          {visibleFiledTasks.map(({ id: channelTaskId, taskId }) => {
+          {displayedFiledTasks.map(({ id: channelTaskId, taskId }) => {
             const task = tasks?.find((t) => t.id === taskId);
             const title = task?.title || "Untitled task";
             return (
@@ -563,6 +767,26 @@ function ChannelSection({
               />
             );
           })}
+          {hiddenTaskCount > 0 && (
+            <Button
+              variant="default"
+              size="default"
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "view_more_tasks",
+                  surface: "sidebar",
+                  channel_id: channel.id,
+                });
+                setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL);
+              }}
+              className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
+            >
+              <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
+                <CaretDownIcon size={12} />
+              </span>
+              View {nextBatchCount} more
+            </Button>
+          )}
         </Flex>
       )}
     </Box>
@@ -579,6 +803,19 @@ export function ChannelsList() {
 
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
   const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
+
+  // Fire CHANNELS_SPACE_VIEWED once per space mount, after channels first load
+  // (so the counts are accurate). The sidebar stays mounted while navigating
+  // between channels, so this naturally fires once per entry into the space.
+  const viewedTrackedRef = useRef(false);
+  useEffect(() => {
+    if (isLoading || viewedTrackedRef.current) return;
+    viewedTrackedRef.current = true;
+    track(ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED, {
+      channel_count: channels.length,
+      starred_count: starred.length,
+    });
+  }, [isLoading, channels.length, starred.length]);
 
   return (
     <>
