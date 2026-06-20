@@ -55,6 +55,10 @@ import { useInitialDirectoryFromFolderId } from "../hooks/useInitialDirectoryFro
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
+import {
+  type SuggestedPrompt,
+  SuggestedPromptCard,
+} from "./SuggestedPromptCard";
 import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
 
@@ -77,6 +81,12 @@ interface TaskInputProps {
    * needs a repo and attaches one lazily.
    */
   allowNoRepo?: boolean;
+  /**
+   * Channels new-task starter prompts. When provided, a column of suggestion
+   * cards renders below the input while it's empty; clicking one fills the
+   * composer. Channels-only — omitted on the /code new-task screen.
+   */
+  suggestions?: SuggestedPrompt[];
 }
 
 export function TaskInput({
@@ -91,6 +101,7 @@ export function TaskInput({
   channelContext,
   channelName,
   allowNoRepo,
+  suggestions,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
@@ -532,6 +543,7 @@ export function TaskInput({
     setAdditionalDirectories,
   } = useTaskCreation({
     editorRef,
+    sessionId,
     selectedDirectory,
     selectedRepository: selectedCloudRepository,
     githubUserIntegrationId: selectedGithubUserIntegrationId,
@@ -674,7 +686,14 @@ export function TaskInput({
         <DotPatternBackground className="h-[100.333%]" />
         <div
           style={{
-            top: "50%",
+            // Raise the input when the suggestion cards are shown so the longer
+            // list below it isn't squished against the bottom of the viewport.
+            // Tied to the same condition as the cards (which hide once the
+            // editor has content) so the input recenters as the user types.
+            top:
+              suggestions && suggestions.length > 0 && editorIsEmpty
+                ? "38%"
+                : "50%",
             transform: "translate(-50%, -50%)",
           }}
           className="absolute left-1/2 z-[1] flex w-[calc(100%-2rem)] max-w-[600px] flex-col gap-2"
@@ -922,7 +941,47 @@ export function TaskInput({
               )}
           </Flex>
           <div className="absolute top-full right-0 left-0 z-10">
-            <SuggestedTasksPanel />
+            {suggestions ? (
+              suggestions.length > 0 &&
+              editorIsEmpty && (
+                <div className="mt-6 flex flex-col gap-2">
+                  <Text
+                    size="1"
+                    weight="medium"
+                    className="px-2.5 text-(--gray-11)"
+                  >
+                    Suggestions
+                  </Text>
+                  <div className="grid grid-cols-2 gap-2">
+                    {suggestions.map((suggestion) => (
+                      <SuggestedPromptCard
+                        key={suggestion.label}
+                        suggestion={suggestion}
+                        onSelect={() => {
+                          // Use pending content (not setContent) so the
+                          // multi-line template — intro + "User input:" fill-in
+                          // lines — keeps its line breaks; focuses at the end.
+                          useDraftStore
+                            .getState()
+                            .actions.setPendingContent(sessionId, {
+                              segments: [
+                                { type: "text", text: suggestion.prompt },
+                              ],
+                            });
+                          // Bug/feature suggestions start in plan mode; the
+                          // analysis ones start in auto mode.
+                          if (isValidConfigValue(modeOption, suggestion.mode)) {
+                            setConfigOption(modeOption.id, suggestion.mode);
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
+            ) : (
+              <SuggestedTasksPanel />
+            )}
           </div>
         </div>
       </Flex>
