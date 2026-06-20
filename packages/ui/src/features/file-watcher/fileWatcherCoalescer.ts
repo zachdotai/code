@@ -63,7 +63,7 @@ export function createFileWatcherCoalescer(
     dispose() {
       if (timer !== null) {
         clearTimeout(timer);
-        timer = null;
+        flush();
       }
     },
   };

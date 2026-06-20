@@ -109,12 +109,25 @@ describe("createFileWatcherCoalescer", () => {
     expect(calls.invalidateGitBranch).toBe(2);
   });
 
-  it("does not flush after dispose", () => {
+  it("flushes pending work on dispose so a teardown mid-window drops nothing", () => {
     const { actions, calls } = makeActions();
     const c = createFileWatcherCoalescer(actions, 250);
     c.gitStateChanged();
+    c.fileChanged("a.ts");
+    c.dispose();
+    expect(calls.invalidateGitBranch).toBe(1);
+    expect(calls.invalidateFile).toEqual(["a.ts"]);
+    vi.advanceTimersByTime(1000);
+    expect(calls.invalidateGitBranch).toBe(1);
+    expect(calls.invalidateFile).toEqual(["a.ts"]);
+  });
+
+  it("dispose with no pending work does nothing", () => {
+    const { actions, calls } = makeActions();
+    const c = createFileWatcherCoalescer(actions, 250);
     c.dispose();
     vi.advanceTimersByTime(1000);
     expect(calls.invalidateGitBranch).toBe(0);
+    expect(calls.invalidateFile).toEqual([]);
   });
 });

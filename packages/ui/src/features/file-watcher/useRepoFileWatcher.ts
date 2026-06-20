@@ -45,15 +45,16 @@ export function useRepoFileWatcher(repoPath: string | null, taskId?: string) {
     () =>
       createFileWatcherCoalescer({
         invalidateFile(relativePath) {
+          if (!repoPath) return;
           queryClient.invalidateQueries({
             queryKey: cacheKeys.fsQueryKey("readRepoFile", {
-              repoPath: repoPath ?? "",
+              repoPath,
               filePath: relativePath,
             }),
           });
           queryClient.invalidateQueries({
             queryKey: cacheKeys.fsQueryKey("readRepoFileBounded", {
-              repoPath: repoPath ?? "",
+              repoPath,
               filePath: relativePath,
             }),
           });
