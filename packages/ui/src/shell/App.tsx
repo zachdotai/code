@@ -59,7 +59,6 @@ function App() {
     client: authenticatedClient,
     enabled:
       isAuthenticated && hasCompletedOnboarding && hasCodeAccess === true,
-    refetchOnWindowFocus: "always",
   });
   const currentOrg = currentUser?.organization;
   const needsAiApproval =
