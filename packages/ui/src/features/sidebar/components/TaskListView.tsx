@@ -59,13 +59,13 @@ const TaskRow = memo(function TaskRow({
   isSelected,
   hideHoverActions,
   isEditing,
-  onTaskClick,
-  onTaskDoubleClick,
-  onTaskContextMenu,
-  onTaskArchive,
-  onTaskTogglePin,
-  onTaskEditSubmit,
-  onTaskEditCancel,
+  onClick,
+  onDoubleClick,
+  onContextMenu,
+  onArchive,
+  onTogglePin,
+  onEditSubmit,
+  onEditCancel,
   timestamp,
   depth = 0,
 }: {
@@ -74,21 +74,21 @@ const TaskRow = memo(function TaskRow({
   isSelected: boolean;
   hideHoverActions: boolean;
   isEditing: boolean;
-  onTaskClick: (taskId: string, e: React.MouseEvent) => void;
-  onTaskDoubleClick: (taskId: string) => void;
-  onTaskContextMenu: (
+  onClick: (taskId: string, e: React.MouseEvent) => void;
+  onDoubleClick: (taskId: string) => void;
+  onContextMenu: (
     taskId: string,
     e: React.MouseEvent,
     isPinned: boolean,
   ) => void;
-  onTaskArchive: (taskId: string) => void;
-  onTaskTogglePin: (taskId: string) => void;
-  onTaskEditSubmit: (
+  onArchive: (taskId: string) => void;
+  onTogglePin: (taskId: string) => void;
+  onEditSubmit: (
     taskId: string,
     currentTitle: string,
     newTitle: string,
   ) => void;
-  onTaskEditCancel: () => void;
+  onEditCancel: () => void;
   timestamp: number;
   depth?: number;
 }) {
@@ -125,15 +125,13 @@ const TaskRow = memo(function TaskRow({
       hasDiff={hasDiff}
       prUrl={task.cloudPrUrl}
       timestamp={timestamp}
-      onClick={(e) => onTaskClick(task.id, e)}
-      onDoubleClick={() => onTaskDoubleClick(task.id)}
-      onContextMenu={(e) => onTaskContextMenu(task.id, e, task.isPinned)}
-      onArchive={() => onTaskArchive(task.id)}
-      onTogglePin={() => onTaskTogglePin(task.id)}
-      onEditSubmit={(newTitle) =>
-        onTaskEditSubmit(task.id, task.title, newTitle)
-      }
-      onEditCancel={onTaskEditCancel}
+      onClick={(e) => onClick(task.id, e)}
+      onDoubleClick={() => onDoubleClick(task.id)}
+      onContextMenu={(e) => onContextMenu(task.id, e, task.isPinned)}
+      onArchive={() => onArchive(task.id)}
+      onTogglePin={() => onTogglePin(task.id)}
+      onEditSubmit={(newTitle) => onEditSubmit(task.id, task.title, newTitle)}
+      onEditCancel={onEditCancel}
     />
   );
 });
@@ -212,13 +210,13 @@ export function TaskListView({
               isSelected={selectedIdSet.has(task.id)}
               hideHoverActions={hasMultiSelection}
               isEditing={editingTaskId === task.id}
-              onTaskClick={onTaskClick}
-              onTaskDoubleClick={onTaskDoubleClick}
-              onTaskContextMenu={onTaskContextMenu}
-              onTaskArchive={onTaskArchive}
-              onTaskTogglePin={onTaskTogglePin}
-              onTaskEditSubmit={onTaskEditSubmit}
-              onTaskEditCancel={onTaskEditCancel}
+              onClick={onTaskClick}
+              onDoubleClick={onTaskDoubleClick}
+              onContextMenu={onTaskContextMenu}
+              onArchive={onTaskArchive}
+              onTogglePin={onTaskTogglePin}
+              onEditSubmit={onTaskEditSubmit}
+              onEditCancel={onTaskEditCancel}
               timestamp={task[timestampKey]}
             />
           ))}
@@ -313,13 +311,13 @@ export function TaskListView({
                         isSelected={selectedIdSet.has(task.id)}
                         hideHoverActions={hasMultiSelection}
                         isEditing={editingTaskId === task.id}
-                        onTaskClick={onTaskClick}
-                        onTaskDoubleClick={onTaskDoubleClick}
-                        onTaskContextMenu={onTaskContextMenu}
-                        onTaskArchive={onTaskArchive}
-                        onTaskTogglePin={onTaskTogglePin}
-                        onTaskEditSubmit={onTaskEditSubmit}
-                        onTaskEditCancel={onTaskEditCancel}
+                        onClick={onTaskClick}
+                        onDoubleClick={onTaskDoubleClick}
+                        onContextMenu={onTaskContextMenu}
+                        onArchive={onTaskArchive}
+                        onTogglePin={onTaskTogglePin}
+                        onEditSubmit={onTaskEditSubmit}
+                        onEditCancel={onTaskEditCancel}
                         timestamp={task[timestampKey]}
                         depth={1}
                       />
@@ -343,13 +341,13 @@ export function TaskListView({
                   isSelected={selectedIdSet.has(task.id)}
                   hideHoverActions={hasMultiSelection}
                   isEditing={editingTaskId === task.id}
-                  onTaskClick={onTaskClick}
-                  onTaskDoubleClick={onTaskDoubleClick}
-                  onTaskContextMenu={onTaskContextMenu}
-                  onTaskArchive={onTaskArchive}
-                  onTaskTogglePin={onTaskTogglePin}
-                  onTaskEditSubmit={onTaskEditSubmit}
-                  onTaskEditCancel={onTaskEditCancel}
+                  onClick={onTaskClick}
+                  onDoubleClick={onTaskDoubleClick}
+                  onContextMenu={onTaskContextMenu}
+                  onArchive={onTaskArchive}
+                  onTogglePin={onTaskTogglePin}
+                  onEditSubmit={onTaskEditSubmit}
+                  onEditCancel={onTaskEditCancel}
                   timestamp={task[timestampKey]}
                 />
               ))}
