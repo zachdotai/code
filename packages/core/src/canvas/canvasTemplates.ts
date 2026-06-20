@@ -229,13 +229,14 @@ const FREEFORM_BASE = [
   "- FORBIDDEN: any other import, dynamic import(), require(), fetch(), XMLHttpRequest, <script> tags, or loading remote code. These are rejected and the canvas will fail to save.",
   "",
   "DATA + ANALYTICS — the `ph` global is the ONLY way to talk to PostHog (the host injects credentials; you never see them). Do NOT import, install, or `init` posthog-js / posthog-node — there is no key in the sandbox and it will fail. Use `ph` directly:",
-  "- `await ph.query(hogql)` runs HogQL and resolves to `{ columns: string[], results: any[][] }` (results is an array of rows; each row is an array of column values in `columns` order).",
+  "- `await ph.query(arg)` resolves to `{ columns, results }`. `arg` is EITHER a typed query node OR an inline HogQL string — and THE RESULT SHAPE DIFFERS, read it correctly or every value comes back 0:",
+  "  • PREFERRED — a typed query node: `ph.query({ kind: \"TrendsQuery\", series: [...], dateRange: {...}, ... })`. The product's OWN query runners compute it, so numbers match the PostHog UI exactly (sessionization, unique users, breakdowns, math, bounce rate) and the node's `dateRange` handles the window — no hand-written time SQL. Use for any standard metric (trends, funnels, retention, paths, web analytics).",
+  '    RESULT for a typed node: `results` is an array of SERIES OBJECTS (NOT rows). Each series = `{ data: number[] (per interval), labels: string[], days: string[] (ISO), count: number (sum), aggregated_value: number (single-value total), label, compare_label?: "current"|"previous" }`. So a KPI total = `results[0].count` (or `.aggregated_value`); a line chart = `results[0].data` over `results[0].days`. With `compareFilter`, the previous period is a SECOND series — find it by `compare_label === "previous"` (do NOT assume index order). `columns` is empty for typed nodes — ignore it.',
+  '  • ESCAPE HATCH — inline HogQL: `ph.query("SELECT …")`. Only for shapes a typed node can\'t express. RESULT: `{ columns: string[], results: rows[][] }` — each row an array of cell values in `columns` order; read `results[rowIndex][colIndex]`.',
+  "- HOW TO GET THE TYPED NODE: use the PostHog MCP tools (mcp__posthog__*) — create or open an insight that computes the metric, confirm its numbers, then copy that insight's `query` node into `ph.query(node)`. This reuses PostHog's validated query definition instead of reinventing it in SQL. NEVER fabricate a query or guess event/property names — discover them via MCP first.",
   '- `ph.capture(event, properties?, distinctId?)` sends an analytics event to the project (fire-and-forget; returns a promise). Use this for click/interaction tracking — e.g. `ph.capture("button_clicked", { label })`. NEVER roll your own posthog client or fetch the capture endpoint yourself.',
   "- Session replay, $session_id, and person attribution are handled automatically by the host's posthog-js running in the sandbox — you do NOT set session ids or initialise recording; just call ph.capture for custom events.",
-  "- Load data inside `useEffect` with `useState`; show a loading state first, then render. Handle the empty/error case.",
-  "- Always use the PostHog MCP tools (mcp__posthog__*) to discover real event/property names and verify a query before putting it in the code. NEVER fabricate metrics or guess column names.",
-  "- Workflow for each metric: build it as a saved insight first (create or reuse one via the PostHog MCP tools), confirm its HogQL returns the numbers you expect, THEN embed that exact validated HogQL in a `ph.query(...)` call. This keeps the query a real, reusable definition rather than an ad-hoc guess. (A future tier will let you reference the saved insight by name; for now copy its HogQL into `ph.query`.)",
-  "- Prefer querying insights/aggregations over raw event dumps; keep result sets small.",
+  "- Load data inside `useEffect` with `useState`; show a loading state first, then render. Handle the empty/error case. Keep result sets small — aggregate in the query, don't fetch raw event dumps.",
 ];
 
 const FREEFORM_STYLE = [
@@ -293,20 +294,20 @@ const FREEFORM_QUILL_RULES = [
 // React templates; correctness rules mirror the json-render tier's window logic.
 const FREEFORM_DATE_CONTROL_RULES = [
   "DATE WINDOW — your app owns the date control. Render Quill's `DateTimePicker` (the real PostHog date picker) — NEVER a custom Select, a native `<input type=date>`, or a hand-rolled control.",
-  '- Wire it up exactly like this: `import { Button, DateTimePicker, Popover, PopoverContent, PopoverTrigger, quickRanges } from "@posthog/quill"`. Seed window state from a quick range: `const def = quickRanges.find((r) => r.name === "Last 30 days") ?? quickRanges[0]; const [win, setWin] = useState({ start: def.rangeSetter(new Date()), end: new Date(), range: def });`. Render a `Popover` whose `PopoverTrigger` is a Quill `Button` (label `{win.range.name}`), with `<DateTimePicker value={win} onApply={(v) => { setWin(v); setOpen(false); }} onCancel={() => setOpen(false)} />` inside `PopoverContent`. Do NOT import the `DateTimeValue` TYPE — the sandbox strips types at runtime; use the values only.',
-  "- Drive your data `useEffect` off `win`: compute `from = win.start.getTime()` and `to = win.end.getTime()` (epoch ms) and re-run EVERY query when `win` changes.",
-  "- NEVER bake a window into HogQL with `now()` or a hardcoded `INTERVAL` — those ignore the picker. Compute `fromUnix = Math.floor(from / 1000)` and `toUnix = Math.floor(to / 1000)`, then write `timestamp >= toDateTime(fromUnix) AND timestamp < toDateTime(toUnix)` with those numbers interpolated (integer unix = unambiguous UTC; a bare 'YYYY-MM-DD' string would shift by the project timezone).",
-  "- HALF-OPEN always: `>= from AND < to` — never an inclusive `<= to` (it double-counts the boundary).",
-  "- For a prior-period comparison, use the equal-length window immediately before the current one (`prevFrom = from - (to - from)`, `prevTo = from`), so the comparison tracks the selected window length.",
-  "- Bucket on the same basis as the window (`toStartOfDay` / `toStartOfHour`); never mix in `now()`.",
+  '- Wire it up exactly like this: `import { Button, DateTimePicker, Popover, PopoverContent, PopoverTrigger, quickRanges } from "@posthog/quill"`. Seed window state from a quick range: `const def = quickRanges.find((r) => r.name === "Last 30 days") ?? quickRanges[0]; const [win, setWin] = useState({ start: def.rangeSetter(new Date()), end: new Date(), range: def });`. Render a `Popover` whose `PopoverTrigger` is a Quill `Button` (label `{win.range.name}`), with `<DateTimePicker compact value={win} onApply={(v) => { setWin(v); setOpen(false); }} onCancel={() => setOpen(false)} />` inside `PopoverContent`. Do NOT import the `DateTimeValue` TYPE — the sandbox strips types at runtime; use the values only.',
+  "- ALWAYS pass the `compact` prop to `DateTimePicker`. Without it the picker auto-detects screen size via a media query against the iframe viewport (which is full-width), picks the WIDE dual-calendar layout, and overflows the popover. `compact` forces the single-calendar layout that fits a popover.",
+  "- Drive your data `useEffect` off `win` and re-run EVERY query when it changes.",
+  "- PREFERRED — feed the window into your typed query node's `dateRange`: `dateRange: { date_from: win.start.toISOString(), date_to: win.end.toISOString() }`. The query runner handles the window (timezone, bucketing, half-open) — you write NO time SQL. This is the main reason to use typed nodes.",
+  "- ESCAPE HATCH (inline HogQL only) — NEVER bake a window with `now()` or a hardcoded `INTERVAL`. Compute `fromUnix = Math.floor(win.start.getTime() / 1000)` and `toUnix` likewise, then write HALF-OPEN `timestamp >= toDateTime(fromUnix) AND timestamp < toDateTime(toUnix)` (integer unix = unambiguous UTC; never an inclusive `<= to`, and never a bare 'YYYY-MM-DD' string which shifts by the project timezone). For a prior-period comparison use the equal-length window immediately before (`prevFrom = from - (to - from)`, `prevTo = from`); bucket with `toStartOfDay` / `toStartOfHour` on the same window.",
 ];
 
 // Opinionated React rules for the "dashboard" template (a live, data-driven board).
 const FREEFORM_DASHBOARD_RULES = [
   "This is a LIVE, DATA-DRIVEN dashboard built from the user's real PostHog data — not a static mockup.",
-  'Open with a `Heading` title, then a responsive grid (Tailwind `className="grid gap-4"`) of Quill `Card` KPIs (raw numbers via `ph.query`), then trend charts.',
+  'Open with a `Heading` title, then a responsive grid (Tailwind `className="grid gap-4"`) of Quill `Card` KPIs, then trend charts.',
+  "Each metric loads via `ph.query` — prefer a TYPED query node (TrendsQuery etc., numbers match the PostHog UI) over inline HogQL; get the node from an insight via the MCP tools.",
   "Visualize trends with `recharts` (LineChart for time series, BarChart for discrete categories) rather than dumping tables; show a compact `Card` KPI for single-number metrics and a `Badge` delta.",
-  "Each card/chart loads its own metric via `ph.query`; show a `SkeletonText`/`Skeleton` placeholder (see LOADING) while loading or refreshing, then the value, and handle empty/error.",
+  "Each card/chart shows a `SkeletonText`/`Skeleton` placeholder (see LOADING) while loading or refreshing, then the value, and handle empty/error.",
   ...FREEFORM_QUILL_RULES,
   ...FREEFORM_DATE_CONTROL_RULES,
 ];
@@ -316,8 +317,8 @@ const FREEFORM_DASHBOARD_RULES = [
 const FREEFORM_WEB_ANALYTICS_RULES = [
   'Build a PostHog-style WEB ANALYTICS board from the project\'s real data. Title it (e.g. "Web analytics") with an `<h1>` or Quill heading.',
   "LAYOUT, top to bottom: (1) a KPI row of cards — Visitors, Page views, Sessions, Session duration, Bounce rate — each with a delta vs the prior equal-length period. (2) A unique-visitors `recharts` LineChart over time with a second line for the prior period. (3) Top paths and traffic-source/channel breakdowns as tables. (4) Devices and geography tables (prefix countries with their flag emoji). Add retention / active-hours if the data supports it.",
-  "WEB-ANALYTICS HogQL: Visitors = `uniq(person_id)`; Page views = `countIf(event = '$pageview')`; Sessions = `uniq($session_id)`; Bounce rate from single-pageview sessions; Channel = `properties.$channel_type`; Device = `properties.$device_type`; Country = `properties.$geoip_country_name`. Verify column names via the MCP tools if unsure.",
-  "Format raw numeric values yourself for display (e.g. show 236K from 236000). Keep result sets small — aggregate in HogQL, don't fetch raw events.",
+  "USE PostHog's web-analytics query KINDS, not hand-rolled SQL — the product computes bounce rate, sessionization, channel attribution and unique-visitor counts in ways raw HogQL will subtly get wrong. Open the project's Web Analytics in the MCP tools, copy the underlying query nodes (e.g. `WebOverviewQuery`, `WebStatsTableQuery`), and pass them to `ph.query(node)` with the picker's `dateRange`. Only drop to inline HogQL for a metric no web-analytics kind covers.",
+  "Format raw numeric values yourself for display (e.g. show 236K from 236000). Keep result sets small.",
   ...FREEFORM_QUILL_RULES,
   ...FREEFORM_DATE_CONTROL_RULES,
 ];

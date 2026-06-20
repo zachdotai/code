@@ -110,21 +110,44 @@ export interface FreeformGenEvents {
 // Canvas data avenue: the host-side query the postMessage `ph.query` shim calls.
 // Routed through PostHog's cached query runner (the same avenue insights use, so
 // caching + cold-boot are handled), never a bare uncached /query (the token is
-// injected host-side; the iframe only sees this shape). Edit mode runs inline
-// HogQL; view/published mode (Phase 3) will reject inline and require a named,
-// server-stored insight via `run`.
+// injected host-side; the iframe only sees this shape).
+//
+// Two shapes (the agent picks per metric; see the canvas templates skill):
+//   • `query` — a TYPED query node (`{ kind: "TrendsQuery" | "FunnelsQuery" |
+//     "HogQLQuery" | … }`). PREFERRED: the product's own query runners compute it,
+//     so the numbers match the PostHog UI (sessionization, unique users, bounce
+//     rate, breakdowns, math) and the typed `dateRange` handles windows correctly.
+//   • `hogql` — an inline HogQL string (wrapped server-side as a HogQLQuery).
+//     Escape hatch for shapes a typed node can't express; the agent owns the SQL.
+// Exactly one must be present. Edit mode allows both; view/published mode (Phase 3)
+// rejects inline and requires a named, server-stored insight via `run`.
 // ---------------------------------------------------------------------------
-export const canvasDataQueryInput = z.object({
-  hogql: z.string().min(1),
-  // Reserved for bound parameters (Phase 3 named queries). Edit mode ignores it.
-  params: z.record(z.string(), z.unknown()).optional(),
-});
+export const canvasDataQueryInput = z
+  .object({
+    // A typed query node passed straight to the query runner. Opaque here (the
+    // node schemas are large + product-owned); validated by the API on execution.
+    query: z.record(z.string(), z.unknown()).optional(),
+    // Inline HogQL string (the escape hatch). Server wraps it as a HogQLQuery.
+    hogql: z.string().min(1).optional(),
+    // Reserved for bound parameters (Phase 3 named queries). Edit mode ignores it.
+    params: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine((v) => v.query != null || v.hogql != null, {
+    message: "ph.query requires a query node or a HogQL string",
+  });
 export type CanvasDataQueryInput = z.infer<typeof canvasDataQueryInput>;
 
 export const canvasDataResultSchema = z.object({
   columns: z.array(z.string()),
-  // Each row is an array of cell values, aligned to `columns`.
-  results: z.array(z.array(z.unknown())),
+  // The result rows. SHAPE DEPENDS ON THE QUERY KIND:
+  //   • HogQLQuery (inline `hogql`) → an array of ROWS, each row an array of cell
+  //     values aligned to `columns` (e.g. `[[123], [456]]`).
+  //   • Typed nodes (TrendsQuery/etc.) → an array of SERIES OBJECTS as PostHog
+  //     returns them — `{ data: number[], labels: string[], days: string[],
+  //     count, aggregated_value, compare_label, … }`. NOT rows-of-cells; passed
+  //     through untouched so the canvas reads the native trends shape.
+  // Hence `unknown` per element rather than `unknown[]`.
+  results: z.array(z.unknown()),
 });
 export type CanvasDataResult = z.infer<typeof canvasDataResultSchema>;
 

@@ -49,10 +49,25 @@ export function buildSandboxDocument(
   // wins over layered. That stripped Quill buttons (e.g. the Select trigger) of their
   // border/background while box-shadow-bordered Cards survived. Quill self-styles and we
   // ship our own minimal reset, so Preflight isn't needed; utilities still generate.
-  corePlugins: { preflight: false }, theme: { extend: {
+  // The FULL Quill color/fill token map (mirrors the @theme inline block in
+  // quill/tokens.css). Pure-utility components like DateTimePicker have NO BEM
+  // fallback in primitives.css — they rely entirely on these utilities (e.g. the
+  // calendar's \`bg-fill-hover\`, \`bg-fill-selected\`), so every token Quill maps
+  // must be here or the component renders half-styled.
+  corePlugins: { preflight: false },
+  plugins: [
+    // Quill authors for Tailwind v4; \`not-disabled:\` is a v4 variant the Play
+    // CDN (v3) lacks. The calendar uses \`not-disabled:hover:bg-fill-hover\`, so
+    // register it (composes with \`hover:\`) or those day-cell styles never generate.
+    tailwind.plugin(({ addVariant }) => {
+      addVariant("not-disabled", "&:not(:disabled)");
+    }),
+  ],
+  theme: { extend: {
     colors: {
       border: "var(--border)", input: "var(--input)", ring: "var(--ring)",
       background: "var(--background)", foreground: "var(--foreground)",
+      chrome: "var(--chrome)",
       primary: { DEFAULT: "var(--primary)", foreground: "var(--primary-foreground)" },
       secondary: { DEFAULT: "var(--secondary)", foreground: "var(--secondary-foreground)" },
       destructive: { DEFAULT: "var(--destructive)", foreground: "var(--destructive-foreground)" },
@@ -61,6 +76,15 @@ export function buildSandboxDocument(
       popover: { DEFAULT: "var(--popover)", foreground: "var(--popover-foreground)" },
       card: { DEFAULT: "var(--card)", foreground: "var(--card-foreground)" },
       success: { DEFAULT: "var(--success)", foreground: "var(--success-foreground)" },
+      warning: { DEFAULT: "var(--warning)", foreground: "var(--warning-foreground)" },
+      info: { DEFAULT: "var(--info)", foreground: "var(--info-foreground)" },
+      // Surface fills the calendar (and other stateful primitives) use for
+      // hover / selected / expanded backgrounds.
+      fill: {
+        hover: "var(--fill-hover)",
+        selected: "var(--fill-selected)",
+        expanded: "var(--fill-expanded)",
+      },
     },
     borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
   } } };
@@ -92,8 +116,16 @@ export function buildSandboxDocument(
     window.ph = {
       // Run a named, server-stored query (the only shape allowed in view mode).
       run: (name, params) => call("run", { name, params: params ?? {} }),
-      // Inline HogQL — edit mode only; rejected by the host in view mode.
-      query: (hogql, params) => call("query", { hogql, params: params ?? {} }),
+      // Run a query. Pass a TYPED query node (\`{ kind: "TrendsQuery", … }\`) for
+      // UI-matching numbers (preferred), or an inline HogQL string (escape hatch).
+      // Edit mode only; rejected by the host in view mode.
+      query: (queryOrHogql, params) =>
+        call(
+          "query",
+          typeof queryOrHogql === "string"
+            ? { hogql: queryOrHogql, params: params ?? {} }
+            : { query: queryOrHogql, params: params ?? {} },
+        ),
       // Send an analytics event. Prefer in-iframe posthog-js (so it shares the
       // session/replay); otherwise host-mediated (no replay, still captured).
       capture: (event, properties, distinctId) => {
