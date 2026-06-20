@@ -10,10 +10,12 @@ export const queryClient = new QueryClient({
   },
 });
 
-// Electron renderers stay visible when the BrowserWindow loses OS focus, so
-// `document.visibilitychange` (TanStack's default signal) never fires on
-// app-switch. Listen to window `focus`/`blur` as well so refetchOnWindowFocus
-// actually triggers when the user returns from an external browser.
+// Electron renderers stay "visible" when the BrowserWindow loses OS focus, so
+// `document.visibilitychange` (TanStack's default focus signal) never fires on
+// app-switch. Track window `focus`/`blur` so `focusManager` knows when the app
+// is backgrounded and pauses `refetchInterval` polling for the queries that
+// don't set `refetchIntervalInBackground`. Refetch-on-focus is off (see
+// `defaultOptions` above); this listener exists only for the polling gate.
 focusManager.setEventListener((handleFocus) => {
   if (typeof window === "undefined") return;
 
