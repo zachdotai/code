@@ -17,12 +17,19 @@ import {
 } from "@phosphor-icons/react";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import {
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   ButtonGroup,
   Collapsible,
   CollapsibleContent,
   CollapsibleHeader,
   CollapsibleTrigger,
+  AlertDialog as ConfirmDialog,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -141,14 +148,23 @@ function useChannelActions(channel: Channel): {
   actions: ChannelActionItem[];
   renameOpen: boolean;
   setRenameOpen: (open: boolean) => void;
+  confirmDeleteOpen: boolean;
+  setConfirmDeleteOpen: (open: boolean) => void;
+  confirmDelete: () => Promise<boolean>;
+  isDeleting: boolean;
 } {
   const [renameOpen, setRenameOpen] = useState(false);
+  // "Delete channel" opens a confirmation dialog rather than deleting inline —
+  // the action is destructive and irreversible.
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { deleteChannel, isDeleting } = useChannelMutations();
   const { isStarred, toggleStar, removeStar } = useChannelStarToggle(channel);
 
-  const onDelete = async () => {
+  // Runs the actual delete once confirmed. Returns whether it succeeded so the
+  // dialog can stay open (and show the toast) on failure.
+  const confirmDelete = async (): Promise<boolean> => {
     try {
       // Unfile the channel's dashboards + filed tasks first. The folder delete
       // would also cascade, but doing it explicitly via the typed endpoints
@@ -179,6 +195,7 @@ function useChannelActions(channel: Channel): {
       if (pathname.startsWith(`/website/${channel.id}`)) {
         void navigate({ to: "/website" });
       }
+      return true;
     } catch (error) {
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "delete",
@@ -189,6 +206,7 @@ function useChannelActions(channel: Channel): {
       toast.error("Couldn't delete channel", {
         description: error instanceof Error ? error.message : String(error),
       });
+      return false;
     }
   };
 
@@ -235,12 +253,19 @@ function useChannelActions(channel: Channel): {
       label: "Delete channel",
       icon: <TrashIcon size={14} />,
       variant: "destructive",
-      disabled: isDeleting,
-      onSelect: () => void onDelete(),
+      onSelect: () => setConfirmDeleteOpen(true),
     },
   ];
 
-  return { actions, renameOpen, setRenameOpen };
+  return {
+    actions,
+    renameOpen,
+    setRenameOpen,
+    confirmDeleteOpen,
+    setConfirmDeleteOpen,
+    confirmDelete,
+    isDeleting,
+  };
 }
 
 // Renders the shared channel actions into either menu primitive. Branching by
@@ -726,7 +751,15 @@ function ChannelSection({
   const [canvasOpen, setCanvasOpen] = useState(false);
   // Shared by the "..." dropdown and the right-click context menu so both offer
   // the same star / edit / rename / delete actions.
-  const { actions, renameOpen, setRenameOpen } = useChannelActions(channel);
+  const {
+    actions,
+    renameOpen,
+    setRenameOpen,
+    confirmDeleteOpen,
+    setConfirmDeleteOpen,
+    confirmDelete,
+    isDeleting,
+  } = useChannelActions(channel);
   // Only the first few tasks per channel show by default; "View more" reveals
   // another batch each click so a busy channel doesn't flood the sidebar.
   const [taskLimit, setTaskLimit] = useState(MAX_VISIBLE_TASKS_PER_CHANNEL);
@@ -1001,6 +1034,54 @@ function ChannelSection({
         open={renameOpen}
         onOpenChange={setRenameOpen}
       />
+      {/* Destructive confirm for "Delete channel" — spells out what's removed. */}
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete #{channel.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the channel and can’t be undone.
+              <ul className="list-disc ps-4">
+                <li>
+                  The channel and its{" "}
+                  <span className="font-medium">CONTEXT.md</span> are deleted.
+                </li>
+                <li>
+                  Every canvas saved in this channel is permanently deleted.
+                </li>
+                <li>
+                  Filed tasks are removed from the channel, but the tasks
+                  themselves are not deleted.
+                </li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose
+              render={
+                <Button variant="outline" size="sm">
+                  Cancel
+                </Button>
+              }
+            />
+            <Button
+              variant="destructive"
+              size="sm"
+              loading={isDeleting}
+              onClick={() =>
+                void confirmDelete().then((ok) => {
+                  if (ok) setConfirmDeleteOpen(false);
+                })
+              }
+            >
+              Delete channel
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </ConfirmDialog>
     </Box>
   );
 }
