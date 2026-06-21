@@ -53,3 +53,25 @@ canvas generation harness. The root `AGENTS.md` architecture rules still apply.
   concurrent edit elsewhere can clobber each other (no `base_version` on `meta`).
   Acceptable for now; revisit with optimistic concurrency / versioning if
   multi-client editing becomes real.
+
+## Channel sidebar preloading
+
+- A channel's contents load **lazily on expand**: `ChannelSection`
+  (`components/ChannelsList.tsx`) only passes a real `channelId` to its content
+  queries once `open` is true, so the tree doesn't fire one query per channel on
+  mount.
+- To keep first-open instant, the same caches are **warmed on hover/focus**:
+  `ChannelSection.prefetchContents()` runs from the row's `onMouseEnter` /
+  `onFocus` and prefetches every per-channel query. Each prefetch hook reuses the
+  query's `queryOptions` with the **same `staleTime`** as the live query, so it
+  no-ops when the data is already fresh.
+- **Rule: lazy-loaded content and preloading must stay in lockstep.** When you
+  add a new per-channel item type to the expanded tree (a new query gated on
+  `open`, like dashboards or filed tasks), you MUST also:
+  1. add a `usePrefetch…` hook next to that query (mirror `usePrefetchDashboards`
+     in `hooks/useDashboards.ts` / `usePrefetchChannelTasks` in
+     `hooks/useChannelTasks.ts` — same key, same `staleTime`), and
+  2. call it inside `ChannelSection.prefetchContents()`.
+
+  Otherwise the new content cold-fetches on first expand and reintroduces the
+  open jank the prefetch path exists to prevent.
