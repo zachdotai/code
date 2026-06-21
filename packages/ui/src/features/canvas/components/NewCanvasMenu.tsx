@@ -50,7 +50,7 @@ export function CanvasTemplateList({
   const createAndOpen = useCreateAndOpenDashboard(channelId);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1">
       {templates.map((t) => (
         <Button
           key={t.id}
@@ -66,8 +66,8 @@ export function CanvasTemplateList({
             );
           }}
         >
-          <span className="font-medium text-gray-12">{t.name}</span>
-          <span className="font-normal text-gray-10 text-xs [text-wrap:initial]">
+          <span className="font-medium">{t.name}</span>
+          <span className="font-normal text-muted-foreground/80 text-xs [text-wrap:initial]">
             {t.description}
           </span>
         </Button>

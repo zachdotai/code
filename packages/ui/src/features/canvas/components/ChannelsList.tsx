@@ -87,7 +87,7 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { AlertDialog, Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
 
 // Cap how many tasks each channel shows by default; the rest hide behind a
@@ -121,18 +121,27 @@ function relativeTime(ms: number): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-// Hover-revealed "..." menu on a channel header: rename or delete the channel.
-// `open`/`onOpenChange` are lifted so the parent's button group can stay
-// visible while the menu is open.
-function ChannelMenu({
-  channel,
-  open,
-  onOpenChange,
-}: {
-  channel: Channel;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+// One actionable entry in a channel's menu, rendered the same whether it
+// surfaces in the hover "..." dropdown or the right-click context menu.
+type ChannelActionItem = {
+  key: string;
+  label: string;
+  icon: ReactNode;
+  onSelect: () => void;
+  variant?: "destructive";
+  disabled?: boolean;
+  // Draw a divider above this item to separate it from the previous group.
+  separatorBefore?: boolean;
+};
+
+// The channel actions (star, edit context, rename, delete) plus the rename-modal
+// state they drive. Single source of truth so the dropdown and context menus
+// stay in lockstep — add an action here and both surfaces pick it up.
+function useChannelActions(channel: Channel): {
+  actions: ChannelActionItem[];
+  renameOpen: boolean;
+  setRenameOpen: (open: boolean) => void;
+} {
   const [renameOpen, setRenameOpen] = useState(false);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -183,83 +192,145 @@ function ChannelMenu({
     }
   };
 
+  const actions: ChannelActionItem[] = [
+    {
+      key: "star",
+      label: isStarred ? "Unstar channel" : "Star channel",
+      icon: <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />,
+      onSelect: () => {
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: isStarred ? "unstar" : "star",
+          surface: "sidebar",
+          channel_id: channel.id,
+        });
+        toggleStar();
+      },
+    },
+    {
+      key: "edit-context",
+      label: "Edit CONTEXT.md",
+      icon: <FileTextIcon size={14} />,
+      separatorBefore: true,
+      onSelect: () => {
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: "edit_context_open",
+          surface: "sidebar",
+          channel_id: channel.id,
+        });
+        navigate({
+          to: "/website/$channelId/context",
+          params: { channelId: channel.id },
+        });
+      },
+    },
+    {
+      key: "rename",
+      label: "Rename channel",
+      icon: <PencilSimpleIcon size={14} />,
+      separatorBefore: true,
+      onSelect: () => setRenameOpen(true),
+    },
+    {
+      key: "delete",
+      label: "Delete channel",
+      icon: <TrashIcon size={14} />,
+      variant: "destructive",
+      disabled: isDeleting,
+      onSelect: () => void onDelete(),
+    },
+  ];
+
+  return { actions, renameOpen, setRenameOpen };
+}
+
+// Renders the shared channel actions into either menu primitive. Branching by
+// `kind` (rather than a union-typed component) keeps the item/separator props
+// type-checked against each primitive.
+function ChannelActionItems({
+  actions,
+  kind,
+}: {
+  actions: ChannelActionItem[];
+  kind: "dropdown" | "context";
+}) {
+  if (kind === "dropdown") {
+    return (
+      <>
+        {actions.map((a) => (
+          <Fragment key={a.key}>
+            {a.separatorBefore && <DropdownMenuSeparator />}
+            <DropdownMenuItem
+              variant={a.variant}
+              disabled={a.disabled}
+              onClick={a.onSelect}
+            >
+              {a.icon}
+              {a.label}
+            </DropdownMenuItem>
+          </Fragment>
+        ))}
+      </>
+    );
+  }
   return (
     <>
-      <DropdownMenu open={open} onOpenChange={onOpenChange}>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              variant="outline"
-              size="icon-xs"
-              aria-label={`Options for ${channel.name}`}
-              className={cn(
-                "group-hover:border-border",
-                "transition-opacity",
-                open ? "opacity-100" : "opacity-0 group-hover/chan:opacity-100",
-              )}
-            >
-              <DotsThreeIcon size={14} weight="bold" />
-            </Button>
-          }
-        />
-        <DropdownMenuContent
-          align="end"
-          side="bottom"
-          sideOffset={4}
-          className="w-auto min-w-fit"
-        >
-          <DropdownMenuItem
-            onClick={() => {
-              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                action_type: isStarred ? "unstar" : "star",
-                surface: "sidebar",
-                channel_id: channel.id,
-              });
-              toggleStar();
-            }}
+      {actions.map((a) => (
+        <Fragment key={a.key}>
+          {a.separatorBefore && <ContextMenuSeparator />}
+          <ContextMenuItem
+            variant={a.variant}
+            disabled={a.disabled}
+            onClick={a.onSelect}
           >
-            <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
-            {isStarred ? "Unstar channel" : "Star channel"}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => {
-              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                action_type: "edit_context_open",
-                surface: "sidebar",
-                channel_id: channel.id,
-              });
-              navigate({
-                to: "/website/$channelId/context",
-                params: { channelId: channel.id },
-              });
-            }}
-          >
-            <FileTextIcon size={14} />
-            Edit CONTEXT.md
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setRenameOpen(true)}>
-            <PencilSimpleIcon size={14} />
-            Rename channel
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            variant="destructive"
-            disabled={isDeleting}
-            onClick={() => void onDelete()}
-          >
-            <TrashIcon size={14} />
-            Delete channel
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <RenameChannelModal
-        channel={channel}
-        open={renameOpen}
-        onOpenChange={setRenameOpen}
-      />
+            {a.icon}
+            {a.label}
+          </ContextMenuItem>
+        </Fragment>
+      ))}
     </>
+  );
+}
+
+// Hover-revealed "..." menu on a channel header. Presentation only — the action
+// list comes from `useChannelActions`, so it matches the right-click menu.
+function ChannelMenu({
+  channelName,
+  actions,
+  open,
+  onOpenChange,
+}: {
+  channelName: string;
+  actions: ChannelActionItem[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="outline"
+            size="icon-xs"
+            aria-label={`Options for ${channelName}`}
+            className={cn(
+              "group-hover:border-border",
+              "transition-opacity",
+              open ? "opacity-100" : "opacity-0 group-hover/chan:opacity-100",
+            )}
+          >
+            <DotsThreeIcon size={14} weight="bold" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent
+        align="end"
+        side="bottom"
+        sideOffset={4}
+        className="w-auto min-w-fit"
+      >
+        <ChannelActionItems actions={actions} kind="dropdown" />
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -653,6 +724,9 @@ function ChannelSection({
   // stacks on top when "New canvas" is chosen.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
+  // Shared by the "..." dropdown and the right-click context menu so both offer
+  // the same star / edit / rename / delete actions.
+  const { actions, renameOpen, setRenameOpen } = useChannelActions(channel);
   // Only the first few tasks per channel show by default; "View more" reveals
   // another batch each click so a busy channel doesn't flood the sidebar.
   const [taskLimit, setTaskLimit] = useState(MAX_VISIBLE_TASKS_PER_CHANNEL);
@@ -717,34 +791,44 @@ function ChannelSection({
           </CollapsibleTrigger>
           {/* Full-row surface under the overlaid icon — ps-8 clears it so the
               name lines up with the "New" button above, and the whole row opens
-              the channel index. */}
-          <Button
-            variant="default"
-            size="default"
-            left
-            data-selected={isIndexActive || undefined}
-            onClick={() => {
-              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                action_type: "nav_click",
-                surface: "sidebar",
-                channel_id: channel.id,
-              });
-              navigate({
-                to: "/website/$channelId",
-                params: { channelId: channel.id },
-              });
-            }}
-            className="w-full min-w-0 justify-start ps-8 data-selected:bg-fill-selected data-selected:text-gray-12"
-          >
-            <span
-              className={cn(
-                "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
-                menuOpen && "pr-8",
-              )}
-            >
-              {channel.name}
-            </span>
-          </Button>
+              the channel index. Right-clicking it opens the same actions as the
+              "..." menu. */}
+          <ContextMenu>
+            <ContextMenuTrigger
+              render={
+                <Button
+                  variant="default"
+                  size="default"
+                  left
+                  data-selected={isIndexActive || undefined}
+                  onClick={() => {
+                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                      action_type: "nav_click",
+                      surface: "sidebar",
+                      channel_id: channel.id,
+                    });
+                    navigate({
+                      to: "/website/$channelId",
+                      params: { channelId: channel.id },
+                    });
+                  }}
+                  className="w-full min-w-0 justify-start ps-8 data-selected:bg-fill-selected data-selected:text-gray-12"
+                >
+                  <span
+                    className={cn(
+                      "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
+                      menuOpen && "pr-8",
+                    )}
+                  >
+                    {channel.name}
+                  </span>
+                </Button>
+              }
+            />
+            <ContextMenuContent>
+              <ChannelActionItems actions={actions} kind="context" />
+            </ContextMenuContent>
+          </ContextMenu>
         </CollapsibleHeader>
         {/* Hover actions: new task + the options menu. Stay visible while the
             menu is open. */}
@@ -772,7 +856,8 @@ function ChannelSection({
               <TooltipContent side="top">New…</TooltipContent>
             </Tooltip>
             <ChannelMenu
-              channel={channel}
+              channelName={channel.name}
+              actions={actions}
               open={menuOpen}
               onOpenChange={setMenuOpen}
             />
@@ -782,14 +867,14 @@ function ChannelSection({
             template picker as a Base UI nested dialog, so it stacks on top and
             dismissing it returns here. */}
         <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md gap-0">
             <DialogHeader>
               <DialogTitle>Create new</DialogTitle>
               <DialogDescription>
                 Add a task or a canvas to {channel.name}.
               </DialogDescription>
             </DialogHeader>
-            <DialogBody className="gap-0">
+            <DialogBody className="gap-0 [&_*[data-slot=scroll-area-viewport]]:p-2">
               <Button
                 variant="default"
                 className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-3 text-left"
@@ -806,8 +891,8 @@ function ChannelSection({
                   });
                 }}
               >
-                <span className="font-medium text-gray-12">New task</span>
-                <span className="font-normal text-gray-10 text-xs [text-wrap:initial]">
+                <span className="font-medium">New task</span>
+                <span className="font-normal text-muted-foreground/80 text-xs [text-wrap:initial]">
                   Describe something for the agent to work on in this channel.
                 </span>
               </Button>
@@ -821,12 +906,12 @@ function ChannelSection({
                     />
                   )}
                 >
-                  <span className="font-medium text-gray-12">New canvas</span>
-                  <span className="font-normal text-gray-10 text-xs [text-wrap:initial]">
+                  <span className="font-medium">New canvas</span>
+                  <span className="font-normal text-muted-foreground/80 text-xs [text-wrap:initial]">
                     Build a dashboard or freeform canvas from a template.
                   </span>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-md gap-0">
                   <DialogHeader>
                     <DialogTitle>Choose a template</DialogTitle>
                     <DialogDescription>
@@ -834,7 +919,7 @@ function ChannelSection({
                       follow when generating UI.
                     </DialogDescription>
                   </DialogHeader>
-                  <DialogBody className="flex flex-col gap-2">
+                  <DialogBody className="flex flex-col gap-2 [&_*[data-slot=scroll-area-viewport]]:p-2">
                     <CanvasTemplateList
                       channelId={channel.id}
                       surface="sidebar"
@@ -910,6 +995,12 @@ function ChannelSection({
           </Flex>
         </CollapsibleContent>
       </Collapsible>
+      {/* One modal for both the dropdown and context-menu "Rename" actions. */}
+      <RenameChannelModal
+        channel={channel}
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+      />
     </Box>
   );
 }
