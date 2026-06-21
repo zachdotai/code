@@ -147,7 +147,7 @@ export function ChannelsSidebar() {
 
       {/* The whole nav (links + channel tree) scrolls as one — only the switcher
           above and Settings below stay pinned. */}
-      <Box className="min-h-0 flex-1 overflow-y-auto">
+      <Box className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto">
         <ChannelsNav />
         <ChannelsList />
       </Box>

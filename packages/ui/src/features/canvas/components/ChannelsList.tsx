@@ -32,6 +32,13 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
   cn,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -39,12 +46,18 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
   Separator,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@posthog/quill";
+
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
+import { CanvasTemplateList } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import {
   useChannelStars,
@@ -70,7 +83,7 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { AlertDialog, Box, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { AlertDialog, Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
@@ -277,7 +290,7 @@ function ChildRow({
           {title}
         </span>
         {subtitle ? (
-          <span className="truncate text-[10px] text-gray-9 leading-tight">
+          <span className="truncate text-[10px] text-muted-foreground/80 leading-tight">
             {subtitle}
           </span>
         ) : null}
@@ -341,14 +354,14 @@ function DashboardRow({
   return (
     <>
       <ContextMenu>
-        <Tooltip content={dashboard.name} delayDuration={600}>
+        <Tooltip>
           <ContextMenuTrigger
             render={
-              <Box>
+              <TooltipTrigger>
                 <ChildRow
                   icon={iconForTemplate(dashboard.templateId)}
                   title={dashboard.name}
-                  subtitle={`updated ${relativeTime(dashboard.updatedAt)}`}
+                  subtitle={`${relativeTime(dashboard.updatedAt)}`}
                   active={active}
                   onClick={() => {
                     track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
@@ -365,9 +378,10 @@ function DashboardRow({
                     });
                   }}
                 />
-              </Box>
+              </TooltipTrigger>
             }
           />
+          <TooltipContent side="right">{dashboard.name}</TooltipContent>
         </Tooltip>
         <ContextMenuContent>
           <ContextMenuItem
@@ -556,10 +570,10 @@ function TaskRow({
 
   return (
     <ContextMenu>
-      <Tooltip content={title} delayDuration={600}>
+      <Tooltip>
         <ContextMenuTrigger
           render={
-            <Box>
+            <TooltipTrigger>
               <ChildRow
                 icon={icon}
                 title={title}
@@ -567,9 +581,10 @@ function TaskRow({
                 active={active}
                 onClick={onClick}
               />
-            </Box>
+            </TooltipTrigger>
           }
         />
+        <TooltipContent side="right">{title}</TooltipContent>
       </Tooltip>
       <ContextMenuContent>
         <ContextMenuSub>
@@ -632,6 +647,10 @@ function ChannelSection({
   const [open, setOpen] = useState(isActive);
   // Lifted so the hover button group stays visible while the menu is open.
   const [menuOpen, setMenuOpen] = useState(false);
+  // The "New…" picker dialog, and the nested "Choose a template" dialog it
+  // stacks on top when "New canvas" is chosen.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [canvasOpen, setCanvasOpen] = useState(false);
   // Only the first few tasks per channel show by default; "View more" reveals
   // another batch each click so a busy channel doesn't flood the sidebar.
   const [taskLimit, setTaskLimit] = useState(MAX_VISIBLE_TASKS_PER_CHANNEL);
@@ -716,12 +735,51 @@ function ChannelSection({
             menu is open. */}
         <div className="absolute top-1 right-1">
           <ButtonGroup>
-            <Tooltip content="New task" side="top">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-xs"
+                    aria-label={`New in ${channel.name}`}
+                    onClick={() => setPickerOpen(true)}
+                    className={cn(
+                      "gap-1 transition-opacity group-hover:border-border",
+                      menuOpen || pickerOpen
+                        ? "opacity-100"
+                        : "opacity-0 group-hover/chan:opacity-100",
+                    )}
+                  >
+                    <PlusIcon size={12} weight="bold" />
+                  </Button>
+                }
+              />
+              <TooltipContent side="top">New…</TooltipContent>
+            </Tooltip>
+            <ChannelMenu
+              channel={channel}
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+            />
+          </ButtonGroup>
+        </div>
+        {/* "New…" picker: choose task vs canvas. "New canvas" opens the
+            template picker as a Base UI nested dialog, so it stacks on top and
+            dismissing it returns here. */}
+        <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Create new</DialogTitle>
+              <DialogDescription>
+                Add a task or a canvas to {channel.name}.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody className="gap-0">
               <Button
-                variant="outline"
-                size="icon-xs"
-                aria-label={`New task in ${channel.name}`}
+                variant="default"
+                className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-3 text-left"
                 onClick={() => {
+                  setPickerOpen(false);
                   track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
                     action_type: "new_task_open",
                     surface: "sidebar",
@@ -732,30 +790,57 @@ function ChannelSection({
                     params: { channelId: channel.id },
                   });
                 }}
-                className={cn(
-                  "transition-opacity group-hover:border-border",
-                  menuOpen
-                    ? "opacity-100"
-                    : "opacity-0 group-hover/chan:opacity-100",
-                )}
               >
-                <PlusIcon size={14} weight="bold" />
+                <span className="font-medium text-gray-12">New task</span>
+                <span className="font-normal text-gray-10 text-xs [text-wrap:initial]">
+                  Describe something for the agent to work on in this channel.
+                </span>
               </Button>
-            </Tooltip>
-            <ChannelMenu
-              channel={channel}
-              open={menuOpen}
-              onOpenChange={setMenuOpen}
-            />
-          </ButtonGroup>
-        </div>
+              <Dialog open={canvasOpen} onOpenChange={setCanvasOpen}>
+                <DialogTrigger
+                  render={(props) => (
+                    <Button
+                      variant="default"
+                      className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-3 text-left"
+                      {...props}
+                    />
+                  )}
+                >
+                  <span className="font-medium text-gray-12">New canvas</span>
+                  <span className="font-normal text-gray-10 text-xs [text-wrap:initial]">
+                    Build a dashboard or freeform canvas from a template.
+                  </span>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Choose a template</DialogTitle>
+                    <DialogDescription>
+                      This gives the agent context for which guardrails to
+                      follow when generating UI.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogBody className="flex flex-col gap-2">
+                    <CanvasTemplateList
+                      channelId={channel.id}
+                      surface="sidebar"
+                      onPicked={() => {
+                        setCanvasOpen(false);
+                        setPickerOpen(false);
+                      }}
+                    />
+                  </DialogBody>
+                </DialogContent>
+              </Dialog>
+            </DialogBody>
+          </DialogContent>
+        </Dialog>
         {/* Children hang off a vertical guide line, like a tree. The folder
             variant's own inset is removed so the guide line controls indent. */}
-        <CollapsibleContent className="!px-0">
+        <CollapsibleContent className="px-0">
           <Flex
             direction="column"
             gap="px"
-            className="mt-px ml-[15px] border-gray-6 border-l pl-1 empty:hidden"
+            className="mt-px ml-[11px] border-gray-6 border-l pl-2 empty:hidden"
           >
             {dashboards.map((d) => (
               <DashboardRow
@@ -839,7 +924,9 @@ export function ChannelsList() {
   }, [isLoading, channels.length, starred.length]);
 
   return (
-    <>
+    // One shared provider groups every row tooltip so that once one shows,
+    // moving to the next row reveals its tooltip instantly (no re-delay).
+    <TooltipProvider delay={600}>
       <Flex direction="column" gap="px" className="px-2 pb-2">
         <Box className="py-1.5">
           <Separator />
@@ -900,6 +987,6 @@ export function ChannelsList() {
       </Flex>
 
       <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />
-    </>
+    </TooltipProvider>
   );
 }
