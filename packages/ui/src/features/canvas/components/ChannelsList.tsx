@@ -1,7 +1,6 @@
 import {
   ArchiveIcon,
   CaretDownIcon,
-  CaretRightIcon,
   ChartBarIcon,
   ChartLineIcon,
   CodeIcon,
@@ -20,6 +19,10 @@ import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import {
   Button,
   ButtonGroup,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleHeader,
+  CollapsibleTrigger,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -620,27 +623,28 @@ function ChannelSection({
   const archivedTaskIds = useArchivedTaskIds();
   const base = `/website/${channel.id}`;
   const isActive = pathname === base || pathname.startsWith(`${base}/`);
-  // Channels start collapsed; expansion is session-only. Navigating into a
-  // channel (sidebar, cmd-k, deep link) auto-expands it so the active channel
-  // is always open, while leaving manual collapse/expand intact afterward.
+  // The header surface navigates to the channel index, so only highlight it
+  // when that exact route is open (children carry their own active state).
+  const isIndexActive = pathname === base;
+  // Expansion is owned by the left icon trigger only. A deep link / fresh load
+  // into a channel opens it once (initial state), but navigating the main row
+  // afterward just selects the channel — it does not expand it.
   const [open, setOpen] = useState(isActive);
   // Lifted so the hover button group stays visible while the menu is open.
   const [menuOpen, setMenuOpen] = useState(false);
   // Only the first few tasks per channel show by default; "View more" reveals
   // another batch each click so a busy channel doesn't flood the sidebar.
   const [taskLimit, setTaskLimit] = useState(MAX_VISIBLE_TASKS_PER_CHANNEL);
-  useEffect(() => {
-    if (isActive) setOpen(true);
-  }, [isActive]);
-  // Toggle expansion; collapsing also resets back to the first batch of tasks.
-  const toggleOpen = () => {
+  // Expansion is driven by the Collapsible's icon trigger; collapsing also
+  // resets back to the first batch of tasks.
+  const onOpenChange = (next: boolean) => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-      action_type: open ? "collapse_channel" : "open_channel",
+      action_type: next ? "open_channel" : "collapse_channel",
       surface: "sidebar",
       channel_id: channel.id,
     });
-    setOpen((o) => !o);
-    if (open) setTaskLimit(MAX_VISIBLE_TASKS_PER_CHANNEL);
+    setOpen(next);
+    if (!next) setTaskLimit(MAX_VISIBLE_TASKS_PER_CHANNEL);
   };
 
   // Lazy: a channel's canvases and filed tasks are only fetched once it's
@@ -664,131 +668,148 @@ function ChannelSection({
 
   return (
     <Box className="group/chan relative">
-      {/* The channel header row is one button group: the "# name" toggle grows
-          to fill the row, with the hover actions (new task + options menu)
-          joined onto its right edge. */}
-      {/* Trigger is a quill Button; open/close is plain state (no Collapsible),
-            so the leading icon lines up with the "New" button above. */}
-      <Button
-        variant="default"
-        size="default"
-        onClick={toggleOpen}
-        aria-expanded={open}
-        className="w-full min-w-0 flex-1 justify-start gap-2 aria-expanded:bg-transparent"
-      >
-        {/* `#` by default; swaps to the expand/collapse caret on hover. Sized to
-              match the "New" button's plus so the columns align. */}
-        <span className="relative inline-flex size-[14px] shrink-0 items-center justify-center text-gray-10">
-          <HashIcon size={14} className="group-hover/chan:invisible" />
-          <span className="absolute inset-0 hidden items-center justify-center group-hover/chan:flex">
-            {open ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
-          </span>
-        </span>
-        <span
-          className={cn(
-            "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
-            menuOpen && "pr-8",
-          )}
-        >
-          {channel.name}
-        </span>
-      </Button>
-      {/* Hover actions: new task + the options menu. Stay visible while the
-            menu is open. */}
-      <div className="absolute top-1 right-1">
-        <ButtonGroup>
-          <Tooltip content="New task" side="top">
-            <Button
-              variant="outline"
-              size="icon-xs"
-              aria-label={`New task in ${channel.name}`}
-              onClick={() => {
-                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                  action_type: "new_task_open",
-                  surface: "sidebar",
-                  channel_id: channel.id,
-                });
-                navigate({
-                  to: "/website/$channelId/new",
-                  params: { channelId: channel.id },
-                });
-              }}
+      <Collapsible variant="folder" open={open} onOpenChange={onOpenChange}>
+        {/* Header row: the leading icon is the expand/collapse trigger (`#`
+            swaps to a chevron on hover), and the rest of the row is a button
+            that navigates into the channel index. */}
+        <CollapsibleHeader>
+          {/* Icon-only trigger — overlaid at the row's start edge. */}
+          <CollapsibleTrigger
+            iconOnly
+            icon={<HashIcon size={14} />}
+            aria-label={`Toggle ${channel.name}`}
+          >
+            Toggle {channel.name}
+          </CollapsibleTrigger>
+          {/* Full-row surface under the overlaid icon — ps-8 clears it so the
+              name lines up with the "New" button above, and the whole row opens
+              the channel index. */}
+          <Button
+            variant="default"
+            size="default"
+            left
+            data-selected={isIndexActive || undefined}
+            onClick={() => {
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: "nav_click",
+                surface: "sidebar",
+                channel_id: channel.id,
+              });
+              navigate({
+                to: "/website/$channelId",
+                params: { channelId: channel.id },
+              });
+            }}
+            className="w-full min-w-0 justify-start ps-8 data-selected:bg-fill-selected data-selected:text-gray-12"
+          >
+            <span
               className={cn(
-                "transition-opacity group-hover:border-border",
-                menuOpen
-                  ? "opacity-100"
-                  : "opacity-0 group-hover/chan:opacity-100",
+                "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
+                menuOpen && "pr-8",
               )}
             >
-              <PlusIcon size={14} weight="bold" />
-            </Button>
-          </Tooltip>
-          <ChannelMenu
-            channel={channel}
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-          />
-        </ButtonGroup>
-      </div>
-      {open && (
-        // Children hang off a vertical guide line, like a tree.
-        <Flex
-          direction="column"
-          gap="px"
-          className="mt-px ml-[15px] border-gray-6 border-l pl-1 empty:hidden"
-        >
-          {dashboards.map((d) => (
-            <DashboardRow
-              key={d.id}
-              channelId={channel.id}
-              dashboard={d}
-              active={pathname === `${base}/dashboards/${d.id}`}
-            />
-          ))}
-          {displayedFiledTasks.map(({ id: channelTaskId, taskId }) => {
-            const task = tasks?.find((t) => t.id === taskId);
-            const title = task?.title || "Untitled task";
-            return (
-              <TaskRow
-                key={channelTaskId}
-                channelTaskId={channelTaskId}
-                channelId={channel.id}
-                taskId={taskId}
-                task={task}
-                title={title}
-                active={pathname === `${base}/tasks/${taskId}`}
-                onClick={() =>
+              {channel.name}
+            </span>
+          </Button>
+        </CollapsibleHeader>
+        {/* Hover actions: new task + the options menu. Stay visible while the
+            menu is open. */}
+        <div className="absolute top-1 right-1">
+          <ButtonGroup>
+            <Tooltip content="New task" side="top">
+              <Button
+                variant="outline"
+                size="icon-xs"
+                aria-label={`New task in ${channel.name}`}
+                onClick={() => {
+                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                    action_type: "new_task_open",
+                    surface: "sidebar",
+                    channel_id: channel.id,
+                  });
                   navigate({
-                    to: "/website/$channelId/tasks/$taskId",
-                    params: { channelId: channel.id, taskId },
-                  })
-                }
-                channels={channels}
+                    to: "/website/$channelId/new",
+                    params: { channelId: channel.id },
+                  });
+                }}
+                className={cn(
+                  "transition-opacity group-hover:border-border",
+                  menuOpen
+                    ? "opacity-100"
+                    : "opacity-0 group-hover/chan:opacity-100",
+                )}
+              >
+                <PlusIcon size={14} weight="bold" />
+              </Button>
+            </Tooltip>
+            <ChannelMenu
+              channel={channel}
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+            />
+          </ButtonGroup>
+        </div>
+        {/* Children hang off a vertical guide line, like a tree. The folder
+            variant's own inset is removed so the guide line controls indent. */}
+        <CollapsibleContent className="!px-0">
+          <Flex
+            direction="column"
+            gap="px"
+            className="mt-px ml-[15px] border-gray-6 border-l pl-1 empty:hidden"
+          >
+            {dashboards.map((d) => (
+              <DashboardRow
+                key={d.id}
+                channelId={channel.id}
+                dashboard={d}
+                active={pathname === `${base}/dashboards/${d.id}`}
               />
-            );
-          })}
-          {hiddenTaskCount > 0 && (
-            <Button
-              variant="default"
-              size="default"
-              onClick={() => {
-                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                  action_type: "view_more_tasks",
-                  surface: "sidebar",
-                  channel_id: channel.id,
-                });
-                setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL);
-              }}
-              className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
-            >
-              <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
-                <CaretDownIcon size={12} />
-              </span>
-              View {nextBatchCount} more
-            </Button>
-          )}
-        </Flex>
-      )}
+            ))}
+            {displayedFiledTasks.map(({ id: channelTaskId, taskId }) => {
+              const task = tasks?.find((t) => t.id === taskId);
+              const title = task?.title || "Untitled task";
+              return (
+                <TaskRow
+                  key={channelTaskId}
+                  channelTaskId={channelTaskId}
+                  channelId={channel.id}
+                  taskId={taskId}
+                  task={task}
+                  title={title}
+                  active={pathname === `${base}/tasks/${taskId}`}
+                  onClick={() =>
+                    navigate({
+                      to: "/website/$channelId/tasks/$taskId",
+                      params: { channelId: channel.id, taskId },
+                    })
+                  }
+                  channels={channels}
+                />
+              );
+            })}
+            {hiddenTaskCount > 0 && (
+              <Button
+                variant="default"
+                size="default"
+                onClick={() => {
+                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                    action_type: "view_more_tasks",
+                    surface: "sidebar",
+                    channel_id: channel.id,
+                  });
+                  setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL);
+                }}
+                className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
+              >
+                <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
+                  <CaretDownIcon size={12} />
+                </span>
+                View {nextBatchCount} more
+              </Button>
+            )}
+          </Flex>
+        </CollapsibleContent>
+      </Collapsible>
     </Box>
   );
 }
