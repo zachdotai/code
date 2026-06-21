@@ -30,6 +30,24 @@ export function useDashboards(channelId: string | undefined): {
   return { dashboards: data ?? [], isLoading };
 }
 
+/**
+ * Warm the dashboards-list cache for a channel ahead of opening it (e.g. on
+ * hover), so expanding the channel shows its canvases without a cold fetch.
+ * Respects the same staleTime, so it no-ops when the data is already fresh.
+ */
+export function usePrefetchDashboards(): (channelId: string) => void {
+  const trpc = useHostTRPC();
+  const queryClient = useQueryClient();
+  return useCallback(
+    (channelId: string) => {
+      void queryClient.prefetchQuery(
+        trpc.dashboards.list.queryOptions({ channelId }, { staleTime: 5_000 }),
+      );
+    },
+    [trpc, queryClient],
+  );
+}
+
 /** A single saved dashboard record (spec + metadata). */
 export function useDashboard(id: string | undefined): {
   dashboard: DashboardRecord | null | undefined;

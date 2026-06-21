@@ -72,10 +72,12 @@ import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannel
 import {
   useChannelTaskMutations,
   useChannelTasks,
+  usePrefetchChannelTasks,
 } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   useDashboardMutations,
   useDashboards,
+  usePrefetchDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
@@ -670,6 +672,15 @@ function ChannelSection({
   // expanded, so the tree doesn't fire one query per channel on mount.
   const { dashboards } = useDashboards(open ? channel.id : undefined);
   const { tasks: filedTasks } = useChannelTasks(open ? channel.id : undefined);
+  // Warm both caches on hover/focus so the first expand is instant instead of
+  // popping in after a cold fetch. No-ops once the data is fresh or loaded.
+  const prefetchDashboards = usePrefetchDashboards();
+  const prefetchChannelTasks = usePrefetchChannelTasks();
+  const prefetchContents = () => {
+    if (open) return;
+    prefetchDashboards(channel.id);
+    prefetchChannelTasks(channel.id);
+  };
   // Tasks are private to each user. A task filed by someone else won't be in
   // `tasks` (it isn't shared with me), so hide it rather than rendering an
   // "Untitled task" placeholder. Also drop archived tasks.
@@ -686,7 +697,11 @@ function ChannelSection({
   );
 
   return (
-    <Box className="group/chan relative">
+    <Box
+      className="group/chan relative"
+      onMouseEnter={prefetchContents}
+      onFocus={prefetchContents}
+    >
       <Collapsible variant="folder" open={open} onOpenChange={onOpenChange}>
         {/* Header row: the leading icon is the expand/collapse trigger (`#`
             swaps to a chevron on hover), and the rest of the row is a button
