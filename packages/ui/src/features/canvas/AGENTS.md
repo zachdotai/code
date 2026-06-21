@@ -4,6 +4,24 @@ Conventions for the channel-scoped Website space: channels, dashboards, and the
 gen-UI canvas. Read this before changing breadcrumbs, dashboard naming, or the
 canvas generation harness. The root `AGENTS.md` architecture rules still apply.
 
+## Components & styling
+
+- **Use `@posthog/quill`, not Radix.** New UI in this space pulls components from
+  `@posthog/quill` (`Button`, `Dialog*`, `AlertDialog*`, `DropdownMenu*`,
+  `ContextMenu*`, `Tooltip*`, `Collapsible*`, …). Do **not** reach for
+  `@radix-ui/themes` or `@radix-ui/react-*`. Some older code here still imports
+  `@radix-ui/themes` (`Box`, `Flex`, `Text`, `AlertDialog`) — that's legacy to be
+  migrated, not a pattern to copy. When you touch such code, prefer swapping to
+  the Quill equivalent.
+- **Don't restyle Quill internals.** Quill components are already themed —
+  spacing, typography, and especially **color** are baked in. Do not add
+  `text-gray-*` / `text-muted-foreground` / `font-*` or other color/typography
+  classes to elements *inside* a Quill component (menu items, dialog titles,
+  buttons, etc.); you'll fight or override the design system and drift from every
+  other surface. Trust the defaults. Layout-only utilities (`flex`, `gap`,
+  width/`max-w`, `truncate`) on wrappers are fine; reach for `className` overrides
+  on Quill items only when there is a real, deliberate exception — and call it out.
+
 ## Spaces & chrome
 
 - Channels is a **top-level space** reached through the app rail (`AppNav`),
