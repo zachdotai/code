@@ -119,9 +119,9 @@ export function NewCanvasMenu({
         )}
       >
         <PlusIcon size={14} />
-        New canvas
+        New canvas…
       </DialogTrigger>
-      <DialogContent className="max-w-md bg-[red] [&_*[data-slot=scroll-area-viewport]]:bg-[red]">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Choose a template</DialogTitle>
           <DialogDescription>

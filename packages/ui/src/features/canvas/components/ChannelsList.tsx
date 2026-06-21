@@ -92,7 +92,7 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { AlertDialog, Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
@@ -243,14 +243,14 @@ function useChannelActions(channel: Channel): {
     },
     {
       key: "rename",
-      label: "Rename channel",
+      label: "Rename channel…",
       icon: <PencilSimpleIcon size={14} />,
       separatorBefore: true,
       onSelect: () => setRenameOpen(true),
     },
     {
       key: "delete",
-      label: "Delete channel",
+      label: "Delete channel…",
       icon: <TrashIcon size={14} />,
       variant: "destructive",
       onSelect: () => setConfirmDeleteOpen(true),
@@ -488,37 +488,34 @@ function DashboardRow({
             onClick={() => setConfirmOpen(true)}
           >
             <TrashIcon size={14} />
-            Delete
+            Delete…
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
 
-      <AlertDialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialog.Content maxWidth="420px" size="2">
-          <AlertDialog.Title size="3">Delete canvas</AlertDialog.Title>
-          <AlertDialog.Description size="1">
-            "{dashboard.name}" will be permanently deleted. This can't be
-            undone.
-          </AlertDialog.Description>
-          <Flex justify="end" gap="2" mt="4">
-            <AlertDialog.Cancel>
-              <Button variant="outline" size="sm">
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={isDeleting}
-                onClick={() => void onDelete()}
-              >
-                Delete
-              </Button>
-            </AlertDialog.Action>
-          </Flex>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
+      <ConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete canvas</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{dashboard.name}" will be permanently deleted. This can't be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose
+              render={<Button variant="outline">Cancel</Button>}
+            />
+            <Button
+              variant="primary"
+              loading={isDeleting}
+              onClick={() => void onDelete().then(() => setConfirmOpen(false))}
+            >
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </ConfirmDialog>
     </>
   );
 }
@@ -939,7 +936,7 @@ function ChannelSection({
                     />
                   )}
                 >
-                  <span className="font-medium">New canvas</span>
+                  <span className="font-medium">New canvas…</span>
                   <span className="font-normal text-muted-foreground/80 text-xs [text-wrap:initial]">
                     Build a dashboard or freeform canvas from a template.
                   </span>
@@ -1061,15 +1058,10 @@ function ChannelSection({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogClose
-              render={
-                <Button variant="outline" size="sm">
-                  Cancel
-                </Button>
-              }
+              render={<Button variant="outline">Cancel</Button>}
             />
             <Button
-              variant="destructive"
-              size="sm"
+              variant="primary"
               loading={isDeleting}
               onClick={() =>
                 void confirmDelete().then((ok) => {

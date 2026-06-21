@@ -21,6 +21,14 @@ canvas generation harness. The root `AGENTS.md` architecture rules still apply.
   other surface. Trust the defaults. Layout-only utilities (`flex`, `gap`,
   width/`max-w`, `truncate`) on wrappers are fine; reach for `className` overrides
   on Quill items only when there is a real, deliberate exception — and call it out.
+- **Suffix `…` on anything that opens another step.** A menu item or button whose
+  click opens a follow-up surface — a dialog, a nested menu, a picker, a
+  confirmation — gets a trailing ellipsis (`…`, the character, not three dots) to
+  signal it isn't the final action: `New…`, `Rename channel…`, `Delete channel…`,
+  `Choose a template…`. A label that performs its action immediately or navigates
+  straight to a destination gets **no** ellipsis (`Edit CONTEXT.md`, `Star
+  channel`). When in doubt: does clicking it ask for more input or confirmation
+  before anything happens? If yes, add the `…`.
 
 ## Spaces & chrome
 
