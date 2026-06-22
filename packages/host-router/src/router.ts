@@ -2,6 +2,7 @@ import { router } from "@posthog/host-trpc/trpc";
 import { additionalDirectoriesRouter } from "./routers/additional-directories.router";
 import { agentRouter } from "./routers/agent.router";
 import { analyticsRouter } from "./routers/analytics.router";
+import { apmEnrichmentRouter } from "./routers/apm-enrichment.router";
 import { archiveRouter } from "./routers/archive.router";
 import { authRouter } from "./routers/auth.router";
 import { canvasDataRouter } from "./routers/canvas-data.router";
@@ -50,6 +51,7 @@ export const hostRouter = router({
   additionalDirectories: additionalDirectoriesRouter,
   agent: agentRouter,
   analytics: analyticsRouter,
+  apmEnrichment: apmEnrichmentRouter,
   archive: archiveRouter,
   auth: authRouter,
   canvasData: canvasDataRouter,

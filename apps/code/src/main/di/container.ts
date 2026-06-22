@@ -142,6 +142,7 @@ import {
   AGENT_SLEEP_COORDINATOR,
 } from "@posthog/workspace-server/services/agent/identifiers";
 import { AgentServiceEvent } from "@posthog/workspace-server/services/agent/schemas";
+import { apmEnrichmentModule } from "@posthog/workspace-server/services/apm-enrichment/apmEnrichment.module";
 import { archiveModule } from "@posthog/workspace-server/services/archive/archive.module";
 import {
   ARCHIVE_FILE_WATCHER,
@@ -425,6 +426,9 @@ container.bind(ENRICHMENT_FILE_READER).toConstantValue({
   listFilesContainingText: (repoPath: string, text: string) =>
     listFilesContainingText(repoPath, text),
 });
+// APM enrichment reuses the ENRICHMENT_AUTH port bound above for PostHog
+// API credentials + active project; it only needs its own service binding.
+container.load(apmEnrichmentModule);
 container.bind(MAIN_PROVISIONING_SERVICE).to(ProvisioningService);
 container.bind(PROVISIONING_SERVICE).toService(MAIN_TOKENS.ProvisioningService);
 

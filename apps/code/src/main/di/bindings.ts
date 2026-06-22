@@ -133,6 +133,8 @@ import type {
   AGENT_REPO_FILES,
   AGENT_SLEEP_COORDINATOR,
 } from "@posthog/workspace-server/services/agent/identifiers";
+import type { ApmEnrichmentService } from "@posthog/workspace-server/services/apm-enrichment/apmEnrichment";
+import type { APM_ENRICHMENT_SERVICE } from "@posthog/workspace-server/services/apm-enrichment/identifiers";
 import type {
   ARCHIVE_FILE_WATCHER,
   ARCHIVE_SESSION_CANCELLER,
@@ -353,6 +355,8 @@ export interface MainBindings {
   // Enrichment host ports
   [ENRICHMENT_AUTH]: EnrichmentAuth;
   [ENRICHMENT_FILE_READER]: EnrichmentFileReader;
+  // APM enrichment service (reuses ENRICHMENT_AUTH for credentials)
+  [APM_ENRICHMENT_SERVICE]: ApmEnrichmentService;
 
   // Provisioning
   [MAIN_PROVISIONING_SERVICE]: ProvisioningService;
