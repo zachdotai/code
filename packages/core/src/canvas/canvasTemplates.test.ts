@@ -41,11 +41,20 @@ describe("AI gateway template", () => {
     expect(aiGateway?.systemPrompt).toContain(formula);
   });
 
-  it("includes the connect snippets and the declarative provider/language switch", () => {
-    const prompt = aiGateway?.systemPrompt ?? "";
-    expect(prompt).toContain("baseURL: '<gateway base URL>/v1'"); // OpenAI
-    expect(prompt).toContain("@anthropic-ai/sdk"); // Anthropic
-    expect(prompt).toContain('"$state": "/provider"');
-    expect(prompt).toContain('"$state": "/language"');
+  it.each([
+    ["OpenAI base URL", "baseURL: '<gateway base URL>/v1'"],
+    ["Anthropic SDK import", "@anthropic-ai/sdk"],
+    ["provider state path", '"$state": "/provider"'],
+    ["language state path", '"$state": "/language"'],
+  ])("bakes the %s into the connect section", (_name, snippet) => {
+    expect(aiGateway?.systemPrompt).toContain(snippet);
+  });
+
+  it("bakes the empty-state probe filter without date placeholders", () => {
+    // The probe runs before the canvas exists, so it uses a literal 30-day
+    // window rather than the {date_from}/{date_to} placeholders.
+    expect(aiGateway?.systemPrompt).toContain(
+      "event = '$ai_generation' AND properties.$ai_gateway = true AND timestamp >= now() - INTERVAL 30 DAY",
+    );
   });
 });

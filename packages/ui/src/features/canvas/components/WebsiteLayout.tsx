@@ -5,6 +5,7 @@ import {
   PencilSimpleIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import { DATA_TEMPLATE_IDS } from "@posthog/core/canvas/canvasTemplates";
 import { Button } from "@posthog/quill";
 import { DashboardDateRangeControl } from "@posthog/ui/features/canvas/components/DashboardDateRangeControl";
 import { DashboardRefreshControl } from "@posthog/ui/features/canvas/components/DashboardRefreshControl";
@@ -39,10 +40,6 @@ import {
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
 }
-
-// Templates whose canvases carry the data toolbar (Filter + date range +
-// refresh) — the ones with refreshable, time-scoped queries.
-const DATA_TEMPLATES = ["dashboard", "web-analytics", "ai-gateway"];
 
 // Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
 // Sits on the right of the single canvas toolbar, beside the refresh control.
@@ -284,11 +281,11 @@ export function WebsiteLayout() {
   const editing = useIsDashboardEditing(dashboardId ?? "");
 
   // The data controls (Filter + date range + query refresh) are data-template
-  // chrome: only the data-driven templates (Dashboard, Web analytics) have
+  // chrome: only templates flagged `dataTemplate` in the registry have
   // refreshable, time-scoped queries. A Blank canvas shows none of it. Legacy
   // canvases (no templateId) default to "dashboard", so they keep the toolbar.
   const { dashboard } = useDashboard(dashboardId ?? "");
-  const isDataTemplate = DATA_TEMPLATES.includes(
+  const isDataTemplate = DATA_TEMPLATE_IDS.has(
     dashboard?.templateId ?? "dashboard",
   );
 

@@ -96,13 +96,21 @@ const WEB_ANALYTICS_RULES = [
   'Store raw numeric values in Stat.value (e.g. 236000, not "236K") — the UI formats them. Percentages for RetentionGrid `values` are 0–100.',
 ];
 
-// The gateway filter — preserve EXACTLY. `event = '$ai_generation' AND
+// The gateway predicate, shared by every query. `event = '$ai_generation' AND
 // properties.$ai_gateway = true` is what separates gateway-emitted generations
-// from SDK-emitted $ai_generation events that share the event name. The time
-// bound uses the canvas date-range placeholders (not a baked-in `INTERVAL 30
-// DAY`) so the board stays refreshable and the picker can rescope it.
-const GATEWAY_WHERE =
-  "event = '$ai_generation' AND properties.$ai_gateway = true AND timestamp >= {date_from} AND timestamp < {date_to}";
+// from SDK-emitted $ai_generation events that share the event name.
+const GATEWAY_BASE_FILTER =
+  "event = '$ai_generation' AND properties.$ai_gateway = true";
+
+// The live filter — the time bound uses the canvas date-range placeholders (not
+// a baked-in `INTERVAL 30 DAY`) so the board stays refreshable and the picker
+// can rescope it.
+const GATEWAY_WHERE = `${GATEWAY_BASE_FILTER} AND timestamp >= {date_from} AND timestamp < {date_to}`;
+
+// The empty-state probe — same predicate, bounded to a literal last-30-days
+// window (no placeholders, since it runs before the canvas and its date range
+// exist). Composed from the base filter so it can't drift from GATEWAY_WHERE.
+const GATEWAY_EMPTY_STATE_WHERE = `${GATEWAY_BASE_FILTER} AND timestamp >= now() - INTERVAL 30 DAY`;
 
 // The "Connect your app" SDK snippets, baked verbatim from the Cloud page
 // (AIGatewayScene.tsx). OpenAI points its SDK at <base>/v1; the Anthropic SDK is
@@ -147,12 +155,7 @@ const AI_GATEWAY_RULES = [
   'SNIPPET SWITCH controls: a `Grid` (columns 2) of two provider `Button`s — "OpenAI" and "Anthropic" — each with `"on": { "click": { "action": "setState", "params": { "statePath": "/provider", "value": "openai" | "anthropic" } } }`; then a `Grid` (columns 3) of three language `Button`s — "TypeScript", "Python", "cURL" — each setting `/language` to "typescript" | "python" | "curl".',
   `SNIPPET BLOCKS: emit SIX \`Markdown\` blocks, one per provider×language pair, each gated by a \`visible\` condition that is an ARRAY of two state conditions (implicit AND): \`"visible": [ { "$state": "/provider", "eq": "<provider>" }, { "$state": "/language", "eq": "<language>" } ]\`. The Markdown \`content\` is the matching fenced code block below (strip the "Provider · Language →" caption; keep the fenced block exactly, INCLUDING \`<gateway base URL>\` as a literal placeholder — Code has no preflight to fill the real host). Snippets:\n\n${CONNECT_SNIPPETS}`,
   // --- Empty state ---------------------------------------------------------
-  "EMPTY STATE: before building, run `SELECT count() FROM events WHERE " +
-    GATEWAY_WHERE.replace("{date_from}", "now() - INTERVAL 30 DAY").replace(
-      " AND timestamp < {date_to}",
-      "",
-    ) +
-    '` via the MCP tools. If it returns 0 (no gateway usage in the window), do NOT build the Usage or By model sections (a zeroed-out board reads as broken). Instead emit ONLY: the h1 title + muted subtitle, a `Hero` (tone accent) titled "No gateway usage yet" whose subtitle is "One endpoint for every major LLM, billed at cost — no markup on tokens. Point your app at the gateway and PostHog tracks its usage, cost, and spend for you. Any project secret key with the llm_gateway:read scope can call it.", and the full Connect your app section.',
+  `EMPTY STATE: before building, run \`SELECT count() FROM events WHERE ${GATEWAY_EMPTY_STATE_WHERE}\` via the MCP tools. If it returns 0 (no gateway usage in the window), do NOT build the Usage or By model sections (a zeroed-out board reads as broken). Instead emit ONLY: the h1 title + muted subtitle, a \`Hero\` (tone accent) titled "No gateway usage yet" whose subtitle is "One endpoint for every major LLM, billed at cost — no markup on tokens. Point your app at the gateway and PostHog tracks its usage, cost, and spend for you. Any project secret key with the llm_gateway:read scope can call it.", and the full Connect your app section.`,
 ];
 
 // Blank: freeform. Build whatever the user describes from the catalog.
@@ -174,6 +177,9 @@ interface BuiltInTemplate {
   allow: CanvasComponentName[];
   /** Starter chips shown in an empty chat (label + the prompt it inserts). */
   suggestions: CanvasSuggestion[];
+  /** Carries the data toolbar (filter + date range + refresh) — its queries are
+   * refreshable and time-scoped. The UI derives its toolbar set from this. */
+  dataTemplate?: boolean;
 }
 
 // Starter chips for the Blank canvas — user-facing prompts (not internal
@@ -211,6 +217,7 @@ const BUILT_INS: BuiltInTemplate[] = [
       "You are PostHog Canvas, an agent that builds live, data-driven dashboards and mini-apps for the user's current PostHog project.",
     rules: DASHBOARD_RULES,
     allow: DASHBOARD_COMPONENTS,
+    dataTemplate: true,
     suggestions: [
       { label: "Web analytics", prompt: "Web analytics" },
       {
@@ -232,6 +239,7 @@ const BUILT_INS: BuiltInTemplate[] = [
       "You are PostHog Canvas, an agent that builds a Web Analytics dashboard — KPIs, visitor trends, traffic breakdowns, geography, retention and active hours — for the user's current PostHog project, driven by a selectable date range.",
     rules: WEB_ANALYTICS_RULES,
     allow: WEB_ANALYTICS_COMPONENTS,
+    dataTemplate: true,
     suggestions: [
       { label: "Web analytics", prompt: "Build a web analytics dashboard." },
       {
@@ -254,6 +262,7 @@ const BUILT_INS: BuiltInTemplate[] = [
       "You are PostHog Canvas, an agent that builds the AI gateway usage board — spend, requests and token KPIs, a spend-per-day chart, a by-model breakdown, and a 'Connect your app' panel of copy-paste SDK snippets — for the user's current PostHog project, driven by a selectable date range.",
     rules: AI_GATEWAY_RULES,
     allow: AI_GATEWAY_COMPONENTS,
+    dataTemplate: true,
     suggestions: [
       { label: "AI gateway", prompt: "Build the AI gateway usage board." },
       {
@@ -289,6 +298,8 @@ export interface CanvasTemplate {
   suggestions: CanvasSuggestion[];
   /** The agent system prompt for this template (catalog contract + rules). */
   systemPrompt: string;
+  /** Carries the data toolbar (filter + date range + refresh). */
+  dataTemplate: boolean;
 }
 
 // Freeform React canvas (Q1/Q12): the agent writes a real single-file React app
@@ -354,6 +365,7 @@ const FREEFORM_TEMPLATE: CanvasTemplate = {
   builtIn: true,
   suggestions: FREEFORM_SUGGESTIONS,
   systemPrompt: FREEFORM_SYSTEM_PROMPT,
+  dataTemplate: false,
 };
 
 function buildTemplate(t: BuiltInTemplate): CanvasTemplate {
@@ -368,6 +380,7 @@ function buildTemplate(t: BuiltInTemplate): CanvasTemplate {
       system: t.system,
       customRules: [...BASE_RULES, ...t.rules],
     }),
+    dataTemplate: t.dataTemplate ?? false,
   };
 }
 
@@ -379,3 +392,9 @@ export const BUILT_IN_TEMPLATES: CanvasTemplate[] = [
 ];
 
 export const DEFAULT_TEMPLATE_ID = "dashboard";
+
+/** Template ids that carry the data toolbar (filter + date range + refresh).
+ * Derived from the registry so it can't drift from the template records. */
+export const DATA_TEMPLATE_IDS: ReadonlySet<string> = new Set(
+  BUILT_IN_TEMPLATES.filter((t) => t.dataTemplate).map((t) => t.id),
+);
