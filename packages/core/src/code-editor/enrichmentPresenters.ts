@@ -1,5 +1,10 @@
 import type { SerializedFlag } from "@posthog/shared";
 
+// formatPercentDelta lives in @posthog/shared so the agent inline comments (in
+// @posthog/enricher, which can't import core) round deltas identically. Re-
+// exported here to keep the editor popover's existing import path stable.
+export { formatPercentDelta } from "@posthog/shared";
+
 export function compactNumber(n: number): string {
   if (n < 1000) return `${n}`;
   if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;

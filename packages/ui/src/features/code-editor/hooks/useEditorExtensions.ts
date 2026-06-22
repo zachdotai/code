@@ -17,12 +17,14 @@ import {
 import { getLanguageExtension } from "@posthog/ui/features/code-editor/utils/languages";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { useMemo } from "react";
+import { postHogApmEnrichmentExtension } from "../extensions/postHogApmEnrichment";
 import { postHogEnrichmentExtension } from "../extensions/postHogEnrichment";
 
 export function useEditorExtensions(
   filePath?: string,
   readOnly = false,
   enableEnrichment = false,
+  enableApmEnrichment = false,
 ) {
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
 
@@ -42,6 +44,7 @@ export function useEditorExtensions(
       ...(readOnly ? [EditorState.readOnly.of(true)] : []),
       ...(languageExtension ? [languageExtension] : []),
       ...(enableEnrichment ? [postHogEnrichmentExtension()] : []),
+      ...(enableApmEnrichment ? [postHogApmEnrichmentExtension()] : []),
     ];
-  }, [filePath, isDarkMode, readOnly, enableEnrichment]);
+  }, [filePath, isDarkMode, readOnly, enableEnrichment, enableApmEnrichment]);
 }

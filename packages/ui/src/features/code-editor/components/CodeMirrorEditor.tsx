@@ -1,8 +1,12 @@
 import { openSearchPanel } from "@codemirror/search";
 import { EditorView } from "@codemirror/view";
-import type { SerializedEnrichment } from "@posthog/shared";
+import type {
+  SerializedApmEnrichment,
+  SerializedEnrichment,
+} from "@posthog/shared";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useEffect, useMemo } from "react";
+import { setApmEnrichmentEffect } from "../extensions/postHogApmEnrichment";
 import { setEnrichmentEffect } from "../extensions/postHogEnrichment";
 import { useCodeMirror } from "../hooks/useCodeMirror";
 import { useEditorExtensions } from "../hooks/useEditorExtensions";
@@ -14,6 +18,7 @@ interface CodeMirrorEditorProps {
   relativePath?: string;
   readOnly?: boolean;
   enrichment?: SerializedEnrichment | null;
+  apmEnrichment?: SerializedApmEnrichment | null;
 }
 
 export function CodeMirrorEditor({
@@ -22,9 +27,16 @@ export function CodeMirrorEditor({
   relativePath,
   readOnly = false,
   enrichment,
+  apmEnrichment,
 }: CodeMirrorEditorProps) {
   const enrichmentEnabled = enrichment !== undefined;
-  const extensions = useEditorExtensions(filePath, readOnly, enrichmentEnabled);
+  const apmEnrichmentEnabled = apmEnrichment !== undefined;
+  const extensions = useEditorExtensions(
+    filePath,
+    readOnly,
+    enrichmentEnabled,
+    apmEnrichmentEnabled,
+  );
   const options = useMemo(
     () => ({ doc: content, extensions, filePath }),
     [content, extensions, filePath],
@@ -39,6 +51,15 @@ export function CodeMirrorEditor({
       effects: setEnrichmentEffect.of(enrichment ?? null),
     });
   }, [enrichment, enrichmentEnabled, instanceRef]);
+
+  useEffect(() => {
+    if (!apmEnrichmentEnabled) return;
+    const view = instanceRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: setApmEnrichmentEffect.of(apmEnrichment ?? null),
+    });
+  }, [apmEnrichment, apmEnrichmentEnabled, instanceRef]);
 
   useEffect(() => {
     if (!filePath) return;

@@ -13,7 +13,7 @@ import {
 } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -26,12 +26,15 @@ import { useFileTreeStore } from "../../right-sidebar/fileTreeStore";
 import { useCwd } from "../../sidebar/useCwd";
 import { useIsWorkspaceCloudRun } from "../../workspace/useWorkspace";
 import { useCloudFileContent } from "../hooks/useCloudFileContent";
+import { useFileApmEnrichment } from "../hooks/useFileApmEnrichment";
 import {
   useAbsoluteFileContent,
   useFileAsBase64,
   useRepoFileContent,
 } from "../hooks/useFileContent";
 import { useFileEnrichment } from "../hooks/useFileEnrichment";
+import { useApmPopoverStore } from "../stores/apmPopoverStore";
+import { ApmEnrichmentPopover } from "./ApmEnrichmentPopover";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import { EnrichmentPopover } from "./EnrichmentPopover";
 
@@ -160,6 +163,17 @@ export function CodeEditorPanel({
     absolutePath: isInsideRepo ? absolutePath : undefined,
     content: isImage ? null : fileContent,
   });
+
+  // Repo-relative path: the server suffix-matches it against the recorded OTel
+  // `code.file.path` (which carries the crate/workspace prefix). An absolute
+  // local path would never match.
+  const apmEnrichment = useFileApmEnrichment({ filePath });
+
+  // Dismiss any open APM popover when switching files; the global store would
+  // otherwise keep the previous file's stats visible over the new one.
+  useEffect(() => {
+    if (filePath) useApmPopoverStore.getState().close();
+  }, [filePath]);
 
   const dataUrlImage = useMemo(
     () =>
@@ -293,8 +307,10 @@ export function CodeEditorPanel({
         relativePath={filePath}
         readOnly
         enrichment={enrichment}
+        apmEnrichment={apmEnrichment}
       />
       <EnrichmentPopover />
+      <ApmEnrichmentPopover />
     </Box>
   );
 }
