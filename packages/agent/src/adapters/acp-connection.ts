@@ -114,6 +114,7 @@ function createClaudeConnection(config: AcpConnectionConfig): AcpConnection {
       ...config.processCallbacks,
       onStructuredOutput: config.onStructuredOutput,
       posthogApiConfig: resolveEnricherApiConfig(config),
+      logger: config.logger?.child("ClaudeAcpAgent"),
     });
     return agent;
   }, agentStream);

@@ -1,3 +1,4 @@
+import type { SpanLineStat } from "@posthog/shared";
 import { describe, expect, test, vi } from "vitest";
 import { enrichFileForAgent, type FileEnrichmentDeps } from "./file-enricher";
 
@@ -10,6 +11,7 @@ function makeDeps(overrides: {
   getApiKey?: () => string | Promise<string>;
   findImportsInSource?: () => Promise<unknown[]>;
   getWrappersForFile?: () => Promise<unknown[]>;
+  fetchApmLineStats?: () => Promise<SpanLineStat[]>;
 }): {
   deps: FileEnrichmentDeps;
   parseSpy: ReturnType<typeof vi.fn>;
@@ -17,6 +19,7 @@ function makeDeps(overrides: {
   getApiKeySpy: ReturnType<typeof vi.fn>;
   findImportsSpy: ReturnType<typeof vi.fn>;
   getWrappersSpy: ReturnType<typeof vi.fn>;
+  fetchApmSpy: ReturnType<typeof vi.fn>;
 } {
   const enrichFromApiSpy = vi.fn(async () => ({
     toInlineComments: () =>
@@ -39,6 +42,7 @@ function makeDeps(overrides: {
   const getWrappersSpy = vi.fn(
     overrides.getWrappersForFile ?? (async () => []),
   );
+  const fetchApmSpy = vi.fn(overrides.fetchApmLineStats ?? (async () => []));
 
   const deps: FileEnrichmentDeps = {
     enricher: {
@@ -52,6 +56,8 @@ function makeDeps(overrides: {
       projectId: 1,
       getApiKey: getApiKeySpy,
     },
+    apmStatsCache: new Map(),
+    fetchApmLineStats: fetchApmSpy,
   };
 
   return {
@@ -61,6 +67,7 @@ function makeDeps(overrides: {
     getApiKeySpy,
     findImportsSpy,
     getWrappersSpy,
+    fetchApmSpy,
   };
 }
 
@@ -261,7 +268,12 @@ describe("enrichFileForAgent", () => {
   });
 
   test("returns null and logs debug when enricher throws", async () => {
-    const logger = { debug: vi.fn() };
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
     const { deps } = makeDeps({ parseRejects: new Error("boom") });
     deps.logger = logger as unknown as FileEnrichmentDeps["logger"];
     const result = await enrichFileForAgent(
@@ -293,5 +305,130 @@ describe("enrichFileForAgent", () => {
         projectId: 1,
       }),
     );
+  });
+});
+
+describe("APM enrichment caching", () => {
+  const ONE_HOT_LINE: SpanLineStat[] = [
+    { line: 1, count: 5, errorCount: 0, p50Ms: 2, p95Ms: 7 },
+  ];
+
+  test.each<{
+    name: string;
+    fetchApmLineStats: () => Promise<SpanLineStat[]>;
+    calls: number;
+    contains: string | null;
+  }>([
+    {
+      name: "serves hot stats from cache on re-read (one fetch)",
+      fetchApmLineStats: async () => ONE_HOT_LINE,
+      calls: 1,
+      contains: "[PostHog] APM",
+    },
+    {
+      name: "caches an empty result so an untraced file is fetched once",
+      fetchApmLineStats: async () => [],
+      calls: 1,
+      contains: null,
+    },
+    {
+      name: "does not cache a transient fetch failure (retries next read)",
+      fetchApmLineStats: async () => {
+        throw new Error("network down");
+      },
+      calls: 2,
+      contains: null,
+    },
+  ])("$name", async ({ fetchApmLineStats, calls, contains }) => {
+    const { deps, fetchApmSpy } = makeDeps({ fetchApmLineStats });
+
+    const first = await enrichFileForAgent(deps, "/repo/flag.rs", "fn m() {}");
+    const second = await enrichFileForAgent(deps, "/repo/flag.rs", "fn m() {}");
+
+    for (const result of [first, second]) {
+      if (contains === null) expect(result).toBeNull();
+      else expect(result).toContain(contains);
+    }
+    expect(fetchApmSpy).toHaveBeenCalledTimes(calls);
+  });
+
+  test("re-applies cached stats to the current content after an edit", async () => {
+    const { deps } = makeDeps({ fetchApmLineStats: async () => ONE_HOT_LINE });
+
+    await enrichFileForAgent(deps, "/repo/flag.rs", "fn m() {}");
+    const edited = await enrichFileForAgent(
+      deps,
+      "/repo/flag.rs",
+      "fn renamed() {}",
+    );
+
+    const firstLine = edited?.split("\n")[0] ?? "";
+    expect(firstLine).toContain("fn renamed() {}");
+    expect(firstLine).toContain("[PostHog] APM");
+  });
+
+  test("a rejecting getApiKey degrades to null instead of throwing", async () => {
+    const { deps, fetchApmSpy } = makeDeps({
+      getApiKey: () => Promise.reject(new Error("token refresh failed")),
+    });
+
+    const result = await enrichFileForAgent(deps, "/repo/flag.rs", "fn m() {}");
+
+    expect(result).toBeNull();
+    expect(fetchApmSpy).not.toHaveBeenCalled();
+  });
+
+  test("queries APM with a timeout that covers the 24h window's worst case", async () => {
+    const { deps, fetchApmSpy } = makeDeps({
+      fetchApmLineStats: async () => ONE_HOT_LINE,
+    });
+
+    await enrichFileForAgent(deps, "/repo/flag.rs", "fn m() {}");
+
+    const config = fetchApmSpy.mock.calls[0]?.[0] as { timeoutMs?: number };
+    expect(config?.timeoutMs).toBeGreaterThanOrEqual(15_000);
+  });
+
+  test("serves from cache within the TTL, refetches once it expires", async () => {
+    const { deps, fetchApmSpy } = makeDeps({
+      fetchApmLineStats: async () => ONE_HOT_LINE,
+    });
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      await enrichFileForAgent(deps, "/repo/flag.rs", "fn m() {}");
+      expect(fetchApmSpy).toHaveBeenCalledTimes(1);
+      now.mockReturnValue(1_000 + 4 * 60_000);
+      await enrichFileForAgent(deps, "/repo/flag.rs", "fn m() {}");
+      expect(fetchApmSpy).toHaveBeenCalledTimes(1);
+      now.mockReturnValue(1_000 + 5 * 60_000 + 1);
+      await enrichFileForAgent(deps, "/repo/flag.rs", "fn m() {}");
+      expect(fetchApmSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test("an event-branch failure does not break the read or lose APM", async () => {
+    const { deps } = makeDeps({
+      fetchApmLineStats: async () => ONE_HOT_LINE,
+      findImportsInSource: async () => [
+        {
+          localName: "track",
+          importedName: "track",
+          resolvedAbsPath: "/repo/t.ts",
+        },
+      ],
+      getWrappersForFile: async () => {
+        throw new Error("fs boom");
+      },
+    });
+
+    const out = await enrichFileForAgent(
+      deps,
+      "/repo/app.ts",
+      'import { track } from "./t";\ntrack("x");',
+    );
+
+    expect(out).toContain("[PostHog] APM");
   });
 });

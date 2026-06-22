@@ -236,6 +236,8 @@ export interface ClaudeAcpAgentOptions {
   onMcpServersReady?: (serverNames: string[]) => void;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   posthogApiConfig?: PostHogAPIConfig;
+  // Host log sink; without it the agent's enrichment logs never reach main.log.
+  logger?: Logger;
 }
 
 export class ClaudeAcpAgent extends BaseAcpAgent {
@@ -255,7 +257,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     this.options = options;
     this.toolUseCache = {};
     this.toolUseStreamCache = new Map();
-    this.logger = new Logger({ debug: true, prefix: "[ClaudeAcpAgent]" });
+    this.logger =
+      options?.logger ??
+      new Logger({ debug: true, prefix: "[ClaudeAcpAgent]" });
     this.enrichment = createEnrichment(options?.posthogApiConfig, this.logger);
   }
 
