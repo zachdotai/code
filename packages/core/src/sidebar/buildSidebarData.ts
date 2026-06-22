@@ -1,4 +1,7 @@
-import type { TaskRunStatus } from "@posthog/shared/domain-types";
+import {
+  isTerminalStatus,
+  type TaskRunStatus,
+} from "@posthog/shared/domain-types";
 import { getRepositoryInfo } from "./groupTasks";
 import type { TaskData } from "./sidebarData.types";
 
@@ -83,6 +86,9 @@ export interface TaskSession {
   pendingPermissions?: { size: number };
   cloudStatus?: TaskRunStatus;
   cloudOutput?: { pr_url?: unknown } | null;
+  taskRunId?: string;
+  // Set to this run's id once the agent emits turn_complete (it went idle).
+  agentIdleForRunId?: string;
 }
 
 export interface TaskWorkspace {
@@ -128,6 +134,22 @@ export function deriveTaskData(
       ? task.latest_run.output.pr_url
       : ((session?.cloudOutput?.pr_url as string | undefined) ?? null);
 
+  // A cloud run's status can stay stuck at a non-terminal value when the
+  // backend never flips it to terminal (the SSE stream EOFs cleanly without a
+  // status write). The agent's own turn_complete signal — surfaced as
+  // `agentIdleForRunId` for this run — proves it finished, so present the run
+  // as completed rather than spinning "in_progress" forever.
+  const rawRunStatus =
+    session?.cloudStatus ?? task.latest_run?.status ?? undefined;
+  const agentIdleForRun =
+    !!session &&
+    session.agentIdleForRunId !== undefined &&
+    session.agentIdleForRunId === session.taskRunId;
+  const taskRunStatus: TaskRunStatus | undefined =
+    agentIdleForRun && rawRunStatus && !isTerminalStatus(rawRunStatus)
+      ? "completed"
+      : rawRunStatus;
+
   const originProduct =
     task.origin_product ??
     (ctx.slackTaskIds.has(task.id) ? "slack" : undefined);
@@ -146,7 +168,7 @@ export function deriveTaskData(
     needsPermission: (session?.pendingPermissions?.size ?? 0) > 0,
     repository: getRepositoryInfo(task, workspace?.folderPath ?? undefined),
     folderId: workspace?.folderId || undefined,
-    taskRunStatus: session?.cloudStatus ?? task.latest_run?.status ?? undefined,
+    taskRunStatus,
     taskRunEnvironment: task.latest_run?.environment ?? undefined,
     originProduct,
     slackThreadUrl,

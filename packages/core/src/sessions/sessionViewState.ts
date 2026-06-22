@@ -1,5 +1,9 @@
 import type { AcpMessage, AgentSession, Workspace } from "@posthog/shared";
-import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
+import {
+  isTerminalStatus,
+  type Task,
+  type TaskRunStatus,
+} from "@posthog/shared/domain-types";
 
 export interface SessionViewState {
   isCloudRunNotTerminal: boolean;
@@ -24,10 +28,15 @@ export function deriveSessionViewState(
   isCloud: boolean,
 ): SessionViewState {
   const cloudStatus = session?.cloudStatus ?? null;
-  const isCloudRunNotTerminal =
-    isCloud &&
-    (!cloudStatus || cloudStatus === "queued" || cloudStatus === "in_progress");
-  const isCloudRunTerminal = isCloud && !isCloudRunNotTerminal;
+  // The live session's cloudStatus can stall at a non-terminal value: the SSE
+  // stream defers the terminal status until the stream cleanly ends, which can
+  // fail to happen. The task's polled REST status is authoritative, so treat the
+  // run as terminal as soon as EITHER source reports it — don't let a stale live
+  // status keep the run "in progress" forever.
+  const restStatus = task.latest_run?.status ?? null;
+  const isCloudRunTerminal =
+    isCloud && (isTerminalStatus(cloudStatus) || isTerminalStatus(restStatus));
+  const isCloudRunNotTerminal = isCloud && !isCloudRunTerminal;
 
   const hasError = session?.status === "error" && !session?.idleKilled;
   const handoffInProgress = session?.handoffInProgress ?? false;

@@ -18,6 +18,7 @@ import {
 } from "@posthog/quill";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useDashboardMutations } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useDashboardEditStore } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import {
   useFreeformChatStore,
@@ -35,7 +36,7 @@ import {
 } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FreeformCanvas } from "./FreeformCanvas";
 import { FreeformGenerateBar } from "./FreeformGenerateBar";
 import { handleFreeformDataRequest } from "./freeformDataBridge";
@@ -97,15 +98,35 @@ export function FreeformCanvasView({
     if (!genTaskId) return false;
     if (genTaskLoading) return true;
     if (genTask?.latest_run?.environment === "cloud") {
-      const cloudStatus =
-        genSession?.cloudStatus ?? genTask?.latest_run?.status ?? null;
-      return !isTerminalStatus(cloudStatus);
+      // The live session's cloudStatus can stall at "in_progress" when the SSE
+      // stream defers the terminal status and never cleanly ends, and the polled
+      // REST status can lag just as long when the backend never flips the run to
+      // terminal. So also trust the agent's own "I'm done" signal: once it emits
+      // turn_complete the session is marked idle for this run. Generation is a
+      // one-shot turn, so an idle agent means the canvas is built — don't let a
+      // stale in_progress on either status source keep it spinning forever.
+      const liveTerminal = isTerminalStatus(genSession?.cloudStatus);
+      const restTerminal = isTerminalStatus(genTask?.latest_run?.status);
+      const agentIdle =
+        !!genSession && genSession.agentIdleForRunId === genSession.taskRunId;
+      return !(liveTerminal || restTerminal || agentIdle);
     }
     return (
       genSession?.status === "connecting" || genSession?.status === "connected"
     );
   })();
   const isGenerating = !!genTaskId && running;
+
+  // Once the generation task stops, clear the server-side association so the
+  // spinner, polling, and disabled composer all recover — for this client and
+  // everyone else tracking the run. The backend also clears it on publish; this
+  // is the fallback for clients whose task status resolves first (mirrors
+  // WebsiteContext's CONTEXT.md generation).
+  const { setGenerationTask } = useDashboardMutations();
+  useEffect(() => {
+    if (genTaskId && !running)
+      void setGenerationTask(dashboardId, null).catch(() => {});
+  }, [genTaskId, running, dashboardId, setGenerationTask]);
 
   // Poll the record while generating so a just-published canvas appears.
   useQuery(
