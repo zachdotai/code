@@ -811,6 +811,10 @@ function ChannelSection({
     hiddenTaskCount,
     MAX_VISIBLE_TASKS_PER_CHANNEL,
   );
+  const hasChildren =
+    dashboards.length > 0 ||
+    displayedFiledTasks.length > 0 ||
+    hiddenTaskCount > 0;
 
   return (
     <Box
@@ -961,64 +965,66 @@ function ChannelSection({
         </div>
         {/* Children hang off a vertical guide line, like a tree. The folder
             variant's own inset is removed so the guide line controls indent. */}
-        <CollapsibleContent className="px-0">
-          <Flex
-            direction="column"
-            gap="px"
-            className="mt-px ml-[11px] border-gray-6 border-l pl-2 empty:hidden"
-          >
-            {dashboards.map((d) => (
-              <DashboardRow
-                key={d.id}
-                channelId={channel.id}
-                dashboard={d}
-                active={pathname === `${base}/dashboards/${d.id}`}
-              />
-            ))}
-            {displayedFiledTasks.map(({ id: channelTaskId, taskId }) => {
-              const task = tasks?.find((t) => t.id === taskId);
-              const title = task?.title || "Untitled task";
-              return (
-                <TaskRow
-                  key={channelTaskId}
-                  channelTaskId={channelTaskId}
+        {hasChildren && (
+          <CollapsibleContent className="px-0">
+            <Flex
+              direction="column"
+              gap="px"
+              className="mt-px ml-[11px] border-gray-6 border-l pl-2 empty:hidden"
+            >
+              {dashboards.map((d) => (
+                <DashboardRow
+                  key={d.id}
                   channelId={channel.id}
-                  taskId={taskId}
-                  task={task}
-                  title={title}
-                  active={pathname === `${base}/tasks/${taskId}`}
-                  onClick={() =>
-                    navigate({
-                      to: "/website/$channelId/tasks/$taskId",
-                      params: { channelId: channel.id, taskId },
-                    })
-                  }
-                  channels={channels}
+                  dashboard={d}
+                  active={pathname === `${base}/dashboards/${d.id}`}
                 />
-              );
-            })}
-            {hiddenTaskCount > 0 && (
-              <Button
-                variant="default"
-                size="default"
-                onClick={() => {
-                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                    action_type: "view_more_tasks",
-                    surface: "sidebar",
-                    channel_id: channel.id,
-                  });
-                  setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL);
-                }}
-                className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
-              >
-                <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
-                  <CaretDownIcon size={12} />
-                </span>
-                View {nextBatchCount} more
-              </Button>
-            )}
-          </Flex>
-        </CollapsibleContent>
+              ))}
+              {displayedFiledTasks.map(({ id: channelTaskId, taskId }) => {
+                const task = tasks?.find((t) => t.id === taskId);
+                const title = task?.title || "Untitled task";
+                return (
+                  <TaskRow
+                    key={channelTaskId}
+                    channelTaskId={channelTaskId}
+                    channelId={channel.id}
+                    taskId={taskId}
+                    task={task}
+                    title={title}
+                    active={pathname === `${base}/tasks/${taskId}`}
+                    onClick={() =>
+                      navigate({
+                        to: "/website/$channelId/tasks/$taskId",
+                        params: { channelId: channel.id, taskId },
+                      })
+                    }
+                    channels={channels}
+                  />
+                );
+              })}
+              {hiddenTaskCount > 0 && (
+                <Button
+                  variant="default"
+                  size="default"
+                  onClick={() => {
+                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                      action_type: "view_more_tasks",
+                      surface: "sidebar",
+                      channel_id: channel.id,
+                    });
+                    setTaskLimit((n) => n + MAX_VISIBLE_TASKS_PER_CHANNEL);
+                  }}
+                  className="w-full min-w-0 justify-start gap-2 text-[13px] text-gray-10"
+                >
+                  <span className="inline-flex size-[14px] shrink-0 items-center justify-center">
+                    <CaretDownIcon size={12} />
+                  </span>
+                  View {nextBatchCount} more
+                </Button>
+              )}
+            </Flex>
+          </CollapsibleContent>
+        )}
       </Collapsible>
       {/* One modal for both the dropdown and context-menu "Rename" actions. */}
       <RenameChannelModal
@@ -1103,7 +1109,7 @@ export function ChannelsList() {
     <TooltipProvider delay={600}>
       <Flex direction="column" gap="px" className="px-2 pb-2">
         <Box className="py-1.5">
-          <Separator />
+          <Separator className="bg-border" />
         </Box>
 
         {starred.length > 0 && (

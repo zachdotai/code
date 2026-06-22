@@ -229,7 +229,7 @@ export function WebsiteLayout() {
           align="center"
           justify="end"
           gap="2"
-          className="h-10 shrink-0 border-gray-6 border-b px-3"
+          className="h-10 shrink-0 border-border border-b px-3"
         >
           {isDashboardDetail && channelId && dashboardId ? (
             <FreeformEditControls

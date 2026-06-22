@@ -6,6 +6,15 @@ import {
 } from "@phosphor-icons/react";
 import { FolderInstructionsConflictError } from "@posthog/api-client/posthog-client";
 import { buildContextSaveProps } from "@posthog/core/canvas/canvasAnalytics";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Button as QuillButton,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -417,53 +426,47 @@ function EmptyState({
   onCreate: () => void;
 }) {
   return (
-    <Flex
-      direction="column"
-      align="center"
-      gap="4"
-      className="mx-auto max-w-[440px] py-16 text-center"
-    >
-      <Box className="rounded-lg border border-gray-6 border-dashed p-4">
-        <FileTextIcon size={28} className="text-gray-8" />
-      </Box>
-      <Flex direction="column" gap="2" align="center">
-        <Text className="font-medium text-[14px] text-gray-12">
-          No CONTEXT.md yet
-        </Text>
-        <Text className="text-[13px] text-gray-10 leading-relaxed">
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <FileTextIcon size={28} />
+        </EmptyMedia>
+        <EmptyTitle>No CONTEXT.md yet</EmptyTitle>
+        <EmptyDescription>
           CONTEXT.md tells agents the specific details they need to know when
           working in <strong>{channelName}</strong> — conventions, gotchas, key
           files, and anything else that isn't obvious from the code.
-        </Text>
-      </Flex>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        {stoppedTaskId ? (
+          <Callout.Root color="amber" size="1" className="w-full text-left">
+            <Callout.Text>
+              The previous generation in task{" "}
+              <Link
+                to="/website/$channelId/tasks/$taskId"
+                params={{ channelId, taskId: stoppedTaskId }}
+                className="font-medium text-amber-11 underline"
+              >
+                {shortTaskId(stoppedTaskId)}
+              </Link>{" "}
+              stopped before writing a CONTEXT.md. You can generate again.
+            </Callout.Text>
+          </Callout.Root>
+        ) : null}
 
-      {stoppedTaskId ? (
-        <Callout.Root color="amber" size="1" className="w-full text-left">
-          <Callout.Text>
-            The previous generation in task{" "}
-            <Link
-              to="/website/$channelId/tasks/$taskId"
-              params={{ channelId, taskId: stoppedTaskId }}
-              className="font-medium text-amber-11 underline"
-            >
-              {shortTaskId(stoppedTaskId)}
-            </Link>{" "}
-            stopped before writing a CONTEXT.md. You can generate again.
-          </Callout.Text>
-        </Callout.Root>
-      ) : null}
-
-      <Flex align="center" gap="3">
-        <Button size="2" variant="solid" onClick={onCreate}>
-          Create CONTEXT.md
-        </Button>
-        <GenerateWithAgent
-          channelId={channelId}
-          channelName={channelName}
-          regenerate={!!stoppedTaskId}
-        />
-      </Flex>
-    </Flex>
+        <Flex align="center" gap="3">
+          <QuillButton variant="primary" size="default" onClick={onCreate}>
+            Create
+          </QuillButton>
+          <GenerateWithAgent
+            channelId={channelId}
+            channelName={channelName}
+            regenerate={!!stoppedTaskId}
+          />
+        </Flex>
+      </EmptyContent>
+    </Empty>
   );
 }
 
@@ -502,10 +505,14 @@ function GenerateWithAgent({
 
   if (!picking) {
     return (
-      <Button size="2" variant="soft" onClick={() => setPicking(true)}>
+      <QuillButton
+        variant="outline"
+        size="default"
+        onClick={() => setPicking(true)}
+      >
         <SparkleIcon size={14} />
         {regenerate ? "Generate again" : "Generate with agent"}
-      </Button>
+      </QuillButton>
     );
   }
 
