@@ -2,10 +2,8 @@ import {
   ArchiveIcon,
   CaretDownIcon,
   ChartBarIcon,
-  ChartLineIcon,
   CodeIcon,
   DotsThreeIcon,
-  FileIcon,
   FileTextIcon,
   FolderIcon,
   HashIcon,
@@ -57,6 +55,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
+import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import {
   NewCanvasDialog,
   trackAndCreateCanvas,
@@ -98,20 +97,6 @@ import { hostClient } from "../hostClient";
 // Cap how many tasks each channel shows by default; the rest hide behind a
 // "View more" button so a busy channel doesn't dominate the sidebar.
 const MAX_VISIBLE_TASKS_PER_CHANNEL = 5;
-
-// A canvas's leading icon, chosen from its template so the tree reads at a
-// glance: bar chart for dashboards, line chart for web-analytics, plain file for
-// blank canvases.
-function iconForTemplate(templateId: string): ReactNode {
-  switch (templateId) {
-    case "web-analytics":
-      return <ChartLineIcon size={16} className="text-gray-9" />;
-    case "blank":
-      return <FileIcon size={16} className="text-gray-9" />;
-    default:
-      return <ChartBarIcon size={16} className="text-gray-9" />;
-  }
-}
 
 // Short "x ago" stamp for an item's subtitle. Coarse on purpose — the sidebar
 // just needs recency at a glance, not a precise duration.
