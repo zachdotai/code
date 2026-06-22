@@ -280,6 +280,13 @@ export function TaskListView({
               );
               const groupFolderId =
                 folder?.id ?? group.tasks.find((t) => t.folderId)?.folderId;
+              // Cloud-only repository groups have no registered local folder.
+              // Their group id is the normalized `owner/repo` key; detect them
+              // via a parsed repository (which carries an organization) so we
+              // can preselect the cloud repo instead of opening a blank input.
+              const cloudRepository = group.tasks.find(
+                (t) => t.repository?.organization,
+              )?.repository?.fullPath;
               return (
                 <DraggableFolder key={group.id} id={group.id} index={index}>
                   <SidebarSection
@@ -293,6 +300,10 @@ export function TaskListView({
                     onNewTask={() => {
                       if (groupFolderId) {
                         openTaskInput(groupFolderId);
+                      } else if (cloudRepository) {
+                        openTaskInput({
+                          initialCloudRepository: cloudRepository,
+                        });
                       } else {
                         openTaskInput();
                       }
