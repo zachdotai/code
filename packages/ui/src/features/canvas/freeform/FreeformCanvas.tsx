@@ -5,6 +5,7 @@ import {
   type HostToCanvasMessage,
 } from "@posthog/core/canvas/freeformSchemas";
 import { logger } from "@posthog/ui/shell/logger";
+import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import {
   useCallback,
   useEffect,
@@ -60,6 +61,9 @@ export function FreeformCanvas({
 }: FreeformCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | null>(null);
+  // The canvas mirrors the host's light/dark theme. Passed via `init` (not the
+  // srcDoc) so a theme switch updates the running canvas in place, like `code`.
+  const theme = useThemeStore((s) => (s.isDarkMode ? "dark" : "light"));
   // Whether the iframe has announced it's ready for `init`. A ref, not state: it
   // only gates an imperative postMessage and is never shown on screen, so it
   // shouldn't trigger re-renders.
@@ -84,6 +88,7 @@ export function FreeformCanvas({
     code,
     mode,
     analytics,
+    theme,
   });
   latest.current = {
     onDataRequest,
@@ -92,6 +97,7 @@ export function FreeformCanvas({
     code,
     mode,
     analytics,
+    theme,
   };
 
   const postInit = useCallback(() => {
@@ -103,6 +109,7 @@ export function FreeformCanvas({
         code: p.code,
         mode: p.mode,
         analytics: p.analytics,
+        theme: p.theme,
       },
       "*",
     );
@@ -186,13 +193,35 @@ export function FreeformCanvas({
   // NB: reference code/mode/analytics DIRECTLY here (not via postInit, which
   // reads them off a ref) — otherwise the exhaustive-deps lint strips them from
   // the array as "unused" and the effect goes stale, never re-posting on change.
+  // Theme is NOT a dep: a re-init remounts the app (new Blob module = fresh
+  // component = reset state), so theme changes go through `set-theme` below
+  // instead. init still carries the current theme so the next mount is correct.
   useEffect(() => {
     if (!readyRef.current) return;
     iframeRef.current?.contentWindow?.postMessage(
-      { channel: "posthog-canvas", type: "init", code, mode, analytics },
+      {
+        channel: "posthog-canvas",
+        type: "init",
+        code,
+        mode,
+        analytics,
+        theme: latest.current.theme,
+      },
       "*",
     );
   }, [code, mode, analytics]);
+
+  // Live theme change: re-theme the running canvas in place (no remount), so a
+  // host theme toggle — or an OS light/dark flip under "system" — preserves all
+  // canvas state (filters, forms, scroll). Skipped until the iframe is ready;
+  // the init above already carries the correct theme for the first render.
+  useEffect(() => {
+    if (!readyRef.current) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { channel: "posthog-canvas", type: "set-theme", theme },
+      "*",
+    );
+  }, [theme]);
 
   return (
     <iframe
@@ -211,7 +240,9 @@ export function FreeformCanvas({
         readyRef.current = true;
         postInit();
       }}
-      className="w-full border-0 bg-white"
+      // bg tracks the host theme so there's no white flash in dark mode before
+      // the iframe paints; the canvas body uses the same --background token.
+      className="w-full border-0 bg-background"
       style={{ height: height ? `${height}px` : "100%", minHeight: "100%" }}
     />
   );
