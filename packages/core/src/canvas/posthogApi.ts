@@ -82,6 +82,79 @@ export async function runHogQLQuery(
   );
 }
 
+/** A saved insight's stored result, fetched by short id. */
+export interface InsightFetchResult {
+  shortId: string;
+  /** `insight.query.kind` — drives result-shape coercion (HogQLQuery → rows). */
+  queryKind: string | null;
+  columns: string[];
+  /** The insight's precomputed `result` (series objects for trends, rows for SQL). */
+  results: unknown[];
+}
+
+/**
+ * Fetch a SAVED insight by `short_id` and return its STORED result straight from
+ * the insights endpoint (`/insights/?short_id=…&refresh=blocking`) — the same
+ * cache the PostHog UI reads, so the numbers match the insight as shown there.
+ * This is how a canvas loads a proven, saved insight instead of re-running a raw
+ * query against `/query/`.
+ *
+ * `dateRange` re-scopes the insight for this request only via `filters_override`
+ * (the product's per-request override) — NOT the flat `date_from`/`date_to` query
+ * params, which are LIST filters that would exclude the insight from the result
+ * set. `short_id` still matches the insight regardless, so the lookup is robust;
+ * if the saved insight's window can't be overridden (e.g. a raw-SQL insight) it
+ * simply returns its saved window. Throws on no selected project, an HTTP
+ * failure, or an unknown short id.
+ */
+export async function fetchInsightByShortId(
+  authService: AuthService,
+  shortId: string,
+  opts?: { dateRange?: { date_from: string; date_to: string } },
+): Promise<InsightFetchResult> {
+  const { apiHost } = await authService.getValidAccessToken();
+  const projectId = authService.getState().currentProjectId;
+  if (projectId == null) {
+    throw new Error("No PostHog project selected");
+  }
+
+  const params = new URLSearchParams({
+    short_id: shortId,
+    refresh: "blocking",
+  });
+  if (opts?.dateRange) {
+    params.set("filters_override", JSON.stringify(opts.dateRange));
+  }
+
+  const response = await authService.authenticatedFetch(
+    fetch,
+    `${apiHost}/api/projects/${projectId}/insights/?${params.toString()}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Insight load failed (${response.status})`);
+  }
+
+  const body = (await response.json()) as {
+    results?: Array<{
+      short_id?: string;
+      query?: { kind?: string } | null;
+      columns?: string[] | null;
+      result?: unknown;
+    }>;
+  };
+  const insight = body.results?.[0];
+  if (!insight) {
+    throw new Error(`Insight "${shortId}" not found`);
+  }
+
+  return {
+    shortId,
+    queryKind: insight.query?.kind ?? null,
+    columns: Array.isArray(insight.columns) ? insight.columns.map(String) : [],
+    results: Array.isArray(insight.result) ? insight.result : [],
+  };
+}
+
 export interface CurrentUser {
   /** The user's PostHog distinct_id (event attribution). */
   distinctId?: string;
