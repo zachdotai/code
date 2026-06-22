@@ -18,6 +18,7 @@ import {
 } from "@posthog/quill";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useDashboardEditStore } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import {
   useFreeformChatStore,
   useFreeformThread,
@@ -62,6 +63,7 @@ export function FreeformCanvasView({
   const undo = useFreeformChatStore((s) => s.undo);
   const redo = useFreeformChatStore((s) => s.redo);
   const setRuntimeError = useFreeformChatStore((s) => s.setRuntimeError);
+  const setEditing = useDashboardEditStore((s) => s.setEditing);
 
   const trpc = useHostTRPC();
 
@@ -264,6 +266,17 @@ export function FreeformCanvasView({
                       : "This canvas is empty. Hit Edit to build it with an agent."}
                   </EmptyDescription>
                 </EmptyHeader>
+                {!interactive && (
+                  <EmptyContent>
+                    <Button
+                      variant="primary"
+                      size="default"
+                      onClick={() => setEditing(dashboardId, true)}
+                    >
+                      Edit canvas
+                    </Button>
+                  </EmptyContent>
+                )}
               </Empty>
             )}
           </ScrollArea>
