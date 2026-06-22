@@ -1,16 +1,16 @@
 import {
   ChartBarIcon,
   ChartLineIcon,
-  CodeIcon,
   FileIcon,
+  ShapesIcon,
 } from "@phosphor-icons/react";
 import { FREEFORM_TEMPLATE_ID } from "@posthog/core/canvas/freeformSchemas";
 import type { ReactNode } from "react";
 
 // A canvas's leading icon, chosen from its template so the tree and header read
 // at a glance: bar chart for json-render dashboards, line chart for web
-// analytics, code for the generic freeform React/HTML app, plain file for blank
-// canvases.
+// analytics, shapes for the generic freeform canvas (until it's classified as
+// something more specific), plain file for blank canvases.
 export function iconForTemplate(
   templateId: string,
   opts?: { size?: number; className?: string },
@@ -23,7 +23,7 @@ export function iconForTemplate(
     case "blank":
       return <FileIcon size={size} className={className} />;
     case FREEFORM_TEMPLATE_ID:
-      return <CodeIcon size={size} className={className} />;
+      return <ShapesIcon size={size} className={className} />;
     default:
       return <ChartBarIcon size={size} className={className} />;
   }

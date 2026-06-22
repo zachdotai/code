@@ -1,4 +1,5 @@
 import { HashIcon } from "@phosphor-icons/react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@posthog/quill";
 import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, useState } from "react";
@@ -49,7 +50,7 @@ export function ChannelBreadcrumb({
         <Text className="shrink-0 text-[13px] text-muted-foreground/20">/</Text>
         <div className="flex items-center gap-1.5">
           {leafIcon && (
-            <span className="flex shrink-0 text-primary">{leafIcon}</span>
+            <span className="mt-px flex shrink-0 text-primary">{leafIcon}</span>
           )}
           {editing && onRename ? (
             <HeaderTitleEditor
@@ -61,13 +62,22 @@ export function ChannelBreadcrumb({
               onCancel={() => setEditing(false)}
             />
           ) : (
-            <Text
-              truncate
-              className="no-drag min-w-0 whitespace-nowrap text-[13px]"
-              onDoubleClick={onRename ? () => setEditing(true) : undefined}
-            >
-              {leafLabel}
-            </Text>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Text
+                    truncate
+                    className="no-drag min-w-0 whitespace-nowrap text-[13px]"
+                    onDoubleClick={
+                      onRename ? () => setEditing(true) : undefined
+                    }
+                  />
+                }
+              >
+                {leafLabel}
+              </TooltipTrigger>
+              <TooltipContent>{leafLabel}</TooltipContent>
+            </Tooltip>
           )}
         </div>
       </Flex>

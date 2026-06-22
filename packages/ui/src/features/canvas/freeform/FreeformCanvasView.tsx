@@ -1,6 +1,7 @@
 import {
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
+  ShapesIcon,
   SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
@@ -251,23 +252,19 @@ export function FreeformCanvasView({
             ) : showGeneratingState ? (
               <GeneratingState channelId={channelId} taskId={genTaskId ?? ""} />
             ) : (
-              <Flex
-                direction="column"
-                align="center"
-                justify="center"
-                height="100%"
-                gap="1"
-                className="px-6 text-center"
-              >
-                <Text size="3" weight="bold" className="text-gray-12">
-                  Freeform canvas
-                </Text>
-                <Text size="2" className="text-gray-10">
-                  {interactive
-                    ? "Describe the canvas below to build it with an agent."
-                    : "This canvas is empty. Hit Edit to build it with an agent."}
-                </Text>
-              </Flex>
+              <Empty className="h-full">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ShapesIcon size={24} />
+                  </EmptyMedia>
+                  <EmptyTitle>Freeform canvas</EmptyTitle>
+                  <EmptyDescription>
+                    {interactive
+                      ? "Describe the canvas below to build it with an agent."
+                      : "This canvas is empty. Hit Edit to build it with an agent."}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             )}
           </ScrollArea>
         </Box>
