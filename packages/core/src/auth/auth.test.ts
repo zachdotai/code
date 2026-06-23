@@ -1451,6 +1451,22 @@ describe("AuthService", () => {
       ]);
     });
 
+    it("treats thrown network errors like transient failures and fails closed", async () => {
+      // The check throws (network timeout / DNS failure) rather than returning
+      // a non-2xx — exercises the catch branch, which must behave like a
+      // transient failure: retry, then fail closed.
+      const { getCheckAccessCalls } = stubFetchWithCheckAccess(() => {
+        throw new TypeError("network down");
+      });
+
+      await restoreSession();
+
+      await vi.waitFor(() =>
+        expect(service.getState().hasCodeAccess).toBe(false),
+      );
+      expect(getCheckAccessCalls()).toBe(10);
+    });
+
     it("does not let a stale retry loop clobber a fresh grant", async () => {
       // Park the retry loop on its first backoff so we can interleave a newer
       // authoritative check that succeeds before the stale loop wakes.
