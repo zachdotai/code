@@ -35,10 +35,11 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
 
   return (
     <Flex direction="column" gap="1">
-      {queued.map((message) => (
+      {queued.map((message, index) => (
         <QueuedMessageView
           key={message.id}
           message={message}
+          connectedToInput={index === queued.length - 1}
           supportsNativeSteer={supportsNativeSteer}
           onSteer={
             isCompacting

@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
+import clsx from "clsx";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import type { QueuedMessage } from "../../sessionStore";
 import { hasFileMentions, parseFileMentions } from "./parseFileMentions";
@@ -16,6 +17,9 @@ interface QueuedMessageViewProps {
   onReturnToEditor?: () => void;
   onRemove?: () => void;
   supportsNativeSteer?: boolean;
+  // when this is the message sitting directly on the composer, square + open its
+  // bottom edge so it connects flush; otherwise it's a standalone rounded card
+  connectedToInput?: boolean;
 }
 
 export function QueuedMessageView({
@@ -24,13 +28,19 @@ export function QueuedMessageView({
   onReturnToEditor,
   onRemove,
   supportsNativeSteer = false,
+  connectedToInput = false,
 }: QueuedMessageViewProps) {
   const steerTooltip = supportsNativeSteer
     ? "Inject this message into the current turn at the next tool boundary."
     : "Interrupt the current turn and resend with this message.";
 
   return (
-    <Box className="rounded-t-md border border-gray-5 border-b-0 bg-card px-3 py-2">
+    <Box
+      className={clsx(
+        "border border-gray-5 bg-card px-3 py-2",
+        connectedToInput ? "rounded-t-md border-b-0" : "rounded-md",
+      )}
+    >
       <Flex align="center" gap="2">
         <Stack size={14} className="shrink-0 text-gray-9" />
         <Box className="min-w-0 flex-1 font-medium text-[13px] text-gray-12 [&>*:last-child]:mb-0">

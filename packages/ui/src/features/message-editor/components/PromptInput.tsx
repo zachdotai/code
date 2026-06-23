@@ -332,7 +332,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
             "h-auto cursor-text bg-card",
             // input is rounded more than the queued-message dock above it; when a
             // message is docked, square the top so the two boxes connect flush
-            attachedTop ? "rounded-b-xl! rounded-t-none!" : "rounded-xl!",
+            attachedTop ? "rounded-t-none! rounded-b-xl!" : "rounded-xl!",
             isBashMode
               ? "ring-1 ring-blue-9"
               : "focus-within:ring-1 focus-within:ring-purple-9",
