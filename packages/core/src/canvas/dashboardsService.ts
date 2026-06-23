@@ -433,6 +433,23 @@ function useChannelRows(kind: "dashboard" | "task") {
   return { rows, loadMore, loading, done };
 }
 
+// Resolve the channel's display name (its folder's last path segment) at runtime
+// from the baked-in id, so a renamed channel still greets correctly. Empty until
+// resolved, so the header avoids a flash of a bare "#".
+function useChannelName(): string {
+  const [name, setName] = useState("");
+  useEffect(() => {
+    let alive = true;
+    void resolveChannelPath().then((path) => {
+      if (alive && path) setName(lastSegment(path));
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return name;
+}
+
 // A fixed-height, scrollable section card. A sentinel at the bottom (observed
 // against THIS box, not the page) fires onLoadMore as the user scrolls near the
 // end. Styled to match the PostHog Code app: greenish-gray neutrals, soft
@@ -710,6 +727,33 @@ const STYLE_TEXT =
   "*::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:8px;border:2px solid transparent;background-clip:padding-box}" +
   "*::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover);background-clip:padding-box}";
 
+function WelcomeHeader() {
+  const name = useChannelName();
+  return (
+    <div style={{ width: "100%", maxWidth: 1200, textAlign: "center" }}>
+      <h1
+        style={{
+          margin: "0 0 12px",
+          fontSize: 30,
+          fontWeight: 700,
+          letterSpacing: "-0.01em",
+          color: "var(--title)",
+        }}
+      >
+        {name ? "Welcome to #" + name + "." : "Welcome to your channel."}
+      </h1>
+      <p style={{ margin: "0 auto", maxWidth: 620, fontSize: 15, lineHeight: 1.55 }}>
+        This is your home for anything related to this channel. Create dashboards
+        & apps with Canvases. Put agents to work for you with Tasks.
+      </p>
+      <p style={{ margin: "8px auto 0", maxWidth: 620, fontSize: 13, color: "var(--meta)" }}>
+        This page is a canvas itself — just click edit to tell the agent what you
+        want your channel homepage to show.
+      </p>
+    </div>
+  );
+}
+
 export default function ChannelHome() {
   return (
     <div
@@ -717,8 +761,10 @@ export default function ChannelHome() {
         minHeight: "100vh",
         boxSizing: "border-box",
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
+        gap: 36,
         padding: 40,
         background:
           "linear-gradient(180deg, var(--bg-from) 0%, var(--bg-to) 100%)",
@@ -728,6 +774,7 @@ export default function ChannelHome() {
       }}
     >
       <style>{STYLE_TEXT}</style>
+      <WelcomeHeader />
       <div
         style={{
           display: "flex",
