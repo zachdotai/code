@@ -53,6 +53,9 @@ export function useGenerateFreeformCanvas(args: {
     async (opts: {
       instruction: string;
       currentCode?: string;
+      // Which model the generation task runs on. Omitted falls back to the
+      // gateway default; the generate bar defaults this to Sonnet for speed.
+      model?: string;
     }): Promise<string | null> => {
       setIsStarting(true);
       try {
@@ -71,6 +74,7 @@ export function useGenerateFreeformCanvas(args: {
             allowNoRepo: true,
             channelContext,
             channelName,
+            model: opts.model,
           },
           (output) => invalidateTasks(output.task),
         );
