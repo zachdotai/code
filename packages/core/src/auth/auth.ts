@@ -910,71 +910,117 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
-    const apiHost = getCloudUrlFromRegion(this.session.cloudRegion);
-    const accessToken = this.session.accessToken;
+    // The healthy path stays synchronous: one awaited attempt resolves the
+    // gate before the app renders. A transient failure must NOT eject an
+    // active user, so we keep the current value and retry in the background,
+    // only failing closed once the retry budget is exhausted (see
+    // `runCodeAccessRetry`). That stops a brief outage from bouncing real
+    // users to the invite screen, while still preventing the gate from being
+    // bypassed by simply keeping the client offline indefinitely.
+    const resolved = await this.checkCodeAccessOnce();
+    if (!resolved) {
+      this.scheduleCodeAccessRetry();
+    }
+  }
+  // Returns true when the server gave a definitive answer (a 200, which also
+  // updates the gate) and false when the request failed transiently and the
+  // caller should retry. Genuine "no access" is a 200 with
+  // `has_access: false`; a non-2xx status (rejected token, rate limit, outage)
+  // is never a reliable "no access" signal.
+  private async checkCodeAccessOnce(): Promise<boolean> {
+    const session = this.session;
+    if (!session) return false;
 
-    for (
-      let attempt = 0;
-      attempt < AuthService.CODE_ACCESS_MAX_ATTEMPTS;
-      attempt++
-    ) {
-      try {
-        const response = await this.executeAuthenticatedFetch(
-          fetch,
-          `${apiHost}/api/code/invites/check-access/`,
-          {},
-          accessToken,
-        );
+    try {
+      const apiHost = getCloudUrlFromRegion(session.cloudRegion);
+      const response = await this.executeAuthenticatedFetch(
+        fetch,
+        `${apiHost}/api/code/invites/check-access/`,
+        {
+          signal: AbortSignal.timeout(
+            AuthService.CODE_ACCESS_FETCH_TIMEOUT_MS,
+          ),
+        },
+        session.accessToken,
+      );
 
-        // Only a definitive 200 response is allowed to change the gate. The
-        // negative case (genuinely no access) comes back as 200 with
-        // `has_access: false`; a non-2xx status means the request itself
-        // failed (outage, rejected token, rate limit) and is never a reliable
-        // "no access" signal, so we retry rather than eject the user.
-        if (response.ok) {
-          const data = (await response.json().catch(() => ({}))) as {
-            has_access?: boolean;
-          };
-          this.updateState({ hasCodeAccess: data.has_access === true });
-          return;
-        }
-
-        this.logger.warn("Transient failure checking code access, retrying", {
-          attempt,
+      if (!response.ok) {
+        this.logger.warn("Transient failure checking code access", {
           status: response.status,
         });
-      } catch (error) {
-        this.logger.warn("Failed to reach code access check, retrying", {
-          attempt,
-          error,
-        });
+        return false;
       }
 
-      const isLastAttempt =
-        attempt === AuthService.CODE_ACCESS_MAX_ATTEMPTS - 1;
-      if (isLastAttempt) break;
+      const data = (await response.json().catch(() => ({}))) as {
+        has_access?: boolean;
+      };
+      this.updateState({ hasCodeAccess: data.has_access === true });
+      return true;
+    } catch (error) {
+      this.logger.warn("Failed to reach code access check", { error });
+      return false;
+    }
+  }
+  private scheduleCodeAccessRetry(): void {
+    if (this.codeAccessRetryPromise) return;
+    this.codeAccessRetryPromise = this.runCodeAccessRetry().finally(() => {
+      this.codeAccessRetryPromise = null;
+    });
+  }
+  // Background retry loop with prime-number backoff — primes keep retries from
+  // synchronising into bursts. We keep retrying until the cumulative backoff
+  // would exceed the budget (~90s), then fail closed so a sustained inability
+  // to call home revokes access rather than granting it forever.
+  private async runCodeAccessRetry(): Promise<void> {
+    let backoffMs = 0;
 
-      await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
+    for (let attempt = 0; ; attempt++) {
+      const delayMs =
+        AuthService.CODE_ACCESS_BACKOFF_PRIMES_MS[
+          Math.min(
+            attempt,
+            AuthService.CODE_ACCESS_BACKOFF_PRIMES_MS.length - 1,
+          )
+        ];
+      if (backoffMs + delayMs > AuthService.CODE_ACCESS_RETRY_BUDGET_MS) {
+        break;
+      }
+
+      await sleepWithBackoff(0, { initialDelayMs: delayMs });
+      backoffMs += delayMs;
+
+      // The session may have ended (e.g. logout) while we were waiting.
+      if (!this.session) return;
+      if (await this.checkCodeAccessOnce()) return;
     }
 
-    // Every attempt failed transiently. Preserve the last known value rather
-    // than asserting `false`: a previously granted user stays in the app, and
-    // a never-determined user stays at `null` (the "Checking access" spinner)
-    // instead of being wrongly bounced to the invite screen during an outage.
-    this.logger.warn(
-      "Code access check failed after retries, preserving previous state",
-      { hasCodeAccess: this.state.hasCodeAccess },
-    );
+    // Could not confirm access within the budget: fail closed so the invite
+    // gate can't be bypassed by keeping the client offline.
+    if (this.session) {
+      this.logger.warn(
+        "Code access check failed within budget, failing closed",
+        { backoffMs },
+      );
+      this.updateState({ hasCodeAccess: false });
+    }
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
   private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
-  private static readonly CODE_ACCESS_MAX_ATTEMPTS = 3;
+  private static readonly CODE_ACCESS_FETCH_TIMEOUT_MS = 10_000;
+  private static readonly CODE_ACCESS_RETRY_BUDGET_MS = 90_000;
+  // Prime-number backoff (ms). Stepping through primes (rather than a doubling
+  // schedule) keeps many clients' retries from lining up after an outage. We
+  // walk the sequence until the cumulative wait would exceed the budget above.
+  private static readonly CODE_ACCESS_BACKOFF_PRIMES_MS = [
+    2_000, 3_000, 5_000, 7_000, 11_000, 13_000, 17_000, 19_000, 23_000,
+  ];
   private static readonly REFRESH_BACKOFF: BackoffOptions = {
     initialDelayMs: 1_000,
     maxDelayMs: 5_000,
     multiplier: 2,
   };
+  private codeAccessRetryPromise: Promise<void> | null = null;
   private recoveryPromise: Promise<void> | null = null;
   private orgProjectsRefreshPromise: Promise<void> | null = null;
   private connectivityUnsubscribe: (() => void) | null = null;

@@ -1398,9 +1398,11 @@ describe("AuthService", () => {
       await service.initialize();
     };
 
-    it("retries a transient failure and grants access on the retry", async () => {
+    it("recovers in the background after transient failures without ejecting the user", async () => {
+      // Fails twice, then succeeds — a real user weathering a blip must end up
+      // with access, never having been flipped to `false`.
       const { getCheckAccessCalls } = stubFetchWithCheckAccess((call) =>
-        call === 1
+        call <= 2
           ? ({
               ok: false,
               status: 403,
@@ -1415,11 +1417,13 @@ describe("AuthService", () => {
 
       await restoreSession();
 
-      expect(service.getState().hasCodeAccess).toBe(true);
-      expect(getCheckAccessCalls()).toBe(2);
+      await vi.waitFor(() =>
+        expect(service.getState().hasCodeAccess).toBe(true),
+      );
+      expect(getCheckAccessCalls()).toBe(3);
     });
 
-    it("preserves prior state instead of ejecting the user when the check keeps failing", async () => {
+    it("fails closed once the retry budget is exhausted", async () => {
       const { getCheckAccessCalls } = stubFetchWithCheckAccess(
         () =>
           ({
@@ -1431,12 +1435,14 @@ describe("AuthService", () => {
 
       await restoreSession();
 
-      const state = service.getState();
-      expect(state.status).toBe("authenticated");
-      // Access was never determined, so it stays null (the "Checking access"
-      // spinner) — never false, which would wrongly show the invite screen.
-      expect(state.hasCodeAccess).toBeNull();
-      expect(getCheckAccessCalls()).toBe(3);
+      // Persistent inability to call home eventually revokes access so the
+      // invite gate can't be bypassed by staying offline.
+      await vi.waitFor(() =>
+        expect(service.getState().hasCodeAccess).toBe(false),
+      );
+      expect(service.getState().status).toBe("authenticated");
+      // 1 awaited attempt + one per prime-backoff step before the budget caps.
+      expect(getCheckAccessCalls()).toBe(9);
     });
 
     it("still gates the user when the server definitively reports no access", async () => {
