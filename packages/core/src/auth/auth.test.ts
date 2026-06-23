@@ -1510,6 +1510,26 @@ describe("AuthService", () => {
       expect(service.getState().hasCodeAccess).toBe(true);
     });
 
+    it("logs out on a 401 instead of retrying", async () => {
+      const { getCheckAccessCalls } = stubFetchWithCheckAccess(
+        () =>
+          ({
+            ok: false,
+            status: 401,
+            json: () => Promise.resolve({}),
+          }) as unknown as Response,
+      );
+
+      await restoreSession();
+
+      // A rejected token is a hard stop: log the user out (no retry, no
+      // fail-closed invite screen) so they re-authenticate.
+      const state = service.getState();
+      expect(state.status).toBe("anonymous");
+      expect(state.hasCodeAccess).toBeNull();
+      expect(getCheckAccessCalls()).toBe(1);
+    });
+
     it("still gates the user when the server definitively reports no access", async () => {
       stubFetchWithCheckAccess(
         () =>

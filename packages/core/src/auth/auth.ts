@@ -928,11 +928,12 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       void this.runCodeAccessRetry(seq);
     }
   }
-  // Returns true when the server gave a definitive answer (a 200, which also
-  // updates the gate) and false when the request failed transiently and the
-  // caller should retry. Genuine "no access" is a 200 with
-  // `has_access: false`; a non-2xx status (rejected token, rate limit, outage)
-  // is never a reliable "no access" signal.
+  // Returns true when the check reached a definitive end and the caller must
+  // NOT retry: either a 200 (which updates the gate from `has_access`) or a
+  // 401 (the token itself is rejected, so we hard-stop and log out). Returns
+  // false only for transient failures worth retrying — a 403 (which during an
+  // outage looks transient), 429, 5xx, or a thrown network error. Genuine
+  // "no access" is a 200 with `has_access: false`, never a non-2xx status.
   private async checkCodeAccessOnce(): Promise<boolean> {
     const session = this.session;
     if (!session) return false;
@@ -949,6 +950,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
         },
         session.accessToken,
       );
+
+      if (response.status === 401) {
+        // The token is rejected — retrying can't fix it. Hard-stop and log out
+        // so the user re-authenticates instead of being retried into a
+        // fail-closed invite screen. (A 403 stays in the transient path below:
+        // during an outage it's not a reliable "your access is gone" signal.)
+        this.logger.warn("Code access check returned 401, logging out");
+        await this.logout();
+        return true;
+      }
 
       if (!response.ok) {
         this.logger.warn("Transient failure checking code access", {
