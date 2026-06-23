@@ -1,7 +1,13 @@
+import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useRef } from "react";
+import { useAuthStateValue } from "../../auth/store";
+import { agentApplicationsKeys } from "../hooks/agentApplicationsKeys";
 import type { ClientToolHandler } from "../hooks/useAgentChat";
 import { useAgentBuilderStore } from "./agentBuilderStore";
+
+const MAX_DESCRIPTION_CHARS = 280;
 
 /**
  * The agent builder's UI-driving client tools. The agent calls these to steer the
@@ -15,6 +21,9 @@ import { useAgentBuilderStore } from "./agentBuilderStore";
  */
 export function useAgentBuilderClientTools(): ClientToolHandler {
   const navigate = useNavigate();
+  const client = useAuthenticatedClient();
+  const queryClient = useQueryClient();
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const followMode = useAgentBuilderStore((s) => s.followMode);
   const setPendingSecret = useAgentBuilderStore((s) => s.setPendingSecret);
   const page = useAgentBuilderStore((s) => s.page);
@@ -26,9 +35,42 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
   pageRef.current = page;
 
   return useCallback(
-    (data) => {
+    async (data) => {
       const args = (data.args ?? {}) as Record<string, unknown>;
       const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+
+      // set_application_description — write the agent's short summary. The
+      // overview surfaces this directly; capping the length keeps it scannable
+      // and forces the agent to retry shorter on overflow.
+      if (data.tool_id === "set_application_description") {
+        const agentSlug = str(args.agent_slug);
+        const description = str(args.description);
+        if (!agentSlug) return { error: "missing_arg: agent_slug" };
+        if (description === undefined) {
+          return { error: "missing_arg: description" };
+        }
+        const trimmed = description.trim();
+        if (trimmed.length > MAX_DESCRIPTION_CHARS) {
+          return {
+            error: `description_too_long: max ${MAX_DESCRIPTION_CHARS} chars`,
+          };
+        }
+        try {
+          await client.updateAgentApplication(agentSlug, {
+            description: trimmed,
+          });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { error: `update_failed: ${msg}` };
+        }
+        void queryClient.invalidateQueries({
+          queryKey: agentApplicationsKeys.detail(projectId, agentSlug),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: agentApplicationsKeys.list(projectId),
+        });
+        return { result: { success: true } };
+      }
 
       // set_secret — interactive punch-out. Park the call (defer) and render a
       // form; the dock PUTs the key and wakes the session on submit. Env keys
@@ -150,6 +192,6 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
           return { result: { focused: false, reason: "unknown_focus_target" } };
       }
     },
-    [navigate, setPendingSecret],
+    [navigate, setPendingSecret, client, queryClient, projectId],
   );
 }

@@ -26,12 +26,6 @@ export function headerActionForPage(
           "Help me create a new agent — walk me through what it should do, then set it up.",
         agentSlug: null,
       };
-    case "agent":
-      return {
-        label: "Explain this agent",
-        prompt: "Explain what this agent does and how it's configured.",
-        agentSlug: page.slug,
-      };
     case "agent-config":
       return {
         label: "Edit configuration",

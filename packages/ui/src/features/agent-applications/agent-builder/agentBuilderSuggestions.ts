@@ -38,10 +38,6 @@ export function suggestionsForPage(
     case "agent":
       return [
         {
-          label: "What does this agent do?",
-          prompt: "Explain what this agent does and how it's configured.",
-        },
-        {
           label: "Is this agent healthy?",
           prompt:
             "Check this agent's recent sessions and tell me whether it's healthy.",

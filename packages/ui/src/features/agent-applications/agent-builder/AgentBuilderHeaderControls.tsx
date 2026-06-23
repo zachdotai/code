@@ -8,6 +8,7 @@ import {
 } from "@posthog/quill";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { Flex } from "@radix-ui/themes";
+import { PublishButton } from "../components/PublishButton";
 import { AGENT_PLATFORM_FLAG } from "../featureFlag";
 import { headerActionForPage } from "./agentBuilderActions";
 import { useAgentBuilderStore } from "./agentBuilderStore";
@@ -40,6 +41,7 @@ export function AgentBuilderHeaderControls() {
 
   const action = headerActionForPage(page);
   const openTip = "Open the agent builder (⌘⇧I)";
+  const showPublish = page.kind === "agent";
 
   return (
     <TooltipProvider delay={500}>
@@ -48,6 +50,7 @@ export function AgentBuilderHeaderControls() {
         gap="2"
         className="absolute top-0 right-0 z-10 shrink-0 px-6 py-2"
       >
+        {showPublish ? <PublishButton idOrSlug={page.slug} /> : null}
         {action ? (
           <div className="flex items-center">
             <Tooltip>

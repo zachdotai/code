@@ -4373,6 +4373,23 @@ export class PostHogAPIClient {
     return all;
   }
 
+  /** Patch mutable application-level fields (name, description). */
+  async updateAgentApplication(
+    idOrSlug: string,
+    patch: { name?: string; description?: string },
+  ): Promise<AgentApplication> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path,
+      overrides: { body: JSON.stringify(patch) },
+    });
+    return (await response.json()) as AgentApplication;
+  }
+
   /** Fetches a single agent application by UUID or slug; null if not found. */
   async getAgentApplication(
     idOrSlug: string,
