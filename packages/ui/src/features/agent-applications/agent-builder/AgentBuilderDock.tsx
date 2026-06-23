@@ -13,10 +13,9 @@ import { useAuthStateValue } from "../../auth/store";
 import { AgentChatPendingApprovalCard } from "../components/AgentChatPendingApprovalCard";
 import { AgentChatSurface } from "../components/AgentChatSurface";
 import { AgentDetailEmptyState } from "../components/AgentDetailLayout";
-import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApproval";
-import { resolveIngressBaseUrl } from "../utils/ingress";
+import { agentIngressBaseUrl } from "../utils/ingress";
 import { AgentBuilderSecretForm } from "./AgentBuilderSecretForm";
 import { AgentBuilderSeedDialog } from "./AgentBuilderSeedDialog";
 import {
@@ -73,12 +72,11 @@ function buildAgentBuilderContext(
  * drive the UI via `focus_*`.
  */
 export function AgentBuilderDock() {
-  const { data: application } = useAgentApplication(AGENT_BUILDER_SLUG);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
-  const ingressBaseUrl = resolveIngressBaseUrl(
-    application?.ingress_base_url,
-    cloudRegion,
-  );
+  // The builder is a first-party, slug-routed agent reachable from any project,
+  // so we address its ingress directly from (slug, region) rather than loading
+  // its API record — which is project-scoped and 404s outside its home project.
+  const ingressBaseUrl = agentIngressBaseUrl(AGENT_BUILDER_SLUG, cloudRegion);
 
   const client = useAuthenticatedClient();
   const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
@@ -255,7 +253,7 @@ export function AgentBuilderDock() {
         <div className="p-4">
           <AgentDetailEmptyState
             title="Agent Builder unavailable"
-            description="The Agent Builder deployment has no reachable ingress in this environment."
+            description="Couldn't resolve your PostHog region, so the Agent Builder ingress can't be reached yet."
           />
         </div>
       ) : (
