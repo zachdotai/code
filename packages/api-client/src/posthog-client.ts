@@ -39,9 +39,15 @@ import type {
   ActionabilityJudgmentArtefact,
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  CodeReferenceArtefact,
+  CommitArtefact,
+  CommitDiffResponse,
   DismissalArtefact,
+  LineReferenceArtefact,
+  NoteArtefact,
   PriorityJudgmentArtefact,
   RepoSelectionArtefact,
+  SafetyJudgmentArtefact,
   SandboxEnvironment,
   SandboxEnvironmentInput,
   Signal,
@@ -54,8 +60,6 @@ import type {
   SignalReportStatus,
   SignalReportsQueryParams,
   SignalReportsResponse,
-  SignalReportTask,
-  SignalReportTaskRelationship,
   SignalTeamConfig,
   SignalUserAutonomyConfig,
   SlackChannelsQueryParams,
@@ -64,6 +68,8 @@ import type {
   SuggestedReviewerWriteEntry,
   Task,
   TaskRun,
+  TaskRunArtefact,
+  UserBasic,
 } from "@posthog/shared/domain-types";
 import {
   buildAgentAnalyticsQueries,
@@ -557,14 +563,39 @@ function optionalString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+/** Unwrap the shared fetcher's `Failed request: [<status>] <json>` into the endpoint's clean message. */
+function extractRequestErrorMessage(error: unknown, fallback: string): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const match = raw.match(/^Failed request: \[(\d+)\] (.*)$/s);
+  if (!match) {
+    return fallback;
+  }
+  try {
+    const body = JSON.parse(match[2]) as { error?: unknown; detail?: unknown };
+    const message = body.error ?? body.detail;
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  } catch {
+    // Non-JSON body — fall through to the status-based fallback.
+  }
+  return `${fallback} (HTTP ${match[1]})`;
+}
+
 type AnyArtefact =
   | SignalReportArtefact
   | PriorityJudgmentArtefact
   | ActionabilityJudgmentArtefact
+  | SafetyJudgmentArtefact
   | SignalFindingArtefact
   | RepoSelectionArtefact
   | SuggestedReviewersArtefact
-  | DismissalArtefact;
+  | DismissalArtefact
+  | CodeReferenceArtefact
+  | LineReferenceArtefact
+  | CommitArtefact
+  | TaskRunArtefact
+  | NoteArtefact;
 
 const DISMISSAL_REASONS = new Set<DismissalReasonOptionValue>(
   DISMISSAL_REASON_OPTIONS.map((o) => o.value),
@@ -587,7 +618,7 @@ function normalizePriorityJudgmentArtefact(
   return {
     id,
     type: "priority_judgment",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       explanation: optionalString(contentValue.explanation) ?? "",
       priority: priority as PriorityJudgmentArtefact["content"]["priority"],
@@ -619,7 +650,7 @@ function normalizeActionabilityJudgmentArtefact(
   return {
     id,
     type: "actionability_judgment",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       explanation: optionalString(contentValue.explanation) ?? "",
       actionability:
@@ -628,6 +659,26 @@ function normalizeActionabilityJudgmentArtefact(
         typeof contentValue.already_addressed === "boolean"
           ? contentValue.already_addressed
           : false,
+    },
+  };
+}
+
+function normalizeSafetyJudgmentArtefact(
+  value: Record<string, unknown>,
+): SafetyJudgmentArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+
+  const contentValue = isObjectRecord(value.content) ? value.content : null;
+  if (!contentValue || typeof contentValue.choice !== "boolean") return null;
+
+  return {
+    id,
+    type: "safety_judgment",
+    ...artefactBase(value),
+    content: {
+      choice: contentValue.choice,
+      explanation: optionalString(contentValue.explanation),
     },
   };
 }
@@ -647,7 +698,7 @@ function normalizeSignalFindingArtefact(
   return {
     id,
     type: "signal_finding",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       signal_id: signalId,
       relevant_code_paths: Array.isArray(contentValue.relevant_code_paths)
@@ -685,7 +736,7 @@ function normalizeRepoSelectionArtefact(
   return {
     id,
     type: "repo_selection",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       repository: optionalString(contentValue.repository),
       reason: optionalString(contentValue.reason) ?? "",
@@ -715,13 +766,212 @@ function normalizeDismissalArtefact(
   return {
     id,
     type: "dismissal",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       reason,
       note: optionalString(contentValue.note) ?? "",
       user_id:
         typeof contentValue.user_id === "number" ? contentValue.user_id : null,
       user_uuid: optionalString(contentValue.user_uuid),
+    },
+  };
+}
+
+// ── Log artefact normalizers ──────────────────────────────────────────────
+// The backend stores log-artefact content as a JSON object (not the string-or-
+// session_id shape the generic fallback expects), so each type needs an explicit
+// normalizer — otherwise it falls through and gets dropped.
+
+/** User the artefact is attributed to, when the row carries a valid `created_by`. */
+function normalizeArtefactUser(value: unknown): UserBasic | null {
+  if (!isObjectRecord(value)) return null;
+  const id = value.id;
+  const uuid = optionalString(value.uuid);
+  const email = optionalString(value.email);
+  if (typeof id !== "number" || !uuid || !email) return null;
+  return {
+    id,
+    uuid,
+    email,
+    first_name: optionalString(value.first_name) ?? undefined,
+    last_name: optionalString(value.last_name) ?? undefined,
+  };
+}
+
+/** Row-level fields shared by every artefact: timestamps plus user/task attribution. */
+function artefactBase(value: Record<string, unknown>): {
+  created_at: string;
+  updated_at: string | null;
+  created_by: UserBasic | null;
+  task_id: string | null;
+} {
+  return {
+    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    updated_at: optionalString(value.updated_at),
+    created_by: normalizeArtefactUser(value.created_by),
+    task_id: optionalString(value.task_id),
+  };
+}
+
+function normalizeCodeReferenceArtefact(
+  value: Record<string, unknown>,
+): CodeReferenceArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+  const c = isObjectRecord(value.content) ? value.content : null;
+  if (!c) return null;
+  const file_path = optionalString(c.file_path);
+  if (!file_path) return null;
+
+  return {
+    id,
+    type: "code_reference",
+    ...artefactBase(value),
+    content: {
+      file_path,
+      start_line: typeof c.start_line === "number" ? c.start_line : 0,
+      end_line: typeof c.end_line === "number" ? c.end_line : 0,
+      contents: optionalString(c.contents) ?? "",
+      relevance_note: optionalString(c.relevance_note) ?? "",
+    },
+  };
+}
+
+function normalizeLineReferenceArtefact(
+  value: Record<string, unknown>,
+): LineReferenceArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+  const c = isObjectRecord(value.content) ? value.content : null;
+  if (!c) return null;
+  const file_path = optionalString(c.file_path);
+  if (!file_path) return null;
+
+  return {
+    id,
+    type: "line_reference",
+    ...artefactBase(value),
+    content: {
+      file_path,
+      line: typeof c.line === "number" ? c.line : 0,
+      note: optionalString(c.note) ?? "",
+      contents: optionalString(c.contents),
+    },
+  };
+}
+
+function normalizeCommitArtefact(
+  value: Record<string, unknown>,
+): CommitArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+  const c = isObjectRecord(value.content) ? value.content : null;
+  if (!c) return null;
+  const repository = optionalString(c.repository);
+  const branch = optionalString(c.branch);
+  const commit_sha = optionalString(c.commit_sha);
+  if (!repository || !branch || !commit_sha) return null;
+
+  return {
+    id,
+    type: "commit",
+    ...artefactBase(value),
+    content: {
+      repository,
+      branch,
+      commit_sha,
+      message: optionalString(c.message) ?? "",
+      note: optionalString(c.note),
+    },
+  };
+}
+
+function normalizeTaskRunArtefact(
+  value: Record<string, unknown>,
+): TaskRunArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+  const c = isObjectRecord(value.content) ? value.content : null;
+  if (!c) return null;
+  const task_id = optionalString(c.task_id);
+  if (!task_id) return null;
+  const product = optionalString(c.product);
+  const type = optionalString(c.type);
+  if (!product || !type) return null;
+
+  return {
+    id,
+    type: "task_run",
+    ...artefactBase(value),
+    content: {
+      task_id,
+      run_id: optionalString(c.run_id),
+      product,
+      type,
+    },
+  };
+}
+
+function normalizeNoteArtefact(
+  value: Record<string, unknown>,
+): NoteArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+  const c = isObjectRecord(value.content) ? value.content : null;
+  if (!c) return null;
+  const note = optionalString(c.note);
+  if (!note) return null;
+
+  return {
+    id,
+    type: "note",
+    ...artefactBase(value),
+    content: {
+      note,
+      author: optionalString(c.author),
+    },
+  };
+}
+
+/** Best human-readable one-liner from arbitrary artefact content. */
+function contentPreview(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (isObjectRecord(content)) {
+    for (const key of ["note", "explanation", "reason", "message", "content"]) {
+      const v = content[key];
+      if (typeof v === "string" && v.trim()) return v;
+    }
+  }
+  try {
+    const text = JSON.stringify(content);
+    return text && text !== "{}" && text !== "null" ? text.slice(0, 300) : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Last-resort normalizer: keeps the row (type, timestamps, attribution, a text
+ * preview) when its content doesn't match the type's expected shape, so an
+ * artefact never silently vanishes from the activity log.
+ */
+function normalizeFallbackArtefact(
+  value: Record<string, unknown>,
+): SignalReportArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+  return {
+    id,
+    type: optionalString(value.type) ?? "unknown",
+    degraded: true,
+    ...artefactBase(value),
+    content: {
+      session_id: "",
+      start_time: "",
+      end_time: "",
+      distinct_id: "",
+      content: contentPreview(value.content),
+      distance_to_centroid: null,
     },
   };
 }
@@ -733,19 +983,55 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
 
   const dispatchType = optionalString(value.type);
   if (dispatchType === "signal_finding") {
-    return normalizeSignalFindingArtefact(value);
+    return (
+      normalizeSignalFindingArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "actionability_judgment") {
-    return normalizeActionabilityJudgmentArtefact(value);
+    return (
+      normalizeActionabilityJudgmentArtefact(value) ??
+      normalizeFallbackArtefact(value)
+    );
+  }
+  if (dispatchType === "safety_judgment") {
+    return (
+      normalizeSafetyJudgmentArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "priority_judgment") {
-    return normalizePriorityJudgmentArtefact(value);
+    return (
+      normalizePriorityJudgmentArtefact(value) ??
+      normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "repo_selection") {
-    return normalizeRepoSelectionArtefact(value);
+    return (
+      normalizeRepoSelectionArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "dismissal") {
-    return normalizeDismissalArtefact(value);
+    return (
+      normalizeDismissalArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
+  }
+  if (dispatchType === "code_reference") {
+    return (
+      normalizeCodeReferenceArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
+  }
+  if (dispatchType === "line_reference") {
+    return (
+      normalizeLineReferenceArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
+  }
+  if (dispatchType === "commit") {
+    return normalizeCommitArtefact(value) ?? normalizeFallbackArtefact(value);
+  }
+  if (dispatchType === "task_run") {
+    return normalizeTaskRunArtefact(value) ?? normalizeFallbackArtefact(value);
+  }
+  if (dispatchType === "note") {
+    return normalizeNoteArtefact(value) ?? normalizeFallbackArtefact(value);
   }
 
   const id = optionalString(value.id);
@@ -754,15 +1040,13 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   }
 
   const type = dispatchType ?? "unknown";
-  const created_at =
-    optionalString(value.created_at) ?? new Date(0).toISOString();
 
   // suggested_reviewers: content is an array of reviewer objects
   if (type === "suggested_reviewers" && Array.isArray(value.content)) {
     return {
       id,
       type: "suggested_reviewers" as const,
-      created_at,
+      ...artefactBase(value),
       content: value.content as SuggestedReviewersArtefact["content"],
     };
   }
@@ -770,7 +1054,7 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   // video_segment and other artefacts with object content
   const contentValue = isObjectRecord(value.content) ? value.content : null;
   if (!contentValue) {
-    return null;
+    return normalizeFallbackArtefact(value);
   }
 
   const content = optionalString(contentValue.content);
@@ -778,13 +1062,13 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
 
   // The backend may return empty content objects when binary decode fails.
   if (!content && !sessionId) {
-    return null;
+    return normalizeFallbackArtefact(value);
   }
 
   return {
     id,
     type,
-    created_at,
+    ...artefactBase(value),
     content: {
       session_id: sessionId ?? "",
       start_time: optionalString(contentValue.start_time) ?? "",
@@ -1851,8 +2135,6 @@ export class PostHogAPIClient {
       > & {
         github_integration?: number | null;
         github_user_integration?: string | null;
-        /** POST-only: `SignalReportTask.relationship` to create when linking to `signal_report`. */
-        signal_report_task_relationship?: SignalReportTaskRelationship;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -2990,6 +3272,32 @@ export class PostHogAPIClient {
     }
   }
 
+  async getCommitDiff(
+    reportId: string,
+    artefactId: string,
+  ): Promise<CommitDiffResponse> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/signals/reports/${reportId}/artefacts/${artefactId}/diff/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+
+    // The shared fetcher throws `Failed request: [<status>] <json-body>` for any non-2xx, so
+    // unwrap that into the endpoint's clean `error` message rather than surfacing the raw string.
+    let response: Response;
+    try {
+      response = await this.api.fetcher.fetch({ method: "get", url, path });
+    } catch (error) {
+      throw new Error(
+        extractRequestErrorMessage(error, "Couldn\u2019t load the diff."),
+      );
+    }
+
+    const data = (await response.json()) as Partial<CommitDiffResponse>;
+    return {
+      diff: typeof data.diff === "string" ? data.diff : "",
+      truncated: data.truncated === true,
+    };
+  }
+
   async updateSignalReportState(
     reportId: string,
     input:
@@ -3031,6 +3339,12 @@ export class PostHogAPIClient {
     return (await response.json()) as SignalReport;
   }
 
+  /**
+   * Edit a report's suggested reviewers. The server appends a new `suggested_reviewers` status
+   * artefact (latest-wins), canonicalizes each entry to a lowercase `github_login`, and carries
+   * `relevant_commits` / `github_name` forward from the current reviewers for surviving logins.
+   * Returns the newly-appended artefact (a fresh id), not the one addressed by `artefactId`.
+   */
   async updateSignalReportArtefact(
     reportId: string,
     artefactId: string,
@@ -3115,35 +3429,6 @@ export class PostHogAPIClient {
       status: "reingestion_started" | "already_running";
       report_id: string;
     };
-  }
-
-  async getSignalReportTasks(
-    reportId: string,
-    options?: { relationship?: SignalReportTask["relationship"] },
-  ): Promise<SignalReportTask[]> {
-    const teamId = await this.getTeamId();
-    const url = new URL(
-      `${this.api.baseUrl}/api/projects/${teamId}/signals/reports/${reportId}/tasks/`,
-    );
-    if (options?.relationship) {
-      url.searchParams.set("relationship", options.relationship);
-    }
-    const path = `/api/projects/${teamId}/signals/reports/${reportId}/tasks/`;
-
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path,
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch signal report tasks: ${response.statusText}`,
-      );
-    }
-
-    const data = (await response.json()) as { results?: SignalReportTask[] };
-    return data.results ?? [];
   }
 
   async getSignalTeamConfig(): Promise<SignalTeamConfig> {
