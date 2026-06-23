@@ -910,27 +910,66 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
-    try {
-      const apiHost = getCloudUrlFromRegion(this.session.cloudRegion);
-      const response = await this.executeAuthenticatedFetch(
-        fetch,
-        `${apiHost}/api/code/invites/check-access/`,
-        {},
-        this.session.accessToken,
-      );
-      const data = (await response.json().catch(() => ({}))) as {
-        has_access?: boolean;
-      };
+    const apiHost = getCloudUrlFromRegion(this.session.cloudRegion);
+    const accessToken = this.session.accessToken;
 
-      this.updateState({ hasCodeAccess: data.has_access === true });
-    } catch (error) {
-      this.logger.warn("Failed to update code access state", { error });
-      this.updateState({ hasCodeAccess: false });
+    for (
+      let attempt = 0;
+      attempt < AuthService.CODE_ACCESS_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      try {
+        const response = await this.executeAuthenticatedFetch(
+          fetch,
+          `${apiHost}/api/code/invites/check-access/`,
+          {},
+          accessToken,
+        );
+
+        // Only a definitive 200 response is allowed to change the gate. The
+        // negative case (genuinely no access) comes back as 200 with
+        // `has_access: false`; a non-2xx status means the request itself
+        // failed (outage, rejected token, rate limit) and is never a reliable
+        // "no access" signal, so we retry rather than eject the user.
+        if (response.ok) {
+          const data = (await response.json().catch(() => ({}))) as {
+            has_access?: boolean;
+          };
+          this.updateState({ hasCodeAccess: data.has_access === true });
+          return;
+        }
+
+        this.logger.warn("Transient failure checking code access, retrying", {
+          attempt,
+          status: response.status,
+        });
+      } catch (error) {
+        this.logger.warn("Failed to reach code access check, retrying", {
+          attempt,
+          error,
+        });
+      }
+
+      const isLastAttempt =
+        attempt === AuthService.CODE_ACCESS_MAX_ATTEMPTS - 1;
+      if (isLastAttempt) break;
+
+      await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
     }
+
+    // Every attempt failed transiently. Preserve the last known value rather
+    // than asserting `false`: a previously granted user stays in the app, and
+    // a never-determined user stays at `null` (the "Checking access" spinner)
+    // instead of being wrongly bounced to the invite screen during an outage.
+    this.logger.warn(
+      "Code access check failed after retries, preserving previous state",
+      { hasCodeAccess: this.state.hasCodeAccess },
+    );
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
   private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
+  private static readonly CODE_ACCESS_MAX_ATTEMPTS = 3;
   private static readonly REFRESH_BACKOFF: BackoffOptions = {
     initialDelayMs: 1_000,
     maxDelayMs: 5_000,

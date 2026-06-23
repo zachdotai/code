@@ -1342,4 +1342,116 @@ describe("AuthService", () => {
       expect(redeemCallCount).toBe(2);
     });
   });
+
+  describe("code access check resilience", () => {
+    const stubFetchWithCheckAccess = (
+      checkAccess: (callCount: number) => Response,
+    ): { getCheckAccessCalls: () => number } => {
+      let checkAccessCalls = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1" },
+              }),
+            } as unknown as Response;
+          }
+
+          if (/\/api\/organizations\/[^/]+\/$/.test(url)) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                name: "Org 1",
+                teams: [{ id: 42, name: "Project 42" }],
+              }),
+            } as unknown as Response;
+          }
+
+          if (url.includes("/invites/check-access/")) {
+            checkAccessCalls++;
+            return checkAccess(checkAccessCalls);
+          }
+
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({}),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+      );
+      return { getCheckAccessCalls: () => checkAccessCalls };
+    };
+
+    const restoreSession = async () => {
+      seedStoredSession({ selectedProjectId: 42 });
+      oauthFlow.refreshToken.mockResolvedValue(
+        mockTokenResponse({
+          accessToken: "access-token",
+          refreshToken: "refresh-token",
+        }),
+      );
+      await service.initialize();
+    };
+
+    it("retries a transient failure and grants access on the retry", async () => {
+      const { getCheckAccessCalls } = stubFetchWithCheckAccess((call) =>
+        call === 1
+          ? ({
+              ok: false,
+              status: 403,
+              json: () => Promise.resolve({}),
+            } as unknown as Response)
+          : ({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ has_access: true }),
+            } as unknown as Response),
+      );
+
+      await restoreSession();
+
+      expect(service.getState().hasCodeAccess).toBe(true);
+      expect(getCheckAccessCalls()).toBe(2);
+    });
+
+    it("preserves prior state instead of ejecting the user when the check keeps failing", async () => {
+      const { getCheckAccessCalls } = stubFetchWithCheckAccess(
+        () =>
+          ({
+            ok: false,
+            status: 403,
+            json: () => Promise.resolve({}),
+          }) as unknown as Response,
+      );
+
+      await restoreSession();
+
+      const state = service.getState();
+      expect(state.status).toBe("authenticated");
+      // Access was never determined, so it stays null (the "Checking access"
+      // spinner) — never false, which would wrongly show the invite screen.
+      expect(state.hasCodeAccess).toBeNull();
+      expect(getCheckAccessCalls()).toBe(3);
+    });
+
+    it("still gates the user when the server definitively reports no access", async () => {
+      stubFetchWithCheckAccess(
+        () =>
+          ({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ has_access: false }),
+          }) as unknown as Response,
+      );
+
+      await restoreSession();
+
+      expect(service.getState().hasCodeAccess).toBe(false);
+    });
+  });
 });
