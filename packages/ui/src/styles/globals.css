@@ -1181,3 +1181,81 @@ button,
   background-color: rgb(0 0 0 / 0.7);
   opacity: 1;
 }
+
+/*
+ * PostHog brand rainbow gradient — used by the inbox self-driving command pill so
+ * the one setup command reads as "enable a capability" rather than a code dump.
+ * Mirrors the PostHog Cloud onboarding.
+ */
+:root {
+  --rainbow-gradient: linear-gradient(
+    90deg,
+    #0143cb 0%,
+    #2b6ff4 24%,
+    #d23401 47%,
+    #ff651f 66%,
+    #fba000 83%,
+    #0143cb 100%
+  );
+  /* Deliberately gentle so the scroll reads as a slow shimmer, not a strobe. */
+  --rainbow-scroll-duration: 6s;
+}
+
+.rainbow-text {
+  color: transparent;
+  background-image: var(--rainbow-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  background-size: 200% 100%;
+}
+
+.rainbow-text-animating {
+  animation: rainbow-scroll var(--rainbow-scroll-duration) linear infinite;
+}
+
+@keyframes rainbow-scroll {
+  0% {
+    background-position-x: 0%;
+  }
+
+  100% {
+    background-position-x: 200%;
+  }
+}
+
+/*
+ * The PostHog hog springs up when clicked (see JumpingLogomark). The spike lives
+ * in the first 4% of an infinite cycle, so the hog jumps briefly now and then;
+ * clicking restarts the cycle and bumps --logomark-jump-magnitude for a bigger pop.
+ */
+.animate-logomark-jump {
+  --logomark-jump-height-base: 12px;
+  --logomark-jump-magnitude: 1;
+}
+
+.animate-logomark-jump svg {
+  overflow: visible;
+  animation: logomark-jump calc(0.4s * 25) cubic-bezier(0.6, 0, 0.2, 0.8)
+    infinite;
+}
+
+@keyframes logomark-jump {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  2% {
+    transform: translateY(
+      calc(
+        var(--logomark-jump-height-base) *
+        var(--logomark-jump-magnitude) *
+        -1
+      )
+    );
+  }
+
+  4% {
+    transform: translateY(0);
+  }
+}
