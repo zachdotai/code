@@ -39,6 +39,7 @@ import {
   type Task,
 } from "@posthog/shared/domain-types";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
+import { createAppendOnlyTracker } from "./appendOnlyTracker";
 import type { CloudArtifactClient } from "./cloudArtifactIdentifiers";
 import { classifyCloudLogAppend } from "./cloudLogGap";
 import { CloudLogGapReconciler } from "./cloudLogGapReconciler";
@@ -297,9 +298,19 @@ export interface CloudConnectionAuth {
   cloudRegion?: CloudRegion | null;
 }
 
+export interface ReconcileSessionState {
+  taskRunId: string;
+  taskId: string;
+  taskTitle: string;
+  status: AgentSession["status"];
+  isCloud?: boolean;
+  idleKilled?: boolean;
+  eventCount: number;
+}
+
 export interface ReconcileTaskConnectionParams {
   task: Task;
-  session: AgentSession | undefined;
+  session: ReconcileSessionState | undefined;
   repoPath: string | null;
   isCloud: boolean;
   isSuspended?: boolean;
@@ -311,6 +322,72 @@ export interface ReconcileTaskConnectionParams {
 const ACTIVITY_HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 
 export type SessionPlan = Extract<SessionUpdate, { sessionUpdate: "plan" }>;
+
+export function selectLatestPlan(events: AcpMessage[]): SessionPlan | null {
+  let planIndex = -1;
+  let plan: SessionPlan | null = null;
+  let turnEndResponseIndex = -1;
+
+  for (let i = events.length - 1; i >= 0; i--) {
+    const msg = events[i].message;
+
+    if (
+      turnEndResponseIndex === -1 &&
+      isJsonRpcResponse(msg) &&
+      (msg.result as { stopReason?: string })?.stopReason !== undefined
+    ) {
+      turnEndResponseIndex = i;
+    }
+
+    if (
+      planIndex === -1 &&
+      isJsonRpcNotification(msg) &&
+      msg.method === "session/update"
+    ) {
+      const update = (msg.params as { update?: { sessionUpdate?: string } })
+        ?.update;
+      if (update?.sessionUpdate === "plan") {
+        planIndex = i;
+        plan = update as SessionPlan;
+      }
+    }
+
+    if (planIndex !== -1 && turnEndResponseIndex !== -1) break;
+  }
+
+  if (turnEndResponseIndex > planIndex) return null;
+
+  return plan;
+}
+
+export function createLatestPlanTracker() {
+  return createAppendOnlyTracker<
+    { plan: SessionPlan | null },
+    SessionPlan | null
+  >({
+    init: () => ({ plan: null }),
+    processEvent: (state, event) => {
+      const msg = event.message;
+
+      if (
+        isJsonRpcResponse(msg) &&
+        (msg.result as { stopReason?: string })?.stopReason !== undefined
+      ) {
+        state.plan = null;
+        return;
+      }
+
+      if (isJsonRpcNotification(msg) && msg.method === "session/update") {
+        const update = (msg.params as { update?: { sessionUpdate?: string } })
+          ?.update;
+        if (update?.sessionUpdate === "plan") {
+          state.plan = update as SessionPlan;
+        }
+      }
+    },
+    getResult: (state) => state.plan,
+  });
+}
 
 export const SESSION_SERVICE = Symbol.for("posthog.core.sessions.service");
 
@@ -3911,7 +3988,7 @@ export class SessionService {
 
   private reconcileLocalConnection(params: {
     task: Task;
-    session: AgentSession | undefined;
+    session: ReconcileSessionState | undefined;
     repoPath: string;
     isOnline: boolean;
     isSuspended?: boolean;
@@ -3966,9 +4043,9 @@ export class SessionService {
 
   private loadLogsOnlyIfDisconnected(
     task: Task,
-    session: AgentSession | undefined,
+    session: ReconcileSessionState | undefined,
   ): void {
-    if (session && session.events.length > 0) return;
+    if (session && session.eventCount > 0) return;
     if (!task.latest_run?.id || !task.latest_run?.log_url) return;
 
     this.loadLogsOnly({
@@ -4034,40 +4111,7 @@ export class SessionService {
   }
 
   public selectLatestPlan(events: AcpMessage[]): SessionPlan | null {
-    let planIndex = -1;
-    let plan: SessionPlan | null = null;
-    let turnEndResponseIndex = -1;
-
-    for (let i = events.length - 1; i >= 0; i--) {
-      const msg = events[i].message;
-
-      if (
-        turnEndResponseIndex === -1 &&
-        isJsonRpcResponse(msg) &&
-        (msg.result as { stopReason?: string })?.stopReason !== undefined
-      ) {
-        turnEndResponseIndex = i;
-      }
-
-      if (
-        planIndex === -1 &&
-        isJsonRpcNotification(msg) &&
-        msg.method === "session/update"
-      ) {
-        const update = (msg.params as { update?: { sessionUpdate?: string } })
-          ?.update;
-        if (update?.sessionUpdate === "plan") {
-          planIndex = i;
-          plan = update as SessionPlan;
-        }
-      }
-
-      if (planIndex !== -1 && turnEndResponseIndex !== -1) break;
-    }
-
-    if (turnEndResponseIndex > planIndex) return null;
-
-    return plan;
+    return selectLatestPlan(events);
   }
 
   public maybeRevertBypassMode(
