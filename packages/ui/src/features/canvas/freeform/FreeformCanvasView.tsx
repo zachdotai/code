@@ -35,10 +35,11 @@ import {
 } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FreeformCanvas } from "./FreeformCanvas";
 import { FreeformGenerateBar } from "./FreeformGenerateBar";
 import { handleFreeformDataRequest } from "./freeformDataBridge";
+import { useCanvasReadyCelebration } from "./useCanvasReadyCelebration";
 import { useCanvasNavigation, useHomeCanvasReset } from "./useHomeCanvasView";
 
 // The dashboardId a thread is keyed on ("dashboard:<id>" → "<id>").
@@ -113,6 +114,13 @@ export function FreeformCanvasView({
     );
   })();
   const isGenerating = !!genTaskId && running;
+
+  // Celebrate the moment a generation lands (chime + toast + one-shot reveal).
+  const { justRevealed } = useCanvasReadyCelebration({
+    code: code ?? "",
+    isGenerating,
+    canvasName: dashboard?.name ?? "",
+  });
 
   // Poll the record while generating so a just-published canvas appears.
   useQuery(
@@ -263,17 +271,19 @@ export function FreeformCanvasView({
           />
           <ScrollArea className="h-full">
             {showCanvas ? (
-              <ErrorBoundary name="freeform-canvas" resetKey={threadId}>
-                <FreeformCanvas
-                  code={code}
-                  mode="edit"
-                  onDataRequest={handleFreeformDataRequest}
-                  onError={onError}
-                  onRendered={onRendered}
-                  onNavigate={onNavigate}
-                  analytics={analytics}
-                />
-              </ErrorBoundary>
+              <div className={justRevealed ? "canvas-reveal h-full" : "h-full"}>
+                <ErrorBoundary name="freeform-canvas" resetKey={threadId}>
+                  <FreeformCanvas
+                    code={code}
+                    mode="edit"
+                    onDataRequest={handleFreeformDataRequest}
+                    onError={onError}
+                    onRendered={onRendered}
+                    onNavigate={onNavigate}
+                    analytics={analytics}
+                  />
+                </ErrorBoundary>
+              </div>
             ) : showGeneratingState ? (
               <GeneratingState channelId={channelId} taskId={genTaskId ?? ""} />
             ) : (
@@ -313,6 +323,20 @@ export function FreeformCanvasView({
   );
 }
 
+// Ambient status lines cycled while a generation runs, so the wait feels alive
+// instead of frozen. Deliberately gentle and non-committal — they set a mood,
+// not a literal progress report (the real run lives behind "View task").
+const GENERATING_MESSAGES = [
+  "An agent is building this canvas.",
+  "Reading your channel's context…",
+  "Querying your PostHog data…",
+  "Sketching the layout…",
+  "Wiring up the charts…",
+  "Adding the finishing touches…",
+];
+
+const GENERATING_MESSAGE_MS = 2600;
+
 // Centered status shown while a generation task runs on an empty canvas, with a
 // button to jump to the task doing the work.
 function GeneratingState({
@@ -322,6 +346,14 @@ function GeneratingState({
   channelId: string;
   taskId: string;
 }) {
+  const [messageIdx, setMessageIdx] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setMessageIdx((i) => (i + 1) % GENERATING_MESSAGES.length);
+    }, GENERATING_MESSAGE_MS);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <Empty className="h-full">
       <EmptyHeader>
@@ -329,7 +361,9 @@ function GeneratingState({
           <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
         </EmptyMedia>
         <EmptyTitle>Generating</EmptyTitle>
-        <EmptyDescription>An agent is building this canvas.</EmptyDescription>
+        <EmptyDescription className="transition-opacity duration-500">
+          {GENERATING_MESSAGES[messageIdx]}
+        </EmptyDescription>
       </EmptyHeader>
       {taskId && (
         <EmptyContent>

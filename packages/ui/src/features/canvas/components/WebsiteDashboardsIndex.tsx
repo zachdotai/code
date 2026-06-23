@@ -1,4 +1,4 @@
-import { DotsThreeIcon, TrashIcon } from "@phosphor-icons/react";
+import { DotsThreeIcon, ShapesIcon, TrashIcon } from "@phosphor-icons/react";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import {
   Badge,
@@ -10,10 +10,17 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Text,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { ChannelsWelcome } from "@posthog/ui/features/canvas/components/ChannelsWelcome";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { FreeformCanvas } from "@posthog/ui/features/canvas/freeform/FreeformCanvas";
 import { handleFreeformDataRequest } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
@@ -56,29 +63,31 @@ export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
 
   if (dashboards.length === 0) {
     return (
-      <Flex
-        direction="column"
-        align="center"
-        justify="center"
-        height="100%"
-        gap="3"
-        className="px-6 text-center"
-      >
-        <Flex direction="column" gap="1">
-          <Text size="lg" weight="semibold">
-            No canvases yet
-          </Text>
-          <Text size="sm" variant="muted">
-            Create one and build it with the agent, then save it.
-          </Text>
-        </Flex>
-        <NewCanvasMenu channelId={channelId} variant="primary" />
-      </Flex>
+      <div className="flex h-full flex-col">
+        <ChannelsWelcome />
+        <Empty className="flex-1">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <ShapesIcon size={24} />
+            </EmptyMedia>
+            <EmptyTitle>Create your first canvas</EmptyTitle>
+            <EmptyDescription>
+              A canvas is a live mini-app built from your PostHog data. Describe
+              what you want and an agent builds it — then save it to this
+              channel.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <NewCanvasMenu channelId={channelId} variant="primary" />
+          </EmptyContent>
+        </Empty>
+      </div>
     );
   }
 
   return (
     <div className="scroll-mask-4 h-full overflow-auto bg-gray-1">
+      <ChannelsWelcome />
       <Box className="p-5">
         <Grid columns={{ initial: "1", sm: "2", md: "3" }} gap="4">
           {dashboards.map((d) => (

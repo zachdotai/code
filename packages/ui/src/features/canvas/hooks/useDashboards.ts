@@ -84,7 +84,18 @@ export function useDashboardMutations() {
   };
 
   const create = useMutation(
-    trpc.dashboards.create.mutationOptions({ onSuccess: invalidate }),
+    trpc.dashboards.create.mutationOptions({
+      onSuccess: (record) => {
+        // Warm the record cache so opening the new canvas is instant — the
+        // destination's `dashboards.get` query resolves from cache with no cold
+        // fetch flash — then reconcile the list in the background.
+        queryClient.setQueryData(
+          trpc.dashboards.get.queryKey({ id: record.id }),
+          record,
+        );
+        invalidate();
+      },
+    }),
   );
   const remove = useMutation(
     trpc.dashboards.delete.mutationOptions({ onSuccess: invalidate }),

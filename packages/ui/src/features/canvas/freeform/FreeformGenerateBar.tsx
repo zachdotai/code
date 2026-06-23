@@ -2,6 +2,16 @@ import { SparkleIcon } from "@phosphor-icons/react";
 import { useGenerateFreeformCanvas } from "@posthog/ui/features/canvas/hooks/useGenerateFreeformCanvas";
 import { Button, Flex, Spinner, TextArea } from "@radix-ui/themes";
 
+// A few starter ideas shown on an empty canvas, so a blank box doesn't leave
+// users guessing what's possible. Clicking one drops it into the composer to
+// edit before generating.
+const EXAMPLE_PROMPTS = [
+  "Weekly active users by platform",
+  "Signup → activation funnel",
+  "Top events over the last 7 days",
+  "Retention by signup cohort",
+];
+
 // Composer that kicks off freeform canvas generation as a dedicated task: the
 // user describes what they want and the agent builds + publishes the canvas. No
 // repo is picked up front — the agent attaches one lazily only if it needs it.
@@ -39,6 +49,8 @@ export function FreeformGenerateBar({
   const draft = value;
   const setDraft = onValueChange;
   const isEdit = !!currentCode?.trim();
+  // Only nudge with examples on a fresh, empty composer for a brand-new canvas.
+  const showExamples = !isEdit && !draft.trim() && !isStarting;
 
   const run = async () => {
     const instruction = draft.trim();
@@ -67,6 +79,23 @@ export function FreeformGenerateBar({
         rows={3}
         disabled={isStarting}
       />
+      {showExamples && (
+        <Flex align="center" gap="2" wrap="wrap">
+          {EXAMPLE_PROMPTS.map((prompt) => (
+            <Button
+              key={prompt}
+              type="button"
+              size="1"
+              variant="soft"
+              color="gray"
+              radius="full"
+              onClick={() => setDraft(prompt)}
+            >
+              {prompt}
+            </Button>
+          ))}
+        </Flex>
+      )}
       <Flex align="center" justify="end" gap="2">
         <Button
           size="2"

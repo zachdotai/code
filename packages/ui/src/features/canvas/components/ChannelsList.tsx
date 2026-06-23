@@ -1200,7 +1200,7 @@ export function ChannelsList() {
 
         {!isLoading && channels.length === 0 && (
           <Text size="1" className="px-2 text-gray-9">
-            No channels yet. Create one to get started.
+            No channels yet. Create one to group canvases and tasks.
           </Text>
         )}
 

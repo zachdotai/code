@@ -111,6 +111,33 @@
 }
 
 /*
+ * Canvas "reveal" — a one-shot, gentle fade + lift played when a freshly
+ * generated canvas first appears, so the payoff lands softly instead of
+ * popping in. Apply the class to the canvas container for the duration of the
+ * animation, then drop it. Honors reduced-motion.
+ */
+.canvas-reveal {
+  animation: canvas-reveal-in 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes canvas-reveal-in {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.992);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-reveal {
+    animation: none;
+  }
+}
+
+/*
  * Quill ships its dialog backdrop at `opacity-20` (light) / `opacity-70`
  * (dark). The light value is barely visible — bump it so dialogs feel
  * properly modal across the app, matching Radix Themes.

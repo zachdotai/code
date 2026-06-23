@@ -1,8 +1,15 @@
-import { PlusIcon } from "@phosphor-icons/react";
-import { Button } from "@posthog/quill";
+import { HashIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  Button,
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@posthog/quill";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { Flex, Text } from "@radix-ui/themes";
 import { Navigate } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -25,27 +32,26 @@ export function WebsiteChannelsIndex() {
   }
 
   return (
-    <Flex
-      direction="column"
-      align="center"
-      justify="center"
-      height="100%"
-      gap="3"
-      className="px-6 text-center"
-    >
-      <Flex direction="column" gap="1">
-        <Text size="3" weight="bold" className="text-gray-12">
-          No channels yet
-        </Text>
-        <Text size="2" className="text-gray-10">
-          Create a channel to get its own canvases, tasks, and settings.
-        </Text>
-      </Flex>
-      <Button variant="primary" onClick={() => setModalOpen(true)}>
-        <PlusIcon size={14} />
-        Create channel
-      </Button>
+    <>
+      <Empty className="h-full">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <HashIcon size={24} />
+          </EmptyMedia>
+          <EmptyTitle>Create your first channel</EmptyTitle>
+          <EmptyDescription>
+            Channels keep related work together — each one has its own canvases,
+            tasks, and shared context, like a folder for a product area or team.
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button variant="primary" onClick={() => setModalOpen(true)}>
+            <PlusIcon size={14} />
+            Create channel
+          </Button>
+        </EmptyContent>
+      </Empty>
       <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />
-    </Flex>
+    </>
   );
 }
