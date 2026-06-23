@@ -30,7 +30,7 @@ export function QueuedMessageView({
     : "Interrupt the current turn and resend with this message.";
 
   return (
-    <Box className="rounded-lg border border-gray-5 bg-card px-3 py-2">
+    <Box className="rounded-t-md border border-gray-5 border-b-0 bg-card px-3 py-2">
       <Flex align="center" gap="2">
         <Stack size={14} className="shrink-0 text-gray-9" />
         <Box className="min-w-0 flex-1 font-medium text-[13px] text-gray-12 [&>*:last-child]:mb-0">

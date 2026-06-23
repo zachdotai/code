@@ -34,7 +34,7 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
   if (queued.length === 0) return null;
 
   return (
-    <Flex direction="column" gap="1" className="mb-1">
+    <Flex direction="column" gap="1">
       {queued.map((message) => (
         <QueuedMessageView
           key={message.id}

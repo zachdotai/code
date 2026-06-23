@@ -41,7 +41,10 @@ import {
   useShowRawLogs,
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import {
+  useQueuedMessagesForTask,
+  useSessionForTask,
+} from "@posthog/ui/features/sessions/useSession";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
@@ -169,6 +172,7 @@ export function SessionView({
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
   const toggleMessagingMode = useToggleMessagingMode(taskId);
+  const hasQueuedMessages = useQueuedMessagesForTask(taskId).length > 0;
   const { allowBypassPermissions } = useSettingsStore();
   const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
@@ -606,6 +610,7 @@ export function SessionView({
                         {taskId && <QueuedMessagesDock taskId={taskId} />}
                         <PromptInput
                           ref={editorRef}
+                          attachedTop={hasQueuedMessages}
                           sessionId={sessionId}
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}

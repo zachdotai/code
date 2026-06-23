@@ -63,6 +63,9 @@ export interface PromptInputProps {
   submitTooltipOverride?: string;
   editorHeight?: "default" | "large";
   tourTarget?: string;
+  // when a queued-message dock sits flush on top, square the input's top corners
+  // so the two boxes read as one connected unit
+  attachedTop?: boolean;
 }
 
 export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
@@ -102,6 +105,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       submitTooltipOverride,
       editorHeight = "default",
       tourTarget,
+      attachedTop = false,
     },
     ref,
   ) => {
@@ -324,7 +328,15 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         <InputGroup
           onClick={handleContainerClick}
           onContextMenu={handleContextMenu}
-          className={`h-auto cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:ring-1 focus-within:ring-purple-9"}`}
+          className={clsx(
+            "h-auto cursor-text bg-card",
+            // input is rounded more than the queued-message dock above it; when a
+            // message is docked, square the top so the two boxes connect flush
+            attachedTop ? "rounded-b-xl! rounded-t-none!" : "rounded-xl!",
+            isBashMode
+              ? "ring-1 ring-blue-9"
+              : "focus-within:ring-1 focus-within:ring-purple-9",
+          )}
           {...(tourTarget && {
             "data-tour": `${tourTarget}-editor`,
             "data-tour-ready": !isEmpty ? "true" : undefined,
