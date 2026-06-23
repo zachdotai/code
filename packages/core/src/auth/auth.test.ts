@@ -1,6 +1,6 @@
 import type { RootLogger } from "@posthog/di/logger";
 import type { IPowerManager } from "@posthog/platform/power-manager";
-import { OAUTH_SCOPE_VERSION } from "@posthog/shared";
+import { OAUTH_SCOPE_VERSION, sleep } from "@posthog/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthService } from "./auth";
 import type {
@@ -21,6 +21,7 @@ vi.mock("@posthog/shared", async (importOriginal) => {
   return {
     ...actual,
     sleepWithBackoff: vi.fn().mockResolvedValue(undefined),
+    sleep: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -1441,8 +1442,56 @@ describe("AuthService", () => {
         expect(service.getState().hasCodeAccess).toBe(false),
       );
       expect(service.getState().status).toBe("authenticated");
-      // 1 awaited attempt + one per prime-backoff step before the budget caps.
-      expect(getCheckAccessCalls()).toBe(9);
+      // 1 awaited attempt + one retry per prime-backoff step (9 primes).
+      expect(getCheckAccessCalls()).toBe(10);
+      // The backoff schedule is actually exercised: each retry waits the next
+      // prime delay (the mocked sleep records the requested durations).
+      expect(vi.mocked(sleep).mock.calls.map((call) => call[0])).toEqual([
+        2_000, 3_000, 5_000, 7_000, 11_000, 13_000, 17_000, 19_000, 23_000,
+      ]);
+    });
+
+    it("does not let a stale retry loop clobber a fresh grant", async () => {
+      // Park the retry loop on its first backoff so we can interleave a newer
+      // authoritative check that succeeds before the stale loop wakes.
+      let releaseSleep!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        releaseSleep = resolve;
+      });
+      vi.mocked(sleep).mockImplementationOnce(() => gate);
+
+      let call = 0;
+      stubFetchWithCheckAccess(() => {
+        call++;
+        // First (restore) attempt fails and schedules the retry loop; every
+        // later check succeeds with access.
+        return call === 1
+          ? ({
+              ok: false,
+              status: 403,
+              json: () => Promise.resolve({}),
+            } as unknown as Response)
+          : ({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ has_access: true }),
+            } as unknown as Response);
+      });
+
+      await restoreSession();
+      // Restore's attempt failed transiently; gate is unresolved (null, not false).
+      expect(service.getState().hasCodeAccess).toBeNull();
+
+      // A fresh authoritative check (token refresh) resolves access true and
+      // supersedes the parked loop's sequence.
+      await service.refreshAccessToken();
+      expect(service.getState().hasCodeAccess).toBe(true);
+
+      // Wake the stale loop: it must notice it was superseded and NOT fail closed.
+      releaseSleep();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(service.getState().hasCodeAccess).toBe(true);
     });
 
     it("still gates the user when the server definitively reports no access", async () => {

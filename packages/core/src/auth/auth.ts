@@ -9,6 +9,7 @@ import {
   getCloudUrlFromRegion,
   NotAuthenticatedError,
   OAUTH_SCOPE_VERSION,
+  sleep,
   sleepWithBackoff,
   TypedEventEmitter,
   withTimeout,
@@ -910,16 +911,21 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
+    // Every call is a fresh authoritative check; bumping the sequence
+    // supersedes any retry loop still running from an earlier call so a stale
+    // loop can never clobber a newer result.
+    const seq = ++this.codeAccessCheckSeq;
+
     // The healthy path stays synchronous: one awaited attempt resolves the
     // gate before the app renders. A transient failure must NOT eject an
     // active user, so we keep the current value and retry in the background,
-    // only failing closed once the retry budget is exhausted (see
+    // only failing closed once the retry window is exhausted (see
     // `runCodeAccessRetry`). That stops a brief outage from bouncing real
     // users to the invite screen, while still preventing the gate from being
     // bypassed by simply keeping the client offline indefinitely.
     const resolved = await this.checkCodeAccessOnce();
     if (!resolved) {
-      this.scheduleCodeAccessRetry();
+      void this.runCodeAccessRetry(seq);
     }
   }
   // Returns true when the server gave a definitive answer (a 200, which also
@@ -961,57 +967,32 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return false;
     }
   }
-  private scheduleCodeAccessRetry(): void {
-    if (this.codeAccessRetryPromise) return;
-    this.codeAccessRetryPromise = this.runCodeAccessRetry().finally(() => {
-      this.codeAccessRetryPromise = null;
-    });
-  }
-  // Background retry loop with prime-number backoff — primes keep retries from
-  // synchronising into bursts. We keep retrying until the cumulative backoff
-  // would exceed the budget (~90s), then fail closed so a sustained inability
-  // to call home revokes access rather than granting it forever.
-  private async runCodeAccessRetry(): Promise<void> {
-    let backoffMs = 0;
-
-    for (let attempt = 0; ; attempt++) {
-      const delayMs =
-        AuthService.CODE_ACCESS_BACKOFF_PRIMES_MS[
-          Math.min(
-            attempt,
-            AuthService.CODE_ACCESS_BACKOFF_PRIMES_MS.length - 1,
-          )
-        ];
-      if (backoffMs + delayMs > AuthService.CODE_ACCESS_RETRY_BUDGET_MS) {
-        break;
-      }
-
-      await sleepWithBackoff(0, { initialDelayMs: delayMs });
-      backoffMs += delayMs;
-
-      // The session may have ended (e.g. logout) while we were waiting.
-      if (!this.session) return;
+  // Background retry loop with prime-number backoff. Stepping through primes
+  // (rather than a doubling schedule) keeps many clients' retries from lining
+  // up into bursts after a shared outage. The prime sequence is the whole
+  // budget — it sums to ~77s of waiting — after which we fail closed so a
+  // sustained inability to call home revokes access rather than granting it
+  // forever. `seq` guards against a newer authoritative check (or logout)
+  // having superseded this loop while it slept.
+  private async runCodeAccessRetry(seq: number): Promise<void> {
+    for (const delayMs of AuthService.CODE_ACCESS_BACKOFF_PRIMES_MS) {
+      await sleep(delayMs);
+      if (this.codeAccessCheckSeq !== seq || !this.session) return;
       if (await this.checkCodeAccessOnce()) return;
     }
 
-    // Could not confirm access within the budget: fail closed so the invite
-    // gate can't be bypassed by keeping the client offline.
-    if (this.session) {
-      this.logger.warn(
-        "Code access check failed within budget, failing closed",
-        { backoffMs },
-      );
-      this.updateState({ hasCodeAccess: false });
-    }
+    if (this.codeAccessCheckSeq !== seq || !this.session) return;
+    // Could not confirm access within the retry window: fail closed so the
+    // invite gate can't be bypassed by keeping the client offline.
+    this.logger.warn("Code access check failed within retry window, failing closed");
+    this.updateState({ hasCodeAccess: false });
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
   private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
   private static readonly CODE_ACCESS_FETCH_TIMEOUT_MS = 10_000;
-  private static readonly CODE_ACCESS_RETRY_BUDGET_MS = 90_000;
-  // Prime-number backoff (ms). Stepping through primes (rather than a doubling
-  // schedule) keeps many clients' retries from lining up after an outage. We
-  // walk the sequence until the cumulative wait would exceed the budget above.
+  // Prime-number backoff (ms) for the code-access retry loop; the sequence
+  // sums to ~77s, which is the full retry window before failing closed.
   private static readonly CODE_ACCESS_BACKOFF_PRIMES_MS = [
     2_000, 3_000, 5_000, 7_000, 11_000, 13_000, 17_000, 19_000, 23_000,
   ];
@@ -1020,7 +1001,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     maxDelayMs: 5_000,
     multiplier: 2,
   };
-  private codeAccessRetryPromise: Promise<void> | null = null;
+  private codeAccessCheckSeq = 0;
   private recoveryPromise: Promise<void> | null = null;
   private orgProjectsRefreshPromise: Promise<void> | null = null;
   private connectivityUnsubscribe: (() => void) | null = null;

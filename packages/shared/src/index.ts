@@ -4,6 +4,7 @@ export { withTimeout } from "./async";
 export {
   type BackoffOptions,
   getBackoffDelay,
+  sleep,
   sleepWithBackoff,
 } from "./backoff";
 export {
