@@ -1,8 +1,5 @@
-import {
-  escapeXmlAttr,
-  type UploadableSkillSource,
-  unescapeXmlAttr,
-} from "@posthog/shared";
+import { escapeXmlAttr, type UploadableSkillSource } from "@posthog/shared";
+import { parseXmlAttrs } from "./skillTags";
 
 export interface MentionChip {
   type:
@@ -108,7 +105,6 @@ export function contentToXml(content: EditorContent): string {
 
 const CHIP_TAG_REGEX =
   /<(file|folder|skill|error|experiment|insight|feature_flag|github_issue|github_pr)\b([^>]*?)\s*\/>/g;
-const ATTR_REGEX = /(\w+)="([^"]*)"/g;
 
 export function deriveFileLabel(filePath: string): string {
   const segments = filePath.split("/").filter(Boolean);
@@ -117,16 +113,8 @@ export function deriveFileLabel(filePath: string): string {
   return parentDir ? `${parentDir}/${fileName}` : fileName;
 }
 
-function parseAttrs(raw: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  for (const match of raw.matchAll(ATTR_REGEX)) {
-    attrs[match[1]] = unescapeXmlAttr(match[2]);
-  }
-  return attrs;
-}
-
 function chipFromTag(tag: string, rawAttrs: string): MentionChip | null {
-  const attrs = parseAttrs(rawAttrs);
+  const attrs = parseXmlAttrs(rawAttrs);
   switch (tag) {
     case "file": {
       const path = attrs.path;

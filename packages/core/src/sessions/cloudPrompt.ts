@@ -7,12 +7,11 @@ import {
   stripSkillTags,
 } from "@posthog/core/editor/cloud-prompt";
 import type { EditorContent } from "@posthog/core/message-editor/content";
-import { getFileName, pathToFileUri, unescapeXmlAttr } from "@posthog/shared";
+import { collectUploadableSkillTags } from "@posthog/core/message-editor/skillTags";
+import { getFileName, pathToFileUri } from "@posthog/shared";
 import type { CloudSkillBundleRef } from "./cloudArtifactIdentifiers";
 
 const FILE_URI_PREFIX = "file://";
-const SKILL_TAG_REGEX = /<skill\b([^>]*?)\s*\/>/g;
-const ATTR_REGEX = /(\w+)="([^"]*)"/g;
 
 export interface CloudPromptTransport {
   filePaths: string[];
@@ -67,38 +66,17 @@ function collectBlockAttachmentPaths(prompt: ContentBlock[]): string[] {
   return Array.from(new Set(filePaths));
 }
 
-function parseAttrs(raw: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  for (const match of raw.matchAll(ATTR_REGEX)) {
-    attrs[match[1]] = unescapeXmlAttr(match[2]);
-  }
-  return attrs;
-}
-
 function collectSkillBundleRefs(prompt: string): CloudSkillBundleRef[] {
   const refs: CloudSkillBundleRef[] = [];
   const seen = new Set<string>();
 
-  for (const match of prompt.matchAll(SKILL_TAG_REGEX)) {
-    const attrs = parseAttrs(match[1] ?? "");
-    const source = attrs.source;
-    if (
-      !attrs.name ||
-      !attrs.path ||
-      (source !== "user" &&
-        source !== "repo" &&
-        source !== "marketplace" &&
-        source !== "codex")
-    ) {
-      continue;
-    }
-
-    const key = `${source}:${attrs.path}`;
+  for (const tag of collectUploadableSkillTags(prompt)) {
+    const key = `${tag.source}:${tag.path}`;
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
-    refs.push({ name: attrs.name, source, path: attrs.path });
+    refs.push(tag);
   }
 
   return refs;

@@ -11,14 +11,13 @@ import {
   serializeCloudPrompt,
   unescapeXmlAttr,
 } from "@posthog/shared";
+import { skillTagsToSlashCommands } from "../message-editor/skillTags";
 
 export type ReadFileAsBase64 = (filePath: string) => Promise<string | null>;
 
 const ABSOLUTE_FILE_TAG_REGEX = /<file\s+path="([^"]+)"\s*\/>/g;
 const FOLDER_TAG_REGEX = /<folder\s+path="[^"]+"\s*\/>/g;
 const FOLDER_TAG_PATH_REGEX = /<folder\s+path="([^"]+)"\s*\/>/g;
-const SKILL_TAG_REGEX = /<skill\b([^>]*?)\s*\/>/g;
-const ATTR_REGEX = /(\w+)="([^"]*)"/g;
 const TEXT_EXTENSIONS = new Set([
   "c",
   "cc",
@@ -113,19 +112,8 @@ function normalizePromptText(prompt: string): string {
   return prompt.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function parseAttrs(raw: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  for (const match of raw.matchAll(ATTR_REGEX)) {
-    attrs[match[1]] = unescapeXmlAttr(match[2]);
-  }
-  return attrs;
-}
-
 export function stripSkillTags(prompt: string): string {
-  return prompt.replaceAll(SKILL_TAG_REGEX, (_match, rawAttrs: string) => {
-    const attrs = parseAttrs(rawAttrs);
-    return attrs.name ? `/${attrs.name}` : "";
-  });
+  return skillTagsToSlashCommands(prompt);
 }
 
 export function stripAttachmentTags(prompt: string): string {
