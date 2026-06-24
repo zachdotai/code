@@ -51,9 +51,6 @@ function rejectedApprovalRequestId(text: string | undefined): string | null {
  */
 const MAX_LISTEN_RECONNECTS = 6;
 
-/** Reserve a margin so we mint a fresh token before the server rejects the old one. */
-const PREVIEW_TOKEN_EARLY_REFRESH_MS = 30_000;
-
 /** Exponential backoff (capped at 8s) between `/listen` reconnect attempts. */
 function reconnectBackoffMs(attempt: number): number {
   return Math.min(500 * 2 ** (attempt - 1), 8_000);
@@ -75,29 +72,13 @@ function delay(ms: number, signal: AbortSignal): Promise<boolean> {
   });
 }
 
-/**
- * The ingress signals an expired/missing preview token with the fetcher's
- * `Failed request: [401] …` shape, same as any other auth failure. Anything
- * else falls through to the caller as a normal error.
- */
-function isPreviewAuthError(err: unknown): boolean {
-  return err instanceof Error && /\[401\]/.test(err.message);
-}
-
-interface CachedPreviewToken {
-  token: string;
-  expiresAtMs: number;
-}
-
-/** Per-chat saga state — one live `/listen` loop, mapper, and token cache. */
+/** Per-chat saga state — one live `/listen` loop and mapper. */
 interface ChatRuntime {
   mapper: AgentChatMapper;
   abort: AbortController | null;
   streaming: boolean;
   /** Each stream attach bumps this; a superseded loop checks it before touching the store. */
   epoch: number;
-  previewToken: CachedPreviewToken | null;
-  revisionId: string | null;
 }
 
 /**
@@ -105,7 +86,7 @@ interface ChatRuntime {
  * the api-client, streams SSE through the host's mapper, and pumps the resulting
  * ACP messages into the core `agentChatStore` keyed by `chatId` (so the agent
  * builder dock and per-agent previews coexist). One `ChatRuntime` per chat holds
- * the reconnect loop, epoch supersede, and preview-token cache.
+ * the reconnect loop and epoch supersede.
  *
  * The renderer hook supplies the authenticated client per call and the UI seams
  * (mapper, client-tool resolution, context envelope, history) via the session.
@@ -114,7 +95,6 @@ interface ChatRuntime {
 export class AgentChatService {
   private readonly runtimes = new Map<string, ChatRuntime>();
 
-  /** Ensure a runtime exists, dropping a cached token when the revision changes. */
   private runtime(session: AgentChatSession): ChatRuntime {
     let rt = this.runtimes.get(session.chatId);
     if (!rt) {
@@ -123,75 +103,14 @@ export class AgentChatService {
         abort: null,
         streaming: false,
         epoch: 0,
-        previewToken: null,
-        revisionId: session.revisionId,
       };
       this.runtimes.set(session.chatId, rt);
-    }
-    // A token is bound to a specific (app, revision); a stale one wouldn't route
-    // to the new target when the consumer flips revisions (incl. live ↔ draft).
-    if (rt.revisionId !== session.revisionId) {
-      rt.revisionId = session.revisionId;
-      rt.previewToken = null;
     }
     return rt;
   }
 
-  /**
-   * Mint a preview token if we don't have one, or refresh it just before expiry.
-   * `force` skips the cache (post-401 retry). Returns null for live revisions.
-   */
-  private async getPreviewToken(
-    client: PostHogAPIClient,
-    rt: ChatRuntime,
-    session: AgentChatSession,
-    force = false,
-  ): Promise<string | null> {
-    if (!session.revisionId) return null;
-    const cached = rt.previewToken;
-    if (
-      !force &&
-      cached &&
-      cached.expiresAtMs - Date.now() > PREVIEW_TOKEN_EARLY_REFRESH_MS
-    ) {
-      return cached.token;
-    }
-    const minted = await client.mintAgentPreviewToken(
-      session.agentSlug,
-      session.revisionId,
-    );
-    rt.previewToken = {
-      token: minted.token,
-      // Backend returns TTL in seconds; store an absolute deadline so the
-      // early-refresh comparison is straight subtraction.
-      expiresAtMs: Date.now() + minted.expires_in * 1000,
-    };
-    return minted.token;
-  }
-
-  /**
-   * Run an ingress call with the cached preview token; on the fetcher's `[401]`,
-   * mint fresh and retry once. For live revisions this is just `call(null)`.
-   */
-  private async withPreviewToken<T>(
-    client: PostHogAPIClient,
-    rt: ChatRuntime,
-    session: AgentChatSession,
-    call: (token: string | null) => Promise<T>,
-  ): Promise<T> {
-    const token = await this.getPreviewToken(client, rt, session);
-    try {
-      return await call(token);
-    } catch (err) {
-      if (!session.revisionId || !isPreviewAuthError(err)) throw err;
-      const fresh = await this.getPreviewToken(client, rt, session, true);
-      return call(fresh);
-    }
-  }
-
   private async dispatchClientTool(
     client: PostHogAPIClient,
-    rt: ChatRuntime,
     session: AgentChatSession,
     data: ClientToolCallData,
     sessionId: string,
@@ -200,14 +119,11 @@ export class AgentChatService {
     // Interactive tools (set_secret) post their own outcome later.
     if (!outcome || outcome.defer) return;
     try {
-      await this.withPreviewToken(client, rt, session, (token) =>
-        client.sendAgentClientToolResult(
-          session.ingressBaseUrl,
-          sessionId,
-          data.call_id,
-          outcome,
-          token,
-        ),
+      await client.sendAgentClientToolResult(
+        session.ingressBaseUrl,
+        sessionId,
+        data.call_id,
+        outcome,
       );
     } catch {
       // Best-effort — the session will time the call out if this fails.
@@ -232,40 +148,30 @@ export class AgentChatService {
     // reconnect loop can tell "still producing output" from "attached to a
     // silent or ended session". Reset before every pump attempt.
     let madeProgress = false;
-    // Last non-auth stream error, surfaced only if reconnects are exhausted.
+    // Last stream error, surfaced only if reconnects are exhausted.
     let lastDropError: string | null = null;
-    // Pump the SSE generator with the supplied token. Returns:
-    //   "remint"       — server signalled `preview_token_required`; mint + reconnect.
-    //   "auth_failure" — initial fetch 401'd; safety-net retry once.
-    //   "done"         — the stream ended (terminal frame, drop, or supersede).
-    const pump = async (
-      token: string | null,
-    ): Promise<"remint" | "auth_failure" | "done"> => {
+    const pump = async (): Promise<void> => {
       try {
         for await (const event of client.streamAgentSession(
           session.ingressBaseUrl,
           sessionId,
           controller.signal,
-          token,
         )) {
-          if (rt.epoch !== epoch) return "done";
-          // Control event: don't surface to the user, just request a remint.
-          if (event.kind === "preview_token_required") return "remint";
+          if (rt.epoch !== epoch) return;
           // Hard end (meta-end-session): the session is sealed and rejects
           // further `/send`s. Unlike `completed` (turn-end, stays open), this is
           // terminal — finalize and stop tailing. The mapper renders nothing for
-          // it, so skip the append like the remint.
+          // it, so skip the append.
           if (event.kind === "closed") {
             store.setStatus(chatId, "completed");
-            return "done";
+            return;
           }
           madeProgress = true;
           store.appendMessages(chatId, rt.mapper.apply(event));
-          this.trackApprovalState(client, rt, session, chatId, epoch, event);
+          this.trackApprovalState(client, session, chatId, epoch, event);
           if (event.kind === "client_tool_call") {
             void this.dispatchClientTool(
               client,
-              rt,
               session,
               event.data,
               sessionId,
@@ -282,22 +188,13 @@ export class AgentChatService {
             );
           }
         }
-        return "done";
       } catch (err) {
-        if (
-          session.revisionId &&
-          !controller.signal.aborted &&
-          isPreviewAuthError(err)
-        ) {
-          return "auth_failure";
-        }
         // Network reset / idle-timeout close / parse failure: remember it but
         // don't surface yet — the loop reconnects, and only errors if the
         // session is gone or the reconnect budget is exhausted.
         if (!controller.signal.aborted) {
           lastDropError = err instanceof Error ? err.message : null;
         }
-        return "done";
       }
     };
     // Is the run still live? `/listen` can't replay a terminal frame missed
@@ -309,8 +206,6 @@ export class AgentChatService {
         const detail = await client.getAgentSessionViaIngress(
           session.ingressBaseUrl,
           sessionId,
-          undefined,
-          await this.getPreviewToken(client, rt, session),
         );
         return !detail || TERMINAL_SESSION_STATES.has(detail.state)
           ? "terminal"
@@ -320,33 +215,13 @@ export class AgentChatService {
       }
     };
     try {
-      let token = await this.getPreviewToken(client, rt, session);
-      // `preview_token_required` is unbounded (one re-mint per ~15 min TTL); a
-      // true `[401]` only gets one retry as a safety net for the initial fetch.
-      let authRetried = false;
       let reconnectAttempts = 0;
       while (true) {
         madeProgress = false;
-        const outcome = await pump(token);
+        await pump();
         if (rt.epoch !== epoch || controller.signal.aborted) break;
-        if (outcome === "remint") {
-          token = await this.getPreviewToken(client, rt, session, true);
-          continue;
-        }
-        if (outcome === "auth_failure" && !authRetried) {
-          authRetried = true;
-          token = await this.getPreviewToken(client, rt, session, true);
-          continue;
-        }
-        if (outcome === "auth_failure") {
-          store.setError(
-            chatId,
-            "Preview session failed to authenticate. Try again.",
-          );
-          break;
-        }
-        // outcome === "done": a terminal/`waiting` frame already moved us off
-        // "streaming" — that's an expected end, so stop.
+        // A terminal/`waiting` frame already moved us off "streaming" — that's
+        // an expected end, so stop.
         if (agentChatStore.getState().chats[chatId]?.status !== "streaming") {
           break;
         }
@@ -379,18 +254,6 @@ export class AgentChatService {
           controller.signal,
         );
         if (!waited || rt.epoch !== epoch || controller.signal.aborted) break;
-        // Refresh a preview token that may have lapsed across the gap.
-        token = await this.getPreviewToken(client, rt, session);
-      }
-    } catch (err) {
-      // A `getPreviewToken` throw (mint or re-mint) lands here — `pump` handles
-      // its own errors. Without this the rejection would slip past `finally`
-      // (which only flips status) and the stream would quietly stop.
-      if (rt.epoch === epoch && !controller.signal.aborted) {
-        store.setError(
-          chatId,
-          err instanceof Error ? err.message : "Preview session unavailable.",
-        );
       }
     } finally {
       // The loop has fully broken (terminal frame, exhausted budget, or
@@ -422,16 +285,9 @@ export class AgentChatService {
     // includes the context envelope) is stripped + deduped by the mapper.
     s.appendMessages(session.chatId, rt.mapper.seedUserMessage(text));
     try {
-      const { session_id } = await this.withPreviewToken(
-        client,
-        rt,
-        session,
-        (token) =>
-          client.runAgentSession(
-            session.ingressBaseUrl,
-            session.buildWireText(text),
-            token,
-          ),
+      const { session_id } = await client.runAgentSession(
+        session.ingressBaseUrl,
+        session.buildWireText(text),
       );
       agentChatStore.getState().setSessionId(session.chatId, session_id);
       agentChatStore.getState().setStatus(session.chatId, "streaming");
@@ -461,9 +317,7 @@ export class AgentChatService {
     s.appendMessages(session.chatId, rt.mapper.seedUserMessage(text));
     s.setStatus(session.chatId, "streaming");
     try {
-      await this.withPreviewToken(client, rt, session, (token) =>
-        client.sendAgentMessage(session.ingressBaseUrl, sessionId, text, token),
-      );
+      await client.sendAgentMessage(session.ingressBaseUrl, sessionId, text);
       if (!rt.streaming) void this.runStream(client, session, sessionId);
     } catch (err) {
       s.setStatus(session.chatId, "failed");
@@ -485,9 +339,7 @@ export class AgentChatService {
     s.setStatus(session.chatId, "cancelled");
     if (sessionId && session.ingressBaseUrl) {
       try {
-        await this.withPreviewToken(client, rt, session, (token) =>
-          client.cancelAgentSession(session.ingressBaseUrl, sessionId, token),
-        );
+        await client.cancelAgentSession(session.ingressBaseUrl, sessionId);
       } catch {
         // Best-effort.
       }
@@ -498,12 +350,11 @@ export class AgentChatService {
    * Keep `chat.pendingApproval` in sync with the stream — what drives the inline
    * approval card, with no polling. A `queued` approval marker triggers a
    * one-shot fetch of the full request from the ingress (principal-authed,
-   * cross-project, with the draft preview token when present); a non-queued
-   * marker for that request, or a rejection wake, clears it.
+   * cross-project); a non-queued marker for that request, or a rejection wake,
+   * clears it.
    */
   private trackApprovalState(
     client: PostHogAPIClient,
-    rt: ChatRuntime,
     session: AgentChatSession,
     chatId: string,
     epoch: number,
@@ -517,15 +368,14 @@ export class AgentChatService {
       }
       void (async () => {
         try {
-          const token = await this.getPreviewToken(client, rt, session);
           const detail = await client.getAgentApprovalViaIngress(
             session.ingressBaseUrl,
             request_id,
-            token,
           );
+          const rt = this.runtimes.get(chatId);
           // Skip if the stream was superseded (epoch) or the approval was
           // already decided while the fetch was in flight (re-checked state).
-          if (detail && detail.state === "queued" && rt.epoch === epoch) {
+          if (detail && detail.state === "queued" && rt?.epoch === epoch) {
             agentChatStore.getState().setPendingApproval(chatId, detail);
           }
         } catch {
@@ -551,9 +401,8 @@ export class AgentChatService {
 
   /**
    * Decide a `principal`-type tool approval for this chat's session at the
-   * ingress, carrying the session's preview token so the ingress can
-   * principal-match. On approve the runner wakes, dispatches the tool, and the
-   * open `/listen` stream resumes the chat naturally — same as `/send`.
+   * ingress. On approve the runner wakes, dispatches the tool, and the open
+   * `/listen` stream resumes the chat naturally — same as `/send`.
    */
   async decideApproval(
     client: PostHogAPIClient,
@@ -561,14 +410,10 @@ export class AgentChatService {
     approvalId: string,
     body: DecideApprovalRequest,
   ): Promise<void> {
-    const rt = this.runtime(session);
-    await this.withPreviewToken(client, rt, session, (token) =>
-      client.decideAgentApprovalViaIngress(
-        session.ingressBaseUrl,
-        approvalId,
-        body,
-        token,
-      ),
+    await client.decideAgentApprovalViaIngress(
+      session.ingressBaseUrl,
+      approvalId,
+      body,
     );
     // Clear the inline card now — the stream's resolved marker clears it too,
     // but the approve→dispatch (or reject→wake) can lag, so don't leave the user
@@ -593,14 +438,11 @@ export class AgentChatService {
     const rt = this.runtime(session);
     agentChatStore.getState().setStatus(session.chatId, "streaming");
     try {
-      await this.withPreviewToken(client, rt, session, (token) =>
-        client.sendAgentInteractiveToolResult(
-          session.ingressBaseUrl,
-          sessionId,
-          callId,
-          outcome,
-          token,
-        ),
+      await client.sendAgentInteractiveToolResult(
+        session.ingressBaseUrl,
+        sessionId,
+        callId,
+        outcome,
       );
       if (!rt.streaming) void this.runStream(client, session, sessionId);
     } catch (err) {
@@ -641,8 +483,6 @@ export class AgentChatService {
       const detail = await client.getAgentSessionViaIngress(
         session.ingressBaseUrl,
         sessionId,
-        undefined,
-        await this.getPreviewToken(client, rt, session),
       );
       // A newer resume/new-chat won the race while we were fetching.
       if (

@@ -93,36 +93,6 @@ export interface AgentRevision {
   updated_at: string;
 }
 
-// `…/agent_applications/{id}/preview-token/?revision_id=<uuid>` mints a
-// short-lived HS256 JWT that authorizes the ingress to route /run /send /listen
-// /cancel against a non-live revision. Sent on those calls via the
-// `X-Agent-Preview-Token` header (or `?preview_token=` query for EventSource),
-// alongside the usual PostHog bearer. The response's `endpoints` carry the
-// per-trigger preview URLs to hit directly, so the client never derives a
-// revision-scoped ingress URL by string-mangling `application.ingress_base_url`.
-
-/** Per-trigger preview URLs, keyed by trigger type → action → absolute URL. */
-export type AgentPreviewEndpoints = Record<string, Record<string, string>>;
-
-export interface AgentPreviewToken {
-  /** HS256 JWT bound to (app, revision). Short TTL. */
-  token: string;
-  /** Token TTL in seconds from issue; mint a fresh one before this elapses. */
-  expires_in: number;
-  /** `<application_slug>-<revision_uuid_hex>` — the slug ingress uses in routing. */
-  ingress_slug: string;
-  /**
-   * Per-trigger ingress URLs derived from this revision's `spec.triggers[]`.
-   * Empty when no public agent-ingress URL is configured for the active routing mode.
-   * Shape: `{ chat: { run, send, listen, cancel, client_tool_result }, slack: {...} }`.
-   */
-  endpoints: AgentPreviewEndpoints;
-  /** Header/query names + per-trigger accepted auth modes. Opaque to most callers. */
-  auth: Record<string, unknown>;
-  /** Server-side proxy alternative — opaque shape; preferred path is direct-to-ingress. */
-  preview_proxy: Record<string, unknown>;
-}
-
 // `…/revisions/{id}/bundle/` returns a typed bundle ({ agent_md, skills, tools });
 // the client flattens it into these per-file rows keyed by canonical path
 // (agent.md, skills/<id>/SKILL.md, tools/<id>/source.ts, tools/<id>/schema.json).
@@ -607,16 +577,6 @@ export type AgentClientToolResultEvent = AgentSessionEventBase & {
   data: { call_id: string; result?: unknown; error?: string };
 };
 
-/**
- * Draft-preview only. Server fires this on `/listen` ~5s before the preview
- * token expires (then closes the stream); the client mints a fresh token and
- * reconnects. The kind alone is the signal — `data` is unused.
- */
-export type AgentPreviewTokenRequiredEvent = AgentSessionEventBase & {
-  kind: "preview_token_required";
-  data: Record<string, unknown>;
-};
-
 export type AgentSessionEvent =
   | AgentSessionStartedEvent
   | AgentUserMessageEvent
@@ -633,8 +593,7 @@ export type AgentSessionEvent =
   | AgentFailedEvent
   | AgentClosedEvent
   | AgentClientToolCallEvent
-  | AgentClientToolResultEvent
-  | AgentPreviewTokenRequiredEvent;
+  | AgentClientToolResultEvent;
 
 /** Discriminator values for {@link AgentSessionEvent}. */
 export type AgentSessionEventKind = AgentSessionEvent["kind"];

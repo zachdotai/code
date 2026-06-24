@@ -7,8 +7,6 @@ import {
 import type { CloudRegion } from "@posthog/shared";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Flex, Text } from "@radix-ui/themes";
-import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import {
   type PreviewChatEntry,
@@ -44,43 +42,17 @@ function relativeTime(ms: number): string {
 /**
  * Live chat against a deployed agent (the console's "preview/test"). Streams the
  * agent-ingress SSE through the native `ConversationView`. Only meaningful for
- * agents that expose a chat trigger and have a public ingress URL.
+ * agents that expose a chat trigger and have a public ingress URL. Always
+ * targets the agent's currently live revision.
  *
  * A left rail lists the preview chats the user started *here* (persisted
  * locally — never the agent's full server session list, which can include real
  * customer chats), and a banner makes clear this talks to the deployed revision.
- *
- * When `revisionId` targets a non-live revision (the "Test draft" affordance
- * from the revision bar), the hook mints a short-lived preview token and
- * scopes the ingress to that draft; chatId/banner switch accordingly so a
- * draft session can't be confused with a live one.
  */
-export function AgentChatPane({
-  idOrSlug,
-  revisionId,
-  resumeSessionId,
-}: {
-  idOrSlug: string;
-  revisionId?: string | null;
-  /**
-   * Optional session id from the route (`?session=`); when set, the pane
-   * re-attaches to that session on first mount. Lets rail clicks that cross
-   * revisions land on the right surface AND immediately resume — without it,
-   * the new mount would render an empty composer.
-   */
-  resumeSessionId?: string | null;
-}) {
-  const navigate = useNavigate();
+export function AgentChatPane({ idOrSlug }: { idOrSlug: string }) {
   const { data: application } = useAgentApplication(idOrSlug);
-  // null/equal-to-live → fall back to the live revision; explicit non-live
-  // revision id → draft preview mode.
-  const targetRevisionId =
-    revisionId && revisionId !== application?.live_revision
-      ? revisionId
-      : (application?.live_revision ?? null);
-  const isDraftPreview =
-    !!revisionId && revisionId !== application?.live_revision;
-  const { data: revision } = useAgentRevision(idOrSlug, targetRevisionId);
+  const liveRevisionId = application?.live_revision ?? null;
+  const { data: revision } = useAgentRevision(idOrSlug, liveRevisionId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const ingressBaseUrl = resolveIngressBaseUrl(
     application?.ingress_base_url,
@@ -89,77 +61,16 @@ export function AgentChatPane({
   const hasChatTrigger = (revision?.spec?.triggers ?? []).some(
     (t) => rec(t).type === "chat",
   );
-  // Keyed by revision so a draft preview and the live chat coexist in the store
-  // without trampling each other.
-  const chatId = isDraftPreview
-    ? `preview:${idOrSlug}:${revisionId}`
-    : `preview:${idOrSlug}`;
+  const chatId = `preview:${idOrSlug}`;
   const chat = useAgentChat({
     chatId,
     agentSlug: idOrSlug,
     ingressBaseUrl,
-    revisionId: isDraftPreview ? revisionId : null,
     recordHistory: true,
   });
   const pendingApproval = useAgentChatPendingApproval(chatId);
   const chats = useChatHistoryStore((s) => s.byAgent[idOrSlug]) ?? EMPTY_CHATS;
   const removeChat = useChatHistoryStore((s) => s.remove);
-
-  // Partition the rail into "matches the current target" vs everything else
-  // so a live view doesn't drown in old draft previews (and vice-versa). The
-  // expander reveals the rest on demand.
-  const currentRev = isDraftPreview ? (revisionId ?? null) : null;
-  const { matchingChats, otherChats } = useMemo(() => {
-    const matching: PreviewChatEntry[] = [];
-    const other: PreviewChatEntry[] = [];
-    for (const c of chats) {
-      if ((c.revisionId ?? null) === currentRev) matching.push(c);
-      else other.push(c);
-    }
-    return { matchingChats: matching, otherChats: other };
-  }, [chats, currentRev]);
-  const [showOthers, setShowOthers] = useState(false);
-  // Reset the expander whenever the target switches so each surface starts
-  // focused on its own chats.
-  const lastRevRef = useRef(currentRev);
-  if (lastRevRef.current !== currentRev) {
-    lastRevRef.current = currentRev;
-    if (showOthers) setShowOthers(false);
-  }
-
-  // Auto-resume the URL-named session exactly once per param value. Tracked by
-  // a ref so a re-render or chat.resume identity change can't re-fire on the
-  // same id. After kicking it off we clear the URL hint so an in-pane "New
-  // chat" can't be silently undone by a refresh.
-  const resumedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!resumeSessionId || resumedRef.current === resumeSessionId) return;
-    resumedRef.current = resumeSessionId;
-    chat.resume(resumeSessionId);
-    // Anchored to this route so TanStack can resolve the search-fn against the
-    // chat route's typed shape (the no-`to` form widens to `never`).
-    navigate({
-      to: "/code/agents/applications/$idOrSlug/chat",
-      params: { idOrSlug },
-      search: (prev) => ({ ...prev, session: undefined }),
-    });
-  }, [resumeSessionId, chat.resume, navigate, idOrSlug]);
-
-  // The rail mixes chats from every revision; decide per click whether to
-  // resume inline (same target) or navigate to a different revision's surface.
-  const handleRailSelect = (entry: PreviewChatEntry) => {
-    if ((entry.revisionId ?? null) === currentRev) {
-      chat.resume(entry.sessionId);
-      return;
-    }
-    navigate({
-      to: "/code/agents/applications/$idOrSlug/chat",
-      params: { idOrSlug },
-      search: entry.revisionId
-        ? { revision: entry.revisionId, session: entry.sessionId }
-        : { session: entry.sessionId },
-    });
-  };
 
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="chat" fill>
@@ -174,29 +85,21 @@ export function AgentChatPane({
         <div className="p-6">
           <AgentDetailEmptyState
             title="No chat trigger"
-            description={
-              isDraftPreview
-                ? "This draft revision doesn't expose a chat trigger, so there's nothing to chat with. Add a chat trigger via the agent builder to test it here."
-                : "This agent's live revision doesn't expose a chat trigger, so there's nothing to chat with. Add a chat trigger via the agent builder to test it here."
-            }
+            description="This agent's live revision doesn't expose a chat trigger, so there's nothing to chat with. Add a chat trigger via the agent builder to test it here."
           />
         </div>
       ) : (
         <Flex className="h-full min-h-0">
           <ChatHistoryRail
-            chats={matchingChats}
-            otherChats={otherChats}
-            showOthers={showOthers}
-            onToggleShowOthers={() => setShowOthers((v) => !v)}
+            chats={chats}
             activeSessionId={chat.sessionId}
             onNewChat={chat.newChat}
-            onSelect={handleRailSelect}
+            onSelect={(entry) => chat.resume(entry.sessionId)}
             onDelete={(sessionId) => removeChat(idOrSlug, sessionId)}
           />
           <Flex direction="column" className="min-w-0 flex-1">
             <PreviewBanner
-              revisionId={targetRevisionId}
-              isDraft={isDraftPreview}
+              revisionId={liveRevisionId}
               model={revision?.spec?.model}
               region={cloudRegion}
             />
@@ -231,12 +134,10 @@ export function AgentChatPane({
 
 function PreviewBanner({
   revisionId,
-  isDraft,
   model,
   region,
 }: {
   revisionId: string | null;
-  isDraft: boolean;
   model: string | undefined;
   region: CloudRegion | null;
 }) {
@@ -244,15 +145,12 @@ function PreviewBanner({
     <Flex
       align="center"
       gap="2"
-      className={`shrink-0 border-(--gray-5) border-b px-4 py-2 ${
-        isDraft ? "bg-(--amber-2)" : "bg-(--gray-2)"
-      }`}
+      className="shrink-0 border-(--gray-5) border-b bg-(--gray-2) px-4 py-2"
     >
       <InfoIcon size={14} className="shrink-0 text-gray-10" />
       <Text className="text-[12px] text-gray-11 leading-snug">
-        {isDraft
-          ? "Draft preview — messages run against an unpublished revision. Promote it to make this the live one."
-          : "Live preview — messages run against the currently deployed revision. Only chats you start here appear in the list."}
+        Live preview — messages run against the currently deployed revision.
+        Only chats you start here appear in the list.
       </Text>
       <Flex align="center" gap="2" className="ml-auto shrink-0">
         {model ? (
@@ -276,22 +174,14 @@ function PreviewBanner({
 
 function ChatHistoryRail({
   chats,
-  otherChats,
-  showOthers,
-  onToggleShowOthers,
   activeSessionId,
   onNewChat,
   onSelect,
   onDelete,
 }: {
   chats: PreviewChatEntry[];
-  /** Chats from other revisions — hidden behind an expander to keep this surface focused. */
-  otherChats: PreviewChatEntry[];
-  showOthers: boolean;
-  onToggleShowOthers: () => void;
   activeSessionId: string | null;
   onNewChat: () => void;
-  /** Receives the full entry so the parent can route by revision, not just resume. */
   onSelect: (entry: PreviewChatEntry) => void;
   onDelete: (sessionId: string) => void;
 }) {
@@ -313,7 +203,7 @@ function ChatHistoryRail({
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
-        {chats.length === 0 && (otherChats.length === 0 || !showOthers) ? (
+        {chats.length === 0 ? (
           <Text className="block px-1 py-2 text-[11.5px] text-gray-9 leading-snug">
             Chats you start here will show up in this list.
           </Text>
@@ -328,30 +218,6 @@ function ChatHistoryRail({
                 onDelete={onDelete}
               />
             ))}
-            {otherChats.length > 0 ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onToggleShowOthers}
-                  className="mt-1 block rounded-(--radius-2) px-2 py-1 text-left text-[10.5px] text-gray-10 uppercase tracking-wide hover:bg-(--gray-3) hover:text-gray-12"
-                >
-                  {showOthers
-                    ? "Hide other revisions"
-                    : `Show ${otherChats.length} from other revision${otherChats.length === 1 ? "" : "s"}`}
-                </button>
-                {showOthers
-                  ? otherChats.map((c) => (
-                      <RailEntry
-                        key={c.sessionId}
-                        entry={c}
-                        active={c.sessionId === activeSessionId}
-                        onSelect={onSelect}
-                        onDelete={onDelete}
-                      />
-                    ))
-                  : null}
-              </>
-            ) : null}
           </Flex>
         )}
       </div>
@@ -384,20 +250,9 @@ function RailEntry({
           <span className="block truncate text-[12px] text-gray-12 leading-tight">
             {entry.title || "Untitled chat"}
           </span>
-          <Flex align="center" gap="1" className="text-[10.5px] text-gray-9">
-            <span>{relativeTime(entry.startedAt)}</span>
-            {entry.revisionId ? (
-              <>
-                <span aria-hidden>·</span>
-                <span
-                  className="rounded-(--radius-1) bg-(--amber-3) px-1 font-mono text-(--amber-11) text-[10px]"
-                  title={`Draft preview against revision ${entry.revisionId}`}
-                >
-                  rev {entry.revisionId.slice(0, 8)}
-                </span>
-              </>
-            ) : null}
-          </Flex>
+          <Text className="block text-[10.5px] text-gray-9">
+            {relativeTime(entry.startedAt)}
+          </Text>
         </span>
       </button>
       <button

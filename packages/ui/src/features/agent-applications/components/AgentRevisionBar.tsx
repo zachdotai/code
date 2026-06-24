@@ -8,7 +8,6 @@ import type {
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { AlertDialog, Flex, Popover, Text } from "@radix-ui/themes";
-import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useAgentRevisionLifecycle } from "../hooks/useAgentRevisionLifecycle";
 import { useCreateAgentDraftFromRevision } from "../hooks/useCreateAgentDraftFromRevision";
@@ -107,7 +106,6 @@ export function AgentRevisionBar({
 }) {
   const lifecycle = useAgentRevisionLifecycle(idOrSlug);
   const cloneToDraft = useCreateAgentDraftFromRevision(idOrSlug, agent.id);
-  const navigate = useNavigate();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [filters, setFilters] = useState<Set<AgentRevisionState>>(
     () => new Set<AgentRevisionState>(["live", "ready", "draft"]),
@@ -246,30 +244,6 @@ export function AgentRevisionBar({
       </Popover.Root>
 
       <Flex gap="2">
-        {/*
-         * Test — runs this not-yet-promoted revision through the live ingress
-         * with a preview token (the chat tab mints + attaches it via
-         * useAgentChat). Live uses the default Chat tab; archived can't be
-         * exercised.
-         */}
-        {selected.state !== "live" &&
-        selected.state !== "archived" &&
-        !isLive ? (
-          <Button
-            size="1"
-            variant="soft"
-            color="gray"
-            onClick={() =>
-              navigate({
-                to: "/code/agents/applications/$idOrSlug/chat",
-                params: { idOrSlug },
-                search: { revision: selected.id },
-              })
-            }
-          >
-            {selected.state === "draft" ? "Test draft" : "Test"}
-          </Button>
-        ) : null}
         {/*
          * Clone to draft — fork this revision into a fresh editable draft (the
          * exit when a ready/live/archived bundle is immutable but you want to

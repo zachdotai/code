@@ -18,7 +18,6 @@ const mockClient = vi.hoisted(() => ({
   getAgentSessionViaIngress: vi.fn(),
   sendAgentClientToolResult: vi.fn(),
   sendAgentInteractiveToolResult: vi.fn(),
-  mintAgentPreviewToken: vi.fn(),
 }));
 const client = mockClient as unknown as PostHogAPIClient;
 
@@ -27,7 +26,6 @@ function session(chatId: string): AgentChatSession {
     chatId,
     agentSlug: SLUG,
     ingressBaseUrl: INGRESS,
-    revisionId: null,
     createMapper: () => ({
       seedUserMessage: () => [],
       setPromptIdBase: () => {},

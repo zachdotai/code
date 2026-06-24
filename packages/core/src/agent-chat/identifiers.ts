@@ -47,8 +47,6 @@ export interface AgentChatSession {
   /** Agent slug the chat targets. */
   agentSlug: string;
   ingressBaseUrl: string;
-  /** Non-null targets a specific draft revision (preview token attached per call). */
-  revisionId: string | null;
   createMapper(): AgentChatMapper;
   /** Resolve a client-tool call; `defer`/null ⇒ the service won't post a result. */
   resolveClientTool(

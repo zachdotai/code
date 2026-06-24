@@ -34,12 +34,6 @@ export interface UseAgentChatOptions {
   /** Agent slug the chat targets (drives client-tool context + history). */
   agentSlug: string;
   ingressBaseUrl: string | null;
-  /**
-   * When set, this chat targets a specific non-live revision. The service mints
-   * a short-lived preview token and attaches it on every ingress call. Leave
-   * null/unset to use the agent's currently live revision.
-   */
-  revisionId?: string | null;
   /** Index started sessions in the local recent-chats rail (preview only). */
   recordHistory?: boolean;
   /**
@@ -64,7 +58,6 @@ export function useAgentChat({
   chatId,
   agentSlug,
   ingressBaseUrl,
-  revisionId = null,
   recordHistory = false,
   contextProvider,
   clientTools,
@@ -87,7 +80,6 @@ export function useAgentChat({
       chatId,
       agentSlug,
       ingressBaseUrl: ingressBaseUrl ?? "",
-      revisionId,
       createMapper: createAgentChatMapper,
       resolveClientTool: (data) =>
         resolveClientTool(
@@ -109,11 +101,10 @@ export function useAgentChat({
               sessionId,
               title: text.slice(0, 120),
               startedAt: Date.now(),
-              revisionId: revisionId ?? undefined,
             })
         : undefined,
     }),
-    [chatId, agentSlug, ingressBaseUrl, revisionId, recordHistory, recordChat],
+    [chatId, agentSlug, ingressBaseUrl, recordHistory, recordChat],
   );
 
   const send = useCallback(
