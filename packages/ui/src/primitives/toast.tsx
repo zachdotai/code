@@ -124,7 +124,12 @@ export const toast = {
 
   error: (
     title: ReactNode,
-    options?: { description?: string; id?: string | number; duration?: number },
+    options?: {
+      description?: string;
+      id?: string | number;
+      duration?: number;
+      action?: ToastAction;
+    },
   ) => {
     return sonnerToast.custom(
       (id) => (
@@ -133,6 +138,7 @@ export const toast = {
           type="error"
           title={title}
           description={options?.description}
+          action={options?.action}
         />
       ),
       { id: options?.id, duration: options?.duration ?? 5000 },

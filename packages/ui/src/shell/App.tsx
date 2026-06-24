@@ -11,6 +11,7 @@ import { InviteCodeScreen } from "@posthog/ui/features/auth/components/InviteCod
 import { ScopeReauthPrompt } from "@posthog/ui/features/auth/components/ScopeReauthPrompt";
 import { useAuthSession } from "@posthog/ui/features/auth/useAuthSession";
 import { useIsOrgAdmin } from "@posthog/ui/features/auth/useOrgRole";
+import { CanvasGenerationToaster } from "@posthog/ui/features/canvas/freeform/useCanvasGenerationToasts";
 import { AddDirectoryDialog } from "@posthog/ui/features/folder-picker/AddDirectoryDialog";
 import { OnboardingFlow } from "@posthog/ui/features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
@@ -160,6 +161,10 @@ function App() {
         transition={{ duration: 0.5, delay: showTransition ? 0.5 : 0 }}
       >
         <RouterProvider router={router} />
+        {/* Surfaces a toast when a backgrounded canvas generation finishes,
+            from anywhere in the app. Sibling of the router so it stays mounted
+            across every route (not just the canvas space). Renders null. */}
+        <CanvasGenerationToaster />
       </motion.div>
     );
   };
