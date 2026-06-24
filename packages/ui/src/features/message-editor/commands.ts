@@ -4,6 +4,7 @@ import {
   buildFeedbackEventPayload,
   parseCommandLine,
 } from "@posthog/core/message-editor/commands";
+import { escapeXmlAttr } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
   type FeedbackType,
@@ -14,6 +15,7 @@ import type { Editor } from "@tiptap/core";
 import { track } from "../../shell/analytics";
 import { selectDirectory } from "./hostApi";
 import type { MentionChipAttrs } from "./tiptap/MentionChipNode";
+import type { EditorAvailableCommand } from "./types";
 
 interface CommandContext {
   taskId: string;
@@ -133,4 +135,20 @@ export async function tryExecuteCodeCommand(
 
   await cmd.execute(parsed.args, context);
   return true;
+}
+
+export function rewriteLocalSkillCommandPrompt(
+  text: string,
+  commands: EditorAvailableCommand[],
+): string | null {
+  const parsed = parseCommandLine(text.trim());
+  if (!parsed) return null;
+
+  const localSkill = commands.find(
+    (cmd) => cmd.name === parsed.name,
+  )?.localSkill;
+  if (!localSkill) return null;
+
+  const skillTag = `<skill name="${escapeXmlAttr(localSkill.name)}" source="${escapeXmlAttr(localSkill.source)}" path="${escapeXmlAttr(localSkill.path)}" />`;
+  return parsed.args?.trim() ? `${skillTag} ${parsed.args}` : skillTag;
 }

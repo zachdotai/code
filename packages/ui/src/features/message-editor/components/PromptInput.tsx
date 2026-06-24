@@ -197,7 +197,19 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       if (!enableCommands || !skills) return;
       useDraftStore.getState().actions.setCommands(
         sessionId,
-        skills.map((s) => ({ name: s.name, description: s.description })),
+        skills.map((s) => ({
+          name: s.name,
+          description: s.description,
+          ...(s.source === "bundled"
+            ? {}
+            : {
+                localSkill: {
+                  name: s.name,
+                  source: s.source,
+                  path: s.path,
+                },
+              }),
+        })),
       );
       return () => {
         useDraftStore.getState().actions.clearCommands(sessionId);

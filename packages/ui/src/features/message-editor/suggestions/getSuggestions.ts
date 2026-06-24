@@ -16,6 +16,7 @@ import { useDraftStore } from "../draftStore";
 import { searchGithubRefs } from "../hostApi";
 import type {
   CommandSuggestionItem,
+  EditorAvailableCommand,
   FileSuggestionItem,
   IssueSuggestionItem,
 } from "../types";
@@ -83,15 +84,13 @@ export function getCommandSuggestions(
 ): CommandSuggestionItem[] {
   const store = useDraftStore.getState();
   const taskId = store.contexts[sessionId]?.taskId;
-  // Agent commands (from `available_commands_update`) are authoritative once a
-  // session has reported them, but they arrive async after session startup —
-  // fall back to the trpc-fetched skills list so users don't see only the
-  // built-in /good /bad /feedback commands during that window. `null` means
-  // "agent hasn't reported yet"; an empty array means "agent reported empty"
-  // and we respect it.
   const sessionCommands = taskId ? getAvailableCommandsForTask(taskId) : null;
   const draftCommands = store.commands[sessionId] ?? [];
-  const agentCommands = sessionCommands ?? draftCommands;
+  const localDraftCommands = draftCommands.filter((cmd) => cmd.localSkill);
+  const agentCommands: EditorAvailableCommand[] =
+    sessionCommands === null
+      ? draftCommands
+      : [...sessionCommands, ...localDraftCommands];
   const commands = mergeCommands(CODE_COMMANDS, agentCommands);
   const filtered = searchCommands(commands, query);
 

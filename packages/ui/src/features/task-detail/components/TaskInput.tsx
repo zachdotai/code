@@ -53,6 +53,7 @@ import {
   type AgentAdapter,
   useSettingsStore,
 } from "../../settings/settingsStore";
+import { useSkills } from "../../skills/useSkills";
 import {
   areReposReady,
   useInitialRepoSelectionFromFolderId,
@@ -165,6 +166,7 @@ export function TaskInput({
     setLastUsedModel,
     _hasHydrated: settingsHydrated,
   } = useSettingsStore();
+  const { data: skills } = useSkills();
 
   const editorRef = useRef<EditorHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -653,6 +655,28 @@ export function TaskInput({
   const { isOnline } = useConnectivity();
   const promptSessionId = sessionId;
 
+  useEffect(() => {
+    if (!skills) return;
+    useDraftStore.getState().actions.setCommands(
+      promptSessionId,
+      skills.map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        ...(skill.source !== "bundled"
+          ? {
+              localSkill: {
+                name: skill.name,
+                source: skill.source,
+                path: skill.path,
+              },
+            }
+          : {}),
+      })),
+    );
+    return () => {
+      useDraftStore.getState().actions.clearCommands(promptSessionId);
+    };
+  }, [promptSessionId, skills]);
   const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
   const getPromptHistory = useCallback(
     () => useTaskInputHistoryStore.getState().entries.map((e) => e.text),

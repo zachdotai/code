@@ -45,6 +45,7 @@ import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "../../shell/queryClient";
+import { rewriteLocalSkillCommandPrompt } from "../message-editor/commands";
 
 export { SessionService };
 
@@ -59,8 +60,9 @@ function buildSessionServiceDeps(): SessionServiceDeps {
   const queryClient = resolveService<ImperativeQueryClient>(
     IMPERATIVE_QUERY_CLIENT,
   );
-  const cloudArtifactService = new CloudArtifactService((filePath) =>
-    trpc.fs.readFileAsBase64.query({ filePath }),
+  const cloudArtifactService = new CloudArtifactService(
+    (filePath) => trpc.fs.readFileAsBase64.query({ filePath }),
+    (skillBundleRef) => trpc.skills.bundleLocal.query(skillBundleRef),
   );
 
   return {
@@ -126,18 +128,43 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       cloudPromptToBlocks,
       combineQueuedCloudPrompts,
       getCloudPromptTransport,
-      uploadRunAttachments: (client, taskId, runId, filePaths) =>
+      resolveLocalSkillCommandPrompt: async (prompt) => {
+        if (!prompt.trim().startsWith("/")) {
+          return null;
+        }
+
+        const skills = await trpc.skills.list.query();
+        return rewriteLocalSkillCommandPrompt(
+          prompt,
+          skills.map((skill) => ({
+            name: skill.name,
+            description: skill.description,
+            ...(skill.source === "bundled"
+              ? {}
+              : {
+                  localSkill: {
+                    name: skill.name,
+                    source: skill.source,
+                    path: skill.path,
+                  },
+                }),
+          })),
+        );
+      },
+      uploadRunAttachments: (client, taskId, runId, filePaths, skillBundles) =>
         cloudArtifactService.uploadRunAttachments(
           client,
           taskId,
           runId,
           filePaths,
+          skillBundles,
         ),
-      uploadTaskStagedAttachments: (client, taskId, filePaths) =>
+      uploadTaskStagedAttachments: (client, taskId, filePaths, skillBundles) =>
         cloudArtifactService.uploadTaskStagedAttachments(
           client,
           taskId,
           filePaths,
+          skillBundles,
         ),
     },
   };

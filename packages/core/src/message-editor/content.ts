@@ -1,4 +1,8 @@
-import { escapeXmlAttr, unescapeXmlAttr } from "@posthog/shared";
+import {
+  escapeXmlAttr,
+  type UploadableSkillSource,
+  unescapeXmlAttr,
+} from "@posthog/shared";
 
 export interface MentionChip {
   type:
@@ -15,6 +19,9 @@ export interface MentionChip {
   label: string;
   pastedText?: boolean;
   chipId?: string;
+  skillPath?: string;
+  skillSource?: UploadableSkillSource;
+  skillName?: string;
 }
 
 export interface FileAttachment {
@@ -60,6 +67,9 @@ export function contentToXml(content: EditorContent): string {
         inlineFilePaths.add(chip.id);
         return `<folder path="${escapedId}" />`;
       case "command":
+        if (chip.skillPath && chip.skillSource) {
+          return `<skill name="${escapeXmlAttr(chip.skillName ?? chip.label)}" source="${escapeXmlAttr(chip.skillSource)}" path="${escapeXmlAttr(chip.skillPath)}" />`;
+        }
         if (chip.id && chip.id !== chip.label && isAbsolutePathLike(chip.id)) {
           return `<folder path="${escapedId}" />`;
         }
@@ -97,7 +107,7 @@ export function contentToXml(content: EditorContent): string {
 }
 
 const CHIP_TAG_REGEX =
-  /<(file|folder|error|experiment|insight|feature_flag|github_issue|github_pr)\b([^>]*?)\s*\/>/g;
+  /<(file|folder|skill|error|experiment|insight|feature_flag|github_issue|github_pr)\b([^>]*?)\s*\/>/g;
 const ATTR_REGEX = /(\w+)="([^"]*)"/g;
 
 export function deriveFileLabel(filePath: string): string {
@@ -127,6 +137,29 @@ function chipFromTag(tag: string, rawAttrs: string): MentionChip | null {
       const path = attrs.path;
       if (!path) return null;
       return { type: "folder", id: path, label: deriveFileLabel(path) };
+    }
+    case "skill": {
+      const path = attrs.path;
+      const name = attrs.name;
+      const source = attrs.source;
+      if (
+        !path ||
+        !name ||
+        (source !== "user" &&
+          source !== "repo" &&
+          source !== "marketplace" &&
+          source !== "codex")
+      ) {
+        return null;
+      }
+      return {
+        type: "command",
+        id: path,
+        label: name,
+        skillPath: path,
+        skillSource: source,
+        skillName: name,
+      };
     }
     case "error":
     case "experiment":

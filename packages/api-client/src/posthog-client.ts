@@ -432,10 +432,17 @@ export class FolderInstructionsConflictError extends Error {
 
 export interface TaskArtifactUploadRequest {
   name: string;
-  type: "user_attachment";
+  type: "user_attachment" | "skill_bundle";
   size: number;
   content_type?: string;
   source?: string;
+  metadata?: {
+    skill_name: string;
+    skill_source: "user" | "repo" | "marketplace" | "codex";
+    content_sha256: string;
+    bundle_format: "zip";
+    schema_version: number;
+  };
 }
 
 export interface DirectUploadPresignedPost {
@@ -457,6 +464,7 @@ export interface FinalizedTaskArtifactUpload {
   source?: string;
   size?: number;
   content_type?: string;
+  metadata?: TaskArtifactUploadRequest["metadata"];
   storage_path: string;
   uploaded_at?: string;
 }
@@ -2361,6 +2369,7 @@ export class PostHogAPIClient {
             type: artifact.type,
             source: artifact.source,
             content_type: artifact.content_type,
+            metadata: artifact.metadata,
             storage_path: artifact.storage_path,
           })),
         }),
@@ -2436,6 +2445,7 @@ export class PostHogAPIClient {
             type: artifact.type,
             source: artifact.source,
             content_type: artifact.content_type,
+            metadata: artifact.metadata,
             storage_path: artifact.storage_path,
           })),
         }),

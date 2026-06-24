@@ -3,14 +3,20 @@ import {
   buildCloudTaskDescription,
   getAbsoluteAttachmentPaths,
   stripAbsoluteFileTags,
+  stripAttachmentTags,
+  stripSkillTags,
 } from "@posthog/core/editor/cloud-prompt";
 import type { EditorContent } from "@posthog/core/message-editor/content";
-import { getFileName, pathToFileUri } from "@posthog/shared";
+import { getFileName, pathToFileUri, unescapeXmlAttr } from "@posthog/shared";
+import type { CloudSkillBundleRef } from "./cloudArtifactIdentifiers";
 
 const FILE_URI_PREFIX = "file://";
+const SKILL_TAG_REGEX = /<skill\b([^>]*?)\s*\/>/g;
+const ATTR_REGEX = /(\w+)="([^"]*)"/g;
 
 export interface CloudPromptTransport {
   filePaths: string[];
+  skillBundles: CloudSkillBundleRef[];
   messageText?: string;
   promptText: string;
 }
@@ -61,6 +67,43 @@ function collectBlockAttachmentPaths(prompt: ContentBlock[]): string[] {
   return Array.from(new Set(filePaths));
 }
 
+function parseAttrs(raw: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  for (const match of raw.matchAll(ATTR_REGEX)) {
+    attrs[match[1]] = unescapeXmlAttr(match[2]);
+  }
+  return attrs;
+}
+
+function collectSkillBundleRefs(prompt: string): CloudSkillBundleRef[] {
+  const refs: CloudSkillBundleRef[] = [];
+  const seen = new Set<string>();
+
+  for (const match of prompt.matchAll(SKILL_TAG_REGEX)) {
+    const attrs = parseAttrs(match[1] ?? "");
+    const source = attrs.source;
+    if (
+      !attrs.name ||
+      !attrs.path ||
+      (source !== "user" &&
+        source !== "repo" &&
+        source !== "marketplace" &&
+        source !== "codex")
+    ) {
+      continue;
+    }
+
+    const key = `${source}:${attrs.path}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    refs.push({ name: attrs.name, source, path: attrs.path });
+  }
+
+  return refs;
+}
+
 function summarizePrompt(text: string, filePaths: string[]): string {
   if (filePaths.length === 0) {
     return text.trim();
@@ -78,27 +121,31 @@ export function getCloudPromptTransport(
 ): CloudPromptTransport {
   if (typeof prompt === "string") {
     const attachmentPaths = getAbsoluteAttachmentPaths(prompt, filePaths);
+    const skillBundles = collectSkillBundleRefs(prompt);
     const messageText = stripAbsoluteFileTags(prompt).trim();
 
     return {
       filePaths: attachmentPaths,
+      skillBundles,
       messageText: messageText || undefined,
       promptText: buildCloudTaskDescription(prompt, filePaths).trim(),
     };
   }
 
-  const promptText = prompt
+  const rawPromptText = prompt
     .filter(
       (block): block is Extract<ContentBlock, { type: "text" }> =>
         block.type === "text",
     )
     .map((block) => block.text)
-    .join("")
-    .trim();
+    .join("");
+  const promptText = stripSkillTags(rawPromptText).trim();
   const attachmentPaths = collectBlockAttachmentPaths(prompt);
+  const skillBundles = collectSkillBundleRefs(rawPromptText);
 
   return {
     filePaths: attachmentPaths,
+    skillBundles,
     messageText: promptText || undefined,
     promptText: summarizePrompt(promptText, attachmentPaths),
   };
@@ -111,9 +158,10 @@ export function cloudPromptToBlocks(prompt: QueuedCloudPrompt): ContentBlock[] {
 
   const transport = getCloudPromptTransport(prompt);
   const blocks: ContentBlock[] = [];
+  const textWithSkillTags = stripAttachmentTags(prompt);
 
-  if (transport.messageText) {
-    blocks.push({ type: "text", text: transport.messageText });
+  if (textWithSkillTags) {
+    blocks.push({ type: "text", text: textWithSkillTags });
   }
 
   for (const filePath of transport.filePaths) {
