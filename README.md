@@ -7,8 +7,6 @@ Found a bug or have feedback? [Open an issue](https://github.com/PostHog/code/is
 
 # PostHog Code
 
-<!-- CI test comment: verifying the pipeline picks up changes on this branch -->
-
 This is the monorepo for PostHog Code apps and the agent framework that powers them.
 
 ## Development
