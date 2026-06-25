@@ -10,7 +10,6 @@ import {
   InfoIcon,
   KeyIcon,
   LightningIcon,
-  LinkIcon,
   LockKeyIcon,
   PuzzlePieceIcon,
   ScrollIcon,
@@ -202,158 +201,130 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
   ];
 
   const triggers = arr(spec.triggers);
-  if (triggers.length > 0) {
-    children.push({
-      type: "folder",
-      name: "triggers",
-      path: "cfg:triggers",
-      icon: <LightningIcon {...ICON} />,
-      children: triggers.map((t, i) => {
-        const type = triggerType(t);
-        const missing = missingSecretsFor(t, setKeys);
-        return {
-          type: "file" as const,
-          name: type,
-          path: `cfg:trigger/${i}`,
-          icon: triggerIcon(type),
-          trailing:
-            missing.length > 0 ? (
-              <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
-            ) : isPublic(t) ? (
-              <Badge color="amber">public</Badge>
-            ) : undefined,
-        };
-      }),
-    });
-  }
+  children.push({
+    type: "folder",
+    name: "triggers",
+    path: "cfg:triggers",
+    icon: <LightningIcon {...ICON} />,
+    children: triggers.map((t, i) => {
+      const type = triggerType(t);
+      const missing = missingSecretsFor(t, setKeys);
+      return {
+        type: "file" as const,
+        name: type,
+        path: `cfg:trigger/${i}`,
+        icon: triggerIcon(type),
+        trailing:
+          missing.length > 0 ? (
+            <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
+          ) : isPublic(t) ? (
+            <Badge color="amber">public</Badge>
+          ) : undefined,
+      };
+    }),
+  });
 
   const secretKeys = allSecretKeys(spec, setKeys);
-  if (secretKeys.length > 0) {
-    children.push({
-      type: "folder",
-      name: "secrets",
-      path: "cfg:secrets",
+  children.push({
+    type: "folder",
+    name: "secrets",
+    path: "cfg:secrets",
+    icon: <KeyIcon {...ICON} />,
+    children: secretKeys.map((key) => ({
+      type: "file" as const,
+      name: key,
+      path: `cfg:secret/${key}`,
       icon: <KeyIcon {...ICON} />,
-      children: secretKeys.map((key) => ({
-        type: "file" as const,
-        name: key,
-        path: `cfg:secret/${key}`,
-        icon: <KeyIcon {...ICON} />,
-        trailing: setKeys.includes(key) ? undefined : (
-          <Badge color="amber">not set</Badge>
-        ),
-      })),
-    });
-  }
+      trailing: setKeys.includes(key) ? undefined : (
+        <Badge color="amber">not set</Badge>
+      ),
+    })),
+  });
 
   const skills = arr(spec.skills);
-  if (skills.length > 0) {
-    children.push({
-      type: "folder",
-      name: "skills",
-      path: "cfg:skills",
-      icon: <PuzzlePieceIcon {...ICON} />,
-      children: skills.map((s) => {
-        const r = rec(s);
-        const id = str(r.id) ?? str(r.path) ?? "skill";
-        return {
-          type: "file" as const,
-          name: id,
-          path: `cfg:skill/${id}`,
-          description: str(r.description),
-          icon: <PuzzlePieceIcon {...ICON} />,
-        };
-      }),
-    });
-  }
+  children.push({
+    type: "folder",
+    name: "skills",
+    path: "cfg:skills",
+    icon: <PuzzlePieceIcon {...ICON} />,
+    children: skills.map((s) => {
+      const r = rec(s);
+      const id = str(r.id) ?? str(r.path) ?? "skill";
+      return {
+        type: "file" as const,
+        name: id,
+        path: `cfg:skill/${id}`,
+        description: str(r.description),
+        icon: <PuzzlePieceIcon {...ICON} />,
+      };
+    }),
+  });
 
   const tools = arr(spec.tools);
-  if (tools.length > 0) {
-    children.push({
-      type: "folder",
-      name: "tools",
-      path: "cfg:tools",
-      icon: <WrenchIcon {...ICON} />,
-      children: tools.map((t) => {
-        const r = rec(t);
-        const id = toolId(t);
-        return {
-          type: "file" as const,
-          name: shortName(id),
-          path: `cfg:tool/${id}`,
-          icon: toolIcon(str(r.kind)),
-          trailing:
-            r.requires_approval === true ? (
-              <LockKeyIcon size={11} className="text-amber-10" />
-            ) : undefined,
-        };
-      }),
-    });
-  }
+  children.push({
+    type: "folder",
+    name: "tools",
+    path: "cfg:tools",
+    icon: <WrenchIcon {...ICON} />,
+    children: tools.map((t) => {
+      const r = rec(t);
+      const id = toolId(t);
+      return {
+        type: "file" as const,
+        name: shortName(id),
+        path: `cfg:tool/${id}`,
+        icon: toolIcon(str(r.kind)),
+        trailing:
+          r.requires_approval === true ? (
+            <LockKeyIcon size={11} className="text-amber-10" />
+          ) : undefined,
+      };
+    }),
+  });
 
+  // Top-level authorable sections always render — even with no entries — so the
+  // add/connect affordance is reachable on a fresh agent (you add MCP servers,
+  // tools, skills, triggers, secrets and identities from the empty section).
   const mcps = arr(spec.mcps);
-  if (mcps.length > 0) {
-    children.push({
-      type: "folder",
-      name: "mcps",
-      path: "cfg:mcps",
-      icon: <HardDrivesIcon {...ICON} />,
-      children: mcps.map((m) => {
-        const id = str(rec(m).id) ?? "mcp";
-        const missing = mcpMissingSecrets(m, setKeys);
-        return {
-          type: "file" as const,
-          name: id,
-          path: `cfg:mcp/${id}`,
-          icon: <HardDrivesIcon {...ICON} />,
-          trailing:
-            missing.length > 0 ? (
-              <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
-            ) : undefined,
-        };
-      }),
-    });
-  }
+  children.push({
+    type: "folder",
+    name: "mcps",
+    path: "cfg:mcps",
+    icon: <HardDrivesIcon {...ICON} />,
+    children: mcps.map((m) => {
+      const id = str(rec(m).id) ?? "mcp";
+      const missing = mcpMissingSecrets(m, setKeys);
+      return {
+        type: "file" as const,
+        name: id,
+        path: `cfg:mcp/${id}`,
+        icon: <HardDrivesIcon {...ICON} />,
+        trailing:
+          missing.length > 0 ? (
+            <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
+          ) : undefined,
+      };
+    }),
+  });
 
   const identities = identityProviders(spec);
-  if (identities.length > 0) {
-    children.push({
-      type: "folder",
-      name: "identities",
-      path: "cfg:identities",
-      icon: <FingerprintIcon {...ICON} />,
-      children: identities.map((p) => {
-        const id = providerId(p);
-        const used = consumerCount(identityConsumers(spec, id));
-        return {
-          type: "file" as const,
-          name: id,
-          path: `cfg:identity/${id}`,
-          icon: <FingerprintIcon {...ICON} />,
-          trailing:
-            used === 0 ? <Badge color="amber">unused</Badge> : undefined,
-        };
-      }),
-    });
-  }
-
-  const integrations = arr(spec.integrations).filter(
-    (s): s is string => typeof s === "string",
-  );
-  if (integrations.length > 0) {
-    children.push({
-      type: "folder",
-      name: "integrations",
-      path: "cfg:integrations",
-      icon: <LinkIcon {...ICON} />,
-      children: integrations.map((name) => ({
+  children.push({
+    type: "folder",
+    name: "identities",
+    path: "cfg:identities",
+    icon: <FingerprintIcon {...ICON} />,
+    children: identities.map((p) => {
+      const id = providerId(p);
+      const used = consumerCount(identityConsumers(spec, id));
+      return {
         type: "file" as const,
-        name,
-        path: `cfg:integration/${name}`,
-        icon: <LinkIcon {...ICON} />,
-      })),
-    });
-  }
+        name: id,
+        path: `cfg:identity/${id}`,
+        icon: <FingerprintIcon {...ICON} />,
+        trailing: used === 0 ? <Badge color="amber">unused</Badge> : undefined,
+      };
+    }),
+  });
 
   children.push({
     type: "file",
@@ -483,8 +454,6 @@ const SECTION_INFO: Record<string, string> = {
   "cfg:mcps": "Remote MCP servers the agent connects to at session start.",
   "cfg:identities":
     "Identity providers an asker links against, so the agent can act AS them when a tool or MCP call needs it. Per-asker (binding: principal) by default.",
-  "cfg:integrations":
-    "Team-level integrations the agent reuses (configured once at the project level).",
   "cfg:secrets": "Env keys this agent reads. Values are never shown.",
   "cfg:limits": "Hard caps on a single run.",
 };
@@ -557,10 +526,6 @@ function nodeHeader(
       return { icon: <FingerprintIcon {...ICON} />, title: "Identities" };
     case "identity":
       return { icon: <FingerprintIcon {...ICON} />, title: id };
-    case "integrations":
-      return { icon: <LinkIcon {...ICON} />, title: "Integrations" };
-    case "integration":
-      return { icon: <LinkIcon {...ICON} />, title: id };
     case "secrets":
       return { icon: <KeyIcon {...ICON} />, title: "Secrets" };
     case "secret":
@@ -677,10 +642,6 @@ function DetailBody({
           ctx={ctx}
         />
       );
-    case "integrations":
-      return <IntegrationsOverview spec={spec} ctx={ctx} />;
-    case "integration":
-      return <IntegrationBody name={id} />;
     case "secrets":
       return <SecretsOverview spec={spec} ctx={ctx} />;
     case "secret":
@@ -1484,7 +1445,6 @@ function McpBody({
   const tools = arr(r.tools);
   const missing = mcpMissingSecrets(mcp, ctx.setKeys);
   const provider = mcpProvider(mcp);
-  const integration = str(rec(r.auth).integration);
   const connection = str(r.connection);
 
   const {
@@ -1616,7 +1576,6 @@ function McpBody({
       {str(r.url) ? (
         <Row label="url" value={str(r.url) as string} mono />
       ) : null}
-      {integration ? <Row label="integration" value={integration} /> : null}
       {!connection && provider ? (
         <IdentityLink provider={provider} spec={spec} ctx={ctx} />
       ) : null}
@@ -1824,38 +1783,6 @@ function IdentityBody({
           tools declare their provider intrinsically and aren't listed here.
         </Text>
       </div>
-    </Flex>
-  );
-}
-
-function IntegrationsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
-  const integrations = arr(spec.integrations).filter(
-    (s): s is string => typeof s === "string",
-  );
-  if (integrations.length === 0)
-    return <Muted>No integrations declared.</Muted>;
-  return (
-    <Flex direction="column" gap="2">
-      {integrations.map((name) => (
-        <JumpRow
-          key={name}
-          icon={<LinkIcon {...ICON} />}
-          title={name}
-          onClick={() => ctx.onSelect(`cfg:integration/${name}`)}
-        />
-      ))}
-    </Flex>
-  );
-}
-
-function IntegrationBody({ name }: { name: string }) {
-  return (
-    <Flex direction="column" gap="2">
-      <Row label="integration" value={name} />
-      <Muted>
-        The agent reuses the team's {name} connection. It's configured once at
-        the project level — there's no per-agent credential here.
-      </Muted>
     </Flex>
   );
 }
