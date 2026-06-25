@@ -1500,26 +1500,30 @@ function McpBody({
 
   // Rebuild the full spec with this mcps[] entry transformed, then draft-branch
   // (if needed) + PATCH. Lands on (and selects) a new draft off a non-draft.
+  // Destructure the ctx fields the callback reads so the dep array is stable —
+  // `ctx` is a fresh object literal on every parent render, which would
+  // otherwise change identity each time and defeat the useCallback memoization.
+  const { revisionId, revisionState, onSelectRevision } = ctx;
   const apply = useCallback(
     (mutate: (entry: Record<string, unknown>) => Record<string, unknown>) => {
-      if (!ctx.revisionState) return;
+      if (!revisionState) return;
       const nextMcps = arr(spec.mcps).map((m) =>
         (str(rec(m).id) ?? "mcp") === id ? mutate(rec(m)) : m,
       );
       applySpec.mutate(
         {
-          revision: { id: ctx.revisionId, state: ctx.revisionState },
+          revision: { id: revisionId, state: revisionState },
           spec: { ...spec, mcps: nextMcps },
         },
         {
           onSuccess: (rev) => {
-            if (rev.id !== ctx.revisionId) ctx.onSelectRevision?.(rev.id);
+            if (rev.id !== revisionId) onSelectRevision?.(rev.id);
           },
           onError: (e) => toast.error(e.message || "Failed to save"),
         },
       );
     },
-    [applySpec, ctx, id, spec],
+    [applySpec, revisionId, revisionState, onSelectRevision, id, spec],
   );
 
   const setConnection = (value: string) => {

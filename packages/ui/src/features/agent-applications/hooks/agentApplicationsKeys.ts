@@ -54,6 +54,13 @@ export const agentApplicationsKeys = {
     ] as const,
   revisions: (projectId: number | null, idOrSlug: string) =>
     ["agent-applications", "revisions", projectId, idOrSlug] as const,
+  /**
+   * Shared prefix for every per-revision detail query of an agent (each
+   * `revision(...)` key sits under it), so invalidating this prefix refetches
+   * the open revision's spec after an edit without needing its id.
+   */
+  revisionPrefix: (projectId: number | null, idOrSlug: string) =>
+    ["agent-applications", "revision", projectId, idOrSlug] as const,
   revision: (projectId: number | null, idOrSlug: string, revisionId: string) =>
     [
       "agent-applications",
