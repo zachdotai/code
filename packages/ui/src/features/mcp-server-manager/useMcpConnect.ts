@@ -110,6 +110,13 @@ export function useMcpConnect() {
     }),
   );
 
+  // Awaitable refetch so a caller that just connected can read the freshly
+  // created installation back (it's keyed `(team, user, url)` server-side).
+  const refetchInstallations = useCallback(async () => {
+    const res = await installationsQuery.refetch();
+    return (res.data ?? []) as McpServerInstallation[];
+  }, [installationsQuery]);
+
   return {
     oauth,
     installations: installationsQuery.data as
@@ -117,7 +124,12 @@ export function useMcpConnect() {
       | undefined,
     installationsLoading: installationsQuery.isLoading,
     invalidateInstallations,
+    refetchInstallations,
     connectCustom: connectCustomMutation.mutate,
+    // Awaitable variant — resolves when the OAuth callback completes (or
+    // immediately for an api-key install). Used by the builder's connect_mcp
+    // punch-out, which must attach the resulting connection to a spec.
+    connectCustomAsync: connectCustomMutation.mutateAsync,
     connectCustomPending: connectCustomMutation.isPending,
     reauthorize: reauthorizeMutation.mutate,
     reauthorizePending: reauthorizeMutation.isPending,

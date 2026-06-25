@@ -26,17 +26,30 @@ interface AddCustomServerFormProps {
     client_id?: string;
     client_secret?: string;
   }) => void;
+  /** Prefill the form (e.g. the agent builder's connect_mcp punch-out supplies a
+   *  suggested name/url). The user can still edit every field before connecting. */
+  initialValues?: {
+    name?: string;
+    url?: string;
+    description?: string;
+    auth_type?: McpAuthType;
+  };
 }
 
 export function AddCustomServerForm({
   pending,
   onBack,
   onSubmit,
+  initialValues,
 }: AddCustomServerFormProps) {
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-  const [description, setDescription] = useState("");
-  const [authType, setAuthType] = useState<McpAuthType>("oauth");
+  const [name, setName] = useState(initialValues?.name ?? "");
+  const [url, setUrl] = useState(initialValues?.url ?? "");
+  const [description, setDescription] = useState(
+    initialValues?.description ?? "",
+  );
+  const [authType, setAuthType] = useState<McpAuthType>(
+    initialValues?.auth_type ?? "oauth",
+  );
   const [apiKey, setApiKey] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
