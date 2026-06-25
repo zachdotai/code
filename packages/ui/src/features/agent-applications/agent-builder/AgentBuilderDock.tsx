@@ -7,7 +7,6 @@ import {
 } from "@phosphor-icons/react";
 import type { AgentSpec } from "@posthog/shared/agent-platform-types";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
-import { AddCustomServerForm } from "@posthog/ui/features/mcp-server-manager/AddCustomServerForm";
 import {
   type CustomServerInput,
   useMcpConnect,
@@ -22,6 +21,7 @@ import { AgentDetailEmptyState } from "../components/AgentDetailLayout";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApproval";
 import { agentIngressBaseUrl } from "../utils/ingress";
+import { AgentBuilderMcpConnectDialog } from "./AgentBuilderMcpConnectDialog";
 import { AgentBuilderSecretForm } from "./AgentBuilderSecretForm";
 import { AgentBuilderSeedDialog } from "./AgentBuilderSeedDialog";
 import {
@@ -445,27 +445,6 @@ export function AgentBuilderDock() {
                 onSubmit={submitSecret}
                 onCancel={cancelSecret}
               />
-            ) : pendingMcpConnect ? (
-              <Flex
-                direction="column"
-                gap="2"
-                className="max-h-[60vh] shrink-0 overflow-auto border-(--gray-5) border-t bg-(--gray-2) px-4 py-3"
-              >
-                {pendingMcpConnect.purpose ? (
-                  <Text className="text-[11.5px] text-gray-10 leading-snug">
-                    {pendingMcpConnect.purpose}
-                  </Text>
-                ) : null}
-                <AddCustomServerForm
-                  pending={mcpConnectBusy}
-                  initialValues={{
-                    name: pendingMcpConnect.name,
-                    url: pendingMcpConnect.url,
-                  }}
-                  onSubmit={submitMcpConnect}
-                  onBack={cancelMcpConnect}
-                />
-              </Flex>
             ) : null
           }
           composerDisabledReason={
@@ -482,6 +461,13 @@ export function AgentBuilderDock() {
         onStartFresh={seedStartFresh}
         onContinue={seedContinue}
         onCancel={() => setSeedConfirm(null)}
+      />
+
+      <AgentBuilderMcpConnectDialog
+        pending={pendingMcpConnect}
+        busy={mcpConnectBusy}
+        onSubmit={submitMcpConnect}
+        onCancel={cancelMcpConnect}
       />
     </Flex>
   );

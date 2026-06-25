@@ -34,6 +34,9 @@ interface AddCustomServerFormProps {
     description?: string;
     auth_type?: McpAuthType;
   };
+  /** Hide the in-form Back button + title/description — for when a host chrome
+   *  (e.g. a dialog) already provides them. */
+  hideHeader?: boolean;
 }
 
 export function AddCustomServerForm({
@@ -41,6 +44,7 @@ export function AddCustomServerForm({
   onBack,
   onSubmit,
   initialValues,
+  hideHeader = false,
 }: AddCustomServerFormProps) {
   const [name, setName] = useState(initialValues?.name ?? "");
   const [url, setUrl] = useState(initialValues?.url ?? "");
@@ -89,26 +93,30 @@ export function AddCustomServerForm({
   return (
     <form onSubmit={handleSubmit}>
       <Flex direction="column" gap="4" className="min-w-0">
-        <Flex align="center" gap="2">
-          <Button
-            variant="ghost"
-            color="gray"
-            size="1"
-            type="button"
-            onClick={onBack}
-          >
-            <ArrowLeft size={12} />
-            Back
-          </Button>
-        </Flex>
+        {!hideHeader && (
+          <>
+            <Flex align="center" gap="2">
+              <Button
+                variant="ghost"
+                color="gray"
+                size="1"
+                type="button"
+                onClick={onBack}
+              >
+                <ArrowLeft size={12} />
+                Back
+              </Button>
+            </Flex>
 
-        <Flex direction="column" gap="1">
-          <Text className="font-bold text-xl">Add MCP server</Text>
-          <Text color="gray" className="text-sm">
-            Connect a custom MCP server by URL. Tools appear in your agent once
-            the connection is verified.
-          </Text>
-        </Flex>
+            <Flex direction="column" gap="1">
+              <Text className="font-bold text-xl">Add MCP server</Text>
+              <Text color="gray" className="text-sm">
+                Connect a custom MCP server by URL. Tools appear in your agent
+                once the connection is verified.
+              </Text>
+            </Flex>
+          </>
+        )}
 
         <Flex direction="column" gap="3">
           <Flex direction="column" gap="1">
