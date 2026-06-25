@@ -21,20 +21,25 @@ import {
   WrenchIcon,
 } from "@phosphor-icons/react";
 import type {
+  AgentRevisionState,
   AgentSpec,
   BundleFile,
 } from "@posthog/shared/agent-platform-types";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { AddCustomServerForm } from "@posthog/ui/features/mcp-server-manager/AddCustomServerForm";
+import { useMcpConnect } from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
-import { Flex, Text } from "@radix-ui/themes";
-import { type ReactNode, useMemo, useState } from "react";
+import { Flex, Select, Switch, Text } from "@radix-ui/themes";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentEnvKeys } from "../hooks/useAgentEnvKeys";
 import { useAgentRevision } from "../hooks/useAgentRevision";
 import { useAgentRevisionBundle } from "../hooks/useAgentRevisionBundle";
 import { useAgentRevisions } from "../hooks/useAgentRevisions";
+import { useApplyAgentSpec } from "../hooks/useApplyAgentSpec";
 import { triggerRequiredSecretsFor } from "../utils/triggerSecrets";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { AgentRevisionBar } from "./AgentRevisionBar";
@@ -62,9 +67,14 @@ const USAGE_HOST = "https://<ingress-host>";
 interface Ctx {
   idOrSlug: string;
   revisionId: string;
+  /** App UUID + revision state — needed to apply a spec edit (draft-branch then
+   *  PATCH). Absent while the revision is still loading → editing is disabled. */
+  applicationId?: string;
+  revisionState?: AgentRevisionState;
   ingressBaseUrl?: string;
   setKeys: string[];
   onSelect: (node: string) => void;
+  onSelectRevision?: (revisionId: string) => void;
   onOpenSession?: (sessionId: string) => void;
 }
 
@@ -398,9 +408,12 @@ export function AgentConfigurationPane({
     ? {
         idOrSlug,
         revisionId,
+        applicationId: application?.id,
+        revisionState: revision?.state,
         ingressBaseUrl: application?.ingress_base_url ?? undefined,
         setKeys,
         onSelect: onSelectNode,
+        onSelectRevision,
         onOpenSession,
       }
     : null;
@@ -699,7 +712,9 @@ function ModelBody({ spec }: { spec: AgentSpec }) {
       <Row label="model" value={spec.model ?? "not set"} mono />
       <Row label="reasoning" value={spec.reasoning ?? "default"} />
       {spec.entrypoint ? (
-        <Row label="entrypoint" value={spec.entrypoint} mono />
+        // `entrypoint` resolves to `{}` via AgentSpec's `[key: string]: unknown`
+        // index signature (pre-existing); guarded truthy above, so cast.
+        <Row label="entrypoint" value={spec.entrypoint as string} mono />
       ) : null}
     </Flex>
   );
@@ -1342,28 +1357,115 @@ function SkillBody({
 
 function McpsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   const mcps = arr(spec.mcps);
-  if (mcps.length === 0) return <Muted>No MCP servers declared.</Muted>;
+  const { installations, connectCustom, connectCustomPending } =
+    useMcpConnect();
+  const applySpec = useApplyAgentSpec(ctx.idOrSlug, ctx.applicationId);
+  const [showAdd, setShowAdd] = useState(false);
+  const canEdit = !!ctx.revisionState;
+
+  // Append a new mcps[] entry referencing the chosen connection (id derived
+  // from its name, url filled from the installation), then select it.
+  const addFromConnection = (installId: string) => {
+    const install = (installations ?? []).find((i) => i.id === installId);
+    if (!install || !ctx.revisionState) return;
+    const base =
+      (install.display_name || install.url || "mcp")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 32) || "mcp";
+    const taken = new Set(mcps.map((m) => str(rec(m).id)));
+    let newId = base;
+    for (let n = 2; taken.has(newId); n++) newId = `${base}-${n}`;
+    const entry = {
+      id: newId,
+      url: install.url ?? "",
+      connection: install.id,
+      secrets: [] as string[],
+    };
+    applySpec.mutate(
+      {
+        revision: { id: ctx.revisionId, state: ctx.revisionState },
+        spec: { ...spec, mcps: [...mcps, entry] },
+      },
+      {
+        onSuccess: (rev) => {
+          if (rev.id !== ctx.revisionId) ctx.onSelectRevision?.(rev.id);
+          ctx.onSelect(`cfg:mcp/${newId}`);
+        },
+        onError: (e) => toast.error(e.message || "Failed to add MCP server"),
+      },
+    );
+  };
+
   return (
     <Flex direction="column" gap="2">
-      {mcps.map((m) => {
-        const r = rec(m);
-        const id = str(r.id) ?? "mcp";
-        const missing = mcpMissingSecrets(m, ctx.setKeys);
-        return (
-          <JumpRow
-            key={id}
-            icon={<HardDrivesIcon {...ICON} />}
-            title={id}
-            subtitle={str(r.url)}
-            trailing={
-              missing.length > 0 ? (
-                <WarnBadge title={`Needs: ${missing.join(", ")}`} />
-              ) : undefined
-            }
-            onClick={() => ctx.onSelect(`cfg:mcp/${id}`)}
-          />
-        );
-      })}
+      {mcps.length === 0 ? (
+        <Muted>No MCP servers declared.</Muted>
+      ) : (
+        mcps.map((m) => {
+          const r = rec(m);
+          const id = str(r.id) ?? "mcp";
+          const missing = mcpMissingSecrets(m, ctx.setKeys);
+          return (
+            <JumpRow
+              key={id}
+              icon={<HardDrivesIcon {...ICON} />}
+              title={id}
+              subtitle={str(r.connection) ? "shared connection" : str(r.url)}
+              trailing={
+                missing.length > 0 ? (
+                  <WarnBadge title={`Needs: ${missing.join(", ")}`} />
+                ) : undefined
+              }
+              onClick={() => ctx.onSelect(`cfg:mcp/${id}`)}
+            />
+          );
+        })
+      )}
+      {canEdit ? (
+        <Flex align="center" gap="2" className="mt-1" wrap="wrap">
+          {(installations ?? []).length > 0 ? (
+            <Select.Root
+              value=""
+              onValueChange={addFromConnection}
+              disabled={applySpec.isPending}
+            >
+              <Select.Trigger
+                placeholder="+ Add from a connection"
+                className="min-w-[220px]"
+              />
+              <Select.Content>
+                {(installations ?? []).map((i) => (
+                  <Select.Item key={i.id} value={i.id}>
+                    {i.display_name || i.url || i.id}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          ) : (
+            <Muted>No connected MCP servers yet.</Muted>
+          )}
+          <Button
+            size="1"
+            variant="soft"
+            onClick={() => setShowAdd((s) => !s)}
+            disabled={connectCustomPending}
+          >
+            {showAdd ? "Cancel" : "Connect new"}
+          </Button>
+        </Flex>
+      ) : null}
+      {showAdd ? (
+        <AddCustomServerForm
+          pending={connectCustomPending}
+          onBack={() => setShowAdd(false)}
+          onSubmit={(values) => {
+            connectCustom(values);
+            setShowAdd(false);
+          }}
+        />
+      ) : null}
     </Flex>
   );
 }
@@ -1378,20 +1480,143 @@ function McpBody({
   ctx: Ctx;
 }) {
   const r = rec(mcp);
+  const id = str(r.id) ?? "mcp";
   const tools = arr(r.tools);
   const missing = mcpMissingSecrets(mcp, ctx.setKeys);
   const provider = mcpProvider(mcp);
   const integration = str(rec(r.auth).integration);
+  const connection = str(r.connection);
+
+  const {
+    installations,
+    installationsLoading,
+    connectCustom,
+    connectCustomPending,
+  } = useMcpConnect();
+  const applySpec = useApplyAgentSpec(ctx.idOrSlug, ctx.applicationId);
+  const [showAdd, setShowAdd] = useState(false);
+  const canEdit = !!ctx.revisionState;
+  const saving = applySpec.isPending;
+
+  // Rebuild the full spec with this mcps[] entry transformed, then draft-branch
+  // (if needed) + PATCH. Lands on (and selects) a new draft off a non-draft.
+  const apply = useCallback(
+    (mutate: (entry: Record<string, unknown>) => Record<string, unknown>) => {
+      if (!ctx.revisionState) return;
+      const nextMcps = arr(spec.mcps).map((m) =>
+        (str(rec(m).id) ?? "mcp") === id ? mutate(rec(m)) : m,
+      );
+      applySpec.mutate(
+        {
+          revision: { id: ctx.revisionId, state: ctx.revisionState },
+          spec: { ...spec, mcps: nextMcps },
+        },
+        {
+          onSuccess: (rev) => {
+            if (rev.id !== ctx.revisionId) ctx.onSelectRevision?.(rev.id);
+          },
+          onError: (e) => toast.error(e.message || "Failed to save"),
+        },
+      );
+    },
+    [applySpec, ctx, id, spec],
+  );
+
+  const setConnection = (value: string) => {
+    if (value === "none") {
+      apply((entry) => {
+        const next = { ...entry };
+        delete next.connection;
+        return next;
+      });
+      return;
+    }
+    const install = (installations ?? []).find((i) => i.id === value);
+    apply((entry) => ({
+      ...entry,
+      connection: value,
+      url: install?.url ?? entry.url,
+    }));
+  };
+
+  const setToolApproval = (toolName: string, requiresApproval: boolean) => {
+    apply((entry) => ({
+      ...entry,
+      tools: arr(entry.tools).map((t) => {
+        const name = typeof t === "string" ? t : (str(rec(t).name) ?? "");
+        if (name !== toolName) return t;
+        const base = typeof t === "object" ? rec(t) : {};
+        return { ...base, name, requires_approval: requiresApproval };
+      }),
+    }));
+  };
+
+  const connectionMissing =
+    !!connection && !(installations ?? []).some((i) => i.id === connection);
+
   return (
     <Flex direction="column" gap="3">
+      <div>
+        <Subhead>Connection</Subhead>
+        <Muted>
+          One shared MCP connection an owner connected once — used by every
+          asker. Supersedes per-asker auth and bring-your-own-token.
+        </Muted>
+        <Flex align="center" gap="2" className="mt-1.5">
+          <Select.Root
+            value={connection ?? "none"}
+            onValueChange={setConnection}
+            disabled={!canEdit || saving || installationsLoading}
+          >
+            <Select.Trigger
+              placeholder="No connection"
+              className="min-w-[220px]"
+            />
+            <Select.Content>
+              <Select.Item value="none">No connection</Select.Item>
+              {(installations ?? []).map((i) => (
+                <Select.Item key={i.id} value={i.id}>
+                  {i.display_name || i.url || i.id}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+          <Button
+            size="1"
+            variant="soft"
+            onClick={() => setShowAdd((s) => !s)}
+            disabled={connectCustomPending}
+          >
+            {showAdd ? "Cancel" : "Connect new"}
+          </Button>
+        </Flex>
+        {connectionMissing ? (
+          <Text className="mt-1 block text-[12px] text-amber-11">
+            Referenced connection isn't in this project — reconnect it or pick
+            another.
+          </Text>
+        ) : null}
+      </div>
+
+      {showAdd ? (
+        <AddCustomServerForm
+          pending={connectCustomPending}
+          onBack={() => setShowAdd(false)}
+          onSubmit={(values) => {
+            connectCustom(values);
+            setShowAdd(false);
+          }}
+        />
+      ) : null}
+
       {str(r.url) ? (
         <Row label="url" value={str(r.url) as string} mono />
       ) : null}
       {integration ? <Row label="integration" value={integration} /> : null}
-      {provider ? (
+      {!connection && provider ? (
         <IdentityLink provider={provider} spec={spec} ctx={ctx} />
       ) : null}
-      {missing.length > 0 ? (
+      {!connection && missing.length > 0 ? (
         <Attention>
           <Text className="text-[12px] text-gray-12">
             Missing secret{missing.length > 1 ? "s" : ""}:
@@ -1411,16 +1636,17 @@ function McpBody({
           </Flex>
         </Attention>
       ) : null}
+
       <div>
         <Subhead>Tools · {tools.length}</Subhead>
         {tools.length === 0 ? (
           <Muted>No tools selected from this server.</Muted>
         ) : (
-          <div className="mt-1 grid grid-cols-1 gap-1.5 md:grid-cols-2">
+          <Flex direction="column" gap="1.5" className="mt-1">
             {tools.map((t) => {
               const name =
                 typeof t === "string" ? t : (str(rec(t).name) ?? "tool");
-              const approval =
+              const requiresApproval =
                 typeof t === "object" && rec(t).requires_approval === true;
               return (
                 <Flex
@@ -1432,13 +1658,19 @@ function McpBody({
                   <Text className="min-w-0 flex-1 truncate text-[12px] text-gray-12 [font-family:var(--font-mono)]">
                     {name}
                   </Text>
-                  {approval ? (
-                    <LockKeyIcon size={12} className="text-amber-10" />
-                  ) : null}
+                  <Text className="text-[11px] text-gray-10">
+                    Requires approval
+                  </Text>
+                  <Switch
+                    size="1"
+                    checked={requiresApproval}
+                    onCheckedChange={(v) => setToolApproval(name, v === true)}
+                    disabled={!canEdit || saving}
+                  />
                 </Flex>
               );
             })}
-          </div>
+          </Flex>
         )}
       </div>
     </Flex>

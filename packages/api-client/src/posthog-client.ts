@@ -32,6 +32,7 @@ import type {
   AgentSessionLogsParams,
   AgentSessionsListParams,
   AgentSlackManifest,
+  AgentSpec,
   AgentUsersListResponse,
   BundleFile,
   DecideApprovalRequest,
@@ -4675,6 +4676,25 @@ export class PostHogAPIClient {
       method: "post",
       url,
       path,
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /** PATCH a draft revision's spec. Only valid on a draft — clone via
+   *  `createAgentDraftRevisionFrom` first for ready/live/archived. */
+  async updateAgentRevisionSpec(
+    idOrSlug: string,
+    revisionId: string,
+    spec: AgentSpec,
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path,
+      overrides: { body: JSON.stringify({ spec }) },
     });
     return (await response.json()) as AgentRevision;
   }
