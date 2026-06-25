@@ -26,8 +26,7 @@ export function sleepWithBackoff(
   attempt: number,
   options: BackoffOptions,
 ): Promise<void> {
-  const delay = getBackoffDelay(attempt, options);
-  return new Promise((resolve) => setTimeout(resolve, delay));
+  return sleep(getBackoffDelay(attempt, options));
 }
 
 /**

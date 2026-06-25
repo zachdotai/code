@@ -944,9 +944,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
         fetch,
         `${apiHost}/api/code/invites/check-access/`,
         {
-          signal: AbortSignal.timeout(
-            AuthService.CODE_ACCESS_FETCH_TIMEOUT_MS,
-          ),
+          signal: AbortSignal.timeout(AuthService.CODE_ACCESS_FETCH_TIMEOUT_MS),
         },
         session.accessToken,
       );
@@ -981,7 +979,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   // Background retry loop with prime-number backoff. Stepping through primes
   // (rather than a doubling schedule) keeps many clients' retries from lining
   // up into bursts after a shared outage. The prime sequence is the whole
-  // budget — it sums to ~77s of waiting — after which we fail closed so a
+  // budget — it sums to ~100s of waiting — after which we fail closed so a
   // sustained inability to call home revokes access rather than granting it
   // forever. `seq` guards against a newer authoritative check (or logout)
   // having superseded this loop while it slept.
@@ -995,7 +993,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     if (this.codeAccessCheckSeq !== seq || !this.session) return;
     // Could not confirm access within the retry window: fail closed so the
     // invite gate can't be bypassed by keeping the client offline.
-    this.logger.warn("Code access check failed within retry window, failing closed");
+    this.logger.warn(
+      "Code access check failed within retry window, failing closed",
+    );
     this.updateState({ hasCodeAccess: false });
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
@@ -1003,7 +1003,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
   private static readonly CODE_ACCESS_FETCH_TIMEOUT_MS = 10_000;
   // Prime-number backoff (ms) for the code-access retry loop; the sequence
-  // sums to ~77s, which is the full retry window before failing closed.
+  // sums to ~100s, which is the full retry window before failing closed.
   private static readonly CODE_ACCESS_BACKOFF_PRIMES_MS = [
     2_000, 3_000, 5_000, 7_000, 11_000, 13_000, 17_000, 19_000, 23_000,
   ];
