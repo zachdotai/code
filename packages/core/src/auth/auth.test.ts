@@ -1,6 +1,10 @@
 import type { RootLogger } from "@posthog/di/logger";
 import type { IPowerManager } from "@posthog/platform/power-manager";
-import { OAUTH_SCOPE_VERSION, sleep } from "@posthog/shared";
+import {
+  NotAuthenticatedError,
+  OAUTH_SCOPE_VERSION,
+  sleep,
+} from "@posthog/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthService } from "./auth";
 import type {
@@ -1543,6 +1547,89 @@ describe("AuthService", () => {
       await restoreSession();
 
       expect(service.getState().hasCodeAccess).toBe(false);
+    });
+
+    it("treats an unreadable 200 body like a transient failure", async () => {
+      // A 200 whose body can't be parsed (e.g. a proxy returning truncated/HTML
+      // content) is not a definitive answer — it must retry, not gate the user,
+      // and recover once a real body arrives.
+      const { getCheckAccessCalls } = stubFetchWithCheckAccess((call) =>
+        call <= 1
+          ? ({
+              ok: true,
+              status: 200,
+              json: () => Promise.reject(new Error("unexpected token <")),
+            } as unknown as Response)
+          : ({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ has_access: true }),
+            } as unknown as Response),
+      );
+
+      await restoreSession();
+
+      await vi.waitFor(() =>
+        expect(service.getState().hasCodeAccess).toBe(true),
+      );
+      expect(getCheckAccessCalls()).toBe(2);
+    });
+
+    it("honours a success on the final retry instead of failing closed", async () => {
+      // 1 awaited attempt + 8 transient failures, then the 9th (final) retry
+      // succeeds: the loop must settle to access and never reach the
+      // fail-closed write, exercising the final-iteration boundary.
+      const { getCheckAccessCalls } = stubFetchWithCheckAccess((call) =>
+        call < 10
+          ? ({
+              ok: false,
+              status: 403,
+              json: () => Promise.resolve({}),
+            } as unknown as Response)
+          : ({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ has_access: true }),
+            } as unknown as Response),
+      );
+
+      await restoreSession();
+
+      await vi.waitFor(() =>
+        expect(service.getState().hasCodeAccess).toBe(true),
+      );
+      expect(getCheckAccessCalls()).toBe(10);
+    });
+
+    it("rejects an in-flight refresh that logs out mid-sync on a 401", async () => {
+      // The race the seq guard alone doesn't cover: a 401 from the code-access
+      // check logs out *during* syncAuthenticatedSession, inside the shared
+      // refresh promise. The awaited refresh must reject rather than resolve
+      // with the torn-down session's (now dead) access token.
+      let reject401 = false;
+      stubFetchWithCheckAccess(() =>
+        reject401
+          ? ({
+              ok: false,
+              status: 401,
+              json: () => Promise.resolve({}),
+            } as unknown as Response)
+          : ({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ has_access: true }),
+            } as unknown as Response),
+      );
+
+      await restoreSession();
+      expect(service.getState().status).toBe("authenticated");
+
+      reject401 = true;
+      await expect(service.refreshAccessToken()).rejects.toBeInstanceOf(
+        NotAuthenticatedError,
+      );
+      expect(service.getState().status).toBe("anonymous");
+      expect(service.getState().hasCodeAccess).toBeNull();
     });
   });
 });

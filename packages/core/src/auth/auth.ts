@@ -72,6 +72,8 @@ interface TokenResponseOptions {
   selectedProjectId: number | null;
 }
 
+type CodeAccessCheckOutcome = "settled" | "retry";
+
 @injectable()
 export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private state: AuthState = {
@@ -505,6 +507,12 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     const refreshAndSync = async (): Promise<InMemorySession> => {
       const session = await this.refreshSession(sessionInput);
       await this.syncAuthenticatedSession(session);
+      // The code-access check inside the sync can hit a 401 and log us out
+      // mid-refresh. If it did, this session is already torn down, so reject
+      // rather than hand a dead token to callers awaiting the shared refresh.
+      if (this.session !== session) {
+        throw new NotAuthenticatedError();
+      }
       return session;
     };
 
@@ -923,20 +931,20 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     // `runCodeAccessRetry`). That stops a brief outage from bouncing real
     // users to the invite screen, while still preventing the gate from being
     // bypassed by simply keeping the client offline indefinitely.
-    const resolved = await this.checkCodeAccessOnce();
-    if (!resolved) {
+    if ((await this.checkCodeAccessOnce()) === "retry") {
       void this.runCodeAccessRetry(seq);
     }
   }
-  // Returns true when the check reached a definitive end and the caller must
-  // NOT retry: either a 200 (which updates the gate from `has_access`) or a
-  // 401 (the token itself is rejected, so we hard-stop and log out). Returns
-  // false only for transient failures worth retrying — a 403 (which during an
-  // outage looks transient), 429, 5xx, or a thrown network error. Genuine
-  // "no access" is a 200 with `has_access: false`, never a non-2xx status.
-  private async checkCodeAccessOnce(): Promise<boolean> {
+  // A 200 updates the gate from `has_access` and settles; a 401 means the token
+  // itself is rejected, so we hard-stop and log out (still "settled" — retrying
+  // can't fix a rejected token). Everything else is a transient failure worth
+  // retrying: a 403 (which during an outage isn't a reliable "your access is
+  // gone" signal), a 429, a 5xx, an unreadable 200 body, or a thrown network
+  // error. Genuine "no access" is a 200 with `has_access: false`, never a
+  // non-2xx status.
+  private async checkCodeAccessOnce(): Promise<CodeAccessCheckOutcome> {
     const session = this.session;
-    if (!session) return false;
+    if (!session) return "retry";
 
     try {
       const apiHost = getCloudUrlFromRegion(session.cloudRegion);
@@ -950,30 +958,33 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       );
 
       if (response.status === 401) {
-        // The token is rejected — retrying can't fix it. Hard-stop and log out
-        // so the user re-authenticates instead of being retried into a
-        // fail-closed invite screen. (A 403 stays in the transient path below:
-        // during an outage it's not a reliable "your access is gone" signal.)
         this.logger.warn("Code access check returned 401, logging out");
         await this.logout();
-        return true;
+        return "settled";
       }
 
       if (!response.ok) {
         this.logger.warn("Transient failure checking code access", {
           status: response.status,
         });
-        return false;
+        return "retry";
       }
 
-      const data = (await response.json().catch(() => ({}))) as {
+      const data = (await response.json().catch(() => null)) as {
         has_access?: boolean;
-      };
+      } | null;
+      if (data === null) {
+        // An unreadable 200 (truncated/HTML from a proxy) is not a definitive
+        // answer; treat it like any other transient failure rather than gating
+        // the user on garbage.
+        this.logger.warn("Code access check returned an unreadable 200 body");
+        return "retry";
+      }
       this.updateState({ hasCodeAccess: data.has_access === true });
-      return true;
+      return "settled";
     } catch (error) {
       this.logger.warn("Failed to reach code access check", { error });
-      return false;
+      return "retry";
     }
   }
   // Background retry loop with prime-number backoff. Stepping through primes
@@ -981,22 +992,25 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   // up into bursts after a shared outage. The prime sequence is the whole
   // budget — it sums to ~100s of waiting — after which we fail closed so a
   // sustained inability to call home revokes access rather than granting it
-  // forever. `seq` guards against a newer authoritative check (or logout)
-  // having superseded this loop while it slept.
+  // forever. `codeAccessCheckIsStale` guards against a newer authoritative
+  // check (or logout) having superseded this loop while it slept.
   private async runCodeAccessRetry(seq: number): Promise<void> {
     for (const delayMs of AuthService.CODE_ACCESS_BACKOFF_PRIMES_MS) {
       await sleep(delayMs);
-      if (this.codeAccessCheckSeq !== seq || !this.session) return;
-      if (await this.checkCodeAccessOnce()) return;
+      if (this.codeAccessCheckIsStale(seq)) return;
+      if ((await this.checkCodeAccessOnce()) === "settled") return;
     }
 
-    if (this.codeAccessCheckSeq !== seq || !this.session) return;
+    if (this.codeAccessCheckIsStale(seq)) return;
     // Could not confirm access within the retry window: fail closed so the
     // invite gate can't be bypassed by keeping the client offline.
     this.logger.warn(
       "Code access check failed within retry window, failing closed",
     );
     this.updateState({ hasCodeAccess: false });
+  }
+  private codeAccessCheckIsStale(seq: number): boolean {
+    return this.codeAccessCheckSeq !== seq || !this.session;
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
