@@ -49,6 +49,8 @@ export interface AgentChatSession {
   ingressBaseUrl: string;
   /** Non-null targets a specific draft revision (preview token attached per call). */
   revisionId: string | null;
+  /** `kind:'client'` tool ids this client can fulfil; sent to the runner at /run. */
+  supportedClientTools?: readonly string[];
   createMapper(): AgentChatMapper;
   /** Resolve a client-tool call; `defer`/null ⇒ the service won't post a result. */
   resolveClientTool(
