@@ -4,11 +4,10 @@ import type { ClientToolHandler } from "../hooks/useAgentChat";
 import { useAgentBuilderStore } from "./agentBuilderStore";
 
 /**
- * The `kind:'client'` tool ids the agent-builder dock can fulfil. Sent to the
- * runner as `supported_client_tools` at /run so it knows it can punch out the
- * interactive client tools (connect_mcp, set_secret) to this client rather than
- * relay a URL. Keep in sync with the handlers below (plus toast/get_context,
- * which the core chat resolver fulfils built-in).
+ * The `kind:'client'` tool ids the agent-builder dock can fulfil — sent to the
+ * runner as `supported_client_tools` at /run so it exposes only these to the
+ * model. Keep in sync with the handlers below (plus the built-in
+ * toast/get_context). `set_secret`/`connect_mcp` are interactive punch-outs.
  */
 export const AGENT_BUILDER_CLIENT_TOOLS = [
   "set_secret",

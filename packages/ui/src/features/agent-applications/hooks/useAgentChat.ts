@@ -51,10 +51,8 @@ export interface UseAgentChatOptions {
   /** AgentBuilder UI-driving tools (focus_*, set_secret); null → built-in handling. */
   clientTools?: ClientToolHandler;
   /**
-   * The `kind:'client'` tool ids this client can execute this session, forwarded
-   * to the runner at /run so it knows which interactive client tools it can
-   * punch out a form for (e.g. `connect_mcp`). Pass a stable (module-level)
-   * array. AgentBuilder only.
+   * `kind:'client'` tool ids this client can fulfil; sent to the runner at /run.
+   * Pass a stable (module-level) array — it keys the session-config memo.
    */
   supportedClientTools?: readonly string[];
 }

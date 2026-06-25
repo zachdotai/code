@@ -147,7 +147,6 @@ export function AgentBuilderDock() {
     chatId: CHAT_ID,
     agentSlug: AGENT_BUILDER_SLUG,
     ingressBaseUrl,
-    supportedClientTools: AGENT_BUILDER_CLIENT_TOOLS,
     contextProvider: () =>
       buildAgentBuilderContext(page, followMode, {
         id: currentProjectId,
@@ -155,6 +154,7 @@ export function AgentBuilderDock() {
         orgId: currentOrgId,
       }),
     clientTools,
+    supportedClientTools: AGENT_BUILDER_CLIENT_TOOLS,
   });
   const pendingApproval = useAgentChatPendingApproval(CHAT_ID);
 

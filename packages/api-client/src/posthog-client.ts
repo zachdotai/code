@@ -4988,8 +4988,7 @@ export class PostHogAPIClient {
   ): Promise<{ session_id: string; resumed?: boolean }> {
     const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/run`);
     // `supported_client_tools`: the kind:'client' tool ids this client can
-    // execute this session, so the runner knows which interactive client tools
-    // (e.g. connect_mcp) it can punch out a form for vs. must relay a URL for.
+    // execute this session, so the runner exposes only those to the model.
     const body: Record<string, unknown> = { message };
     if (supportedClientTools && supportedClientTools.length > 0) {
       body.supported_client_tools = supportedClientTools;
