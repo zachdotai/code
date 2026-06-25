@@ -1502,8 +1502,8 @@ describe("AuthService", () => {
       // Restore's attempt failed transiently; gate is unresolved (null, not false).
       expect(service.getState().hasCodeAccess).toBeNull();
 
-      // A fresh authoritative check (token refresh) resolves access true and
-      // supersedes the parked loop's sequence.
+      // A fresh authoritative check (token refresh) installs a new session and
+      // resolves access true, superseding the parked loop.
       await service.refreshAccessToken();
       expect(service.getState().hasCodeAccess).toBe(true);
 

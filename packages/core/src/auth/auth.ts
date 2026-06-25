@@ -914,15 +914,11 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     });
   }
   private async updateCodeAccessFromSession(): Promise<void> {
-    if (!this.session) {
+    const session = this.session;
+    if (!session) {
       this.updateState({ hasCodeAccess: null });
       return;
     }
-
-    // Every call is a fresh authoritative check; bumping the sequence
-    // supersedes any retry loop still running from an earlier call so a stale
-    // loop can never clobber a newer result.
-    const seq = ++this.codeAccessCheckSeq;
 
     // The healthy path stays synchronous: one awaited attempt resolves the
     // gate before the app renders. A transient failure must NOT eject an
@@ -932,7 +928,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     // users to the invite screen, while still preventing the gate from being
     // bypassed by simply keeping the client offline indefinitely.
     if ((await this.checkCodeAccessOnce()) === "retry") {
-      void this.runCodeAccessRetry(seq);
+      void this.runCodeAccessRetry(session);
     }
   }
   // A 200 updates the gate from `has_access` and settles; a 401 means the token
@@ -992,25 +988,24 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   // up into bursts after a shared outage. The prime sequence is the whole
   // budget — it sums to ~100s of waiting — after which we fail closed so a
   // sustained inability to call home revokes access rather than granting it
-  // forever. `codeAccessCheckIsStale` guards against a newer authoritative
-  // check (or logout) having superseded this loop while it slept.
-  private async runCodeAccessRetry(seq: number): Promise<void> {
+  // forever. The loop runs for one `session`; a token refresh or logout swaps
+  // `this.session` for a new object (or null), so `this.session !== session`
+  // means a newer authoritative check has superseded this loop and it must
+  // bow out rather than clobber the newer result.
+  private async runCodeAccessRetry(session: InMemorySession): Promise<void> {
     for (const delayMs of AuthService.CODE_ACCESS_BACKOFF_PRIMES_MS) {
       await sleep(delayMs);
-      if (this.codeAccessCheckIsStale(seq)) return;
+      if (this.session !== session) return;
       if ((await this.checkCodeAccessOnce()) === "settled") return;
     }
 
-    if (this.codeAccessCheckIsStale(seq)) return;
+    if (this.session !== session) return;
     // Could not confirm access within the retry window: fail closed so the
     // invite gate can't be bypassed by keeping the client offline.
     this.logger.warn(
       "Code access check failed within retry window, failing closed",
     );
     this.updateState({ hasCodeAccess: false });
-  }
-  private codeAccessCheckIsStale(seq: number): boolean {
-    return this.codeAccessCheckSeq !== seq || !this.session;
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
@@ -1026,7 +1021,6 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     maxDelayMs: 5_000,
     multiplier: 2,
   };
-  private codeAccessCheckSeq = 0;
   private recoveryPromise: Promise<void> | null = null;
   private orgProjectsRefreshPromise: Promise<void> | null = null;
   private connectivityUnsubscribe: (() => void) | null = null;
