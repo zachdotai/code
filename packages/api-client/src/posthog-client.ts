@@ -4984,14 +4984,22 @@ export class PostHogAPIClient {
     ingressBaseUrl: string,
     message: string,
     previewToken?: string | null,
+    supportedClientTools?: readonly string[],
   ): Promise<{ session_id: string; resumed?: boolean }> {
     const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/run`);
+    // `supported_client_tools`: the kind:'client' tool ids this client can
+    // execute this session, so the runner knows which interactive client tools
+    // (e.g. connect_mcp) it can punch out a form for vs. must relay a URL for.
+    const body: Record<string, unknown> = { message };
+    if (supportedClientTools && supportedClientTools.length > 0) {
+      body.supported_client_tools = supportedClientTools;
+    }
     const response = await this.api.fetcher.fetch({
       method: "post",
       url,
       path: url.pathname,
       parameters: previewTokenHeader(previewToken),
-      overrides: { body: JSON.stringify({ message }) },
+      overrides: { body: JSON.stringify(body) },
     });
     return (await response.json()) as { session_id: string; resumed?: boolean };
   }

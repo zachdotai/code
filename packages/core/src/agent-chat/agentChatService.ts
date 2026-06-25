@@ -431,6 +431,7 @@ export class AgentChatService {
             session.ingressBaseUrl,
             session.buildWireText(text),
             token,
+            session.supportedClientTools,
           ),
       );
       agentChatStore.getState().setSessionId(session.chatId, session_id);

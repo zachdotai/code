@@ -31,7 +31,10 @@ import {
   useAgentBuilderStore,
 } from "./agentBuilderStore";
 import { suggestionsForPage } from "./agentBuilderSuggestions";
-import { useAgentBuilderClientTools } from "./useAgentBuilderClientTools";
+import {
+  AGENT_BUILDER_CLIENT_TOOLS,
+  useAgentBuilderClientTools,
+} from "./useAgentBuilderClientTools";
 
 const CHAT_ID = AGENT_BUILDER_CHAT_ID;
 
@@ -144,6 +147,7 @@ export function AgentBuilderDock() {
     chatId: CHAT_ID,
     agentSlug: AGENT_BUILDER_SLUG,
     ingressBaseUrl,
+    supportedClientTools: AGENT_BUILDER_CLIENT_TOOLS,
     contextProvider: () =>
       buildAgentBuilderContext(page, followMode, {
         id: currentProjectId,
