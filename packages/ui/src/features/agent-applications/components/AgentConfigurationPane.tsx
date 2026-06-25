@@ -25,7 +25,7 @@ import type {
   BundleFile,
 } from "@posthog/shared/agent-platform-types";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
-import { AddCustomServerForm } from "@posthog/ui/features/mcp-server-manager/AddCustomServerForm";
+import { AddCustomServerDialog } from "@posthog/ui/features/mcp-server-manager/AddCustomServerDialog";
 import { useMcpConnect } from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
@@ -1410,23 +1410,22 @@ function McpsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
           <Button
             size="1"
             variant="soft"
-            onClick={() => setShowAdd((s) => !s)}
+            onClick={() => setShowAdd(true)}
             disabled={connectCustomPending}
           >
-            {showAdd ? "Cancel" : "Connect new"}
+            Connect new
           </Button>
         </Flex>
       ) : null}
-      {showAdd ? (
-        <AddCustomServerForm
-          pending={connectCustomPending}
-          onBack={() => setShowAdd(false)}
-          onSubmit={(values) => {
-            connectCustom(values);
-            setShowAdd(false);
-          }}
-        />
-      ) : null}
+      <AddCustomServerDialog
+        open={showAdd}
+        pending={connectCustomPending}
+        onOpenChange={setShowAdd}
+        onSubmit={(values) => {
+          connectCustom(values);
+          setShowAdd(false);
+        }}
+      />
     </Flex>
   );
 }
@@ -1548,10 +1547,10 @@ function McpBody({
           <Button
             size="1"
             variant="soft"
-            onClick={() => setShowAdd((s) => !s)}
+            onClick={() => setShowAdd(true)}
             disabled={connectCustomPending}
           >
-            {showAdd ? "Cancel" : "Connect new"}
+            Connect new
           </Button>
         </Flex>
         {connectionMissing ? (
@@ -1562,16 +1561,15 @@ function McpBody({
         ) : null}
       </div>
 
-      {showAdd ? (
-        <AddCustomServerForm
-          pending={connectCustomPending}
-          onBack={() => setShowAdd(false)}
-          onSubmit={(values) => {
-            connectCustom(values);
-            setShowAdd(false);
-          }}
-        />
-      ) : null}
+      <AddCustomServerDialog
+        open={showAdd}
+        pending={connectCustomPending}
+        onOpenChange={setShowAdd}
+        onSubmit={(values) => {
+          connectCustom(values);
+          setShowAdd(false);
+        }}
+      />
 
       {str(r.url) ? (
         <Row label="url" value={str(r.url) as string} mono />

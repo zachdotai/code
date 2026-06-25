@@ -1,6 +1,5 @@
-import { AddCustomServerForm } from "@posthog/ui/features/mcp-server-manager/AddCustomServerForm";
+import { AddCustomServerDialog } from "@posthog/ui/features/mcp-server-manager/AddCustomServerDialog";
 import type { CustomServerInput } from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
-import { Dialog } from "@radix-ui/themes";
 import type { PendingMcpConnect } from "./agentBuilderStore";
 
 /**
@@ -8,8 +7,8 @@ import type { PendingMcpConnect } from "./agentBuilderStore";
  * turn and supplies a prefilled name/url; the user reviews + completes the
  * connect (OAuth / api key) here — the agent never sees the credentials. On
  * success the connection is written onto the target agent's spec and the
- * session woken. A modal (vs. the inline secret punch-out) because the connect
- * form is a full form, not a one-line input.
+ * session woken. Thin wrapper over {@link AddCustomServerDialog} with
+ * punch-out-specific copy and the agent's prefilled values.
  */
 export function AgentBuilderMcpConnectDialog({
   pending,
@@ -23,28 +22,21 @@ export function AgentBuilderMcpConnectDialog({
   onCancel: () => void;
 }) {
   return (
-    <Dialog.Root
+    <AddCustomServerDialog
       open={!!pending}
+      pending={busy}
       onOpenChange={(open) => {
         if (!open) onCancel();
       }}
-    >
-      <Dialog.Content maxWidth="520px" size="3">
-        <Dialog.Title className="text-base">Connect an MCP server</Dialog.Title>
-        <Dialog.Description className="mb-4 text-sm" color="gray">
-          {pending?.purpose ??
-            "Connect a server for this agent. You complete the sign-in — the agent builder never sees your credentials."}
-        </Dialog.Description>
-        {pending ? (
-          <AddCustomServerForm
-            pending={busy}
-            hideHeader
-            initialValues={{ name: pending.name, url: pending.url }}
-            onSubmit={onSubmit}
-            onBack={onCancel}
-          />
-        ) : null}
-      </Dialog.Content>
-    </Dialog.Root>
+      onSubmit={onSubmit}
+      initialValues={
+        pending ? { name: pending.name, url: pending.url } : undefined
+      }
+      title="Connect an MCP server"
+      description={
+        pending?.purpose ??
+        "Connect a server for this agent. You complete the sign-in — the agent builder never sees your credentials."
+      }
+    />
   );
 }
