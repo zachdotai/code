@@ -14,6 +14,7 @@ interface SettingsSchema {
   discordPresenceEnabled: boolean;
   discordPresenceShowTaskTitle: boolean;
   discordPresenceShowRepoName: boolean;
+  quickEntryEnabled: boolean;
 }
 
 function getDefaultWorktreeLocation(): string {
@@ -99,6 +100,10 @@ const schema = {
     type: "boolean" as const,
     default: false,
   },
+  quickEntryEnabled: {
+    type: "boolean" as const,
+    default: true,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -114,6 +119,7 @@ export const settingsStore = new Store<SettingsSchema>({
     discordPresenceEnabled: false,
     discordPresenceShowTaskTitle: false,
     discordPresenceShowRepoName: false,
+    quickEntryEnabled: true,
   },
 });
 

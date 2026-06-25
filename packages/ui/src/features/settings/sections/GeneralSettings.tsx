@@ -74,6 +74,34 @@ export function GeneralSettings() {
     [setPreventSleepWhileRunning, preventSleepMutation],
   );
 
+  // Quick Entry state
+  const { quickEntryEnabled, setQuickEntryEnabled } = useSettingsStore();
+  const { data: serverQuickEntryEnabled } = useQuery(
+    hostTRPC.quickEntry.getEnabled.queryOptions(),
+  );
+  const quickEntryMutation = useMutation(
+    hostTRPC.quickEntry.setEnabled.mutationOptions(),
+  );
+
+  useEffect(() => {
+    if (serverQuickEntryEnabled !== undefined) {
+      setQuickEntryEnabled(serverQuickEntryEnabled);
+    }
+  }, [serverQuickEntryEnabled, setQuickEntryEnabled]);
+
+  const handleQuickEntryEnabledChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "quick_entry_enabled",
+        new_value: checked,
+        old_value: !checked,
+      });
+      setQuickEntryEnabled(checked);
+      quickEntryMutation.mutate({ enabled: checked });
+    },
+    [setQuickEntryEnabled, quickEntryMutation],
+  );
+
   // Chat state
   const {
     desktopNotifications,
@@ -596,11 +624,22 @@ export function GeneralSettings() {
       <SettingRow
         label="Keep awake while agents work"
         description="Prevent your computer from sleeping while the agent is running a task"
-        noBorder
       >
         <Switch
           checked={preventSleepWhileRunning}
           onCheckedChange={handlePreventSleepChange}
+          size="1"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Quick Entry"
+        description="Open a floating task input from anywhere with ⌥ Space"
+        noBorder
+      >
+        <Switch
+          checked={quickEntryEnabled}
+          onCheckedChange={handleQuickEntryEnabledChange}
           size="1"
         />
       </SettingRow>

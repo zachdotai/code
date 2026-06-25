@@ -43,6 +43,7 @@ import { usageMonitorRouter } from "@posthog/host-router/routers/usage-monitor.r
 import { workspaceRouter } from "@posthog/host-router/routers/workspace.router";
 import { discordPresenceRouter } from "./routers/discord-presence";
 import { encryptionRouter } from "./routers/encryption";
+import { quickEntryRouter } from "./routers/quick-entry";
 import { workspaceServerRouter } from "./routers/workspace-server";
 import { router } from "./trpc";
 
@@ -60,6 +61,7 @@ export const trpcRouter = router({
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
   discordPresence: discordPresenceRouter,
+  quickEntry: quickEntryRouter,
   enrichment: enrichmentRouter,
   environment: environmentRouter,
   encryption: encryptionRouter,

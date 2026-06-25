@@ -73,6 +73,7 @@ import type {
 import type { OAuthService } from "@posthog/core/oauth/oauth";
 import type { PROVISIONING_SERVICE } from "@posthog/core/provisioning/identifiers";
 import type { ProvisioningService } from "@posthog/core/provisioning/provisioning";
+import type { QUICK_ENTRY_SERVICE as CORE_QUICK_ENTRY_SERVICE } from "@posthog/core/quick-entry/identifiers";
 import type { SLEEP_SERVICE } from "@posthog/core/sleep/identifiers";
 import type { SleepService } from "@posthog/core/sleep/sleep";
 import type { UI_AUTH, UI_SERVICE } from "@posthog/core/ui/identifiers";
@@ -229,6 +230,7 @@ import type {
 import type { DeepLinkService } from "../services/deep-link/service";
 import type { DiscordPresenceService } from "../services/discord-presence/service";
 import type { EncryptionService } from "../services/encryption/service";
+import type { QuickEntryService } from "../services/quick-entry/service";
 import type { SecureStoreService } from "../services/secure-store/service";
 import type { settingsStore } from "../services/settingsStore";
 import type { WorkspaceServerService } from "../services/workspace-server/service";
@@ -257,6 +259,7 @@ import type {
   POSTHOG_PLUGIN_SERVICE as MAIN_POSTHOG_PLUGIN_SERVICE,
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
   PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
+  QUICK_ENTRY_SERVICE as MAIN_QUICK_ENTRY_SERVICE,
   REPOSITORY_REPOSITORY as MAIN_REPOSITORY_REPOSITORY,
   SCOUT_LINK_SERVICE as MAIN_SCOUT_LINK_SERVICE,
   SECURE_STORE_BACKEND as MAIN_SECURE_STORE_BACKEND,
@@ -430,6 +433,8 @@ export interface MainBindings {
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [MAIN_DISCORD_PRESENCE_SERVICE]: DiscordPresenceService;
+  [MAIN_QUICK_ENTRY_SERVICE]: QuickEntryService;
+  [CORE_QUICK_ENTRY_SERVICE]: QuickEntryService;
 
   // ws-server git service (bound to(GitService))
   [WS_GIT_SERVICE]: GitService;

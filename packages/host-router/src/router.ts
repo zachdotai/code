@@ -33,6 +33,7 @@ import { onboardingImportRouter } from "./routers/onboarding-import.router";
 import { osRouter } from "./routers/os.router";
 import { processTrackingRouter } from "./routers/process-tracking.router";
 import { provisioningRouter } from "./routers/provisioning.router";
+import { quickEntryRouter } from "./routers/quick-entry.router";
 import { secureStoreRouter } from "./routers/secure-store.router";
 import { shellRouter } from "./routers/shell.router";
 import { skillsRouter } from "./routers/skills.router";
@@ -79,6 +80,7 @@ export const hostRouter = router({
   os: osRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,
+  quickEntry: quickEntryRouter,
   secureStore: secureStoreRouter,
   shell: shellRouter,
   skills: skillsRouter,

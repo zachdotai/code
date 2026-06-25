@@ -121,3 +121,6 @@ export const WORKSPACE_SERVER_SERVICE = Symbol.for(
 export const DISCORD_PRESENCE_SERVICE = Symbol.for(
   "posthog.host.main.discord-presence.service",
 );
+export const QUICK_ENTRY_SERVICE = Symbol.for(
+  "posthog.host.main.quick-entry.service",
+);

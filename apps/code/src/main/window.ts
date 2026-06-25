@@ -21,6 +21,8 @@ import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import { type WindowStateSchema, windowStateStore } from "./utils/store";
 
+type IPCHandlerHandle = ReturnType<typeof createIPCHandler>;
+
 const log = logger.scope("window");
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
@@ -73,6 +75,15 @@ export function saveWindowState(window: BrowserWindow): void {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let ipcHandler: IPCHandlerHandle | null = null;
+
+export function attachWindowToIPC(window: BrowserWindow): void {
+  if (!ipcHandler) {
+    log.warn("attachWindowToIPC called before IPC handler was created");
+    return;
+  }
+  ipcHandler.attachWindow(window);
+}
 
 export function focusMainWindow(reason: string): void {
   if (mainWindow) {
@@ -86,6 +97,15 @@ export function focusMainWindow(reason: string): void {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+}
+
+export function showAndFocusMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.moveTop();
+  mainWindow.focus();
+  app.focus({ steal: true });
 }
 
 function setupExternalLinkHandlers(window: BrowserWindow): void {
@@ -247,7 +267,7 @@ export function createWindow(): void {
     .get<ElectronMainWindow>(MAIN_WINDOW_SERVICE)
     .setMainWindowGetter(() => mainWindow);
 
-  createIPCHandler({
+  ipcHandler = createIPCHandler({
     router: trpcRouter,
     windows: [mainWindow],
     createContext: async () => ({ container }),

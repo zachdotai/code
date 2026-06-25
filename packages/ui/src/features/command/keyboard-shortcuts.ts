@@ -3,6 +3,7 @@ import { isMac } from "@posthog/ui/utils/platform";
 export const SHORTCUTS = {
   COMMAND_MENU: "mod+k",
   NEW_TASK: "mod+n,mod+t",
+  QUICK_ENTRY: "alt+space",
   SETTINGS: "mod+,",
   SHORTCUTS_SHEET: "mod+/",
   GO_BACK: "mod+[",
@@ -70,6 +71,12 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Switch Steer / Queue mode",
     category: "editor",
     context: "Session composer",
+  },
+  {
+    id: "quick-entry",
+    keys: SHORTCUTS.QUICK_ENTRY,
+    description: "Open Quick Entry (system-wide)",
+    category: "general",
   },
   {
     id: "inbox",
@@ -256,6 +263,7 @@ function formatKey(key: string): string {
   if (k === "[") return "[";
   if (k === "]") return "]";
   if (k === "tab") return "Tab";
+  if (k === "space") return "Space";
   return k.toUpperCase();
 }
 

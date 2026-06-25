@@ -4,7 +4,7 @@ import { TypedEventEmitter } from "@posthog/shared";
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
 import { createWorkspaceClient } from "@posthog/workspace-client/client";
 import type { FileWatcherEvent } from "@posthog/workspace-client/types";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut } from "electron";
 import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
@@ -60,6 +60,7 @@ import {
   FS_SERVICE as MAIN_FS_SERVICE,
   NEW_TASK_LINK_SERVICE,
   POSTHOG_PLUGIN_SERVICE,
+  QUICK_ENTRY_SERVICE,
   SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
   UPDATES_SERVICE,
@@ -75,6 +76,7 @@ import {
   focusSessionStore,
   focusWorktreePaths,
 } from "./services/focus/desktop-adapters";
+import type { QuickEntryService } from "./services/quick-entry/service";
 import type { WorkspaceServerService } from "./services/workspace-server/service";
 import {
   collectMemorySnapshot,
@@ -376,10 +378,23 @@ app.whenReady().then(async () => {
   container.bind(FS_SERVICE).toService(MAIN_FS_SERVICE);
   await initializeServices();
   initializeDeepLinks();
+  initializeQuickEntry();
 });
+
+function initializeQuickEntry(): void {
+  try {
+    container.get<QuickEntryService>(QUICK_ENTRY_SERVICE).initialize();
+  } catch (err) {
+    log.error("Failed to initialize quick entry", err);
+  }
+}
 
 app.on("window-all-closed", () => {
   app.quit();
+});
+
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
 });
 
 const teardownContainer = async (): Promise<void> => {

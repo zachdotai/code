@@ -75,6 +75,7 @@ import {
 import { oauthModule } from "@posthog/core/oauth/oauth.module";
 import { PROVISIONING_SERVICE } from "@posthog/core/provisioning/identifiers";
 import { ProvisioningService } from "@posthog/core/provisioning/provisioning";
+import { QUICK_ENTRY_SERVICE as CORE_QUICK_ENTRY_SERVICE } from "@posthog/core/quick-entry/identifiers";
 import { SLEEP_SERVICE } from "@posthog/core/sleep/identifiers";
 import { SleepService } from "@posthog/core/sleep/sleep";
 import { UI_AUTH } from "@posthog/core/ui/identifiers";
@@ -238,6 +239,7 @@ import {
 import { DeepLinkService } from "../services/deep-link/service";
 import { DiscordPresenceService } from "../services/discord-presence/service";
 import { EncryptionService } from "../services/encryption/service";
+import { QuickEntryService } from "../services/quick-entry/service";
 import { SecureStoreService } from "../services/secure-store/service";
 import { settingsStore } from "../services/settingsStore";
 import { WorkspaceServerService } from "../services/workspace-server/service";
@@ -269,6 +271,7 @@ import {
   POSTHOG_PLUGIN_SERVICE as MAIN_POSTHOG_PLUGIN_SERVICE,
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
   PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
+  QUICK_ENTRY_SERVICE as MAIN_QUICK_ENTRY_SERVICE,
   REPOSITORY_REPOSITORY as MAIN_REPOSITORY_REPOSITORY,
   SCOUT_LINK_SERVICE as MAIN_SCOUT_LINK_SERVICE,
   SECURE_STORE_BACKEND as MAIN_SECURE_STORE_BACKEND,
@@ -700,6 +703,8 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
 });
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
 container.bind(MAIN_DISCORD_PRESENCE_SERVICE).to(DiscordPresenceService);
+container.bind(MAIN_QUICK_ENTRY_SERVICE).to(QuickEntryService);
+container.bind(CORE_QUICK_ENTRY_SERVICE).toService(MAIN_QUICK_ENTRY_SERVICE);
 
 // Canvas / dashboards (project-bluebird). The host-agnostic dashboard services
 // live in @posthog/core (bound via canvasCoreModule) and resolve through

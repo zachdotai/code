@@ -16,6 +16,9 @@
     "apps/code/src/main/services/encryption/service.ts": [
       "injectable-outside-host"
     ],
+    "apps/code/src/main/services/quick-entry/service.ts": [
+      "injectable-outside-host"
+    ],
     "apps/code/src/main/services/secure-store/service.ts": [
       "injectable-outside-host"
     ],
@@ -27,6 +30,15 @@
     ],
     "apps/code/src/renderer/desktop-services.ts": ["cloud-client-in-renderer"],
     "apps/code/src/renderer/features/code-review/reviewHost.tsx": [
+      "feature-ui-in-host"
+    ],
+    "apps/code/src/renderer/features/quick-entry/QuickEntryRoot.tsx": [
+      "feature-ui-in-host"
+    ],
+    "apps/code/src/renderer/features/quick-entry/QuickEntryTaskListener.tsx": [
+      "feature-ui-in-host"
+    ],
+    "apps/code/src/renderer/features/quick-entry/QuickEntryView.tsx": [
       "feature-ui-in-host"
     ]
   }
