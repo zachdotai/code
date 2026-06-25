@@ -14,6 +14,7 @@ import {
   PuzzlePieceIcon,
   ScrollIcon,
   SparkleIcon,
+  TrashIcon,
   UserIcon,
   WarningIcon,
   WebhooksLogoIcon,
@@ -1514,6 +1515,29 @@ function McpBody({
     }));
   };
 
+  // Drop this whole mcps[] entry from the spec and return to the list. The
+  // shared connection (the mcp_store installation) is untouched — only the
+  // agent's reference to it goes away.
+  const removeMcp = () => {
+    if (!revisionState) return;
+    const nextMcps = arr(spec.mcps).filter(
+      (m) => (str(rec(m).id) ?? "mcp") !== id,
+    );
+    applySpec.mutate(
+      {
+        revision: { id: revisionId, state: revisionState },
+        spec: { ...spec, mcps: nextMcps },
+      },
+      {
+        onSuccess: (rev) => {
+          if (rev.id !== revisionId) onSelectRevision?.(rev.id);
+          ctx.onSelect("cfg:mcps");
+        },
+        onError: (e) => toast.error(e.message || "Failed to remove MCP server"),
+      },
+    );
+  };
+
   const connectionMissing =
     !!connection && !(installations ?? []).some((i) => i.id === connection);
 
@@ -1634,6 +1658,21 @@ function McpBody({
           </Flex>
         )}
       </div>
+
+      {canEdit ? (
+        <Flex justify="end" className="mt-1 border-border border-t pt-3">
+          <Button
+            size="1"
+            variant="soft"
+            color="red"
+            onClick={removeMcp}
+            disabled={saving}
+          >
+            <TrashIcon size={12} />
+            Remove server
+          </Button>
+        </Flex>
+      ) : null}
     </Flex>
   );
 }
