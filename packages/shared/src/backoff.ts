@@ -26,12 +26,6 @@ export function sleepWithBackoff(
   attempt: number,
   options: BackoffOptions,
 ): Promise<void> {
-  return sleep(getBackoffDelay(attempt, options));
-}
-
-/**
- * Sleep for a fixed number of milliseconds.
- */
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  const delay = getBackoffDelay(attempt, options);
+  return new Promise((resolve) => setTimeout(resolve, delay));
 }

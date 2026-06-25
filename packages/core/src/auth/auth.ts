@@ -9,7 +9,6 @@ import {
   getCloudUrlFromRegion,
   NotAuthenticatedError,
   OAUTH_SCOPE_VERSION,
-  sleep,
   sleepWithBackoff,
   TypedEventEmitter,
   withTimeout,
@@ -33,6 +32,7 @@ import {
   type AuthServiceEvents,
   type AuthState,
   type AuthTokenResponse,
+  codeAccessResponse,
   findOrgForProject,
   flattenProjectIds,
   type OrgProjects,
@@ -920,13 +920,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
-    // The healthy path stays synchronous: one awaited attempt resolves the
-    // gate before the app renders. A transient failure must NOT eject an
-    // active user, so we keep the current value and retry in the background,
-    // only failing closed once the retry window is exhausted (see
-    // `runCodeAccessRetry`). That stops a brief outage from bouncing real
-    // users to the invite screen, while still preventing the gate from being
-    // bypassed by simply keeping the client offline indefinitely.
+    // The first attempt is awaited so the gate resolves before render; a
+    // transient failure keeps the current value and retries in the background
+    // (`runCodeAccessRetry`), so a brief outage can't eject an active user yet
+    // staying offline can't keep the gate open forever.
     if ((await this.checkCodeAccessOnce()) === "retry") {
       void this.runCodeAccessRetry(session);
     }
@@ -935,9 +932,8 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   // itself is rejected, so we hard-stop and log out (still "settled" — retrying
   // can't fix a rejected token). Everything else is a transient failure worth
   // retrying: a 403 (which during an outage isn't a reliable "your access is
-  // gone" signal), a 429, a 5xx, an unreadable 200 body, or a thrown network
-  // error. Genuine "no access" is a 200 with `has_access: false`, never a
-  // non-2xx status.
+  // gone" signal), a 429, a 5xx, or a thrown network error. Genuine "no access"
+  // is a 200 with `has_access: false`, never a non-2xx status.
   private async checkCodeAccessOnce(): Promise<CodeAccessCheckOutcome> {
     const session = this.session;
     if (!session) return "retry";
@@ -966,35 +962,31 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
         return "retry";
       }
 
-      const data = (await response.json().catch(() => null)) as {
-        has_access?: boolean;
-      } | null;
-      if (data === null) {
-        // An unreadable 200 (truncated/HTML from a proxy) is not a definitive
-        // answer; treat it like any other transient failure rather than gating
-        // the user on garbage.
-        this.logger.warn("Code access check returned an unreadable 200 body");
-        return "retry";
-      }
-      this.updateState({ hasCodeAccess: data.has_access === true });
+      const body = await response.json().catch(() => null);
+      const parsed = codeAccessResponse.safeParse(body);
+      this.updateState({
+        hasCodeAccess: parsed.success && parsed.data.has_access,
+      });
       return "settled";
     } catch (error) {
       this.logger.warn("Failed to reach code access check", { error });
       return "retry";
     }
   }
-  // Background retry loop with prime-number backoff. Stepping through primes
-  // (rather than a doubling schedule) keeps many clients' retries from lining
-  // up into bursts after a shared outage. The prime sequence is the whole
-  // budget — it sums to ~100s of waiting — after which we fail closed so a
+  // Background retry loop on a bounded exponential backoff. The loop runs for
+  // one `session`; a token refresh or logout swaps `this.session` for a new
+  // object (or null), so `this.session !== session` means a newer authoritative
+  // check has superseded this loop and it must bow out rather than clobber the
+  // newer result. If the whole budget is exhausted we fail closed, so a
   // sustained inability to call home revokes access rather than granting it
-  // forever. The loop runs for one `session`; a token refresh or logout swaps
-  // `this.session` for a new object (or null), so `this.session !== session`
-  // means a newer authoritative check has superseded this loop and it must
-  // bow out rather than clobber the newer result.
+  // forever.
   private async runCodeAccessRetry(session: InMemorySession): Promise<void> {
-    for (const delayMs of AuthService.CODE_ACCESS_BACKOFF_PRIMES_MS) {
-      await sleep(delayMs);
+    for (
+      let attempt = 0;
+      attempt < AuthService.CODE_ACCESS_RETRY_ATTEMPTS;
+      attempt++
+    ) {
+      await sleepWithBackoff(attempt, AuthService.CODE_ACCESS_BACKOFF);
       if (this.session !== session) return;
       if ((await this.checkCodeAccessOnce()) === "settled") return;
     }
@@ -1011,11 +1003,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
   private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
   private static readonly CODE_ACCESS_FETCH_TIMEOUT_MS = 10_000;
-  // Prime-number backoff (ms) for the code-access retry loop; the sequence
-  // sums to ~100s, which is the full retry window before failing closed.
-  private static readonly CODE_ACCESS_BACKOFF_PRIMES_MS = [
-    2_000, 3_000, 5_000, 7_000, 11_000, 13_000, 17_000, 19_000, 23_000,
-  ];
+  private static readonly CODE_ACCESS_RETRY_ATTEMPTS = 9;
+  // Bounded exponential backoff for the code-access retry loop; ~130s of waiting
+  // across the attempts above before failing closed.
+  private static readonly CODE_ACCESS_BACKOFF: BackoffOptions = {
+    initialDelayMs: 2_000,
+    maxDelayMs: 20_000,
+    multiplier: 2,
+  };
   private static readonly REFRESH_BACKOFF: BackoffOptions = {
     initialDelayMs: 1_000,
     maxDelayMs: 5_000,

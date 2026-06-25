@@ -112,6 +112,10 @@ export const validAccessTokenOutput = z.object({
 });
 export type ValidAccessTokenOutput = z.infer<typeof validAccessTokenOutput>;
 
+export const codeAccessResponse = z.object({
+  has_access: z.boolean(),
+});
+
 export const AuthServiceEvent = {
   StateChanged: "state-changed",
 } as const;

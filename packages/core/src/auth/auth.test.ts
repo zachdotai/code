@@ -3,7 +3,7 @@ import type { IPowerManager } from "@posthog/platform/power-manager";
 import {
   NotAuthenticatedError,
   OAUTH_SCOPE_VERSION,
-  sleep,
+  sleepWithBackoff,
 } from "@posthog/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthService } from "./auth";
@@ -25,7 +25,6 @@ vi.mock("@posthog/shared", async (importOriginal) => {
   return {
     ...actual,
     sleepWithBackoff: vi.fn().mockResolvedValue(undefined),
-    sleep: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -1446,13 +1445,12 @@ describe("AuthService", () => {
         expect(service.getState().hasCodeAccess).toBe(false),
       );
       expect(service.getState().status).toBe("authenticated");
-      // 1 awaited attempt + one retry per prime-backoff step (9 primes).
+      // 1 awaited attempt + one retry per backoff step.
       expect(getCheckAccessCalls()).toBe(10);
-      // The backoff schedule is actually exercised: each retry waits the next
-      // prime delay (the mocked sleep records the requested durations).
-      expect(vi.mocked(sleep).mock.calls.map((call) => call[0])).toEqual([
-        2_000, 3_000, 5_000, 7_000, 11_000, 13_000, 17_000, 19_000, 23_000,
-      ]);
+      // Each retry waits the next backoff step (attempt 0..8).
+      expect(
+        vi.mocked(sleepWithBackoff).mock.calls.map((call) => call[0]),
+      ).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     });
 
     it("treats thrown network errors like transient failures and fails closed", async () => {
@@ -1478,7 +1476,7 @@ describe("AuthService", () => {
       const gate = new Promise<void>((resolve) => {
         releaseSleep = resolve;
       });
-      vi.mocked(sleep).mockImplementationOnce(() => gate);
+      vi.mocked(sleepWithBackoff).mockImplementationOnce(() => gate);
 
       let call = 0;
       stubFetchWithCheckAccess(() => {
@@ -1547,32 +1545,6 @@ describe("AuthService", () => {
       await restoreSession();
 
       expect(service.getState().hasCodeAccess).toBe(false);
-    });
-
-    it("treats an unreadable 200 body like a transient failure", async () => {
-      // A 200 whose body can't be parsed (e.g. a proxy returning truncated/HTML
-      // content) is not a definitive answer — it must retry, not gate the user,
-      // and recover once a real body arrives.
-      const { getCheckAccessCalls } = stubFetchWithCheckAccess((call) =>
-        call <= 1
-          ? ({
-              ok: true,
-              status: 200,
-              json: () => Promise.reject(new Error("unexpected token <")),
-            } as unknown as Response)
-          : ({
-              ok: true,
-              status: 200,
-              json: () => Promise.resolve({ has_access: true }),
-            } as unknown as Response),
-      );
-
-      await restoreSession();
-
-      await vi.waitFor(() =>
-        expect(service.getState().hasCodeAccess).toBe(true),
-      );
-      expect(getCheckAccessCalls()).toBe(2);
     });
 
     it("honours a success on the final retry instead of failing closed", async () => {
