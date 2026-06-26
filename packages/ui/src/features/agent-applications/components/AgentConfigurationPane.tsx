@@ -32,8 +32,7 @@ import type {
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { AddCustomServerDialog } from "@posthog/ui/features/mcp-server-manager/AddCustomServerDialog";
 import { useMcpConnect } from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
-import { ToolPolicyToggle } from "@posthog/ui/features/mcp-servers/components/parts/ToolPolicyToggle";
-import { ToolRow } from "@posthog/ui/features/mcp-servers/components/parts/ToolRow";
+import { ToolPermissionList } from "@posthog/ui/features/mcp-servers/components/parts/ToolPermissionList";
 import { useMcpInstallationTools } from "@posthog/ui/features/mcp-servers/hooks/useMcpInstallationTools";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
@@ -168,9 +167,9 @@ function mcpProvider(m: unknown): string | undefined {
 }
 
 // --- Per-agent MCP tool permissions (agent-level shared connection) ---
-// The spec carries allow/approve/deny; the reused ToolRow/ToolPolicyToggle speak
-// the mcp_store vocabulary (approved/needs_approval/do_not_use). Map at the
-// boundary so those components are reused verbatim.
+// The spec carries allow/approve/deny; the shared ToolPermissionList speaks the
+// mcp_store vocabulary (approved/needs_approval/do_not_use). Map at the boundary
+// so that component is reused verbatim.
 type ToolApprovalLevel = "allow" | "approve" | "deny";
 // New connections start safe-by-default: every tool parks for approval until the
 // owner relaxes specific tools. Mirrors the runner's fallback.
@@ -1515,6 +1514,14 @@ function McpBody({
   const overrides = toolLevelOverrides(r);
   const defaultLevel = toToolApprovalLevel(r.default_tool_approval);
   const effectiveDefault = defaultLevel ?? DEFAULT_TOOL_APPROVAL;
+  // Project the live catalog into the shared list's vocabulary: each tool's
+  // displayed state is its override (if any) resolved against the default. The
+  // panel is permission-agnostic, so the override/default math stays here.
+  const displayTools: McpInstallationTool[] = catalogTools.map((t) => ({
+    ...t,
+    approval_state:
+      LEVEL_TO_APPROVAL[overrides.get(t.tool_name) ?? effectiveDefault],
+  }));
 
   // Rebuild the full spec with this mcps[] entry transformed, then draft-branch
   // (if needed) + PATCH. Lands on (and selects) a new draft off a non-draft.
@@ -1717,38 +1724,21 @@ function McpBody({
             individual tools below. Allow = runs automatically · Approve = asks
             the approver each call · Deny = hidden from the agent.
           </Muted>
-          <Flex align="center" gap="3" className="mt-2">
-            <Text className="text-[12px] text-gray-11">Default</Text>
-            <ToolPolicyToggle
-              value={LEVEL_TO_APPROVAL[effectiveDefault]}
-              onChange={(v) => setDefaultLevel(APPROVAL_TO_LEVEL[v])}
+          <div className="mt-2">
+            <ToolPermissionList
+              tools={displayTools}
+              isLoading={catalogLoading}
               disabled={!canEdit || saving}
+              defaultControl={{
+                value: LEVEL_TO_APPROVAL[effectiveDefault],
+                onChange: (v) => setDefaultLevel(APPROVAL_TO_LEVEL[v]),
+              }}
+              onSetTool={(name, state) =>
+                setToolLevel(name, APPROVAL_TO_LEVEL[state])
+              }
+              emptyTitle="No tools discovered yet."
+              emptyHint="They appear once the connection is verified."
             />
-          </Flex>
-          <div className="mt-3">
-            {catalogLoading ? (
-              <Muted>Loading the server's tools…</Muted>
-            ) : catalogTools.length === 0 ? (
-              <Muted>
-                No tools discovered yet — they appear once the connection is
-                verified.
-              </Muted>
-            ) : (
-              <Flex direction="column" gap="1.5">
-                {catalogTools.map((t: McpInstallationTool) => {
-                  const level = overrides.get(t.tool_name) ?? effectiveDefault;
-                  return (
-                    <ToolRow
-                      key={t.tool_name}
-                      tool={{ ...t, approval_state: LEVEL_TO_APPROVAL[level] }}
-                      onChange={(state: McpApprovalState) =>
-                        setToolLevel(t.tool_name, APPROVAL_TO_LEVEL[state])
-                      }
-                    />
-                  );
-                })}
-              </Flex>
-            )}
           </div>
         </div>
       ) : (
