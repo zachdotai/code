@@ -32,9 +32,11 @@ import type {
   AgentSessionLogsParams,
   AgentSessionsListParams,
   AgentSlackManifest,
+  AgentSpec,
   AgentUsersListResponse,
   BundleFile,
   DecideApprovalRequest,
+  ModelCatalog,
 } from "@posthog/shared/agent-platform-types";
 import type {
   ActionabilityJudgmentArtefact,
@@ -4666,6 +4668,38 @@ export class PostHogAPIClient {
           source_revision_id: sourceRevisionId,
         }),
       },
+    });
+    // new_draft wraps the created revision: `{ revision, source_revision_id }`.
+    const data = (await response.json()) as { revision: AgentRevision };
+    return data.revision;
+  }
+
+  /** The served-model catalog + curated auto-level → model map (project-agnostic;
+   * proxies the AI gateway catalog). Powers the config-pane model browser. */
+  async getAgentModelCatalog(): Promise<ModelCatalog> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}models/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    return (await response.json()) as ModelCatalog;
+  }
+
+  /** Update a draft revision's spec (PATCH). Draft-only on the server — a
+   * ready/live spec is frozen. Replaces `spec` wholesale, so callers send the
+   * full updated spec. Returns the updated revision. */
+  async updateAgentRevisionSpec(
+    idOrSlug: string,
+    revisionId: string,
+    spec: AgentSpec,
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path,
+      overrides: { body: JSON.stringify({ spec }) },
     });
     return (await response.json()) as AgentRevision;
   }
