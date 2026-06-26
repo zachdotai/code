@@ -981,11 +981,8 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   // sustained inability to call home revokes access rather than granting it
   // forever.
   private async runCodeAccessRetry(session: InMemorySession): Promise<void> {
-    for (
-      let attempt = 0;
-      attempt < AuthService.CODE_ACCESS_RETRY_ATTEMPTS;
-      attempt++
-    ) {
+    const attempts = AuthService.CODE_ACCESS_RETRY_ATTEMPTS;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       await sleepWithBackoff(attempt, AuthService.CODE_ACCESS_BACKOFF);
       if (this.session !== session) return;
       if ((await this.checkCodeAccessOnce()) === "settled") return;
