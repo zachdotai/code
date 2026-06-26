@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mcpServersSchema, validateCommandParams } from "./schemas";
+import {
+  mcpServersSchema,
+  mcpToolApprovalsSchema,
+  mcpToolInstallationsSchema,
+  validateCommandParams,
+} from "./schemas";
 
 describe("mcpServersSchema", () => {
   it("accepts a valid HTTP server", () => {
@@ -113,6 +118,40 @@ describe("mcpServersSchema", () => {
       },
     ]);
     expect(result.success).toBe(false);
+  });
+});
+
+describe("MCP tool approval config schemas", () => {
+  it("accepts approval state and installation maps", () => {
+    expect(
+      mcpToolApprovalsSchema.safeParse({
+        mcp__Linear__search: "needs_approval",
+        mcp__Linear__create_ticket: "approved",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      mcpToolInstallationsSchema.safeParse({
+        mcp__Linear__search: {
+          installationId: "inst-1",
+          toolName: "search",
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects invalid approval state and incomplete installation refs", () => {
+    expect(
+      mcpToolApprovalsSchema.safeParse({
+        mcp__Linear__search: "ask_me_later",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      mcpToolInstallationsSchema.safeParse({
+        mcp__Linear__search: { installationId: "inst-1" },
+      }).success,
+    ).toBe(false);
   });
 });
 

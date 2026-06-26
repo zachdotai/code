@@ -190,6 +190,20 @@ export class PostHogAPIClient {
     );
   }
 
+  async updateMcpToolApproval(
+    installationId: string,
+    toolName: string,
+    approvalState: "approved" | "needs_approval" | "do_not_use",
+  ): Promise<void> {
+    await this.apiRequest(
+      `/api/environments/${this.getTeamId()}/mcp_server_installations/${installationId}/tools/${encodeURIComponent(toolName)}/`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ approval_state: approvalState }),
+      },
+    );
+  }
+
   async appendTaskRunLog(
     taskId: string,
     runId: string,

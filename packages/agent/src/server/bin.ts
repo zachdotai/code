@@ -3,7 +3,12 @@ import { Command } from "commander";
 import { z } from "zod/v4";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
 import { AgentServer } from "./agent-server";
-import { claudeCodeConfigSchema, mcpServersSchema } from "./schemas";
+import {
+  claudeCodeConfigSchema,
+  mcpServersSchema,
+  mcpToolApprovalsSchema,
+  mcpToolInstallationsSchema,
+} from "./schemas";
 
 const envSchema = z.object({
   JWT_PUBLIC_KEY: z
@@ -95,6 +100,14 @@ program
     "--mcpServers <json>",
     "MCP servers config as JSON array (ACP McpServer[] format)",
   )
+  .option(
+    "--mcpToolApprovals <json>",
+    "MCP tool approval states as JSON object keyed by mcp__server__tool",
+  )
+  .option(
+    "--mcpToolInstallations <json>",
+    "MCP tool installation refs as JSON object keyed by mcp__server__tool",
+  )
   .option("--createPr <boolean>", "Whether this run may publish changes")
   .option("--baseBranch <branch>", "Base branch for PR creation")
   .option(
@@ -125,6 +138,16 @@ program
       options.mcpServers,
       mcpServersSchema,
       "--mcpServers",
+    );
+    const mcpToolApprovals = parseJsonOption(
+      options.mcpToolApprovals,
+      mcpToolApprovalsSchema,
+      "--mcpToolApprovals",
+    );
+    const mcpToolInstallations = parseJsonOption(
+      options.mcpToolInstallations,
+      mcpToolInstallationsSchema,
+      "--mcpToolInstallations",
     );
     const claudeCode = parseJsonOption(
       options.claudeCodeConfig,
@@ -169,6 +192,8 @@ program
       runId: options.runId,
       createPr,
       mcpServers,
+      mcpToolApprovals,
+      mcpToolInstallations,
       baseBranch: options.baseBranch,
       claudeCode,
       allowedDomains,

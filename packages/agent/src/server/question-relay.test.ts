@@ -17,7 +17,7 @@ interface TestableAgentServer {
       options: unknown[];
       toolCall: unknown;
     }) => Promise<{
-      outcome: { outcome: string };
+      outcome: { outcome: string; optionId?: string };
       _meta?: { message?: string };
     }>;
   };
@@ -25,6 +25,17 @@ interface TestableAgentServer {
   session: unknown;
   relayAgentResponse: (payload: Record<string, unknown>) => Promise<void>;
   sendInitialTaskMessage: (payload: Record<string, unknown>) => Promise<void>;
+  resolvePermission: (requestId: string, optionId: string) => boolean;
+  config: {
+    mcpToolApprovals?: Record<
+      string,
+      "approved" | "needs_approval" | "do_not_use"
+    >;
+    mcpToolInstallations?: Record<
+      string,
+      { installationId: string; toolName: string }
+    >;
+  };
 }
 
 const TEST_PAYLOAD = {
@@ -355,6 +366,63 @@ describe("Question relay", () => {
         expect(secondResult.outcome.outcome).toBe("selected");
         expect(brokenSseController.send).toHaveBeenCalledTimes(1);
         expect(appendRawLine).toHaveBeenCalledTimes(2);
+      });
+
+      it("relays MCP Store approval requests without a desktop connection and persists approval", async () => {
+        const appendRawLine = vi.fn();
+        const approvalSpy = vi
+          .spyOn(server.posthogAPI, "updateMcpToolApproval")
+          .mockResolvedValue(undefined);
+
+        server.config.mcpToolApprovals = {
+          mcp__Linear__search: "needs_approval",
+        };
+        server.config.mcpToolInstallations = {
+          mcp__Linear__search: {
+            installationId: "inst-1",
+            toolName: "search",
+          },
+        };
+        server.session = {
+          payload: TEST_PAYLOAD,
+          sseController: null,
+          hasDesktopConnected: false,
+          permissionMode: "default",
+          logWriter: { appendRawLine },
+        };
+
+        const client = server.createCloudClient(TEST_PAYLOAD);
+        const permissionPromise = client.requestPermission({
+          options: ALLOW_OPTIONS,
+          toolCall: {
+            toolCallId: "tool-1",
+            title: "The agent wants to call search (Linear)",
+            kind: "other",
+            rawInput: { toolName: "mcp__Linear__search" },
+          },
+        });
+
+        const request = appendRawLine.mock.calls
+          .map(([, line]) => JSON.parse(line))
+          .find((n) => n?.method === "_posthog/permission_request");
+        expect(request).toBeTruthy();
+        expect(request.params.toolCallId).toBe("tool-1");
+
+        expect(
+          server.resolvePermission(request.params.requestId, "allow"),
+        ).toBe(true);
+
+        await expect(permissionPromise).resolves.toMatchObject({
+          outcome: { outcome: "selected", optionId: "allow" },
+        });
+        expect(approvalSpy).toHaveBeenCalledWith(
+          "inst-1",
+          "search",
+          "approved",
+        );
+        expect(server.config.mcpToolApprovals.mcp__Linear__search).toBe(
+          "approved",
+        );
       });
     });
 

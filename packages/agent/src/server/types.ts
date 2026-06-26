@@ -1,5 +1,9 @@
 import type { AgentMode } from "../types";
-import type { RemoteMcpServer } from "./schemas";
+import type {
+  McpToolApprovalsConfig,
+  McpToolInstallationsConfig,
+  RemoteMcpServer,
+} from "./schemas";
 
 export interface ClaudeCodeConfig {
   systemPrompt?:
@@ -23,6 +27,8 @@ export interface AgentServerConfig {
   createPr?: boolean;
   version?: string;
   mcpServers?: RemoteMcpServer[];
+  mcpToolApprovals?: McpToolApprovalsConfig;
+  mcpToolInstallations?: McpToolInstallationsConfig;
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];

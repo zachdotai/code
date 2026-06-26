@@ -364,6 +364,105 @@ export class AgentServer {
     return mode === "default" || mode === "auto" || mode === "read-only";
   }
 
+  private getMcpToolNameFromPermissionRequest(
+    params: RequestPermissionRequest,
+  ): string | null {
+    const rawInput =
+      params.toolCall?.rawInput &&
+      typeof params.toolCall.rawInput === "object" &&
+      !Array.isArray(params.toolCall.rawInput)
+        ? (params.toolCall.rawInput as Record<string, unknown>)
+        : null;
+    const rawInputToolName =
+      typeof rawInput?.toolName === "string" ? rawInput.toolName : null;
+    if (rawInputToolName?.startsWith("mcp__")) {
+      return rawInputToolName;
+    }
+
+    const meta =
+      params.toolCall?._meta &&
+      typeof params.toolCall._meta === "object" &&
+      !Array.isArray(params.toolCall._meta)
+        ? (params.toolCall._meta as Record<string, unknown>)
+        : null;
+    const claudeCode =
+      meta?.claudeCode &&
+      typeof meta.claudeCode === "object" &&
+      !Array.isArray(meta.claudeCode)
+        ? (meta.claudeCode as Record<string, unknown>)
+        : null;
+    const metaToolName =
+      typeof claudeCode?.toolName === "string" ? claudeCode.toolName : null;
+    if (metaToolName?.startsWith("mcp__")) {
+      return metaToolName;
+    }
+
+    const title =
+      typeof params.toolCall?.title === "string" ? params.toolCall.title : null;
+    if (title?.startsWith("mcp__")) {
+      return title;
+    }
+
+    return null;
+  }
+
+  private isMcpStoreApprovalRequest(params: RequestPermissionRequest): boolean {
+    const toolName = this.getMcpToolNameFromPermissionRequest(params);
+    return Boolean(
+      toolName && this.config.mcpToolApprovals?.[toolName] === "needs_approval",
+    );
+  }
+
+  private async approveMcpStoreToolIfNeeded(
+    params: RequestPermissionRequest,
+    response: RequestPermissionResponse,
+  ): Promise<void> {
+    const approved =
+      response.outcome?.outcome === "selected" &&
+      (response.outcome.optionId === "allow" ||
+        response.outcome.optionId === "allow_always");
+    if (!approved) {
+      return;
+    }
+
+    const toolName = this.getMcpToolNameFromPermissionRequest(params);
+    if (
+      !toolName ||
+      this.config.mcpToolApprovals?.[toolName] !== "needs_approval"
+    ) {
+      return;
+    }
+
+    const installation = this.config.mcpToolInstallations?.[toolName];
+    if (!installation) {
+      this.logger.warn(
+        "Cannot persist MCP Store tool approval: missing installation ref",
+        {
+          toolName,
+        },
+      );
+      return;
+    }
+
+    try {
+      await this.posthogAPI.updateMcpToolApproval(
+        installation.installationId,
+        installation.toolName,
+        "approved",
+      );
+      this.config.mcpToolApprovals = {
+        ...this.config.mcpToolApprovals,
+        [toolName]: "approved",
+      };
+      this.logger.info("Persisted MCP Store tool approval", { toolName });
+    } catch (error) {
+      this.logger.warn("Failed to persist MCP Store tool approval", {
+        toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   private createApp(): Hono {
     const app = new Hono();
 
@@ -1183,6 +1282,9 @@ export class AgentServer {
       allowedDomains: this.config.allowedDomains,
       jsonSchema: preTask?.json_schema ?? null,
       permissionMode: initialPermissionMode,
+      ...(this.config.mcpToolApprovals && {
+        mcpToolApprovals: this.config.mcpToolApprovals,
+      }),
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };
@@ -2458,21 +2560,26 @@ ${signedCommitInstructions}
         {
           const isQuestion = codeToolKind === "question";
           const sessionPermissionMode = this.getSessionPermissionMode();
+          const needsMcpStoreApproval = this.isMcpStoreApprovalRequest(params);
           const needsDesktopApproval =
             isQuestion ||
             this.shouldRelayPermissionToClient(sessionPermissionMode);
 
           if (
             isPlanApproval ||
+            needsMcpStoreApproval ||
             (needsDesktopApproval && this.session?.hasDesktopConnected)
           ) {
             this.logger.debug("Relaying permission request", {
               kind: params.toolCall?.kind,
               isQuestion,
+              needsMcpStoreApproval,
               hasDesktopConnected: this.session?.hasDesktopConnected ?? false,
               sessionPermissionMode,
             });
-            return this.relayPermissionToClient(params);
+            const response = await this.relayPermissionToClient(params);
+            await this.approveMcpStoreToolIfNeeded(params, response);
+            return response;
           }
         }
 

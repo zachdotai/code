@@ -29,6 +29,30 @@ export const mcpServersSchema = z.array(remoteMcpServerSchema);
 
 export type RemoteMcpServer = z.infer<typeof remoteMcpServerSchema>;
 
+const mcpToolApprovalStateSchema = z.enum([
+  "approved",
+  "needs_approval",
+  "do_not_use",
+]);
+
+export const mcpToolApprovalsSchema = z.record(
+  z.string(),
+  mcpToolApprovalStateSchema,
+);
+
+export const mcpToolInstallationsSchema = z.record(
+  z.string(),
+  z.object({
+    installationId: z.string().min(1),
+    toolName: z.string().min(1),
+  }),
+);
+
+export type McpToolApprovalsConfig = z.infer<typeof mcpToolApprovalsSchema>;
+export type McpToolInstallationsConfig = z.infer<
+  typeof mcpToolInstallationsSchema
+>;
+
 export const claudeCodeConfigSchema = z.object({
   systemPrompt: z
     .union([
