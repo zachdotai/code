@@ -1,4 +1,4 @@
-import { ThumbsDownIcon } from "@phosphor-icons/react";
+import { ArchiveIcon } from "@phosphor-icons/react";
 import { extractRepoSelectionRepository } from "@posthog/core/inbox/artefacts";
 import {
   deriveHeadline,
@@ -14,6 +14,7 @@ import { InboxCardTitle } from "@posthog/ui/features/inbox/components/InboxCardT
 import { PrDiffStats } from "@posthog/ui/features/inbox/components/PrDiffStats";
 import { PriorityMonogram } from "@posthog/ui/features/inbox/components/PriorityMonogram";
 import { SuggestedReviewerAvatarStack } from "@posthog/ui/features/inbox/components/SuggestedReviewerAvatarStack";
+import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
 import { useInboxReportDetailPrefetch } from "@posthog/ui/features/inbox/hooks/useInboxReportDetailPrefetch";
 import { useInboxReportArtefacts } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { Button as UiButton } from "@posthog/ui/primitives/Button";
@@ -121,10 +122,16 @@ export function PullRequestCard({
       >
         <Flex align="center" gap="2" className="shrink-0">
           {report.implementation_pr_url && (
-            <PrDiffStats
-              prUrl={report.implementation_pr_url}
-              hideWhileLoading
-            />
+            <Flex direction="column" align="end" gap="1" className="shrink-0">
+              <ReportImplementationPrLink
+                prUrl={report.implementation_pr_url}
+                size="sm"
+              />
+              <PrDiffStats
+                prUrl={report.implementation_pr_url}
+                hideWhileLoading
+              />
+            </Flex>
           )}
           <SuggestedReviewerAvatarStack
             reportId={report.id}
@@ -137,8 +144,8 @@ export function PullRequestCard({
             variant="soft"
             color="gray"
             size="1"
-            aria-label="Dismiss this report"
-            tooltipContent="Dismiss this report"
+            aria-label="Archive this report"
+            tooltipContent="Archive this report"
             disabled={dismissDisabledReason !== null || isDismissPending}
             disabledReason={dismissDisabledReason}
             loading={isDismissPending}
@@ -147,7 +154,7 @@ export function PullRequestCard({
               onDismiss();
             }}
           >
-            <ThumbsDownIcon size={14} />
+            <ArchiveIcon size={14} />
           </UiButton>
           <Button
             type="button"

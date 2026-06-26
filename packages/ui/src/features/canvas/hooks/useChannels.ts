@@ -2,7 +2,7 @@ import type { Schemas } from "@posthog/api-client";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 const CHANNELS_POLL_INTERVAL_MS = 30_000;
 const CHANNELS_QUERY_KEY = ["canvas-channels"] as const;
@@ -17,11 +17,26 @@ export interface Channel {
    * channel, so the desktop shortcut links back to this exact folder.
    */
   path: string;
+  /**
+   * File-system id of the channel's home canvas, if one has been created.
+   * Stored on the folder row's `meta`; used to open the home canvas when the
+   * channel name is clicked. Absent on channels made before home canvases
+   * existed (those are backfilled lazily on first open).
+   */
+  homeCanvasId?: string;
 }
 
 function toChannel(fs: Schemas.FileSystem): Channel {
+  // The generated OpenAPI type declares `meta` as null, but the API returns our
+  // free-form blob at runtime; read homeCanvasId past the type.
+  const meta = fs.meta as { homeCanvasId?: string } | null | undefined;
   // Top-level channels have a single-segment path; strip any leading slash.
-  return { id: fs.id, name: fs.path.replace(/^\/+/, ""), path: fs.path };
+  return {
+    id: fs.id,
+    name: fs.path.replace(/^\/+/, ""),
+    path: fs.path,
+    homeCanvasId: meta?.homeCanvasId,
+  };
 }
 
 /** List the project's channels (top-level desktop file-system folders). */
@@ -37,10 +52,16 @@ export function useChannels(options?: { enabled?: boolean }): {
       refetchInterval: CHANNELS_POLL_INTERVAL_MS,
     },
   );
-  const channels = (query.data ?? [])
-    .filter((fs) => fs.type === "folder")
-    .map(toChannel)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Memoize so the array reference is stable while the underlying data is
+  // unchanged — callers depend on `channels` in their own memos/effects.
+  const channels = useMemo(
+    () =>
+      (query.data ?? [])
+        .filter((fs) => fs.type === "folder")
+        .map(toChannel)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [query.data],
+  );
   return { channels, isLoading: query.isLoading };
 }
 

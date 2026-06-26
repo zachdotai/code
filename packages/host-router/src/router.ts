@@ -4,7 +4,7 @@ import { agentRouter } from "./routers/agent.router";
 import { analyticsRouter } from "./routers/analytics.router";
 import { archiveRouter } from "./routers/archive.router";
 import { authRouter } from "./routers/auth.router";
-import { canvasGenRouter } from "./routers/canvas-gen.router";
+import { canvasDataRouter } from "./routers/canvas-data.router";
 import { canvasTemplatesRouter } from "./routers/canvas-templates.router";
 import { channelTasksRouter } from "./routers/channel-tasks.router";
 import { cloudTaskRouter } from "./routers/cloud-task.router";
@@ -50,7 +50,7 @@ export const hostRouter = router({
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,
-  canvasGen: canvasGenRouter,
+  canvasData: canvasDataRouter,
   canvasTemplates: canvasTemplatesRouter,
   channelTasks: channelTasksRouter,
   cloudTask: cloudTaskRouter,

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -12,6 +12,7 @@ import {
   PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk";
 import { type ServerType, serve } from "@hono/node-server";
+import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -21,6 +22,11 @@ import {
   createAcpConnection,
   type InProcessAcpConnection,
 } from "../adapters/acp-connection";
+import {
+  getSessionJsonlPath,
+  hydrateSessionJsonl,
+} from "../adapters/claude/session/jsonl-hydration";
+import type { GatewayEnv } from "../adapters/claude/session/options";
 import {
   type AgentErrorClassification,
   classifyAgentError,
@@ -34,7 +40,7 @@ import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
-import { extractCreatedPrUrl } from "../pr-url-detector";
+import { findPrUrl, wasCreatedRecently } from "../pr-url-detector";
 import {
   formatConversationForResume,
   type ResumeState,
@@ -252,8 +258,13 @@ export class AgentServer {
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
+  // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
+  // attributions so the most recently created PR in a run wins.
+  private readonly evaluatedPrUrls = new Set<string>();
+  private prAttributionChain: Promise<void> = Promise.resolve();
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
+  private nativeResume: { sessionId: string; warm: boolean } | null = null;
   // Guards against concurrent session initialization. autoInitializeSession() and
   // the GET /events SSE handler can both call initializeSession() — the SSE connection
   // often arrives while newSession() is still awaited (this.session is still null),
@@ -585,6 +596,78 @@ export class AgentServer {
     }
   }
 
+  private async prepareNativeResume(
+    payload: JwtPayload,
+    posthogAPI: PostHogAPIClient,
+    preTaskRun: TaskRun | null,
+    runtimeAdapter: "claude" | "codex",
+    cwd: string,
+    permissionMode: PermissionMode,
+  ): Promise<{ sessionId: string; warm: boolean } | null> {
+    if (runtimeAdapter !== "claude") return null;
+
+    const resumeRunId = this.getResumeRunId(preTaskRun);
+    if (!resumeRunId) return null;
+
+    if (!this.resumeState) {
+      await this.loadResumeState(payload.task_id, resumeRunId, payload.run_id);
+    }
+
+    const priorSessionId = this.resumeState?.sessionId ?? null;
+    if (!priorSessionId) {
+      this.logger.debug("No prior session id; using summary resume fallback", {
+        resumeRunId,
+      });
+      return null;
+    }
+
+    let warm = false;
+    try {
+      await access(getSessionJsonlPath(priorSessionId, cwd));
+      warm = true;
+    } catch {
+      warm = false;
+    }
+
+    try {
+      const hasSession = await hydrateSessionJsonl({
+        sessionId: priorSessionId,
+        cwd,
+        taskId: payload.task_id,
+        runId: resumeRunId,
+        model: this.config.model,
+        permissionMode,
+        posthogAPI,
+        log: {
+          info: (msg, data) => this.logger.debug(msg, data),
+          warn: (msg, data) => this.logger.warn(msg, data),
+        },
+      });
+      if (!hasSession) {
+        this.logger.debug(
+          "No session JSONL to resume; using summary fallback",
+          {
+            resumeRunId,
+            priorSessionId,
+          },
+        );
+        return null;
+      }
+    } catch (error) {
+      this.logger.warn(
+        "Session JSONL hydration failed; using summary fallback",
+        {
+          priorSessionId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      return null;
+    }
+
+    this.logger.debug("Native resume prepared", { priorSessionId, warm });
+    return { sessionId: priorSessionId, warm };
+  }
+
   async stop(): Promise<void> {
     this.logger.debug("Stopping agent server...");
 
@@ -904,6 +987,9 @@ export class AgentServer {
       await this.cleanupSession();
     }
 
+    this.resumeState = null;
+    this.nativeResume = null;
+
     this.logger.debug("Initializing session", {
       runId: payload.run_id,
       taskId: payload.task_id,
@@ -934,10 +1020,11 @@ export class AgentServer {
       }),
     ]);
 
-    this.configureEnvironment({
+    const gatewayEnv = this.configureEnvironment({
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
       signalReportId: preTask?.signal_report,
+      aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id,
@@ -946,19 +1033,27 @@ export class AgentServer {
 
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
 
-    if (prUrl) {
-      this.detectedPrUrl = prUrl;
-    }
+    // Unconditional so a re-init on the same instance drops a stale PR URL.
+    this.detectedPrUrl = prUrl;
 
     const slackThreadUrl = getTaskRunStateString(
       preTaskRun,
       "slack_thread_url",
     );
 
+    // Web backlink to the inbox report that spawned this task, so the
+    // auto-generated PR can point back at it. Built from the same pieces as the
+    // report's `_posthogUrl`: <apiUrl>/project/<projectId>/inbox/<reportId>.
+    const signalReportId = preTask?.signal_report;
+    const inboxReportUrl = signalReportId
+      ? `${this.config.apiUrl.replace(/\/$/, "")}/project/${this.config.projectId}/inbox/${signalReportId}`
+      : null;
+
     const runtimeAdapter = this.getRuntimeAdapter();
     const sessionSystemPrompt = this.buildSessionSystemPrompt(
       prUrl,
       slackThreadUrl,
+      inboxReportUrl,
     );
     const codexInstructions =
       runtimeAdapter === "codex"
@@ -984,15 +1079,16 @@ export class AgentServer {
       deviceType: deviceInfo.type,
       logWriter,
       logger: this.logger,
+      claudeGatewayEnv: runtimeAdapter !== "codex" ? gatewayEnv : undefined,
       codexOptions:
         runtimeAdapter === "codex"
           ? {
               cwd: this.config.repositoryPath ?? "/tmp/workspace",
-              apiBaseUrl: process.env.OPENAI_BASE_URL,
+              apiBaseUrl: gatewayEnv.openaiBaseUrl,
               apiKey: this.config.apiKey,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
-              instructions: codexInstructions,
+              developerInstructions: codexInstructions,
             }
           : undefined,
       onStructuredOutput: async (output) => {
@@ -1053,41 +1149,60 @@ export class AgentServer {
         : runtimeAdapter === "codex"
           ? "auto"
           : "bypassPermissions";
-    const sessionResponse = await clientConnection.newSession({
-      cwd: this.config.repositoryPath ?? "/tmp/workspace",
-      mcpServers: this.config.mcpServers ?? [],
-      _meta: {
-        sessionId: payload.run_id,
-        taskRunId: payload.run_id,
-        taskId: payload.task_id,
-        environment: "cloud",
-        systemPrompt: sessionSystemPrompt,
-        ...(this.config.model && { model: this.config.model }),
-        allowedDomains: this.config.allowedDomains,
-        jsonSchema: preTask?.json_schema ?? null,
-        permissionMode: initialPermissionMode,
-        ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
-        ...(this.config.claudeCode?.plugins?.length && {
-          claudeCode: {
-            options: {
-              ...(this.config.claudeCode?.plugins?.length && {
-                plugins: this.config.claudeCode.plugins,
-              }),
-              ...(runtimeAdapter === "claude" &&
-                this.config.reasoningEffort && {
-                  effort: this.config.reasoningEffort,
-                }),
-            },
-          },
-        }),
-      },
-    });
+    const sessionCwd = this.config.repositoryPath ?? "/tmp/workspace";
+    const sessionMeta = {
+      sessionId: payload.run_id,
+      taskRunId: payload.run_id,
+      taskId: payload.task_id,
+      environment: "cloud",
+      systemPrompt: sessionSystemPrompt,
+      ...(this.config.model && { model: this.config.model }),
+      allowedDomains: this.config.allowedDomains,
+      jsonSchema: preTask?.json_schema ?? null,
+      permissionMode: initialPermissionMode,
+      ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
+      ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
+    };
 
-    const acpSessionId = sessionResponse.sessionId;
-    this.logger.debug("ACP session created", {
-      acpSessionId,
-      runId: payload.run_id,
-    });
+    const nativeResume = await this.prepareNativeResume(
+      payload,
+      posthogAPI,
+      preTaskRun,
+      runtimeAdapter,
+      sessionCwd,
+      initialPermissionMode,
+    );
+
+    let acpSessionId: string;
+    if (nativeResume) {
+      await clientConnection.resumeSession({
+        sessionId: nativeResume.sessionId,
+        cwd: sessionCwd,
+        mcpServers: this.config.mcpServers ?? [],
+        _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
+      });
+      acpSessionId = nativeResume.sessionId;
+      this.nativeResume = nativeResume;
+      this.logger.debug("ACP session resumed", {
+        acpSessionId,
+        runId: payload.run_id,
+        warm: nativeResume.warm,
+      });
+    } else {
+      const sessionResponse = await clientConnection.newSession({
+        cwd: sessionCwd,
+        mcpServers: this.config.mcpServers ?? [],
+        _meta: sessionMeta,
+      });
+      acpSessionId = sessionResponse.sessionId;
+      this.logger.debug("ACP session created", {
+        acpSessionId,
+        runId: payload.run_id,
+      });
+    }
+
+    this.evaluatedPrUrls.clear();
+    this.prAttributionChain = Promise.resolve();
 
     this.session = {
       payload,
@@ -1210,6 +1325,11 @@ export class AgentServer {
       }
     }
 
+    if (this.nativeResume) {
+      await this.sendResumeContinuation(payload, taskRun);
+      return;
+    }
+
     if (!this.resumeState) {
       const resumeRunId = this.getResumeRunId(taskRun);
       if (resumeRunId) {
@@ -1221,7 +1341,6 @@ export class AgentServer {
       }
     }
 
-    // Resume flow: if we have resume state, format conversation history as context
     if (this.resumeState && this.resumeState.conversation.length > 0) {
       await this.sendResumeMessage(payload, taskRun);
       return;
@@ -1277,11 +1396,6 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
-
-      // Mark the run terminal. No-op for interactive sessions (they stay open
-      // for follow-ups); for background cloud-task runs this flips the run from
-      // "in_progress" to "completed".
-      await this.signalTaskComplete(payload, result.stopReason);
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
       if (this.session) {
@@ -1296,44 +1410,14 @@ export class AgentServer {
     taskRun: TaskRun | null,
   ): Promise<void> {
     if (!this.session || !this.resumeState) return;
+    const resumeState = this.resumeState;
 
-    try {
+    await this.runResumeTurn(payload, "Resume message", async () => {
       const conversationSummary = formatConversationForResume(
-        this.resumeState.conversation,
+        resumeState.conversation,
       );
 
-      let checkpointApplied = false;
-      if (
-        this.resumeState.latestGitCheckpoint &&
-        this.config.repositoryPath &&
-        this.posthogAPI
-      ) {
-        try {
-          const checkpointTracker = new HandoffCheckpointTracker({
-            repositoryPath: this.config.repositoryPath,
-            taskId: payload.task_id,
-            runId: payload.run_id,
-            apiClient: this.posthogAPI,
-            logger: this.logger.child("HandoffCheckpoint"),
-          });
-          const metrics = await checkpointTracker.applyFromHandoff(
-            this.resumeState.latestGitCheckpoint,
-          );
-          checkpointApplied = true;
-          this.logger.debug("Git checkpoint applied", {
-            branch: this.resumeState.latestGitCheckpoint.branch,
-            head: this.resumeState.latestGitCheckpoint.head,
-            packBytes: metrics.packBytes,
-            indexBytes: metrics.indexBytes,
-            totalBytes: metrics.totalBytes,
-          });
-        } catch (error) {
-          this.logger.warn("Failed to apply git checkpoint", {
-            error: error instanceof Error ? error.message : String(error),
-            branch: this.resumeState.latestGitCheckpoint.branch,
-          });
-        }
-      }
+      const checkpointApplied = await this.applyResumeGitCheckpoint(payload);
 
       const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
 
@@ -1373,26 +1457,72 @@ export class AgentServer {
 
       this.logger.debug("Sending resume message", {
         taskId: payload.task_id,
-        conversationTurns: this.resumeState.conversation.length,
+        conversationTurns: resumeState.conversation.length,
         promptLength: promptBlocksToText(resumePromptBlocks).length,
         hasPendingUserMessage: !!pendingUserPrompt?.length,
         checkpointApplied,
-        hasGitCheckpoint: !!this.resumeState.latestGitCheckpoint,
-        gitCheckpointBranch:
-          this.resumeState.latestGitCheckpoint?.branch ?? null,
+        hasGitCheckpoint: !!resumeState.latestGitCheckpoint,
+        gitCheckpointBranch: resumeState.latestGitCheckpoint?.branch ?? null,
       });
 
-      // Clear resume state so it's not reused
       this.resumeState = null;
+      return resumePromptBlocks;
+    });
+  }
+
+  private async sendResumeContinuation(
+    payload: JwtPayload,
+    taskRun: TaskRun | null,
+  ): Promise<void> {
+    if (!this.session) return;
+
+    await this.runResumeTurn(payload, "Resume continuation", async () => {
+      const checkpointApplied = this.nativeResume?.warm
+        ? false
+        : await this.applyResumeGitCheckpoint(payload);
+
+      const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
+      const prompt: ContentBlock[] = pendingUserPrompt?.length
+        ? pendingUserPrompt
+        : [
+            {
+              type: "text",
+              text: "Continue from where you left off. The user is waiting for your response.",
+            },
+          ];
+
+      this.logger.debug("Sending resume continuation", {
+        taskId: payload.task_id,
+        sessionId: this.nativeResume?.sessionId,
+        warm: this.nativeResume?.warm,
+        checkpointApplied,
+        hasPendingUserMessage: !!pendingUserPrompt?.length,
+      });
+
+      this.resumeState = null;
+      this.nativeResume = null;
+      return prompt;
+    });
+  }
+
+  private async runResumeTurn(
+    payload: JwtPayload,
+    logLabel: string,
+    buildPrompt: () => Promise<ContentBlock[]>,
+  ): Promise<void> {
+    if (!this.session) return;
+
+    try {
+      const prompt = await buildPrompt();
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
       const result = await this.session.clientConnection.prompt({
         sessionId: this.session.acpSessionId,
-        prompt: resumePromptBlocks,
+        prompt,
       });
 
-      this.logger.debug("Resume message completed", {
+      this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
       });
 
@@ -1405,17 +1535,50 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
-
-      // Mark the run terminal. No-op for interactive sessions (they stay open
-      // for follow-ups); for background cloud-task runs this flips the run from
-      // "in_progress" to "completed".
-      await this.signalTaskComplete(payload, result.stopReason);
     } catch (error) {
-      this.logger.error("Failed to send resume message", error);
+      this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
       if (this.session) {
         await this.session.logWriter.flushAll();
       }
       await this.classifyAndSignalFailure(payload, "resume", error);
+    }
+  }
+
+  private async applyResumeGitCheckpoint(
+    payload: JwtPayload,
+  ): Promise<boolean> {
+    if (
+      !this.resumeState?.latestGitCheckpoint ||
+      !this.config.repositoryPath ||
+      !this.posthogAPI
+    ) {
+      return false;
+    }
+    try {
+      const checkpointTracker = new HandoffCheckpointTracker({
+        repositoryPath: this.config.repositoryPath,
+        taskId: payload.task_id,
+        runId: payload.run_id,
+        apiClient: this.posthogAPI,
+        logger: this.logger.child("HandoffCheckpoint"),
+      });
+      const metrics = await checkpointTracker.applyFromHandoff(
+        this.resumeState.latestGitCheckpoint,
+      );
+      this.logger.debug("Git checkpoint applied", {
+        branch: this.resumeState.latestGitCheckpoint.branch,
+        head: this.resumeState.latestGitCheckpoint.head,
+        packBytes: metrics.packBytes,
+        indexBytes: metrics.indexBytes,
+        totalBytes: metrics.totalBytes,
+      });
+      return true;
+    } catch (error) {
+      this.logger.warn("Failed to apply git checkpoint", {
+        error: error instanceof Error ? error.message : String(error),
+        branch: this.resumeState.latestGitCheckpoint.branch,
+      });
+      return false;
     }
   }
 
@@ -1652,8 +1815,13 @@ export class AgentServer {
   private buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string | { append: string } {
-    const cloudAppend = this.buildCloudSystemPrompt(prUrl, slackThreadUrl);
+    const cloudAppend = this.buildCloudSystemPrompt(
+      prUrl,
+      slackThreadUrl,
+      inboxReportUrl,
+    );
     const userPrompt = this.config.claudeCode?.systemPrompt;
 
     // String override: combine user prompt with cloud instructions
@@ -1680,6 +1848,32 @@ export class AgentServer {
       : systemPrompt.append;
   }
 
+  /**
+   * Builds the optional `claudeCode` session meta. Reasoning effort and plugins
+   * are independent: effort must reach Claude even when no plugins are set, so
+   * it cannot sit behind a plugins guard.
+   */
+  private buildClaudeCodeSessionMeta(
+    runtimeAdapter: "claude" | "codex",
+  ): { claudeCode: { options: Record<string, unknown> } } | undefined {
+    const plugins = this.config.claudeCode?.plugins;
+    const effort =
+      runtimeAdapter === "claude" ? this.config.reasoningEffort : undefined;
+
+    if (!plugins?.length && !effort) {
+      return undefined;
+    }
+
+    const options: Record<string, unknown> = {};
+    if (plugins?.length) {
+      options.plugins = plugins;
+    }
+    if (effort) {
+      options.effort = effort;
+    }
+    return { claudeCode: { options } };
+  }
+
   private getCloudInteractionOrigin(): string | undefined {
     return (
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN ??
@@ -1689,16 +1883,22 @@ export class AgentServer {
   }
 
   /**
+   * Automated, PostHog-branded origins: the Slack app and the Self-driving
+   * inbox. These both auto-publish by default and attribute their PRs to
+   * "PostHog" rather than the PostHog Code desktop app.
+   */
+  private isAutomatedOrigin(): boolean {
+    const origin = this.getCloudInteractionOrigin();
+    return origin === "slack" || origin === "signal_report";
+  }
+
+  /**
    * Automated-origin cloud runs auto-publish by default. Every other origin is
    * review-first unless the user explicitly asks, and createPr=false always
    * disables publishing.
    */
   private shouldAutoPublishCloudChanges(): boolean {
-    const origin = this.getCloudInteractionOrigin();
-    return (
-      (origin === "slack" || origin === "signal_report") &&
-      this.config.createPr !== false
-    );
+    return this.isAutomatedOrigin() && this.config.createPr !== false;
   }
 
   private buildDetectedPrContext(prUrl: string): string {
@@ -1723,6 +1923,7 @@ export class AgentServer {
   private buildCloudSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
@@ -1741,7 +1942,10 @@ You are replying in a Slack thread. Slack readers want short, skimmable answers 
 - This is a default, not a hard rule. If the user (or their saved memory) asks for more depth or a specific format, follow that instead.
 
 # Mentioning users
-When you want to ping a Slack user in your reply, copy their \`<@U…|displayname>\` token verbatim from the message context — Slack renders that as a real mention. Writing \`@displayname\` as plain text does NOT ping them.
+To ping a Slack user, reuse a \`<@U…|displayname>\` token that already appears in the message context — copy it verbatim, including the \`U…\` ID. Do NOT construct a mention token from a name, and do NOT substitute the display name (or any other string) for the \`U…\` ID — \`<@Jane|Jane Doe>\` is not a valid mention; only the form with the real ID like \`<@U01ABCDEF23|Jane Doe>\` is. If the person you want to refer to has no \`<@U…|displayname>\` token anywhere in the thread context, write their name as plain text instead of inventing one.
+
+# Suggesting code changes
+You can also open pull requests directly from this Slack thread. When the user's question describes a problem with a plausible code-side fix — a bug visible in errors or logs, missing or broken instrumentation, a broken funnel step traceable to UI code, a stale config that lives in a repo — end your reply with a one-sentence offer to open a PR for the fix and ask if they want you to proceed. Skip the offer for pure data lookups with no actionable code change (e.g. "what was DAU yesterday?"), and skip it when the fix would clearly live outside any repo you can reach.
 `
       : "";
     const signedCommitInstructions = `
@@ -1808,9 +2012,17 @@ When you open a draft pull request, open it FIRST, then handle verification.
   full suite for before marking the PR ready for review.`;
 
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
+    // Slack- and inbox-originated PRs are attributed to PostHog, not the
+    // PostHog Code desktop app — they come from the Slack app / Self-driving
+    // inbox, which users know as "PostHog".
+    const createdWith = this.isAutomatedOrigin()
+      ? "Created with [PostHog](https://posthog.com?ref=pr)"
+      : "Created with [PostHog Code](https://posthog.com/code?ref=pr)";
     const prFooter = slackThreadUrl
-      ? `*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](${slackThreadUrl})*`
-      : `*Created with [PostHog Code](https://posthog.com/code?ref=pr)*`;
+      ? `*${createdWith} from a [Slack thread](${slackThreadUrl})*`
+      : inboxReportUrl
+        ? `*${createdWith} from an [inbox report](${inboxReportUrl})*`
+        : `*${createdWith}*`;
 
     if (prUrl) {
       if (!shouldAutoCreatePr) {
@@ -1906,7 +2118,9 @@ ${signedCommitInstructions}
     return `${identityInstructions}
 # Cloud Task Execution
 
-After completing the requested changes:
+If the work you are being asked to do already has an open pull request — for example, the inbox report you fetched links an implementation PR (its \`implementation_pr_url\`), or this same thread already produced a PR that you are now being asked to revise — do NOT open a second PR. Check that PR out with \`gh pr checkout <url>\`, continue on its branch, and commit your changes to it with the \`git_signed_commit\` tool (if the branch is behind its base, call \`git_signed_merge\` first). A PR is only the one to continue if it is for this same request; if the thread merely mentions an unrelated or older PR, ignore it. Only open a new, separate PR when the change is genuinely distinct from the existing one.
+
+Otherwise, after completing the requested changes:
 1. Pick a new branch name prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`)
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). The tool creates the branch on the remote and a signed commit on it.
 3. Before opening the PR, prepare the body:
@@ -1986,43 +2200,25 @@ ${signedCommitInstructions}
       }
     }
 
-    const isError = stopReason === "error";
-
-    // Interactive sessions stay open after a normal turn so the user can send
-    // follow-up messages — only an error is terminal there. Background
-    // (headless cloud-task) runs have no follow-up sender, so a normal
-    // end-of-turn IS the run's terminal state and must be reported as
-    // completed; otherwise the run stays "in_progress" forever.
-    if (!isError && this.getEffectiveMode(payload) !== "background") {
+    if (stopReason !== "error") {
       this.logger.debug("Skipping status update for non-error stop reason", {
         stopReason,
       });
       return;
     }
 
-    // Only a clean `end_turn` means the run actually finished its work. Any
-    // other stop reason (error, or an early stop like `max_tokens`/`refusal`)
-    // means the agent halted before completing the task, so report it as
-    // failed rather than completed.
-    const isCompleted = stopReason === "end_turn";
-    const status = isCompleted ? "completed" : "failed";
-    const failureMessage = isError
-      ? (errorMessage ?? "Agent error")
-      : `Agent stopped before completing the task (stop reason: ${stopReason})`;
+    const status = "failed";
 
-    this.enqueueTaskTerminalEvent(
-      isCompleted
-        ? POSTHOG_NOTIFICATIONS.TASK_COMPLETE
-        : POSTHOG_NOTIFICATIONS.ERROR,
-      isCompleted
-        ? { source: "agent_server", stopReason }
-        : { source: "agent_server", stopReason, error: failureMessage },
-    );
+    this.enqueueTaskTerminalEvent(POSTHOG_NOTIFICATIONS.ERROR, {
+      source: "agent_server",
+      stopReason,
+      error: errorMessage ?? "Agent error",
+    });
 
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
-        ...(isCompleted ? {} : { error_message: failureMessage }),
+        error_message: errorMessage ?? "Agent error",
       });
       this.logger.debug("Task completion signaled", { status, stopReason });
     } catch (error) {
@@ -2053,6 +2249,7 @@ ${signedCommitInstructions}
     isInternal = false,
     originProduct,
     signalReportId,
+    aiStage,
     taskId,
     taskRunId,
     taskUserId,
@@ -2061,11 +2258,12 @@ ${signedCommitInstructions}
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
+    aiStage?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
     taskTitle?: string | null;
-  } = {}): void {
+  } = {}): GatewayEnv {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
     const gatewayUrl = resolveLlmGatewayUrl(
@@ -2086,30 +2284,35 @@ ${signedCommitInstructions}
       task_origin_product: originProduct,
       task_internal: isInternal,
       signal_report_id: signalReportId,
+      ai_stage: aiStage,
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,
       task_title: taskTitle,
     });
 
+    // Server-level constants that don't vary per task — safe to keep in
+    // process.env so spawned tools (PostHog MCP, workspace-server, etc.) can
+    // reach the PostHog API without explicit threading.
     Object.assign(process.env, {
-      // PostHog
       POSTHOG_API_KEY: apiKey,
       POSTHOG_API_URL: apiUrl,
       POSTHOG_API_HOST: apiUrl,
       POSTHOG_AUTH_HEADER: `Bearer ${apiKey}`,
       POSTHOG_PROJECT_ID: String(projectId),
-      // Anthropic
-      ANTHROPIC_API_KEY: apiKey,
-      ANTHROPIC_AUTH_TOKEN: apiKey,
-      ANTHROPIC_BASE_URL: gatewayUrl,
-      ANTHROPIC_CUSTOM_HEADERS: customHeaders,
-      // OpenAI (for models like GPT-4, o1, etc.)
-      OPENAI_API_KEY: apiKey,
-      OPENAI_BASE_URL: openaiBaseUrl,
-      // Generic gateway
-      LLM_GATEWAY_URL: gatewayUrl,
     });
+
+    // Task-specific gateway config is returned rather than written to
+    // process.env so that concurrent sessions do not clobber each other's
+    // gateway URL, auth token, or custom headers.
+    return {
+      anthropicBaseUrl: gatewayUrl,
+      anthropicAuthToken: apiKey,
+      openaiBaseUrl,
+      openaiApiKey: apiKey,
+      anthropicCustomHeaders: customHeaders,
+      posthogProjectId: String(projectId),
+    };
   }
 
   private buildSlackQuestionRelayResponse(
@@ -2264,6 +2467,8 @@ ${signedCommitInstructions}
           });
         }
 
+        this.maybeAttachCreatedPr(payload, params.update);
+
         // session/update notifications flow through the tapped stream (like local transport)
         // Capture checkpoints for file-changing tools so cloud resumes restore
         // from git checkpoints rather than tree snapshots.
@@ -2284,13 +2489,6 @@ ${signedCommitInstructions}
             toolResponse?.filePath
           ) {
             await this.captureCheckpointState();
-          }
-
-          if (
-            toolName &&
-            (toolName.includes("Bash") || toolName.includes("bash"))
-          ) {
-            this.detectAndAttachPrUrl(payload, params.update);
           }
         }
       },
@@ -2419,59 +2617,75 @@ ${signedCommitInstructions}
     );
   }
 
-  private detectAndAttachPrUrl(
+  private maybeAttachCreatedPr(
     payload: JwtPayload,
-    update: Record<string, unknown>,
+    update: Record<string, unknown> | undefined,
   ): void {
+    if (!update) return;
+    const prUrl = findPrUrl(JSON.stringify(update));
+    if (!prUrl || this.evaluatedPrUrls.has(prUrl)) return;
+    this.evaluatedPrUrls.add(prUrl);
+    // Chain so attributions run in detection order; later PRs overwrite earlier ones.
+    this.prAttributionChain = this.prAttributionChain
+      .catch(() => {})
+      .then(() => this.attachPrIfCreatedThisRun(payload, prUrl));
+  }
+
+  private async attachPrIfCreatedThisRun(
+    payload: JwtPayload,
+    prUrl: string,
+  ): Promise<void> {
+    // Already the attributed PR (e.g. seeded from a Slack notification, or re-detected).
+    if (prUrl === this.detectedPrUrl) return;
+
+    let createdAt: string | null;
     try {
-      const meta = (update?._meta as Record<string, unknown>)?.claudeCode as
-        | Record<string, unknown>
-        | undefined;
-
-      const content = update?.content as
-        | Array<{ type?: string; text?: string }>
-        | undefined;
-
-      const prUrl = extractCreatedPrUrl({
-        toolName: meta?.toolName as string | undefined,
-        bashCommand: meta?.bashCommand as string | undefined,
-        toolResponse: meta?.toolResponse,
-        content,
+      createdAt = await this.fetchPrCreatedAt(prUrl);
+    } catch (err) {
+      this.logger.debug("PR attribution lookup failed", {
+        runId: payload.run_id,
+        prUrl,
+        error: err,
       });
-      if (!prUrl) return;
+      return;
+    }
 
-      this.detectedPrUrl = prUrl;
-      this.logger.debug("Detected PR URL from gh pr create", {
+    // Only attribute PRs created during this run, not ones the agent merely viewed.
+    if (!wasCreatedRecently(createdAt, Date.now())) return;
+
+    this.detectedPrUrl = prUrl;
+
+    try {
+      await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
+        output: { pr_url: prUrl },
+      });
+      this.logger.debug("Attributed created PR to task run", {
+        taskId: payload.task_id,
         runId: payload.run_id,
         prUrl,
       });
-
-      // Fire-and-forget: attach PR URL to the task run
-      this.posthogAPI
-        .updateTaskRun(payload.task_id, payload.run_id, {
-          output: { pr_url: prUrl },
-        })
-        .then(() => {
-          this.logger.debug("PR URL attached to task run", {
-            taskId: payload.task_id,
-            runId: payload.run_id,
-            prUrl,
-          });
-        })
-        .catch((err) => {
-          this.logger.error("Failed to attach PR URL to task run", {
-            taskId: payload.task_id,
-            runId: payload.run_id,
-            prUrl,
-            error: err,
-          });
-        });
     } catch (err) {
-      // Never let detection errors break message flow
-      this.logger.debug("Error in PR URL detection", {
+      this.logger.error("Failed to attach PR URL to task run", {
+        taskId: payload.task_id,
         runId: payload.run_id,
+        prUrl,
         error: err,
       });
+    }
+  }
+
+  private async fetchPrCreatedAt(prUrl: string): Promise<string | null> {
+    const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
+      cwd: this.config.repositoryPath,
+      timeoutMs: 10_000,
+    });
+    if (res.exitCode !== 0) return null;
+    try {
+      return (
+        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      );
+    } catch {
+      return null;
     }
   }
 

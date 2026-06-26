@@ -16,14 +16,23 @@ import { useCallback } from "react";
 import * as nav from "./navigationBridge";
 
 /**
- * Opens a task: navigates to /code/tasks/$taskId and ensures a workspace
- * exists. Workspace binding is delegated to the host-provided
- * NavigationTaskBinder (the refactor's abstraction over folder/workspace
- * registration); if it reports a stale folder, we redirect to folder settings.
+ * Opens a task: navigates to its detail route and ensures a workspace exists.
+ * Workspace binding is delegated to the host-provided NavigationTaskBinder (the
+ * refactor's abstraction over folder/workspace registration); if it reports a
+ * stale folder, we redirect to folder settings.
+ *
+ * When `opts.channelId` is provided (the task is filed to a Project Bluebird
+ * channel), navigation targets the channel-organized view under /website,
+ * keeping the channels chrome; otherwise it targets /code/tasks/$taskId. Every
+ * other side effect is identical — channel tasks still need workspace
+ * provisioning so TaskDetail resolves a cwd.
  *
  * Replaces the old `navigationStore.navigateToTask` action.
  */
-export async function openTask(task: Task): Promise<void> {
+export async function openTask(
+  task: Task,
+  opts?: { channelId?: string },
+): Promise<void> {
   // Seed the detail cache so the route loader resolves from cache and never
   // fetches — critical for optimistic/local/cloud-pending tasks that the API
   // can't yet return, which would otherwise hang the route in its pending state.
@@ -31,7 +40,11 @@ export async function openTask(task: Task): Promise<void> {
     taskDetailQuery(task.id).queryKey,
     task,
   );
-  nav.navigateToTaskDetail(task.id);
+  if (opts?.channelId) {
+    nav.navigateToChannelTask(opts.channelId, task.id);
+  } else {
+    nav.navigateToTaskDetail(task.id);
+  }
   setActiveTaskContext(task);
   track(ANALYTICS_EVENTS.TASK_VIEWED, { task_id: task.id });
 
@@ -55,6 +68,9 @@ export interface TaskInputNavigationOptions {
   initialModel?: string;
   initialMode?: string;
   reportAssociation?: { reportId: string; title: string };
+  // Which space's new-task screen to open. Both render the same TaskInput; the
+  // channels variant keeps the channels chrome instead of switching to Code.
+  space?: "code" | "website";
 }
 
 /**
@@ -90,7 +106,11 @@ export function openTaskInput(
         : undefined,
     },
   });
-  nav.navigateToCode();
+  if (options.space === "website") {
+    nav.navigateToWebsiteNew();
+  } else {
+    nav.navigateToCode();
+  }
 }
 
 export function useOpenTaskInput(): typeof openTaskInput {

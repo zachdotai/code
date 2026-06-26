@@ -1,11 +1,13 @@
 import {
   ArrowSquareOutIcon,
+  CopyIcon,
   GitPullRequestIcon,
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
 import { parsePrUrl } from "@posthog/core/inbox/reportPresentation";
 import { Button } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
+import { ReportActivitySection } from "@posthog/ui/features/inbox/components/detail/ReportActivitySection";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxMetaSeparator } from "@posthog/ui/features/inbox/components/InboxMetaRow";
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
@@ -13,6 +15,8 @@ import { PrDiffStats } from "@posthog/ui/features/inbox/components/PrDiffStats";
 import { ReportDetailActions } from "@posthog/ui/features/inbox/components/ReportDetailActions";
 import { ReportTasksSection } from "@posthog/ui/features/inbox/components/ReportTasksSection";
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
+import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
+import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { Text } from "@radix-ui/themes";
 
 interface PullRequestDetailProps {
@@ -62,6 +66,10 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
         report.implementation_pr_url ? (
           <>
             <InboxMetaSeparator />
+            <ReportImplementationPrLink
+              prUrl={report.implementation_pr_url}
+              size="md"
+            />
             <PrDiffStats
               prUrl={report.implementation_pr_url}
               hideWhileLoading
@@ -72,6 +80,15 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
       primaryAction={
         <>
           <ReportDetailActions report={report} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => copyInboxReportLink(report)}
+            title="Copy a deep link to this report"
+          >
+            <CopyIcon size={12} />
+          </Button>
           {prRef && report.implementation_pr_url ? (
             <Button
               type="button"
@@ -98,6 +115,7 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
     >
       <ReportTasksSection report={report} />
       <SuggestedReviewersSection report={report} />
+      <ReportActivitySection reportId={report.id} />
     </InboxDetailFrame>
   );
 }

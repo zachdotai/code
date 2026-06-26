@@ -39,6 +39,7 @@ import {
   type Task,
 } from "@posthog/shared/domain-types";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
+import { createAppendOnlyTracker } from "./appendOnlyTracker";
 import type { CloudArtifactClient } from "./cloudArtifactIdentifiers";
 import { classifyCloudLogAppend } from "./cloudLogGap";
 import { CloudLogGapReconciler } from "./cloudLogGapReconciler";
@@ -92,6 +93,7 @@ const LOCAL_SESSION_RECOVERY_FAILED_MESSAGE =
 const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
+const AUTH_RESTORE_MAX_RETRY_WAITS = 6;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -274,6 +276,11 @@ interface AuthCredentials {
   client: AuthClient;
 }
 
+type AuthCredentialsStatus =
+  | { kind: "ready"; auth: AuthCredentials }
+  | { kind: "restoring" }
+  | { kind: "missing" };
+
 export interface ConnectParams {
   task: Task;
   repoPath: string;
@@ -291,9 +298,19 @@ export interface CloudConnectionAuth {
   cloudRegion?: CloudRegion | null;
 }
 
+export interface ReconcileSessionState {
+  taskRunId: string;
+  taskId: string;
+  taskTitle: string;
+  status: AgentSession["status"];
+  isCloud?: boolean;
+  idleKilled?: boolean;
+  eventCount: number;
+}
+
 export interface ReconcileTaskConnectionParams {
   task: Task;
-  session: AgentSession | undefined;
+  session: ReconcileSessionState | undefined;
   repoPath: string | null;
   isCloud: boolean;
   isSuspended?: boolean;
@@ -305,6 +322,72 @@ export interface ReconcileTaskConnectionParams {
 const ACTIVITY_HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 
 export type SessionPlan = Extract<SessionUpdate, { sessionUpdate: "plan" }>;
+
+export function selectLatestPlan(events: AcpMessage[]): SessionPlan | null {
+  let planIndex = -1;
+  let plan: SessionPlan | null = null;
+  let turnEndResponseIndex = -1;
+
+  for (let i = events.length - 1; i >= 0; i--) {
+    const msg = events[i].message;
+
+    if (
+      turnEndResponseIndex === -1 &&
+      isJsonRpcResponse(msg) &&
+      (msg.result as { stopReason?: string })?.stopReason !== undefined
+    ) {
+      turnEndResponseIndex = i;
+    }
+
+    if (
+      planIndex === -1 &&
+      isJsonRpcNotification(msg) &&
+      msg.method === "session/update"
+    ) {
+      const update = (msg.params as { update?: { sessionUpdate?: string } })
+        ?.update;
+      if (update?.sessionUpdate === "plan") {
+        planIndex = i;
+        plan = update as SessionPlan;
+      }
+    }
+
+    if (planIndex !== -1 && turnEndResponseIndex !== -1) break;
+  }
+
+  if (turnEndResponseIndex > planIndex) return null;
+
+  return plan;
+}
+
+export function createLatestPlanTracker() {
+  return createAppendOnlyTracker<
+    { plan: SessionPlan | null },
+    SessionPlan | null
+  >({
+    init: () => ({ plan: null }),
+    processEvent: (state, event) => {
+      const msg = event.message;
+
+      if (
+        isJsonRpcResponse(msg) &&
+        (msg.result as { stopReason?: string })?.stopReason !== undefined
+      ) {
+        state.plan = null;
+        return;
+      }
+
+      if (isJsonRpcNotification(msg) && msg.method === "session/update") {
+        const update = (msg.params as { update?: { sessionUpdate?: string } })
+          ?.update;
+        if (update?.sessionUpdate === "plan") {
+          state.plan = update as SessionPlan;
+        }
+      }
+    },
+    getResult: (state) => state.plan,
+  });
+}
 
 export const SESSION_SERVICE = Symbol.for("posthog.core.sessions.service");
 
@@ -361,6 +444,28 @@ export function isPermissionRequestAlreadySurfaced(
   );
 }
 
+function classifyTurnEventKind(
+  msg: AcpMessage["message"],
+): "text" | "output" | "other" {
+  if (!("method" in msg) || msg.method !== "session/update") return "other";
+  const update = (msg as { params?: { update?: Record<string, unknown> } })
+    .params?.update;
+  if (!update) return "other";
+  const sessionUpdate = update.sessionUpdate;
+  if (sessionUpdate === "agent_message_chunk") {
+    const content = update.content as { type?: string } | undefined;
+    return content?.type === "text" ? "text" : "output";
+  }
+  if (
+    sessionUpdate === "agent_thought_chunk" ||
+    sessionUpdate === "tool_call" ||
+    sessionUpdate === "tool_call_update"
+  ) {
+    return "output";
+  }
+  return "other";
+}
+
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
@@ -398,6 +503,10 @@ export class SessionService {
   private cloudLogGapReconciler: CloudLogGapReconciler;
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
+  private liveTurnContent = new Map<
+    string,
+    { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
+  >();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -405,8 +514,16 @@ export class SessionService {
    */
   private previewConfigOptionsCache = new Map<
     string,
-    Promise<SessionConfigOption[]>
+    { promise: Promise<SessionConfigOption[]>; fetchedAt: number }
   >();
+  /**
+   * Initial cloud prompt text (user message + any channel CONTEXT.md block),
+   * stashed by task creation keyed by taskId. The cloud sandbox takes seconds to
+   * boot and echo this back, so the optimistic placeholder would otherwise show
+   * the bare task description with no CONTEXT.md chip until the echo lands. Seed
+   * the placeholder with this richer text instead, then drop it once consumed.
+   */
+  private initialCloudOptimisticPrompt = new Map<string, string>();
 
   constructor(private readonly d: SessionServiceDeps) {
     this.cloudRunIdleTracker = new CloudRunIdleTracker();
@@ -503,7 +620,11 @@ export class SessionService {
     }
 
     try {
-      const auth = await this.getAuthCredentials();
+      const authStatus = await this.getAuthCredentialsStatus();
+      if (authStatus.kind === "restoring") {
+        throw new Error("Authentication is still restoring. Please wait.");
+      }
+      const auth = authStatus.kind === "ready" ? authStatus.auth : null;
       const route = routeLocalConnect({
         hasAuth: auth !== null,
         latestRunId: latestRun?.id,
@@ -631,23 +752,38 @@ export class SessionService {
 
       let lastRetryMessage = message;
       let wentOffline = false;
-      for (let attempt = 1; attempt <= AUTO_RETRY_MAX_ATTEMPTS; attempt++) {
+      let restoringWaits = 0;
+      let attempt = 0;
+      while (attempt < AUTO_RETRY_MAX_ATTEMPTS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, AUTO_RETRY_DELAY_MS),
+        );
+        if (!this.d.getIsOnline()) {
+          this.d.log.warn("Skipping retry — device went offline", { taskId });
+          wentOffline = true;
+          break;
+        }
+
+        // Wait out an in-flight restore instead of spending a retry on
+        // clearSessionError, which tears the connecting session down.
+        if (
+          restoringWaits < AUTH_RESTORE_MAX_RETRY_WAITS &&
+          (await this.getAuthCredentialsStatus()).kind === "restoring"
+        ) {
+          restoringWaits++;
+          this.d.log.info("Auth still restoring; keeping session connecting", {
+            taskId,
+            restoringWaits,
+          });
+          continue;
+        }
+
+        attempt++;
         this.d.log.warn("Auto-retrying failed connection", {
           taskId,
           attempt,
           delayMs: AUTO_RETRY_DELAY_MS,
         });
-        await new Promise((resolve) =>
-          setTimeout(resolve, AUTO_RETRY_DELAY_MS),
-        );
-        if (!this.d.getIsOnline()) {
-          this.d.log.warn("Skipping retry — device went offline", {
-            taskId,
-            attempt,
-          });
-          wentOffline = true;
-          break;
-        }
         try {
           await this.clearSessionError(taskId, repoPath);
           return;
@@ -1220,6 +1356,7 @@ export class SessionService {
     subscription?.event.unsubscribe();
     subscription?.permission?.unsubscribe();
     this.subscriptions.delete(taskRunId);
+    this.liveTurnContent.delete(taskRunId);
   }
 
   /**
@@ -1247,12 +1384,53 @@ export class SessionService {
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
     this.cloudPermissionRequestIds.clear();
+    this.liveTurnContent.clear();
     this.cloudLogGapReconciler.clear();
     this.dispatchingCloudQueues.clear();
     this.scheduledCloudQueueFlushes.clear();
     this.cloudRunIdleTracker.clear();
     this.idleKilledSubscription?.unsubscribe();
     this.idleKilledSubscription = null;
+  }
+
+  /**
+   * A steer message rides on `session/prompt` with `_meta.steer`. It is folded
+   * into the running turn, so its request must not participate in turn-state
+   * bookkeeping (currentPromptId / isPromptPending) or the live turn would be
+   * cut short. Its response carries a foreign request id, so the currentPromptId
+   * guard ignores it without needing a marker here.
+   */
+  private isSteerMessage(msg: AcpMessage["message"]): boolean {
+    if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
+      const params = msg.params as { _meta?: { steer?: boolean } } | undefined;
+      return params?._meta?.steer === true;
+    }
+    return false;
+  }
+
+  private finalizeTurnContent(
+    taskRunId: string,
+    trigger: "stop_reason" | "turn_complete",
+    endedAtTs: number,
+  ): void {
+    const tally = this.liveTurnContent.get(taskRunId);
+    if (!tally) return;
+    this.liveTurnContent.delete(taskRunId);
+    const session = this.d.store.getSessions()[taskRunId];
+    const payload = {
+      taskRunId,
+      taskId: session?.taskId,
+      isCloud: session?.isCloud ?? false,
+      trigger,
+      agentTextChunks: tally.agentTextChunks,
+      agentOutputEvents: tally.agentOutputEvents,
+      durationMs: Math.max(0, endedAtTs - tally.startedAtTs),
+    };
+    if (tally.agentTextChunks === 0 && tally.agentOutputEvents === 0) {
+      this.d.log.warn("Turn completed with no agent output", payload);
+    } else {
+      this.d.log.debug("Turn completed", payload);
+    }
   }
 
   private updatePromptStateFromEvents(
@@ -1262,6 +1440,20 @@ export class SessionService {
   ): void {
     for (const acpMsg of events) {
       const msg = acpMsg.message;
+      // A steer is injected into the running turn, not a turn of its own. Skip
+      // its request so it never claims currentPromptId. Otherwise the steer's
+      // instant response would clear the live turn's pending state.
+      if (this.isSteerMessage(msg)) {
+        continue;
+      }
+      const turnTally = isLive
+        ? this.liveTurnContent.get(taskRunId)
+        : undefined;
+      if (turnTally) {
+        const kind = classifyTurnEventKind(msg);
+        if (kind === "text") turnTally.agentTextChunks += 1;
+        else if (kind === "output") turnTally.agentOutputEvents += 1;
+      }
       if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
         this.d.store.updateSession(taskRunId, {
           isPromptPending: true,
@@ -1269,6 +1461,13 @@ export class SessionService {
           pausedDurationMs: 0,
           currentPromptId: msg.id,
         });
+        if (isLive) {
+          this.liveTurnContent.set(taskRunId, {
+            startedAtTs: acpMsg.ts,
+            agentTextChunks: 0,
+            agentOutputEvents: 0,
+          });
+        }
         const promptSession = this.d.store.getSessions()[taskRunId];
         if (promptSession?.isCloud) {
           this.cloudRunIdleTracker.markBusy(promptSession);
@@ -1298,6 +1497,9 @@ export class SessionService {
           promptStartedAt: null,
           currentPromptId: null,
         });
+        if (isLive) {
+          this.finalizeTurnContent(taskRunId, "stop_reason", acpMsg.ts);
+        }
       }
       if (isTurnCompleteEvent(acpMsg)) {
         // Local sessions use the JSON-RPC response as the canonical turn-done
@@ -1320,6 +1522,7 @@ export class SessionService {
               );
             }
             this.d.taskViewedApi.markActivity(session.taskId);
+            this.finalizeTurnContent(taskRunId, "turn_complete", acpMsg.ts);
           }
         }
       }
@@ -1648,6 +1851,7 @@ export class SessionService {
   async sendPrompt(
     taskId: string,
     prompt: string | ContentBlock[],
+    options?: { steer?: boolean },
   ): Promise<{ stopReason: string }> {
     if (!this.d.getIsOnline()) {
       throw new Error(
@@ -1665,6 +1869,23 @@ export class SessionService {
       throw new Error(
         "Confirm the folder access dialog before sending your message.",
       );
+    }
+
+    // Steer: the user sent a message mid-turn and asked to fold it into the
+    // running turn rather than queue it. Native (Claude) injects at the next
+    // tool boundary; everything else interrupts the turn and resends below as a
+    // fresh prompt. Compaction always falls through to the queue.
+    if (options?.steer && session.isPromptPending && !session.isCompacting) {
+      const supportsNativeSteer =
+        !session.isCloud && session.adapter === "claude";
+      if (supportsNativeSteer) {
+        return this.sendSteerPrompt(session, prompt);
+      }
+      await this.cancelPrompt(taskId);
+      const refreshed = this.d.store.getSessionByTaskId(taskId);
+      if (refreshed) {
+        session = refreshed;
+      }
     }
 
     if (session.isCloud) {
@@ -1748,6 +1969,34 @@ export class SessionService {
 
     return this.sendLocalPrompt(session, blocks, promptText, {
       optimisticApplied: true,
+    });
+  }
+
+  /**
+   * Send a steer message: folded into the turn already running rather than
+   * queued. It renders when its `session/prompt` echo arrives and is injected
+   * by the agent at the next tool boundary. The running turn keeps ownership of
+   * the prompt lifecycle, so this never touches isPromptPending.
+   */
+  private async sendSteerPrompt(
+    session: AgentSession,
+    prompt: string | ContentBlock[],
+  ): Promise<{ stopReason: string }> {
+    const blocks = normalizePromptToBlocks(prompt);
+    const promptText = extractPromptText(prompt);
+
+    this.d.track(ANALYTICS_EVENTS.PROMPT_SENT, {
+      task_id: session.taskId,
+      is_initial: false,
+      execution_type: "local",
+      prompt_length_chars: promptText.length,
+      is_steer: true,
+    });
+
+    return this.d.trpc.agent.prompt.mutate({
+      sessionId: session.taskRunId,
+      prompt: blocks,
+      steer: true,
     });
   }
 
@@ -1900,6 +2149,34 @@ export class SessionService {
   }
 
   /**
+   * Steer a single queued message into the running turn now: drop it from the
+   * queue and resend it as a steer. Native (Claude, local) injects at the next
+   * tool boundary; cloud/Codex interrupt and resend. The rest of the queue is
+   * left in place and drains when the turn ends. Rolls the message back onto
+   * the queue if the send fails so it is not silently lost.
+   */
+  async steerQueuedMessage(taskId: string, messageId: string): Promise<void> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return;
+    // Steer falls through to the queue during compaction, which would re-enqueue
+    // the message as plain text and drop its rawPrompt. Leave it queued; it
+    // drains normally once compaction ends.
+    if (session.isCompacting) return;
+    const message = session.messageQueue.find((m) => m.id === messageId);
+    if (!message) return;
+
+    this.d.store.removeQueuedMessage(taskId, messageId);
+    try {
+      await this.sendPrompt(taskId, message.rawPrompt ?? message.content, {
+        steer: true,
+      });
+    } catch (error) {
+      this.d.store.prependQueuedMessages(taskId, [message]);
+      throw error;
+    }
+  }
+
+  /**
    * Cancel the current prompt.
    */
   async cancelPrompt(taskId: string): Promise<boolean> {
@@ -2020,13 +2297,20 @@ export class SessionService {
       return { stopReason: "queued" };
     }
 
-    const [auth, cloudCommandAuth] = await Promise.all([
-      this.getAuthCredentials(),
-      this.getCloudCommandAuth(),
-    ]);
-    if (!auth || !cloudCommandAuth) {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind === "restoring") {
+      return this.queueRestoringCloudPrompt(
+        session,
+        prompt,
+        "Cloud message queued (auth restoring)",
+      );
+    }
+
+    const cloudCommandAuth = await this.getCloudCommandAuth();
+    if (authStatus.kind !== "ready" || !cloudCommandAuth) {
       throw new Error("Authentication required for cloud commands");
     }
+    const { auth } = authStatus;
 
     this.watchCloudTask(
       session.taskId,
@@ -2164,6 +2448,13 @@ export class SessionService {
           session.status === "connected");
       if (!canSendNow || session.isPromptPending) return;
 
+      // Draining while auth is still restoring would route through the restoring
+      // gate in sendCloudPrompt, re-enqueueing a single merged prompt and losing
+      // the original message boundaries. The auth-restored flush re-runs this
+      // once credentials are ready.
+      const authStatus = await this.getAuthCredentialsStatus();
+      if (authStatus.kind === "restoring") return;
+
       const drained = this.d.store.dequeueMessages(taskId);
       const combined = this.d.h.combineQueuedCloudPrompts(drained);
       if (!combined) return;
@@ -2193,10 +2484,19 @@ export class SessionService {
     session: AgentSession,
     prompt: string | ContentBlock[],
   ): Promise<{ stopReason: string }> {
-    const authCredentials = await this.getAuthCredentials();
-    if (!authCredentials) {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind === "restoring") {
+      return this.queueRestoringCloudPrompt(
+        session,
+        prompt,
+        "Cloud resume queued (auth restoring)",
+      );
+    }
+    if (authStatus.kind !== "ready") {
       throw new Error("Authentication required for cloud commands");
     }
+    const authCredentials = authStatus.auth;
+
     const auth = await this.getCloudCommandAuth();
     if (!auth) {
       throw new Error("Authentication required for cloud commands");
@@ -2732,8 +3032,11 @@ export class SessionService {
     if (session?.initialPrompt?.length) {
       const { taskTitle, initialPrompt } = session;
       await this.teardownSession(session.taskRunId);
-      const auth = await this.getAuthCredentials();
-      if (!auth) {
+      const authStatus = await this.getAuthCredentialsStatus();
+      if (authStatus.kind === "restoring") {
+        throw new Error("Authentication is still restoring. Please wait.");
+      }
+      if (authStatus.kind !== "ready") {
         throw new Error(
           "Unable to reach server. Please check your connection.",
         );
@@ -2742,7 +3045,7 @@ export class SessionService {
         taskId,
         taskTitle,
         repoPath,
-        auth,
+        authStatus.auth,
         initialPrompt,
       );
       return;
@@ -2790,10 +3093,14 @@ export class SessionService {
     }
     this.unsubscribeFromChannel(taskRunId);
 
-    const auth = await this.getAuthCredentials();
-    if (!auth) {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind === "restoring") {
+      throw new Error("Authentication is still restoring. Please wait.");
+    }
+    if (authStatus.kind !== "ready") {
       throw new Error("Unable to reach server. Please check your connection.");
     }
+    const auth = authStatus.auth;
 
     const prefetchedLogs = await this.fetchSessionLogs(logUrl, taskRunId);
 
@@ -2829,9 +3136,10 @@ export class SessionService {
     initialModel?: string,
   ): Promise<void> {
     const cacheKey = `${apiHost}::${adapter}`;
-    let pending = this.previewConfigOptionsCache.get(cacheKey);
-    if (!pending) {
-      pending = this.d.trpc.agent.getPreviewConfigOptions
+    let entry = this.previewConfigOptionsCache.get(cacheKey);
+    if (!entry || Date.now() - entry.fetchedAt > 300_000) {
+      if (entry) this.previewConfigOptionsCache.delete(cacheKey);
+      const promise = this.d.trpc.agent.getPreviewConfigOptions
         .query({ apiHost, adapter })
         .catch((err: unknown) => {
           this.d.log.warn(
@@ -2842,13 +3150,18 @@ export class SessionService {
               error: err,
             },
           );
-          this.previewConfigOptionsCache.delete(cacheKey);
+          // Only evict if this entry is still the cached one; a concurrent
+          // refresh may have replaced it and we must not drop the fresh entry.
+          if (this.previewConfigOptionsCache.get(cacheKey) === entry) {
+            this.previewConfigOptionsCache.delete(cacheKey);
+          }
           return [] as SessionConfigOption[];
         });
-      this.previewConfigOptionsCache.set(cacheKey, pending);
+      entry = { promise, fetchedAt: Date.now() };
+      this.previewConfigOptionsCache.set(cacheKey, entry);
     }
 
-    const previewOptions = await pending;
+    const previewOptions = await entry.promise;
     const extras = previewOptions
       .filter(
         (opt) => opt.category === "model" || opt.category === "thought_level",
@@ -3099,6 +3412,20 @@ export class SessionService {
     return () => {};
   }
 
+  /**
+   * Stash the initial cloud prompt (user message plus any channel CONTEXT.md
+   * block) so the optimistic placeholder can render it — and its CONTEXT.md
+   * chip — immediately, instead of waiting for the sandbox to boot and echo it
+   * back. Best-effort: lost on reload, where the merge layer dedupes the echo
+   * against the bare placeholder instead.
+   */
+  rememberInitialCloudPrompt(taskId: string, content: string): void {
+    const trimmed = content.trim();
+    if (trimmed) {
+      this.initialCloudOptimisticPrompt.set(taskId, content);
+    }
+  }
+
   private hydrateCloudTaskSessionFromLogs(
     taskId: string,
     taskRunId: string,
@@ -3125,13 +3452,21 @@ export class SessionService {
       // Seed the optimistic user-message bubble whenever the agent has
       // not yet recorded an initial `session/prompt` request — covers the
       // brand-new task case as well as "agent has emitted lifecycle
-      // notifications but hasn't received its first prompt yet".
-      if (!hasUserPrompt && taskDescription?.trim()) {
+      // notifications but hasn't received its first prompt yet". Prefer the
+      // stashed initial prompt (which carries the channel CONTEXT.md block, so
+      // its chip renders right away) over the bare task description.
+      const seedContent =
+        this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
+      if (!hasUserPrompt && seedContent?.trim()) {
         this.d.store.appendOptimisticItem(taskRunId, {
           type: "user_message",
-          content: taskDescription,
+          content: seedContent,
           timestamp: Date.now(),
         });
+      }
+      if (hasUserPrompt) {
+        // The real prompt has landed; the stash is no longer needed.
+        this.initialCloudOptimisticPrompt.delete(taskId);
       }
 
       if (rawEntries.length === 0) {
@@ -3537,6 +3872,24 @@ export class SessionService {
     }
   }
 
+  public flushQueuedCloudMessagesAfterAuthRestored(): void {
+    const sessions = this.d.store.getSessions();
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud || session.messageQueue.length === 0) continue;
+      this.scheduleCloudQueueFlush(session.taskId, "auth_restored");
+    }
+  }
+
+  public countQueuedCloudMessages(): number {
+    const sessions = this.d.store.getSessions();
+    let count = 0;
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud) continue;
+      count += session.messageQueue.length;
+    }
+    return count;
+  }
+
   public updateSessionTaskTitle(taskId: string, taskTitle: string): void {
     const session = this.d.store.getSessionByTaskId(taskId);
     if (!session) return;
@@ -3641,7 +3994,7 @@ export class SessionService {
 
   private reconcileLocalConnection(params: {
     task: Task;
-    session: AgentSession | undefined;
+    session: ReconcileSessionState | undefined;
     repoPath: string;
     isOnline: boolean;
     isSuspended?: boolean;
@@ -3696,9 +4049,9 @@ export class SessionService {
 
   private loadLogsOnlyIfDisconnected(
     task: Task,
-    session: AgentSession | undefined,
+    session: ReconcileSessionState | undefined,
   ): void {
-    if (session && session.events.length > 0) return;
+    if (session && session.eventCount > 0) return;
     if (!task.latest_run?.id || !task.latest_run?.log_url) return;
 
     this.loadLogsOnly({
@@ -3764,40 +4117,7 @@ export class SessionService {
   }
 
   public selectLatestPlan(events: AcpMessage[]): SessionPlan | null {
-    let planIndex = -1;
-    let plan: SessionPlan | null = null;
-    let turnEndResponseIndex = -1;
-
-    for (let i = events.length - 1; i >= 0; i--) {
-      const msg = events[i].message;
-
-      if (
-        turnEndResponseIndex === -1 &&
-        isJsonRpcResponse(msg) &&
-        (msg.result as { stopReason?: string })?.stopReason !== undefined
-      ) {
-        turnEndResponseIndex = i;
-      }
-
-      if (
-        planIndex === -1 &&
-        isJsonRpcNotification(msg) &&
-        msg.method === "session/update"
-      ) {
-        const update = (msg.params as { update?: { sessionUpdate?: string } })
-          ?.update;
-        if (update?.sessionUpdate === "plan") {
-          planIndex = i;
-          plan = update as SessionPlan;
-        }
-      }
-
-      if (planIndex !== -1 && turnEndResponseIndex !== -1) break;
-    }
-
-    if (turnEndResponseIndex > planIndex) return null;
-
-    return plan;
+    return selectLatestPlan(events);
   }
 
   public maybeRevertBypassMode(
@@ -4076,16 +4396,39 @@ export class SessionService {
 
   // --- Helper Methods ---
 
-  private async getAuthCredentials(): Promise<AuthCredentials | null> {
+  private async getAuthCredentialsStatus(): Promise<AuthCredentialsStatus> {
     const authState = await this.d.fetchAuthState();
+    // `bootstrapComplete === false` also covers the pre-initialize window where
+    // status is still the default "anonymous" but auth has not resolved yet.
+    if (
+      authState.status === "restoring" ||
+      authState.bootstrapComplete === false
+    ) {
+      return { kind: "restoring" };
+    }
+
     const apiHost = authState.cloudRegion
       ? getCloudUrlFromRegion(authState.cloudRegion)
       : null;
     const projectId = authState.currentProjectId;
     const client = this.d.createAuthenticatedClient(authState);
 
-    if (!apiHost || !projectId || !client) return null;
-    return { apiHost, projectId, client };
+    if (!apiHost || !projectId || !client) return { kind: "missing" };
+    return { kind: "ready", auth: { apiHost, projectId, client } };
+  }
+
+  private queueRestoringCloudPrompt(
+    session: AgentSession,
+    prompt: string | ContentBlock[],
+    reason: string,
+  ): { stopReason: "queued" } {
+    const transport = this.d.h.getCloudPromptTransport(prompt);
+    this.d.store.enqueueMessage(session.taskId, transport.promptText, prompt);
+    this.d.log.info(reason, {
+      taskId: session.taskId,
+      queueLength: session.messageQueue.length + 1,
+    });
+    return { stopReason: "queued" };
   }
 
   private parseLogContent(content: string): ParsedSessionLogs {

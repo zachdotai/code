@@ -7,7 +7,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { track } from "@posthog/ui/shell/analytics";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "./ScoutBadges";
 import { ScoutLinkedReportChip } from "./ScoutLinkedReportChip";
@@ -26,12 +26,12 @@ export function ScoutEmissionCard({
   skillName?: string;
   /** Interactive controls shown after the finding id at the footer's left. */
   actions?: ReactNode;
-  /** Replaces the default pipeline note at the footer's right edge. */
+  /** Content pinned to the footer's right edge, e.g. the task-run link. */
   footerEnd?: ReactNode;
   /**
-   * The inbox report this finding's signal grouped into, when resolved by the
-   * reverse lookup. Renders a chip linking to it; absent/undefined falls back
-   * to the generic pipeline note.
+   * The inbox report this finding's signal grouped into, when the reverse lookup
+   * resolved one. Renders a chip (next to the task-run link) linking to it; absent
+   * renders nothing – an unlinked finding shows no report indicator.
    */
   linkedReport?: LinkedSignalReport | null;
   defaultExpanded?: boolean;
@@ -91,6 +91,21 @@ export function ScoutEmissionCard({
       >
         <MarkdownRenderer content={emission.description} />
       </Box>
+      {emission.tags?.length ? (
+        <Flex gap="1" mt="2" wrap="wrap">
+          {emission.tags.map((tag) => (
+            <Badge
+              key={tag}
+              variant="soft"
+              color="gray"
+              size="1"
+              className="text-[11px]"
+            >
+              {tag}
+            </Badge>
+          ))}
+        </Flex>
+      ) : null}
       {expanded ? (
         <Flex
           align="center"
@@ -100,21 +115,15 @@ export function ScoutEmissionCard({
           className="border-t border-t-(--gray-5) text-[11px] text-gray-10"
         >
           <Text className="font-mono text-[11px]">{emission.finding_id}</Text>
+          {actions}
+          <span className="flex-1" />
           {linkedReport ? (
             <ScoutLinkedReportChip
               report={linkedReport}
               skillName={skillName}
             />
           ) : null}
-          {actions}
-          <span className="flex-1" />
-          {footerEnd ??
-            (linkedReport ? null : (
-              <Text className="text-[11px] text-gray-9">
-                Sent to the signals pipeline – report assignment isn&apos;t
-                traceable here yet
-              </Text>
-            ))}
+          {footerEnd}
         </Flex>
       ) : null}
     </Box>

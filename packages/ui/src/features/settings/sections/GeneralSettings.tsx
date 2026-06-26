@@ -12,6 +12,7 @@ import {
   type AutoConvertLongText,
   type CompletionSound,
   type DefaultInitialTaskMode,
+  type DefaultMessagingMode,
   type DefaultReasoningEffort,
   type DiffOpenMode,
   type SendMessagesWith,
@@ -82,11 +83,13 @@ export function GeneralSettings() {
     completionVolume,
     autoConvertLongText,
     defaultInitialTaskMode,
+    defaultMessagingMode,
     defaultReasoningEffort,
     diffOpenMode,
     sendMessagesWith,
     conversationCollapseMode,
     hedgehogMode,
+    slotMachineMode,
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
@@ -94,11 +97,13 @@ export function GeneralSettings() {
     setCompletionVolume,
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
+    setDefaultMessagingMode,
     setDefaultReasoningEffort,
     setDiffOpenMode,
     setSendMessagesWith,
     setConversationCollapseMode,
     setHedgehogMode,
+    setSlotMachineMode,
   } = useSettingsStore();
 
   // Sync toggle off if the user denied notification permission at the OS level
@@ -199,6 +204,18 @@ export function GeneralSettings() {
     [defaultInitialTaskMode, setDefaultInitialTaskMode],
   );
 
+  const handleDefaultMessagingModeChange = useCallback(
+    (value: DefaultMessagingMode) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "default_messaging_mode",
+        new_value: value,
+        old_value: defaultMessagingMode,
+      });
+      setDefaultMessagingMode(value);
+    },
+    [defaultMessagingMode, setDefaultMessagingMode],
+  );
+
   const handleDefaultReasoningEffortChange = useCallback(
     (value: DefaultReasoningEffort) => {
       track(ANALYTICS_EVENTS.SETTING_CHANGED, {
@@ -245,6 +262,18 @@ export function GeneralSettings() {
       setHedgehogMode(checked);
     },
     [hedgehogMode, setHedgehogMode],
+  );
+
+  const handleSlotMachineModeChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "slot_machine_mode",
+        new_value: checked,
+        old_value: slotMachineMode,
+      });
+      setSlotMachineMode(checked);
+    },
+    [slotMachineMode, setSlotMachineMode],
   );
 
   const accountUrl = buildPostHogUrl("/settings/user", cloudRegion);
@@ -367,6 +396,7 @@ export function GeneralSettings() {
               <Select.Item value="slide">Slide</Select.Item>
               <Select.Item value="switch">Switch</Select.Item>
               <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
+              <Select.Item value="icq">ICQ</Select.Item>
             </Select.Content>
           </Select.Root>
           {completionSound !== "none" && (
@@ -416,6 +446,25 @@ export function GeneralSettings() {
           <Select.Content>
             <Select.Item value="plan">Plan</Select.Item>
             <Select.Item value="last_used">Last used</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      <SettingRow
+        label="Default messaging mode"
+        description="Mode new sessions start in. Steer applies messages mid-turn. Queue holds them until the turn ends."
+      >
+        <Select.Root
+          value={defaultMessagingMode}
+          onValueChange={(value) =>
+            handleDefaultMessagingModeChange(value as DefaultMessagingMode)
+          }
+          size="1"
+        >
+          <Select.Trigger className="min-w-[100px]" />
+          <Select.Content>
+            <Select.Item value="queue">Queue</Select.Item>
+            <Select.Item value="steer">Steer</Select.Item>
           </Select.Content>
         </Select.Root>
       </SettingRow>
@@ -561,14 +610,22 @@ export function GeneralSettings() {
         Fun
       </Text>
 
-      <SettingRow
-        label="Hedgehog mode"
-        description={<HedgehogDescription />}
-        noBorder
-      >
+      <SettingRow label="Hedgehog mode" description={<HedgehogDescription />}>
         <Switch
           checked={hedgehogMode}
           onCheckedChange={handleHedgehogModeChange}
+          size="1"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Slot machine mode 🎰"
+        description="Show a pull-able slot machine lever while a task is running. Every run is a gamble. Pull the handle and watch the reels spin."
+        noBorder
+      >
+        <Switch
+          checked={slotMachineMode}
+          onCheckedChange={handleSlotMachineModeChange}
           size="1"
         />
       </SettingRow>

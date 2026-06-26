@@ -3,7 +3,7 @@ import { agentRouter } from "@posthog/host-router/routers/agent.router";
 import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { archiveRouter } from "@posthog/host-router/routers/archive.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
-import { canvasGenRouter } from "@posthog/host-router/routers/canvas-gen.router";
+import { canvasDataRouter } from "@posthog/host-router/routers/canvas-data.router";
 import { canvasTemplatesRouter } from "@posthog/host-router/routers/canvas-templates.router";
 import { channelTasksRouter } from "@posthog/host-router/routers/channel-tasks.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
@@ -41,6 +41,7 @@ import { uiRouter } from "@posthog/host-router/routers/ui.router";
 import { updatesRouter } from "@posthog/host-router/routers/updates.router";
 import { usageMonitorRouter } from "@posthog/host-router/routers/usage-monitor.router";
 import { workspaceRouter } from "@posthog/host-router/routers/workspace.router";
+import { discordPresenceRouter } from "./routers/discord-presence";
 import { encryptionRouter } from "./routers/encryption";
 import { workspaceServerRouter } from "./routers/workspace-server";
 import { router } from "./trpc";
@@ -51,13 +52,14 @@ export const trpcRouter = router({
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,
-  canvasGen: canvasGenRouter,
+  canvasData: canvasDataRouter,
   canvasTemplates: canvasTemplatesRouter,
   channelTasks: channelTasksRouter,
   dashboards: dashboardsRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
+  discordPresence: discordPresenceRouter,
   enrichment: enrichmentRouter,
   environment: environmentRouter,
   encryption: encryptionRouter,

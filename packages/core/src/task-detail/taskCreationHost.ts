@@ -16,6 +16,7 @@ export interface CreateWorkspaceArgs {
   mode: WorkspaceMode;
   branch?: string;
   allowRemoteBranchCheckout?: boolean;
+  reuseExistingWorktree?: boolean;
 }
 
 export interface CreatedWorkspaceInfo {
@@ -55,6 +56,11 @@ export interface ITaskCreationHost {
   getAuthenticatedClient(): Promise<TaskCreationApiClient | null>;
   assertCloudUsageAvailable(): Promise<void>;
   getTaskDirectory(taskId: string, repoKey?: string): Promise<string | null>;
+  /**
+   * Ensure a per-task scratch working directory exists for a repo-less channel
+   * task. Returns its absolute path so the agent session can start there.
+   */
+  ensureScratchDir(taskId: string): Promise<string>;
   getWorkspace(taskId: string): Promise<Workspace | null>;
   createWorkspace(args: CreateWorkspaceArgs): Promise<CreatedWorkspaceInfo>;
   deleteWorkspace(args: {

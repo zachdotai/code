@@ -1,13 +1,28 @@
+import {
+  ArrowSquareOut,
+  CaretLeftIcon,
+  CaretRightIcon,
+} from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
+import { Button } from "@posthog/quill";
 import {
   BILLING_FLAG,
   HOME_TAB_FLAG,
   PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { isContentlessTask } from "@posthog/shared/domain-types";
+import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/components/DeepLinkApprovalModal";
+import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
-import { AppNav } from "@posthog/ui/features/canvas/components/AppNav";
-import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
+import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
+import {
+  FeedbackModal,
+  type FeedbackModalMode,
+} from "@posthog/ui/features/canvas/components/FeedbackModal";
+import { useCanvasDeepLink } from "@posthog/ui/features/canvas/hooks/useCanvasDeepLink";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
@@ -20,12 +35,15 @@ import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery"
 import { MainSidebar } from "@posthog/ui/features/sidebar/components/MainSidebar";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useVisualTaskOrder } from "@posthog/ui/features/sidebar/useVisualTaskOrder";
+import { ExistingWorktreeDialog } from "@posthog/ui/features/task-detail/components/ExistingWorktreeDialog";
 import { RemoteBranchCheckoutDialog } from "@posthog/ui/features/task-detail/components/RemoteBranchCheckoutDialog";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { TourOverlay } from "@posthog/ui/features/tour/components/TourOverlay";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
+import LogosLandscape from "@posthog/ui/primitives/Logo";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { GlobalEventHandlers } from "@posthog/ui/shell/GlobalEventHandlers";
 import { HeaderRow } from "@posthog/ui/shell/HeaderRow";
@@ -34,11 +52,16 @@ import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { openUrlInBrowser } from "@posthog/ui/utils/browser";
+import { getPostHogUrl } from "@posthog/ui/utils/urls";
+import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRootRoute,
   Outlet,
+  useCanGoBack,
+  useNavigate,
+  useRouter,
   useRouterState,
 } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -87,6 +110,62 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const view = useAppView();
+  const navigate = useNavigate();
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
+  // Forward availability isn't exposed by the router (and history.length counts
+  // pre-app entries, so it can't be compared to __TSR_index). Track the newest
+  // index we've reached: only a PUSH wipes the forward stack, so it resets the
+  // newest to the current index. REPLACE mutates the current entry in place
+  // (index unchanged, forward entries intact) and BACK/GO just move within the
+  // existing stack, so both keep the max. Forward is live while below it.
+  const historyIndex = useRouterState({
+    select: (s) => s.location.state.__TSR_index,
+  });
+  const [newestIndex, setNewestIndex] = useState(historyIndex);
+  useEffect(() => {
+    return router.history.subscribe(({ location, action }) => {
+      const idx = location.state.__TSR_index;
+      setNewestIndex((prev) =>
+        action.type === "PUSH" ? idx : Math.max(prev, idx),
+      );
+    });
+  }, [router]);
+  const canGoForward = historyIndex < newestIndex;
+
+  // Feedback modal shown in the Channels title bar. Opened directly by "Leave
+  // feedback" (mode "feedback"), or as an intercept before navigating away —
+  // "Go back to Code" (mode "leaving") and "PostHog Web" (mode "posthog-web"),
+  // each of which routes once the modal is submitted or skipped.
+  const [feedbackMode, setFeedbackMode] = useState<FeedbackModalMode | null>(
+    null,
+  );
+  const currentProjectId = useAuthStateValue((s) => s.currentProjectId);
+
+  // The user's current project on the correct cloud (region comes from
+  // cloudRegion via getPostHogUrl), falling back to the account root. `null`
+  // when the region is unknown — the "PostHog Web" button is disabled then, so
+  // a click can never silently no-op.
+  const posthogWebUrl = getPostHogUrl(
+    currentProjectId ? `/project/${currentProjectId}` : "/",
+  );
+
+  // Both "Go back to Code" and "PostHog Web" open the feedback modal first and
+  // perform their navigation only once it's submitted or skipped.
+  const handleFeedbackFinished = () => {
+    const finishedMode = feedbackMode;
+    setFeedbackMode(null);
+    if (finishedMode === "leaving") {
+      navigate({ to: "/code" });
+    } else if (finishedMode === "posthog-web" && posthogWebUrl) {
+      void openUrlInBrowser(posthogWebUrl);
+    }
+  };
+
+  const handleOpenPostHogWeb = () => {
+    track(ANALYTICS_EVENTS.POSTHOG_WEB_OPENED);
+    setFeedbackMode("posthog-web");
+  };
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -116,6 +195,8 @@ function RootLayout() {
   useTaskDeepLink();
   useInboxDeepLink();
   useScoutDeepLink();
+  useCanvasDeepLink();
+  const approvalDeepLink = useApprovalDeepLink();
   useSetupDiscovery();
   useNewTaskDeepLink();
 
@@ -129,7 +210,8 @@ function RootLayout() {
       (t) =>
         t.latest_run?.environment === "cloud" &&
         !workspaces[t.id] &&
-        !reconcilingTaskIds.current.has(t.id),
+        !reconcilingTaskIds.current.has(t.id) &&
+        !isContentlessTask(t),
     );
     if (missing.length === 0) return;
     const missingIds = missing.map((t) => t.id);
@@ -204,32 +286,80 @@ function RootLayout() {
 
   if (isChannelsSpace) {
     return (
-      <Flex height="100vh">
-        <AppNav />
-        <Flex direction="column" flexGrow="1" overflow="hidden">
-          <Flex flexGrow="1" overflow="hidden">
-            <Flex
-              direction="column"
-              className="w-[260px] shrink-0 border-gray-6 border-r bg-gray-2"
+      <Flex direction="column" height="100vh" className="bg-chrome">
+        {/* Full-width title bar: a window-drag region carrying the PostHog
+            mark. The left padding clears the macOS stoplights. */}
+        <Flex align="center" gap="3" className="drag h-10 shrink-0 pl-[78px]">
+          <Box className="h-[14px] w-[26px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
+            <LogosLandscape code={false} />
+          </Box>
+          <Flex align="center" gap="2" className="no-drag">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Back"
+              disabled={!canGoBack}
+              onClick={() => router.history.back()}
             >
-              {/* Aligns the channel list with the outlet's breadcrumb bar (same
-                  h-10) so both columns start at the same line, like /code. */}
-              <Flex
-                align="center"
-                className="h-10 shrink-0 border-gray-6 border-b px-3"
-              >
-                <Text size="1" weight="medium" className="text-gray-12">
-                  Channels
-                </Text>
-              </Flex>
-              <Box className="min-h-0 flex-1 overflow-hidden">
-                <ChannelsList />
-              </Box>
-            </Flex>
-            <Box flexGrow="1" overflow="hidden">
+              <CaretLeftIcon size={14} />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Forward"
+              disabled={!canGoForward}
+              onClick={() => router.history.forward()}
+            >
+              <CaretRightIcon size={14} />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "leave_space",
+                  surface: "title_bar",
+                });
+                setFeedbackMode("leaving");
+              }}
+            >
+              Go back to Code
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "leave_feedback",
+                  surface: "title_bar",
+                });
+                setFeedbackMode("feedback");
+              }}
+            >
+              Leave feedback
+            </Button>
+          </Flex>
+          <Flex align="center" className="no-drag ml-auto pr-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!posthogWebUrl}
+              onClick={handleOpenPostHogWeb}
+            >
+              <ArrowSquareOut size={14} />
+              PostHog Web
+            </Button>
+          </Flex>
+        </Flex>
+        <Flex flexGrow="1" overflow="hidden">
+          <ChannelsSidebar />
+          {/* Content sits in a bordered, rounded card inset from the window
+              edges — the framed pane from the design. */}
+          <Box flexGrow="1" className="overflow-hidden">
+            <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
               <Outlet />
             </Box>
-          </Flex>
+          </Box>
         </Flex>
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <KeyboardShortcutsSheet
@@ -242,6 +372,11 @@ function RootLayout() {
         />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        <FeedbackModal
+          mode={feedbackMode}
+          onFinished={handleFeedbackFinished}
+        />
+        <ExistingWorktreeDialog />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
@@ -266,6 +401,7 @@ function RootLayout() {
         />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        <ExistingWorktreeDialog />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
@@ -277,7 +413,6 @@ function RootLayout() {
 
   return (
     <Flex height="100vh">
-      {bluebirdEnabled && <AppNav />}
       <Flex direction="column" flexGrow="1" overflow="hidden">
         <HeaderRow />
         <Flex flexGrow="1" overflow="hidden">
@@ -309,6 +444,13 @@ function RootLayout() {
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        {approvalDeepLink.pending ? (
+          <DeepLinkApprovalModal
+            pending={approvalDeepLink.pending}
+            onClose={approvalDeepLink.clear}
+          />
+        ) : null}
+        <ExistingWorktreeDialog />
         <HedgehogMode />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>

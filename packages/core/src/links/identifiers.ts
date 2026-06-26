@@ -11,3 +11,7 @@ export const SCOUT_LINK_SERVICE = Symbol.for("posthog.core.scoutLinkService");
 export const NEW_TASK_LINK_SERVICE = Symbol.for(
   "posthog.core.newTaskLinkService",
 );
+export const APPROVAL_LINK_SERVICE = Symbol.for(
+  "posthog.core.approvalLinkService",
+);
+export const CANVAS_LINK_SERVICE = Symbol.for("posthog.core.canvasLinkService");

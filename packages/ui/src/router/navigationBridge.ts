@@ -32,6 +32,37 @@ export function navigateToTaskPending(key: string): void {
   });
 }
 
+export function navigateToChannel(channelId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/website/$channelId",
+    params: { channelId },
+  });
+}
+
+export function navigateToChannelTask(channelId: string, taskId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/website/$channelId/tasks/$taskId",
+    params: { channelId, taskId },
+  });
+}
+
+export function navigateToChannelNewTask(channelId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/website/$channelId/new",
+    params: { channelId },
+  });
+}
+
+export function navigateToChannelDashboard(
+  channelId: string,
+  dashboardId: string,
+): void {
+  void getRouterOrNull()?.navigate({
+    to: "/website/$channelId/dashboards/$dashboardId",
+    params: { channelId, dashboardId },
+  });
+}
+
 export function navigateToFolderSettings(folderId: string): void {
   void getRouterOrNull()?.navigate({
     to: "/folders/$folderId",
@@ -61,6 +92,13 @@ export function navigateToInboxReportDetail(reportId: string): void {
   });
 }
 
+export function navigateToInboxDismissedDetail(reportId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/inbox/dismissed/$reportId",
+    params: { reportId },
+  });
+}
+
 export function navigateToScoutDetail(
   skillSlug: string,
   findingId?: string,
@@ -74,6 +112,13 @@ export function navigateToScoutDetail(
 
 export function navigateToAgents(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents" });
+}
+
+export function navigateToApproval(requestId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/agents/applications/approvals",
+    search: { request: requestId },
+  });
 }
 
 export function navigateToArchived(): void {
@@ -93,6 +138,38 @@ export function navigateToSkills(): void {
 
 export function navigateToMcpServers(): void {
   void getRouterOrNull()?.navigate({ to: "/mcp-servers" });
+}
+
+// Channels-space mirrors. These render the same shared views as their /code (or
+// top-level) counterparts but under /website, so navigating from the channels
+// sidebar keeps the channels chrome instead of switching back to Code. The
+// SidebarNavSection picks the right variant based on the active space.
+
+export function navigateToWebsiteNew(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/new" });
+}
+
+export function navigateToWebsiteHome(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/home" });
+}
+
+// The Canvas workspace landing (the channels index, where canvases live).
+export function navigateToCanvas(): void {
+  void getRouterOrNull()?.navigate({ to: "/website" });
+}
+
+export function navigateToWebsiteSkills(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/skills" });
+}
+
+export function navigateToWebsiteMcpServers(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/mcp-servers" });
+}
+
+export function navigateToWebsiteCommandCenter(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/command-center" });
+  // Parity with navigateToCommandCenter's analytics tracking.
+  track(ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED);
 }
 
 export function navigateToSettings(

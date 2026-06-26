@@ -1,6 +1,7 @@
 import type { SignalReport, SignalReportPriority } from "@posthog/shared/types";
 import { describe, expect, it } from "vitest";
 import {
+  buildArchiveListOrdering,
   buildPriorityFilterParam,
   buildSignalReportListOrdering,
   buildSuggestedReviewerFilterParam,
@@ -98,21 +99,46 @@ describe("filterReportsBySearch", () => {
 });
 
 describe("buildSignalReportListOrdering", () => {
-  it("puts status then suggested reviewer then descending field", () => {
-    expect(buildSignalReportListOrdering("total_weight", "desc")).toBe(
-      "status,-is_suggested_reviewer,-total_weight",
+  it.each([
+    ["total_weight", "desc", "status,-total_weight,priority"],
+    ["created_at", "asc", "status,created_at,priority"],
+    ["signal_count", "desc", "status,-signal_count,priority"],
+  ] as const)(
+    "orders by status then %s (%s), tiebreaking by priority",
+    (field, direction, expected) => {
+      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
+    },
+  );
+
+  it.each([
+    ["priority", "asc", "status,priority,-created_at"],
+    ["priority", "desc", "status,-priority,-created_at"],
+  ] as const)(
+    "tiebreaks %s (%s) by newest first",
+    (field, direction, expected) => {
+      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
+    },
+  );
+
+  it("does not float the current user's reports via ordering", () => {
+    expect(buildSignalReportListOrdering("priority", "asc")).not.toContain(
+      "is_suggested_reviewer",
     );
   });
+});
 
-  it("puts status then suggested reviewer then ascending field", () => {
-    expect(buildSignalReportListOrdering("created_at", "asc")).toBe(
-      "status,-is_suggested_reviewer,created_at",
-    );
+describe("buildArchiveListOrdering", () => {
+  it.each([
+    ["updated_at", "desc", "-updated_at"],
+    ["updated_at", "asc", "updated_at"],
+    ["created_at", "desc", "-created_at"],
+  ] as const)("orders by %s (%s) only", (field, direction, expected) => {
+    expect(buildArchiveListOrdering(field, direction)).toBe(expected);
   });
 
-  it("works for signal_count", () => {
-    expect(buildSignalReportListOrdering("signal_count", "desc")).toBe(
-      "status,-is_suggested_reviewer,-signal_count",
+  it("does not prefix with status, so suppressed and resolved interleave by time", () => {
+    expect(buildArchiveListOrdering("updated_at", "desc")).not.toContain(
+      "status",
     );
   });
 });

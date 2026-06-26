@@ -1,3 +1,4 @@
+import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
 import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
@@ -13,6 +14,7 @@ export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
 export type AgentAdapter = "claude" | "codex";
 export type DefaultInitialTaskMode = "plan" | "last_used";
+export type DefaultMessagingMode = "queue" | "steer";
 export type DefaultReasoningEffort =
   | "low"
   | "medium"
@@ -39,7 +41,8 @@ export type CompletionSound =
   | "shoot"
   | "slide"
   | "switch"
-  | "wilhelm";
+  | "wilhelm"
+  | "icq";
 
 export type TerminalFont =
   | "berkeley-mono"
@@ -64,10 +67,13 @@ interface SettingsStore {
   lastUsedModel: string | null;
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
+  cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
   defaultReasoningEffort: DefaultReasoningEffort;
+  defaultMessagingMode: DefaultMessagingMode;
+  setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
   setLastUsedLocalWorkspaceMode: (mode: LocalWorkspaceMode) => void;
@@ -76,6 +82,9 @@ interface SettingsStore {
   setLastUsedModel: (model: string) => void;
   setLastUsedReasoningEffort: (effort: string) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
+  setCachedCloudRepositoryMap: (
+    map: Record<string, UserRepositoryIntegrationRef>,
+  ) => void;
   setLastUsedEnvironment: (
     repoPath: string,
     environmentId: string | null,
@@ -131,8 +140,10 @@ interface SettingsStore {
 
   // Experimental / misc
   hedgehogMode: boolean;
+  slotMachineMode: boolean;
   mcpAppsDisabledServers: string[];
   setHedgehogMode: (enabled: boolean) => void;
+  setSlotMachineMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
 
   // Onboarding hints
@@ -159,10 +170,12 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedModel: null,
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
+      cachedCloudRepositoryMap: {},
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
       defaultReasoningEffort: "last_used",
+      defaultMessagingMode: "queue",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
       setLastUsedLocalWorkspaceMode: (mode) =>
@@ -174,6 +187,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedReasoningEffort: effort }),
       setLastUsedCloudRepository: (repo) =>
         set({ lastUsedCloudRepository: repo }),
+      setCachedCloudRepositoryMap: (map) =>
+        set({ cachedCloudRepositoryMap: map }),
       setLastUsedEnvironment: (repoPath, environmentId) =>
         set((state) => {
           const next = { ...state.lastUsedEnvironments };
@@ -192,6 +207,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedInitialTaskMode: mode }),
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
+      setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
 
       // Notifications
       desktopNotifications: true,
@@ -248,8 +264,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       // Experimental / misc
       hedgehogMode: false,
+      slotMachineMode: false,
       mcpAppsDisabledServers: [],
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
+      setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
       setMcpAppsDisabledServers: (servers) =>
         set({ mcpAppsDisabledServers: servers }),
 
@@ -297,10 +315,12 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedModel: state.lastUsedModel,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
+        cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
+        defaultMessagingMode: state.defaultMessagingMode,
 
         // Notifications
         desktopNotifications: state.desktopNotifications,
@@ -332,6 +352,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,
+        slotMachineMode: state.slotMachineMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
 
         // Onboarding hints

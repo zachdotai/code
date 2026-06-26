@@ -36,8 +36,9 @@ import {
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
-import { extractCreatedPrUrl } from "@posthog/agent/pr-url-detector";
+import { findPrUrl, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
+import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
 import { APP_META_SERVICE, type IAppMeta } from "@posthog/platform/app-meta";
 import {
@@ -53,19 +54,29 @@ import {
   STORAGE_PATHS_SERVICE,
 } from "@posthog/platform/storage-paths";
 import {
+  type IWorkspaceSettings,
+  WORKSPACE_SETTINGS_SERVICE,
+} from "@posthog/platform/workspace-settings";
+import {
   type AcpMessage,
   isAuthError,
+  serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
 import { inject, injectable, preDestroy } from "inversify";
 import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
+import type { FoldersService } from "../folders/folders";
+import { FOLDERS_SERVICE } from "../folders/identifiers";
+import type { RegisteredFolder } from "../folders/schemas";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { loadSessionEnvOverrides } from "../session-env/loader";
+import { isScratchPath } from "../workspace/scratch";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
+import { cleanupCodexHome, prepareCodexHome } from "./codex-home";
 import { discoverExternalPlugins } from "./discover-plugins";
 import {
   AGENT_AUTH_ADAPTER,
@@ -285,6 +296,9 @@ interface ManagedSession {
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
+  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
+  prAttributed: boolean;
+  evaluatedPrUrls: Set<string>;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -359,6 +373,10 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly storagePaths: IStoragePaths,
     @inject(WORKSPACE_REPOSITORY)
     private readonly workspaceRepository: IWorkspaceRepository,
+    @inject(WORKSPACE_SETTINGS_SERVICE)
+    private readonly workspaceSettings: IWorkspaceSettings,
+    @inject(FOLDERS_SERVICE)
+    private readonly foldersService: FoldersService,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
@@ -521,6 +539,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     customInstructions?: string,
     additionalDirectories?: string[],
     systemPromptOverride?: string,
+    channelMode?: boolean,
+    knownLocalFolders?: RegisteredFolder[],
   ): {
     append: string;
   } {
@@ -560,6 +580,33 @@ When creating pull requests, add the following footer at the end of the PR descr
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
 \`\`\``;
 
+    if (channelMode) {
+      const localFolders = (knownLocalFolders ?? []).filter(
+        (f) => f.exists !== false,
+      );
+      const localFoldersBlock = localFolders.length
+        ? `\n\nThe user already has these repositories checked out locally on this machine. Prefer reusing one of these over cloning anything:\n${localFolders
+            .map(
+              (f) =>
+                `  - ${f.name} — ${f.path}${f.remoteUrl ? ` (${f.remoteUrl})` : ""}`,
+            )
+            .join("\n")}`
+        : "";
+
+      prompt += `
+
+## Channel task (no repository attached)
+You are running in a PostHog channel as a general-purpose assistant. This task may NOT need a code repository at all — it could be data analysis via PostHog tools, drafting a message, or answering a question. Do not assume you need a repo.
+
+- Your working directory is a scratch directory, not a git checkout. Treat it as empty.
+- Decide from the user's request (and the channel CONTEXT.md included above, if any) whether the task actually requires working inside a code repository. If it doesn't, just do the work in the scratch directory — do NOT attach a repo.
+
+If a repository IS genuinely required, attach one in this priority order:
+1. **Reuse a folder the user already has locally.** ${localFolders.length ? "Pick the one that best matches the request and the channel CONTEXT.md, then `cd` into its absolute path and do all git and file work there. It is already on disk — do NOT clone it again." : "If the user names a folder or path, `cd` into that absolute path and work there."}
+2. **If you can't confidently pick one** (none clearly match, or it's ambiguous), use the AskUserQuestion tool to ask the user which local folder to use, or for the path where the folder lives on this machine. Do not guess.
+3. **Only as a last resort** — when the user has no local copy, or explicitly wants a fresh checkout — clone from remote. Call \`list_repos\` to see what's available (prefer repos named in CONTEXT.md), then **confirm with the user via AskUserQuestion before cloning**, and use \`clone_repo\` (pass \`owner/repo\`); it clones into a subdirectory of your working directory and returns the path to \`cd\` into.${localFoldersBlock}`;
+    }
+
     if (customInstructions) {
       prompt += `\n\nUser custom instructions:\n${customInstructions}`;
     }
@@ -580,9 +627,6 @@ When creating pull requests, add the following footer at the end of the PR descr
     this.validateSessionParams(params);
     const config = this.toSessionConfig(params);
     const session = await this.getOrCreateSession(config, false);
-    if (!session) {
-      throw new Error("Failed to create session");
-    }
     return this.toSessionResponse(session);
   }
 
@@ -601,6 +645,16 @@ When creating pull requests, add the following footer at the end of the PR descr
     return session ? this.toSessionResponse(session) : null;
   }
 
+  private async getOrCreateSession(
+    config: SessionConfig,
+    isReconnect: false,
+    isRetry?: boolean,
+  ): Promise<ManagedSession>;
+  private async getOrCreateSession(
+    config: SessionConfig,
+    isReconnect: true,
+    isRetry?: boolean,
+  ): Promise<ManagedSession | null>;
   private async getOrCreateSession(
     config: SessionConfig,
     isReconnect: boolean,
@@ -624,6 +678,21 @@ When creating pull requests, add the following footer at the end of the PR descr
 
     // Preview config doesn't need a real repo — use a temp directory
     const repoPath = taskId === "__preview__" ? tmpdir() : rawRepoPath;
+
+    // Repo-less channel tasks run in a scratch dir. Detecting it server-side
+    // (rather than plumbing a flag from the client) keeps channel mode correct
+    // across reconnects, where the same scratch repoPath is passed back in.
+    const channelMode = isScratchPath(
+      repoPath,
+      this.workspaceSettings.getWorktreeLocation(),
+    );
+
+    // In channel mode the agent decides at runtime whether it needs a repo. Give
+    // it the user's previously-used local folders so it can reuse one (or ask)
+    // instead of cloning from remote. Only fetched for channel sessions.
+    const knownLocalFolders = channelMode
+      ? await this.foldersService.getFolders().catch(() => [])
+      : [];
 
     const additionalDirectories =
       taskId === "__preview__"
@@ -681,16 +750,43 @@ When creating pull requests, add the following footer at the end of the PR descr
         customInstructions,
         additionalDirectories,
         systemPromptOverride,
+        channelMode,
+        knownLocalFolders,
       );
+
+      const bundledSkillsDir = join(
+        this.posthogPluginService.getPluginPath(),
+        "skills",
+      );
+
+      let codexHome: string | undefined;
+      if (adapter === "codex") {
+        try {
+          codexHome = await prepareCodexHome({
+            appDataPath: this.storagePaths.appDataPath,
+            taskRunId,
+            bundledSkillsDir,
+            log: this.log,
+          });
+        } catch (err) {
+          // A skills-prep failure must not kill the session; Codex falls back
+          // to its default home and the user's own ~/.agents/skills.
+          this.log.warn("Failed to prepare codex home", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
 
       const acpConnection = await agent.run(taskId, taskRunId, {
         adapter,
         gatewayUrl: proxyUrl,
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
+        codexHome,
         model,
         reasoningEffort: adapter === "codex" ? effort : undefined,
-        instructions: adapter === "codex" ? systemPrompt.append : undefined,
+        developerInstructions:
+          adapter === "codex" ? systemPrompt.append : undefined,
         additionalDirectories:
           adapter === "codex" ? additionalDirectories : undefined,
         onStructuredOutput: jsonSchema
@@ -779,6 +875,7 @@ When creating pull requests, add the following footer at the end of the PR descr
           {
             userDataDir: this.storagePaths.appDataPath,
             repoPath,
+            bundledSkillsDir,
           },
           this.log,
         );
@@ -852,6 +949,7 @@ When creating pull requests, add the following footer at the end of the PR descr
             environment: "local",
             sessionId: existingSessionId,
             systemPrompt,
+            ...(channelMode && { channelMode }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
@@ -877,6 +975,7 @@ When creating pull requests, add the following footer at the end of the PR descr
             taskRunId,
             environment: "local",
             systemPrompt,
+            ...(channelMode && { channelMode }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
@@ -907,6 +1006,8 @@ When creating pull requests, add the following footer at the end of the PR descr
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
+        prAttributed: false,
+        evaluatedPrUrls: new Set(),
       };
 
       this.sessions.set(taskRunId, session);
@@ -930,7 +1031,10 @@ When creating pull requests, add the following footer at the end of the PR descr
           `Auth error during ${isReconnect ? "reconnect" : "create"}, retrying`,
           { taskRunId },
         );
-        return this.getOrCreateSession(config, isReconnect, true);
+        if (isReconnect) {
+          return this.getOrCreateSession(config, true, true);
+        }
+        return this.getOrCreateSession(config, false, true);
       }
       // When the in-process ACP layer masks a thrown error as a generic
       // "Internal error", the real text survives in `data.details`. Surface it
@@ -945,7 +1049,16 @@ When creating pull requests, add the following footer at the end of the PR descr
       const action = isReconnect ? "reconnect" : "create";
       this.log.error(
         `Failed to ${action} session${isRetry ? " after retry" : ""}${detailSuffix}`,
-        err,
+        {
+          taskRunId,
+          taskId,
+          sessionId: config.sessionId,
+          adapter: config.adapter,
+          model: config.model,
+          isRetry,
+          data: (err as { data?: unknown }).data,
+          errorDetail: serializeError(err),
+        },
       );
       // Non-auth reconnect failure on first attempt: fall back to a fresh session.
       // If this was already an auth retry (isRetry=true), we've exhausted retries
@@ -953,6 +1066,8 @@ When creating pull requests, add the following footer at the end of the PR descr
       if (isReconnect && !isRetry) {
         this.log.warn("Reconnect failed, falling back to new session", {
           taskRunId,
+          taskId,
+          sessionId: config.sessionId,
         });
         config.sessionId = undefined;
         return this.getOrCreateSession(config, false, false);
@@ -1041,10 +1156,26 @@ When creating pull requests, add the following footer at the end of the PR descr
   async prompt(
     sessionId: string,
     prompt: ContentBlock[],
+    options?: { steer?: boolean },
   ): Promise<PromptOutput> {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    // A steer is injected into the turn that is already running, which owns the
+    // promptPending/sleep/idle lifecycle. Forward it fire-and-forget so this
+    // call does not flip that shared state out from under the live turn.
+    if (options?.steer) {
+      const result = await session.clientSideConnection.prompt({
+        sessionId: getAgentSessionId(session),
+        prompt,
+        _meta: { steer: true },
+      });
+      return {
+        stopReason: result.stopReason,
+        _meta: result._meta as PromptOutput["_meta"],
+      };
     }
 
     // Prepend pending context if present
@@ -1367,6 +1498,14 @@ For git operations while detached:
   private async cleanupSession(taskRunId: string): Promise<void> {
     const session = this.sessions.get(taskRunId);
     if (session) {
+      if (session.promptPending || session.inFlightMcpToolCalls.size > 0) {
+        this.log.warn("Cleaning up session with in-flight work", {
+          taskRunId,
+          taskId: session.taskId,
+          promptPending: session.promptPending,
+          inFlightMcpToolCalls: session.inFlightMcpToolCalls.size,
+        });
+      }
       this.cancelInFlightMcpToolCalls(session);
       this.sleepService.release(taskRunId);
       try {
@@ -1374,6 +1513,10 @@ For git operations while detached:
       } catch {
         this.log.debug("Agent cleanup failed", { taskRunId });
       }
+
+      await cleanupCodexHome(this.storagePaths.appDataPath, taskRunId).catch(
+        () => this.log.debug("Codex home cleanup failed", { taskRunId }),
+      );
 
       this.sessions.delete(taskRunId);
 
@@ -1755,13 +1898,15 @@ For git operations while detached:
       if (msg.params?.update?.sessionUpdate !== "tool_call_update") return;
 
       const update = msg.params.update;
+      const session = this.sessions.get(taskRunId);
+
+      // Runs before the toolName gate: a PR URL can surface without a Bash
+      // toolName (e.g. in terminal output).
+      this.maybeAttachCreatedPr(taskRunId, session, update);
+
       const toolMeta = update._meta?.claudeCode;
       const toolName = toolMeta?.toolName;
       if (!toolName) return;
-
-      const session = this.sessions.get(taskRunId);
-
-      this.detectAndAttachPrUrl(taskRunId, session, toolMeta, update.content);
 
       this.trackAgentFileActivity(taskRunId, session, toolName);
     } catch (err) {
@@ -1772,37 +1917,32 @@ For git operations while detached:
     }
   }
 
-  /**
-   * Detect GitHub PR URLs in `gh pr create` output and attach to task.
-   * Gated on the originating bash command so that unrelated PR URLs (e.g.
-   * `gh pr view`, `gh search prs`) don't get latched onto the run.
-   */
-  private detectAndAttachPrUrl(
+  private maybeAttachCreatedPr(
     taskRunId: string,
     session: ManagedSession | undefined,
-    toolMeta:
-      | {
-          toolName?: string;
-          toolResponse?: unknown;
-          bashCommand?: string;
-        }
-      | undefined,
-    content?: Array<{ type?: string; text?: string }>,
+    update: unknown,
   ): void {
-    const prUrl = extractCreatedPrUrl({
-      toolName: toolMeta?.toolName,
-      bashCommand: toolMeta?.bashCommand,
-      toolResponse: toolMeta?.toolResponse,
-      content,
-    });
-    if (!prUrl) return;
+    if (!session || session.prAttributed) return;
+    const prUrl = findPrUrl(JSON.stringify(update));
+    if (!prUrl || session.evaluatedPrUrls.has(prUrl)) return;
+    session.evaluatedPrUrls.add(prUrl);
+    void this.attachPrIfCreatedThisRun(taskRunId, session, prUrl);
+  }
 
-    this.log.info("Detected PR URL from gh pr create", { taskRunId, prUrl });
+  private async attachPrIfCreatedThisRun(
+    taskRunId: string,
+    session: ManagedSession,
+    prUrl: string,
+  ): Promise<void> {
+    if (session.prAttributed) return;
 
-    if (!session) {
-      this.log.warn("Session not found for PR attachment", { taskRunId });
-      return;
-    }
+    const createdAt = await this.fetchPrCreatedAt(session.repoPath, prUrl);
+    if (!wasCreatedRecently(createdAt, Date.now())) return;
+    // Re-check after the await: another URL may have attributed while we waited.
+    if (session.prAttributed) return;
+
+    session.prAttributed = true;
+    this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
 
     session.agent
       .attachPullRequestToTask(session.taskId, prUrl)
@@ -1833,6 +1973,26 @@ For git operations while detached:
     this.emitAgentFileActivityForCurrentBranch(taskRunId, session, {
       reason: "pr-detected",
     });
+  }
+
+  /** PR `createdAt` (ISO) via the GitHub CLI, or null if it can't be resolved. */
+  private async fetchPrCreatedAt(
+    cwd: string,
+    prUrl: string,
+  ): Promise<string | null> {
+    try {
+      const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
+        cwd,
+        timeoutMs: 10_000,
+      });
+      if (res.exitCode !== 0) return null;
+      return (
+        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      );
+    } catch (err) {
+      this.log.debug("Failed to resolve PR createdAt", { prUrl, error: err });
+      return null;
+    }
   }
 
   /**

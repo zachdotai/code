@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import jwt from "jsonwebtoken";
 import { type SetupServerApi, setupServer } from "msw/node";
 import {
@@ -10,9 +12,18 @@ import {
   it,
   vi,
 } from "vitest";
-import { createTestRepo, type TestRepo } from "../test/fixtures/api";
+import { getSessionJsonlPath } from "../adapters/claude/session/jsonl-hydration";
+import type { PermissionMode } from "../execution-mode";
+import type { PostHogAPIClient } from "../posthog-api";
+import type { ResumeState } from "../resume";
+import {
+  createMockApiClient,
+  createTaskRun,
+  createTestRepo,
+  type TestRepo,
+} from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
-import type { TaskRun } from "../types";
+import type { StoredEntry, TaskRun } from "../types";
 import {
   AgentServer,
   isTurnCompleteNotification,
@@ -200,19 +211,35 @@ interface TestableServer {
     payload: JwtPayload,
     run: TaskRun | null,
   ): Promise<void>;
-  detectAndAttachPrUrl(payload: unknown, update: unknown): void;
   detectedPrUrl: string | null;
   buildCloudSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string;
   buildDetectedPrContext(prUrl: string): string;
   buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
   getRuntimeAdapter(): "claude" | "codex";
+  buildClaudeCodeSessionMeta(
+    runtimeAdapter: "claude" | "codex",
+  ): { claudeCode: { options: Record<string, unknown> } } | undefined;
+}
+
+interface NativeResumeTestServer {
+  resumeState: ResumeState | null;
+  prepareNativeResume(
+    payload: JwtPayload,
+    posthogAPI: PostHogAPIClient,
+    preTaskRun: TaskRun | null,
+    runtimeAdapter: "claude" | "codex",
+    cwd: string,
+    permissionMode: PermissionMode,
+  ): Promise<{ sessionId: string; warm: boolean } | null>;
 }
 
 let nextTestPort = 20000;
@@ -268,6 +295,21 @@ function createTestJwt(
       expiresIn: expiresInSeconds,
     },
   );
+}
+
+function sessionUpdateEntry(
+  sessionUpdate: string,
+  extra: Record<string, unknown> = {},
+): StoredEntry {
+  return {
+    type: "notification",
+    timestamp: new Date().toISOString(),
+    notification: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { update: { sessionUpdate, ...extra } },
+    },
+  };
 }
 
 // Test RSA key pair (2048-bit, for testing only)
@@ -626,104 +668,6 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
-
-    it.each([
-      {
-        label: "completed on a clean end_turn",
-        stopReason: "end_turn",
-        expectedStatus: "completed",
-        expectedMethod: "_posthog/task_complete",
-        expectsErrorMessage: false,
-      },
-      {
-        label: "failed when the run stops early (max_tokens)",
-        stopReason: "max_tokens",
-        expectedStatus: "failed",
-        expectedMethod: "_posthog/error",
-        expectsErrorMessage: true,
-      },
-    ])(
-      "marks a background run $label",
-      async ({
-        stopReason,
-        expectedStatus,
-        expectedMethod,
-        expectsErrorMessage,
-      }) => {
-        const order: string[] = [];
-        const testServer = new AgentServer({
-          port,
-          jwtPublicKey: TEST_PUBLIC_KEY,
-          repositoryPath: repo.path,
-          apiUrl: "http://localhost:8000",
-          apiKey: "test-api-key",
-          projectId: 1,
-          mode: "background",
-          taskId: "test-task-id",
-          runId: "test-run-id",
-        }) as unknown as {
-          eventStreamSender: {
-            enqueue: (event: Record<string, unknown>) => void;
-            stop: () => Promise<void>;
-          };
-          posthogAPI: {
-            updateTaskRun: (
-              taskId: string,
-              runId: string,
-              payload: Record<string, unknown>,
-            ) => Promise<unknown>;
-          };
-          signalTaskComplete(
-            payload: JwtPayload,
-            stopReason: string,
-          ): Promise<void>;
-        };
-        testServer.eventStreamSender = {
-          enqueue: vi.fn(() => {
-            order.push("enqueue");
-          }),
-          stop: vi.fn(async () => {
-            order.push("stop");
-          }),
-        };
-        testServer.posthogAPI = {
-          updateTaskRun: vi.fn(async () => {
-            order.push("update");
-            return {};
-          }),
-        };
-
-        await testServer.signalTaskComplete(
-          {
-            run_id: "run-1",
-            task_id: "task-1",
-            team_id: 1,
-            user_id: 1,
-            distinct_id: "distinct-id",
-            mode: "background",
-          },
-          stopReason,
-        );
-
-        expect(order).toEqual(["enqueue", "update", "stop"]);
-        expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: "notification",
-            notification: expect.objectContaining({
-              method: expectedMethod,
-              params: expect.objectContaining({ stopReason }),
-            }),
-          }),
-        );
-        expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
-          "task-1",
-          "run-1",
-          expectsErrorMessage
-            ? { status: expectedStatus, error_message: expect.any(String) }
-            : { status: expectedStatus },
-        );
-      },
-    );
 
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
@@ -1238,115 +1182,266 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
-  describe("detectedPrUrl tracking", () => {
-    it("stores PR URL when gh pr create produces it", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: 'gh pr create --title "x" --body "y"',
-            toolResponse: {
-              stdout:
-                "https://github.com/PostHog/posthog/pull/42\nCreating pull request...",
-            },
-          },
-        },
-      };
+  describe("buildClaudeCodeSessionMeta", () => {
+    it("sends claude reasoning effort even when no plugins are configured", () => {
+      const s = createServer({ reasoningEffort: "high" });
 
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBe(
-        "https://github.com/PostHog/posthog/pull/42",
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
       );
+
+      expect(meta?.claudeCode.options).toEqual({ effort: "high" });
     });
 
-    it("does not set detectedPrUrl when no PR URL is found", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: "gh pr create",
-            toolResponse: { stdout: "just some output" },
-          },
-        },
-      };
+    it("does not send claudeCode effort for codex runs", () => {
+      const s = createServer({ reasoningEffort: "high" });
 
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBeNull();
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "codex",
+      );
+
+      expect(meta).toBeUndefined();
     });
 
-    it("does not attach PR URL when the bash command is gh pr view", () => {
+    it("returns undefined when neither plugins nor effort are set", () => {
       const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: "gh pr view 42 --json url",
-            toolResponse: {
-              stdout: "https://github.com/PostHog/posthog/pull/42",
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta).toBeUndefined();
+    });
+
+    it("includes both plugins and effort for claude runs", () => {
+      const s = createServer({
+        reasoningEffort: "medium",
+        claudeCode: { plugins: [{ type: "local", path: "/tmp/plugin" }] },
+      });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({
+        plugins: [{ type: "local", path: "/tmp/plugin" }],
+        effort: "medium",
+      });
+    });
+
+    it("returns only plugins when effort is not set", () => {
+      const s = createServer({
+        claudeCode: { plugins: [{ type: "local", path: "/tmp/plugin" }] },
+      });
+
+      const meta = (s as unknown as TestableServer).buildClaudeCodeSessionMeta(
+        "claude",
+      );
+
+      expect(meta?.claudeCode.options).toEqual({
+        plugins: [{ type: "local", path: "/tmp/plugin" }],
+      });
+    });
+  });
+
+  describe("native resume", () => {
+    it("hydrates cold sessions from S3 logs instead of cached resume conversation", async () => {
+      const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      process.env.CLAUDE_CONFIG_DIR = join(repo.path, ".claude-test");
+
+      try {
+        const s = createServer() as unknown as NativeResumeTestServer;
+        s.resumeState = {
+          conversation: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "continue" }],
             },
-          },
-        },
-      };
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "visible answer only" }],
+            },
+          ],
+          latestGitCheckpoint: null,
+          interrupted: false,
+          logEntryCount: 3,
+          sessionId: "prior-session",
+        };
 
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBeNull();
+        const posthogAPI = createMockApiClient();
+        (posthogAPI.getTaskRun as ReturnType<typeof vi.fn>).mockResolvedValue(
+          createTaskRun({ id: "previous-run", log_url: "s3://logs" }),
+        );
+        (
+          posthogAPI.fetchTaskRunLogs as ReturnType<typeof vi.fn>
+        ).mockResolvedValue([
+          sessionUpdateEntry("user_message", {
+            content: { type: "text", text: "continue" },
+          }),
+          sessionUpdateEntry("agent_thought_chunk", {
+            content: {
+              type: "thinking",
+              thinking: "preserve extended thinking",
+            },
+          }),
+          sessionUpdateEntry("agent_message", {
+            content: { type: "text", text: "visible answer" },
+          }),
+        ]);
+
+        const result = await s.prepareNativeResume(
+          {
+            task_id: "test-task-id",
+            run_id: "test-run-id",
+            team_id: 1,
+            user_id: 1,
+            distinct_id: "test-distinct-id",
+            mode: "interactive",
+          },
+          posthogAPI,
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+          "claude",
+          repo.path,
+          "bypassPermissions",
+        );
+
+        expect(result).toEqual({ sessionId: "prior-session", warm: false });
+        expect(posthogAPI.fetchTaskRunLogs).toHaveBeenCalledTimes(1);
+
+        const jsonl = await readFile(
+          getSessionJsonlPath("prior-session", repo.path),
+          "utf-8",
+        );
+        const blocks = jsonl
+          .trim()
+          .split("\n")
+          .flatMap((line) => {
+            const parsed = JSON.parse(line) as {
+              message?: { content?: unknown[] };
+            };
+            return parsed.message?.content ?? [];
+          });
+
+        expect(blocks).toContainEqual({
+          type: "thinking",
+          thinking: "preserve extended thinking",
+        });
+      } finally {
+        if (originalConfigDir === undefined) {
+          delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+          process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+        }
+      }
+    });
+  });
+
+  describe("PR attribution", () => {
+    const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
+    const payload: JwtPayload = {
+      task_id: "t",
+      run_id: "r",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "d",
+      mode: "interactive",
+    };
+
+    // The cloud sandbox frames a created PR's URL inside terminal output, on a
+    // tool_call_update that carries no toolName/bashCommand — the case the old
+    // detector missed. Attribution must work from the serialized update alone.
+    const terminalUpdate = (url: string) => ({
+      sessionUpdate: "tool_call_update",
+      _meta: { terminal_output: `Creating draft pull request...\n${url}\n` },
     });
 
-    it("does not attach PR URL when the bash command is gh search prs", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            bashCommand: 'gh search prs "fix login"',
-            toolResponse: {
-              stdout: "https://github.com/PostHog/posthog/pull/42",
-            },
-          },
-        },
-      };
+    type PrTestServer = {
+      maybeAttachCreatedPr(
+        p: JwtPayload,
+        u: Record<string, unknown> | undefined,
+      ): void;
+      fetchPrCreatedAt(url: string): Promise<string | null>;
+      detectedPrUrl: string | null;
+      posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+    };
 
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBeNull();
+    const justNow = () => new Date().toISOString();
+    const longAgo = "2020-01-01T00:00:00Z";
+
+    const setup = (prCreatedAt: string | null): PrTestServer => {
+      const s = createServer() as unknown as PrTestServer;
+      s.fetchPrCreatedAt = vi.fn(async () => prCreatedAt);
+      s.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      return s;
+    };
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it("attributes a PR created just now from terminal output alone", async () => {
+      const s = setup(justNow());
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
+        output: { pr_url: PR_URL },
+      });
+      expect(s.detectedPrUrl).toBe(PR_URL);
     });
 
-    it("does not attach PR URL when bashCommand is missing", () => {
-      const s = createServer();
-      const payload = {
-        task_id: "test-task-id",
-        run_id: "test-run-id",
-      };
-      const update = {
-        _meta: {
-          claudeCode: {
-            toolName: "Bash",
-            toolResponse: {
-              stdout: "https://github.com/PostHog/posthog/pull/42",
-            },
-          },
-        },
-      };
+    it("does not attribute an older PR the run only viewed (e.g. on a long run)", async () => {
+      const s = setup(longAgo);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+      expect(s.detectedPrUrl).toBeNull();
+    });
 
-      (s as unknown as TestableServer).detectAndAttachPrUrl(payload, update);
-      expect((s as unknown as TestableServer).detectedPrUrl).toBeNull();
+    it("ignores updates with no PR URL", async () => {
+      const s = setup(justNow());
+      s.maybeAttachCreatedPr(payload, { sessionUpdate: "agent_thought_chunk" });
+      await flush();
+      expect(s.fetchPrCreatedAt).not.toHaveBeenCalled();
+      expect(s.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
+    it("attributes once and looks up GitHub once across repeated updates", async () => {
+      const s = setup(justNow());
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.fetchPrCreatedAt).toHaveBeenCalledTimes(1);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("attributes the most recent PR when a run opens several, in detection order", async () => {
+      // output.pr_url holds one value; the latest PR the run created is the useful one.
+      const s = setup(justNow());
+      const second = "https://github.com/PostHog/posthog.com/pull/17765";
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(second));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith("t", "r", {
+        output: { pr_url: second },
+      });
+      expect(s.detectedPrUrl).toBe(second);
+    });
+
+    it("does not let an older PR the run only viewed overwrite the one it created", async () => {
+      const viewed = "https://github.com/PostHog/posthog.com/pull/1";
+      // The created PR reads as recent; the later, merely-viewed PR reads as old.
+      const s = setup(justNow());
+      s.fetchPrCreatedAt = vi.fn(async (url: string) =>
+        url === PR_URL ? justNow() : longAgo,
+      );
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      s.maybeAttachCreatedPr(payload, terminalUpdate(viewed));
+      await flush();
+      expect(s.detectedPrUrl).toBe(PR_URL);
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1457,7 +1552,10 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("Opening the PR — do not block on long checks");
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
-      expect(prompt).toContain("Created with [PostHog Code]");
+      // Slack-origin PRs are attributed to PostHog, not the PostHog Code app.
+      expect(prompt).toContain(
+        "Created with [PostHog](https://posthog.com?ref=pr)",
+      );
       // PR template detection (repo first, org `.github` fallback)
       expect(prompt).toContain(".github/pull_request_template.md");
       expect(prompt).toContain("org's `.github` repo");
@@ -1477,6 +1575,27 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("gh pr create --draft");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
+
+    it.each([
+      { label: "Slack", origin: "slack" },
+      { label: "signal_report", origin: "signal_report" },
+    ])(
+      "guards the auto-PR prompt against duplicating an existing PR on $label-origin runs",
+      ({ origin }) => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = origin;
+        const s = createServer();
+        const prompt = (
+          s as unknown as TestableServer
+        ).buildCloudSystemPrompt();
+        // Still the new-PR branch...
+        expect(prompt).toContain("gh pr create --draft");
+        // ...but tells the agent to continue an existing linked PR instead of duplicating.
+        expect(prompt).toContain("implementation_pr_url");
+        expect(prompt).toContain("gh pr checkout <url>");
+        expect(prompt).toMatch(/do not open a second PR/i);
+        delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+      },
+    );
 
     it("returns PR-update prompt for existing PRs on Slack-origin runs", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
@@ -1688,11 +1807,12 @@ describe("AgentServer HTTP Mode", () => {
           // brevity
           expect(prompt).toContain("Keep the PR description brief");
           expect(prompt).toContain("do NOT enumerate every change");
-          // plain footer, no Slack link
+          // plain footer, no Slack link; Slack-origin PRs are branded "PostHog"
           expect(prompt).toContain(
-            "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr)*",
           );
           expect(prompt).not.toContain("from a [Slack thread]");
+          expect(prompt).not.toContain("PostHog Code](https://posthog.com");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
@@ -1708,12 +1828,48 @@ describe("AgentServer HTTP Mode", () => {
             "https://posthog.slack.com/archives/C123/p456",
           );
           expect(prompt).toContain(
-            "*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
           );
           // The Why bullet no longer carries the thread link.
           expect(prompt).not.toContain(
             "this task started from a Slack thread, also link it",
           );
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("embeds the inbox report link in the footer for a signal_report run", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "signal_report";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            null,
+            "http://localhost:8000/project/1/inbox/rep_1",
+          );
+          expect(prompt).toContain(
+            "*Created with [PostHog](https://posthog.com?ref=pr) from an [inbox report](http://localhost:8000/project/1/inbox/rep_1)*",
+          );
+          expect(prompt).not.toContain("Slack thread");
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+      });
+
+      it("prefers the Slack thread link over the inbox report link when both are present", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+        try {
+          const prompt = (
+            createServer() as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            "https://posthog.slack.com/archives/C123/p456",
+            "http://localhost:8000/project/1/inbox/rep_1",
+          );
+          expect(prompt).toContain("from a [Slack thread]");
+          expect(prompt).not.toContain("from an [inbox report]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
@@ -1747,7 +1903,7 @@ describe("AgentServer HTTP Mode", () => {
             "https://posthog.slack.com/archives/C123/p456",
           );
           expect(prompt).toContain(
-            "*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
           );
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;

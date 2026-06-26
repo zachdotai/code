@@ -34,6 +34,7 @@ import {
   type CanUseTool,
   getSessionMessages,
   listSessions,
+  type McpSdkServerConfigWithInstance,
   type McpServerConfig,
   type Options,
   type Query,
@@ -41,6 +42,7 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
+import { serializeError } from "@posthog/shared";
 import { v7 as uuidv7 } from "uuid";
 import packageJson from "../../../package.json" with { type: "json" };
 import {
@@ -79,7 +81,7 @@ import {
   estimateSkillsTokens,
   estimateSystemPrompt,
 } from "./context-breakdown";
-import { promptToClaude } from "./conversion/acp-to-sdk";
+import { isSteerMeta, promptToClaude } from "./conversion/acp-to-sdk";
 import {
   handleResultMessage,
   handleStreamEvent,
@@ -94,6 +96,7 @@ import {
 import type { EnrichedReadCache } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
+  clearMcpToolMetadataCache,
   fetchMcpToolMetadata,
   getCachedMcpTools,
   getConnectedMcpServerNames,
@@ -107,8 +110,10 @@ import {
   resolveInitialModelId,
 } from "./session/model-config";
 import {
+  DEFAULT_EFFORT,
   DEFAULT_MODEL,
   getEffortOptions,
+  resolveEffortForModel,
   resolveModelPreference,
   supports1MContext,
   supportsMcpInjection,
@@ -117,6 +122,7 @@ import {
 import {
   buildSessionOptions,
   buildSystemPrompt,
+  type GatewayEnv,
   type ProcessSpawnedInfo,
 } from "./session/options";
 import { SettingsManager } from "./session/settings";
@@ -138,10 +144,28 @@ import type {
 
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
 
+// Pre-prompt self-heal runs on every cloud turn; bound the status RPC so a
+// wedged control channel can't stall the turn.
+const MCP_STATUS_TIMEOUT_MS = 5_000;
+
 const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
 
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
+
+function isSdkMcpServer(
+  cfg: McpServerConfig,
+): cfg is McpSdkServerConfigWithInstance {
+  return cfg.type === "sdk";
+}
+
+function externalMcpServers(
+  servers: Record<string, McpServerConfig> | undefined,
+): Record<string, McpServerConfig> {
+  return Object.fromEntries(
+    Object.entries(servers ?? {}).filter(([, cfg]) => !isSdkMcpServer(cfg)),
+  );
+}
 
 // Best-effort: silent on ENOENT, logs other errors so permission failures
 // aren't masked.
@@ -213,6 +237,8 @@ export interface ClaudeAcpAgentOptions {
   onMcpServersReady?: (serverNames: string[]) => void;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   posthogApiConfig?: PostHogAPIConfig;
+  /** Explicit gateway config — avoids global process.env mutation across concurrent sessions. */
+  gatewayEnv?: GatewayEnv;
 }
 
 export class ClaudeAcpAgent extends BaseAcpAgent {
@@ -274,6 +300,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         _meta: {
           posthog: {
             resumeSession: true,
+            steering: "native",
           },
           claudeCode: {
             promptQueueing: true,
@@ -433,6 +460,18 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     if (this.session.promptRunning) {
+      const isSteer = isSteerMeta(params._meta);
+      if (isSteer) {
+        // Fold this message into the turn already running instead of queueing a
+        // new turn. promptToClaude tagged it priority:"next" so the SDK delivers
+        // it at the next tool-call boundary. Return immediately with a benign
+        // end_turn: the in-flight turn (not this call) owns the loop and the
+        // real stop reason. The client tells steers apart by the request's
+        // _meta.steer, not by this value.
+        this.session.input.push(userMessage);
+        await this.broadcastUserMessage(params);
+        return { stopReason: "end_turn" };
+      }
       this.session.input.push(userMessage);
       const order = this.session.nextPendingOrder++;
       const cancelled = await new Promise<boolean>((resolve) => {
@@ -443,6 +482,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       promptReplayed = true;
     } else {
+      // Reconnect the signed-commit server before the turn (guard hook backstops).
+      if (!isLocalOnlyCommand) {
+        await this.ensureLocalToolsConnected("pre-prompt");
+      }
       this.session.input.push(userMessage);
     }
 
@@ -1089,7 +1132,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.session.settingsManager.dispose();
         this.session.input.end();
         throw RequestError.internalError(
-          undefined,
+          { details: msg },
           "The Claude Agent process exited unexpectedly. Please start a new session.",
         );
       }
@@ -1254,17 +1297,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const newAbortController = new AbortController();
     const { sessionId: _drop, ...rest } = prev.queryOptions;
 
-    // parseMcpServers yields only http/sse/stdio – carry over any in-process
-    // ("sdk") server so the local-tools server (signed commits) survives.
-    const preservedInProcess = Object.fromEntries(
-      Object.entries(prev.queryOptions.mcpServers ?? {}).filter(
-        ([, cfg]) => (cfg as { type?: string }).type === "sdk",
-      ),
-    );
+    // Rebuild the in-process ("sdk") server fresh; reusing the prior instance
+    // throws "Already connected to a transport" and drops the signed-commit tools.
+    const freshInProcess = prev.buildInProcessMcpServers();
+    if (Object.keys(freshInProcess).length > 0) {
+      this.logger.info("Rebuilt in-process MCP servers on refresh", {
+        sessionId: this.sessionId,
+        servers: Object.keys(freshInProcess),
+      });
+    }
 
     const newOptions: Options = {
       ...rest,
-      mcpServers: { ...mcpServers, ...preservedInProcess },
+      mcpServers: { ...mcpServers, ...freshInProcess },
       resume: this.sessionId,
       forkSession: false,
       abortController: newAbortController,
@@ -1294,8 +1339,71 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       );
     }
 
-    // Re-fetch MCP tool metadata + slash commands — the server list changed.
-    this.deferBackgroundFetches(newQuery);
+    this.refreshMcpMetadata(newQuery);
+  }
+
+  /**
+   * Best-effort self-heal: if the in-process signed-commit server is enabled but
+   * the live Query reports it disconnected, rebuild a fresh instance and
+   * reconnect via setMcpServers. Returns whether the tooling is usable after.
+   */
+  private async ensureLocalToolsConnected(trigger: string): Promise<boolean> {
+    const names = this.session.localToolsServerNames;
+    if (names.length === 0) {
+      return true;
+    }
+
+    const status = await withTimeout(
+      this.session.query.mcpServerStatus(),
+      MCP_STATUS_TIMEOUT_MS,
+    ).catch((error) => {
+      this.logger.debug("ensureLocalToolsConnected: status check failed", {
+        trigger,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { result: "timeout" as const };
+    });
+    // A slow or failed status RPC must not block the turn; assume healthy.
+    if (status.result !== "success") {
+      return true;
+    }
+
+    const allConnected = names.every((name) =>
+      status.value.some((s) => s.name === name && s.status === "connected"),
+    );
+    if (allConnected) {
+      return true;
+    }
+
+    const logCtx = { trigger, sessionId: this.sessionId, servers: names };
+    this.logger.warn(
+      "Signed-commit MCP server unhealthy; reconnecting",
+      logCtx,
+    );
+
+    try {
+      const next = {
+        ...externalMcpServers(this.session.queryOptions.mcpServers),
+        ...this.session.buildInProcessMcpServers(),
+      };
+      await this.session.query.setMcpServers(next);
+      this.session.queryOptions.mcpServers = next;
+      this.refreshMcpMetadata(this.session.query);
+      this.logger.info("Reconnected signed-commit MCP server", logCtx);
+      return true;
+    } catch (error) {
+      this.logger.error("Failed to reconnect signed-commit MCP server", {
+        ...logCtx,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /** Clear stale MCP tool metadata, then re-fetch it for the new server set. */
+  private refreshMcpMetadata(q: Query): void {
+    clearMcpToolMetadataCache();
+    this.deferBackgroundFetches(q);
   }
 
   async setSessionMode(
@@ -1387,6 +1495,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         ? { ...o, currentValue: resolvedValue }
         : o,
     );
+
+    await this.client.sessionUpdate({
+      sessionId: this.sessionId,
+      update: {
+        sessionUpdate: "config_option_update",
+        configOptions: this.session.configOptions,
+      },
+    });
 
     return { configOptions: this.session.configOptions };
   }
@@ -1531,31 +1647,43 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const earlyModelId =
       settingsManager.getSettings().model || meta?.model || "";
-    const mcpServers = supportsMcpInjection(earlyModelId)
-      ? parseMcpServers(params, this.logger)
-      : {};
 
     // Register the in-process general local-tools MCP server. Tools self-gate
     // via the registry (e.g. signed-commit is cloud-only and needs a GH token),
     // so adding a tool needs no change here. In cloud runs `git commit`/`git
     // push` are blocked by the PreToolUse guard (and the sandbox git shim), so
     // the agent commits via the signed-commit tool instead.
-    const localToolsServer = createLocalToolsMcpServer(
-      {
-        cwd,
-        token: resolveGithubToken(),
-        taskId,
-        baseBranch: meta?.baseBranch,
-      },
-      meta,
-    );
-    if (localToolsServer) {
-      mcpServers[LOCAL_TOOLS_MCP_NAME] = localToolsServer;
-    } else if (cloudRun) {
+    //
+    // A closure so refresh/self-heal can rebuild a fresh instance (reusing one
+    // throws "Already connected to a transport"). Capture only the fields it
+    // needs so the session doesn't pin the whole meta object.
+    const baseBranch = meta?.baseBranch;
+    const environment = meta?.environment;
+    const buildInProcessMcpServers = (): Record<
+      string,
+      McpSdkServerConfigWithInstance
+    > => {
+      const server = createLocalToolsMcpServer(
+        { cwd, token: resolveGithubToken(), taskId, baseBranch },
+        { environment },
+      );
+      return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
+    };
+
+    const initialInProcess = buildInProcessMcpServers();
+    const localToolsServerNames = Object.keys(initialInProcess);
+    if (localToolsServerNames.length === 0 && cloudRun) {
       this.logger.warn(
-        "Cloud run registered no local tools — missing GH_TOKEN/GITHUB_TOKEN? signed commits unavailable",
+        "Cloud run registered no local tools (missing GH_TOKEN/GITHUB_TOKEN?); signed commits unavailable",
       );
     }
+
+    const mcpServers: Record<string, McpServerConfig> = {
+      ...(supportsMcpInjection(earlyModelId)
+        ? parseMcpServers(params, this.logger)
+        : {}),
+      ...initialInProcess,
+    };
 
     const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
 
@@ -1612,7 +1740,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       enrichmentDeps: this.enrichment?.deps,
       enrichedReadCache: this.enrichedReadCache,
       cloudMode: cloudRun,
+      onEnsureLocalToolsConnected: () =>
+        this.ensureLocalToolsConnected("guard-hook"),
       taskState,
+      gatewayEnv: this.options?.gatewayEnv,
       onTaskStateChange: async () => {
         await this.client.sessionUpdate({
           sessionId,
@@ -1632,6 +1763,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const session: Session = {
       query: q,
       queryOptions: options,
+      buildInProcessMcpServers,
+      localToolsServerNames,
       input,
       cancelled: false,
       settingsManager,
@@ -1698,7 +1831,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             sessionId,
             taskId,
             taskRunId: meta?.taskRunId,
-            error: err instanceof Error ? err.message : String(err),
+            errorDetail: serializeError(err),
           },
         );
         throw err;
@@ -1707,6 +1840,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // Kick off SDK initialization for new sessions so it runs concurrently
     // with the model config fetch below (the gateway REST call is independent).
+    const initStartedAt = Date.now();
     const initPromise = !isResume
       ? withTimeout(q.initializationResult(), SESSION_VALIDATION_TIMEOUT_MS)
       : undefined;
@@ -1714,6 +1848,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
+        this.options?.gatewayEnv?.anthropicBaseUrl,
       ),
       ...(meta?.taskRunId
         ? [
@@ -1725,6 +1860,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           ]
         : []),
     ]);
+    const modelConfigMs = Date.now() - initStartedAt;
 
     // Restrict the model list to the user's `availableModels` allowlist
     // from settings.json so config UI and downstream resolution stay
@@ -1749,6 +1885,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         session.knownSlashCommands = collectKnownSlashCommands(
           initResult.value.commands,
         );
+        this.logger.info("Session initialized", {
+          sessionId,
+          taskId,
+          taskRunId: meta?.taskRunId,
+          modelConfigMs,
+          initMs: Date.now() - initStartedAt,
+        });
       } catch (err) {
         settingsManager.dispose();
         this.terminateQuery(q, abortController);
@@ -1756,7 +1899,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           sessionId,
           taskId,
           taskRunId: meta?.taskRunId,
-          error: err instanceof Error ? err.message : String(err),
+          modelConfigMs,
+          initMs: Date.now() - initStartedAt,
+          errorDetail: serializeError(err),
         });
         throw err;
       }
@@ -1780,6 +1925,18 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       await this.session.query.setModel(resolvedSdkModel);
     }
 
+    // Keep thinking enabled by default for effort-capable models (see
+    // DEFAULT_EFFORT).
+    const resolvedEffort = resolveEffortForModel(resolvedModelId, effort);
+    if (resolvedEffort && resolvedEffort !== effort) {
+      this.session.effort = resolvedEffort;
+      this.session.queryOptions.effort = resolvedEffort;
+      await this.session.query.applyFlagSettings({
+        // @ts-expect-error SDK Settings.effortLevel omits "max" but runtime accepts it
+        effortLevel: resolvedEffort,
+      });
+    }
+
     if (supports1MContext(resolvedModelId)) {
       options.betas = ["context-1m-2025-08-07"];
     }
@@ -1797,7 +1954,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const configOptions = this.buildConfigOptions(
       permissionMode,
       modelOptions,
-      effort ?? "medium",
+      this.session.effort ?? DEFAULT_EFFORT,
     );
     session.configOptions = configOptions;
 
@@ -1903,7 +2060,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       currentModelId: string;
       options: SessionConfigSelectOption[];
     },
-    currentEffort: EffortLevel = "medium",
+    currentEffort: EffortLevel = DEFAULT_EFFORT,
   ): SessionConfigOption[] {
     const modeOptions = getAvailableModes().map((mode) => ({
       value: mode.id,
@@ -1971,11 +2128,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const rawCurrentValue = existingEffort?.currentValue;
     const currentValue =
-      typeof rawCurrentValue === "string" ? rawCurrentValue : "high";
+      typeof rawCurrentValue === "string" ? rawCurrentValue : DEFAULT_EFFORT;
     const isValidValue = effortOptions.some((o) => o.value === currentValue);
-    const resolvedValue = isValidValue ? currentValue : "high";
+    const resolvedValue = isValidValue ? currentValue : DEFAULT_EFFORT;
 
-    if (resolvedValue !== currentValue && this.session.effort) {
+    // Set the default when none is chosen yet (see DEFAULT_EFFORT), or re-apply
+    // when the prior level is invalid for the newly selected model.
+    if (!this.session.effort || resolvedValue !== currentValue) {
       this.session.effort = resolvedValue as EffortLevel;
       this.session.queryOptions.effort = resolvedValue as EffortLevel;
       void this.session.query.applyFlagSettings({

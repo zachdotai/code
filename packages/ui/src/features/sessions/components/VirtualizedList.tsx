@@ -1,3 +1,4 @@
+import { cn } from "@posthog/quill";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type CSSProperties,
@@ -22,6 +23,13 @@ interface VirtualizedListProps<T> {
   footer?: ReactNode;
   onScrollStateChange?: (isAtBottom: boolean) => void;
   keepMounted?: readonly number[];
+  /**
+   * Allow horizontal scrolling of the list viewport. Defaults to true. Narrow
+   * surfaces (e.g. the Agent Builder dock) pass false so off-edge content like
+   * a message's hover action can't produce a horizontal scrollbar; nested
+   * scrollers (code blocks) keep their own overflow.
+   */
+  scrollX?: boolean;
 }
 
 export interface VirtualizedListHandle {
@@ -47,6 +55,7 @@ function VirtualizedListInner<T>(
     footer,
     onScrollStateChange,
     keepMounted,
+    scrollX = true,
   }: VirtualizedListProps<T>,
   ref: React.ForwardedRef<VirtualizedListHandle>,
 ) {
@@ -242,7 +251,7 @@ function VirtualizedListInner<T>(
       <div
         ref={parentRef}
         onScroll={handleScroll}
-        className="scroll-mask-8 flex-1 overflow-auto"
+        className={`scroll-mask-8 flex-1 overflow-y-auto ${scrollX ? "overflow-x-auto" : "overflow-x-hidden"}`}
         style={{ scrollbarGutter: "stable" }}
       >
         <div
@@ -271,7 +280,7 @@ function VirtualizedListInner<T>(
                 }}
               >
                 <div
-                  className={itemClassName}
+                  className={cn(itemClassName, "[&_p:last-of-type]:mb-0")}
                   style={itemStyle}
                   data-conversation-item-id={itemKey}
                 >
