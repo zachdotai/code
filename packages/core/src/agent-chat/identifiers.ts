@@ -47,7 +47,7 @@ export interface AgentChatSession {
   /** Agent slug the chat targets. */
   agentSlug: string;
   ingressBaseUrl: string;
-  /** Non-null targets a specific draft revision (preview token attached per call). */
+  /** Non-null routes this chat to a non-live revision (ingress JWT attached per call). */
   revisionId: string | null;
   /** `kind:'client'` tool ids this client can fulfil; sent to the runner at /run. */
   supportedClientTools?: readonly string[];
