@@ -21,6 +21,10 @@ import {
   WrenchIcon,
 } from "@phosphor-icons/react";
 import type {
+  McpApprovalState,
+  McpInstallationTool,
+} from "@posthog/api-client/posthog-client";
+import type {
   AgentRevisionState,
   AgentSpec,
   BundleFile,
@@ -28,6 +32,9 @@ import type {
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { AddCustomServerDialog } from "@posthog/ui/features/mcp-server-manager/AddCustomServerDialog";
 import { useMcpConnect } from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
+import { ToolPolicyToggle } from "@posthog/ui/features/mcp-servers/components/parts/ToolPolicyToggle";
+import { ToolRow } from "@posthog/ui/features/mcp-servers/components/parts/ToolRow";
+import { useMcpInstallationTools } from "@posthog/ui/features/mcp-servers/hooks/useMcpInstallationTools";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
@@ -158,6 +165,40 @@ function toolRequiresIdentity(t: unknown): string | undefined {
 }
 function mcpProvider(m: unknown): string | undefined {
   return str(rec(rec(m).auth).provider);
+}
+
+// --- Per-agent MCP tool permissions (agent-level shared connection) ---
+// The spec carries allow/approve/deny; the reused ToolRow/ToolPolicyToggle speak
+// the mcp_store vocabulary (approved/needs_approval/do_not_use). Map at the
+// boundary so those components are reused verbatim.
+type ToolApprovalLevel = "allow" | "approve" | "deny";
+// New connections start safe-by-default: every tool parks for approval until the
+// owner relaxes specific tools. Mirrors the runner's fallback.
+const DEFAULT_TOOL_APPROVAL: ToolApprovalLevel = "approve";
+const LEVEL_TO_APPROVAL: Record<ToolApprovalLevel, McpApprovalState> = {
+  allow: "approved",
+  approve: "needs_approval",
+  deny: "do_not_use",
+};
+const APPROVAL_TO_LEVEL: Record<McpApprovalState, ToolApprovalLevel> = {
+  approved: "allow",
+  needs_approval: "approve",
+  do_not_use: "deny",
+};
+function toToolApprovalLevel(v: unknown): ToolApprovalLevel | undefined {
+  return v === "allow" || v === "approve" || v === "deny" ? v : undefined;
+}
+/** The per-tool override `level` declared in `mcps[].tools[]`, keyed by name. */
+function toolLevelOverrides(mcpEntry: unknown): Map<string, ToolApprovalLevel> {
+  const out = new Map<string, ToolApprovalLevel>();
+  for (const t of arr(rec(mcpEntry).tools)) {
+    if (typeof t === "object" && t) {
+      const name = str(rec(t).name);
+      const level = toToolApprovalLevel(rec(t).level);
+      if (name && level) out.set(name, level);
+    }
+  }
+  return out;
 }
 interface IdentityConsumers {
   tools: string[];
@@ -1345,6 +1386,10 @@ function McpsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
       url: install.url ?? "",
       connection: install.id,
       secrets: [] as string[],
+      // Safe-by-default: every tool parks for approval until the owner relaxes
+      // specific ones. Activates the per-agent permission model (vs the legacy
+      // allowlist) so the runtime + the detail UI agree from the first save.
+      default_tool_approval: "approve" as const,
     };
     applySpec.mutate(
       {
@@ -1459,6 +1504,18 @@ function McpBody({
   const canEdit = !!ctx.revisionState;
   const saving = applySpec.isPending;
 
+  // Live tool catalog for an agent-level shared connection — the connection id
+  // IS the mcp_store installation id, so we can list its tools and show a
+  // per-tool permission against each. A principal-level (auth.provider) MCP has
+  // no installation here, so `connection` is null and this stays empty.
+  const { tools: catalogTools, isLoading: catalogLoading } =
+    useMcpInstallationTools(connection ?? null, { autoRefreshIfEmpty: true });
+  // Per-agent override level keyed by remote tool name, plus the connection-wide
+  // default. Effective level per tool = override ?? default.
+  const overrides = toolLevelOverrides(r);
+  const defaultLevel = toToolApprovalLevel(r.default_tool_approval);
+  const effectiveDefault = defaultLevel ?? DEFAULT_TOOL_APPROVAL;
+
   // Rebuild the full spec with this mcps[] entry transformed, then draft-branch
   // (if needed) + PATCH. Lands on (and selects) a new draft off a non-draft.
   // Destructure the ctx fields the callback reads so the dep array is stable —
@@ -1516,6 +1573,32 @@ function McpBody({
     }));
   };
 
+  // Set the connection-wide default permission (allow / approve / deny). Setting
+  // it activates the per-agent model on this entry (the runner stops treating
+  // tools[] as a legacy allowlist).
+  const setDefaultLevel = (level: ToolApprovalLevel) => {
+    apply((entry) => ({ ...entry, default_tool_approval: level }));
+  };
+
+  // Override one tool's permission. Dropping it back to the connection default
+  // removes the override so the spec stays minimal (no entry ⇒ inherits default).
+  const setToolLevel = (toolName: string, level: ToolApprovalLevel) => {
+    apply((entry) => {
+      const others = arr(entry.tools).filter(
+        (t) => (typeof t === "string" ? t : str(rec(t).name)) !== toolName,
+      );
+      const tools =
+        level === effectiveDefault
+          ? others
+          : [...others, { name: toolName, level }];
+      return {
+        ...entry,
+        default_tool_approval: entry.default_tool_approval ?? effectiveDefault,
+        tools,
+      };
+    });
+  };
+
   // Drop this whole mcps[] entry from the spec and return to the list. The
   // shared connection (the mcp_store installation) is untouched — only the
   // agent's reference to it goes away.
@@ -1547,8 +1630,11 @@ function McpBody({
       <div>
         <Subhead>Connection</Subhead>
         <Muted>
-          One shared MCP connection an owner connected once — used by every
-          asker. Supersedes per-asker auth and bring-your-own-token.
+          Agent-level: one shared credential an owner connects once (OAuth or
+          API key) and every asker reuses — askers never sign in. You set it up
+          here. For per-asker auth instead, leave this unset and wire a
+          principal identity provider (below) so each asker connects as
+          themselves.
         </Muted>
         <Flex align="center" gap="2" className="mt-1.5">
           <Select.Root
@@ -1623,42 +1709,86 @@ function McpBody({
         </Attention>
       ) : null}
 
-      <div>
-        <Subhead>Tools · {tools.length}</Subhead>
-        {tools.length === 0 ? (
-          <Muted>No tools selected from this server.</Muted>
-        ) : (
-          <Flex direction="column" gap="1.5" className="mt-1">
-            {tools.map((t) => {
-              const name =
-                typeof t === "string" ? t : (str(rec(t).name) ?? "tool");
-              const requiresApproval =
-                typeof t === "object" && rec(t).requires_approval === true;
-              return (
-                <Flex
-                  key={name}
-                  align="center"
-                  gap="2"
-                  className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2"
-                >
-                  <Text className="min-w-0 flex-1 truncate text-[12px] text-gray-12 [font-family:var(--font-mono)]">
-                    {name}
-                  </Text>
-                  <Text className="text-[11px] text-gray-10">
-                    Requires approval
-                  </Text>
-                  <Switch
-                    size="1"
-                    checked={requiresApproval}
-                    onCheckedChange={(v) => setToolApproval(name, v === true)}
-                    disabled={!canEdit || saving}
-                  />
-                </Flex>
-              );
-            })}
+      {connection ? (
+        <div>
+          <Subhead>Tool permissions</Subhead>
+          <Muted>
+            The default applies to every tool this server exposes; override
+            individual tools below. Allow = runs automatically · Approve = asks
+            the approver each call · Deny = hidden from the agent.
+          </Muted>
+          <Flex align="center" gap="3" className="mt-2">
+            <Text className="text-[12px] text-gray-11">Default</Text>
+            <ToolPolicyToggle
+              value={LEVEL_TO_APPROVAL[effectiveDefault]}
+              onChange={(v) => setDefaultLevel(APPROVAL_TO_LEVEL[v])}
+              disabled={!canEdit || saving}
+            />
           </Flex>
-        )}
-      </div>
+          <div className="mt-3">
+            {catalogLoading ? (
+              <Muted>Loading the server's tools…</Muted>
+            ) : catalogTools.length === 0 ? (
+              <Muted>
+                No tools discovered yet — they appear once the connection is
+                verified.
+              </Muted>
+            ) : (
+              <Flex direction="column" gap="1.5">
+                {catalogTools.map((t: McpInstallationTool) => {
+                  const level = overrides.get(t.tool_name) ?? effectiveDefault;
+                  return (
+                    <ToolRow
+                      key={t.tool_name}
+                      tool={{ ...t, approval_state: LEVEL_TO_APPROVAL[level] }}
+                      onChange={(state: McpApprovalState) =>
+                        setToolLevel(t.tool_name, APPROVAL_TO_LEVEL[state])
+                      }
+                    />
+                  );
+                })}
+              </Flex>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div>
+          <Subhead>Tools · {tools.length}</Subhead>
+          {tools.length === 0 ? (
+            <Muted>No tools selected from this server.</Muted>
+          ) : (
+            <Flex direction="column" gap="1.5" className="mt-1">
+              {tools.map((t) => {
+                const name =
+                  typeof t === "string" ? t : (str(rec(t).name) ?? "tool");
+                const requiresApproval =
+                  typeof t === "object" && rec(t).requires_approval === true;
+                return (
+                  <Flex
+                    key={name}
+                    align="center"
+                    gap="2"
+                    className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2"
+                  >
+                    <Text className="min-w-0 flex-1 truncate text-[12px] text-gray-12 [font-family:var(--font-mono)]">
+                      {name}
+                    </Text>
+                    <Text className="text-[11px] text-gray-10">
+                      Requires approval
+                    </Text>
+                    <Switch
+                      size="1"
+                      checked={requiresApproval}
+                      onCheckedChange={(v) => setToolApproval(name, v === true)}
+                      disabled={!canEdit || saving}
+                    />
+                  </Flex>
+                );
+              })}
+            </Flex>
+          )}
+        </div>
+      )}
 
       {canEdit ? (
         <Flex justify="end" className="mt-1 border-border border-t pt-3">
