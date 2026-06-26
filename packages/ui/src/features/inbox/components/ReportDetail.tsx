@@ -13,34 +13,57 @@ import { ReportTasksSection } from "@posthog/ui/features/inbox/components/Report
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 
+/** Tabs whose detail view renders a `ReportDetail`. */
+type ReportDetailBackTo = "/code/inbox/reports" | "/code/inbox/not-actionable";
+
 interface ReportDetailProps {
   reportId: string;
   cachedReport?: SignalReport | null;
+  /** Where the back link points. Defaults to the Reports tab. */
+  backTo?: ReportDetailBackTo;
+  /** Label for the back link. Defaults to "Back to reports". */
+  backLabel?: string;
 }
 
 export function ReportDetail({
   reportId,
   cachedReport = null,
+  backTo = "/code/inbox/reports",
+  backLabel = "Back to reports",
 }: ReportDetailProps) {
   return (
     <InboxReportDetailGate
       reportId={reportId}
       cachedReport={cachedReport}
-      backTo="/code/inbox/reports"
-      backLabel="Back to reports"
+      backTo={backTo}
+      backLabel={backLabel}
       missingCopy="This report couldn't be found. It may have been deleted."
     >
-      {(report) => <ReportDetailContent report={report} />}
+      {(report) => (
+        <ReportDetailContent
+          report={report}
+          backTo={backTo}
+          backLabel={backLabel}
+        />
+      )}
     </InboxReportDetailGate>
   );
 }
 
-function ReportDetailContent({ report }: { report: SignalReport }) {
+function ReportDetailContent({
+  report,
+  backTo,
+  backLabel,
+}: {
+  report: SignalReport;
+  backTo: ReportDetailBackTo;
+  backLabel: string;
+}) {
   return (
     <InboxDetailFrame
       report={report}
-      backTo="/code/inbox/reports"
-      backLabel="Back to reports"
+      backTo={backTo}
+      backLabel={backLabel}
       fallbackTitle="Untitled report"
       primaryAction={
         <>

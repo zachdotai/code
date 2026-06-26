@@ -10,8 +10,10 @@ import {
   isDismissedReport,
   isExcludedFromInbox,
   isInboxDetailPath,
+  isNotActionableReport,
   isPullRequestReport,
   isReportTabReport,
+  isStaffOnlyInboxTab,
   matchesReviewerScope,
   partitionRunsTabReports,
   teammateInboxScope,
@@ -58,10 +60,85 @@ describe("isDismissedReport", () => {
   });
 });
 
+describe("isNotActionableReport", () => {
+  it("matches reports the judgment marked not_actionable", () => {
+    expect(
+      isNotActionableReport(fakeReport({ actionability: "not_actionable" })),
+    ).toBe(true);
+  });
+
+  it.each(["immediately_actionable", "requires_human_input", null] as const)(
+    "does not match %s actionability",
+    (actionability) => {
+      expect(isNotActionableReport(fakeReport({ actionability }))).toBe(false);
+    },
+  );
+
+  it.each(["suppressed", "resolved"] as const)(
+    "excludes terminal %s reports",
+    (status) => {
+      expect(
+        isNotActionableReport(
+          fakeReport({ actionability: "not_actionable", status }),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("excludes PR-bearing reports", () => {
+    expect(
+      isNotActionableReport(
+        fakeReport({
+          actionability: "not_actionable",
+          implementation_pr_url: "https://gh/p/1",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it.each(["potential", "candidate", "in_progress", "pending_input"] as const)(
+    "excludes in-flight %s runs (they stay in the Runs tab)",
+    (status) => {
+      expect(
+        isNotActionableReport(
+          fakeReport({ status, actionability: "not_actionable" }),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("excludes failed reports (they stay in the Runs tab)", () => {
+    expect(
+      isNotActionableReport(
+        fakeReport({ status: "failed", actionability: "not_actionable" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("matches a settled (ready) not_actionable report", () => {
+    expect(
+      isNotActionableReport(
+        fakeReport({ status: "ready", actionability: "not_actionable" }),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("isStaffOnlyInboxTab", () => {
+  it("gates only the Not actionable tab", () => {
+    expect(isStaffOnlyInboxTab("not-actionable")).toBe(true);
+    expect(isStaffOnlyInboxTab("reports")).toBe(false);
+    expect(isStaffOnlyInboxTab("pulls")).toBe(false);
+    expect(isStaffOnlyInboxTab("runs")).toBe(false);
+    expect(isStaffOnlyInboxTab("dismissed")).toBe(false);
+  });
+});
+
 describe("isInboxDetailPath", () => {
   it("matches detail paths for each inbox tab", () => {
     expect(isInboxDetailPath("/code/inbox/pulls/abc")).toBe(true);
     expect(isInboxDetailPath("/code/inbox/reports/abc")).toBe(true);
+    expect(isInboxDetailPath("/code/inbox/not-actionable/abc")).toBe(true);
     expect(isInboxDetailPath("/code/inbox/runs/abc")).toBe(true);
   });
 
@@ -233,6 +310,14 @@ describe("tabFilters", () => {
       expect(
         isReportTabReport(
           fakeReport({ status: "pending_input", implementation_pr_url: null }),
+        ),
+      ).toBe(false);
+    });
+
+    it("excludes not-actionable reports (they go to the Not actionable tab)", () => {
+      expect(
+        isReportTabReport(
+          fakeReport({ status: "ready", actionability: "not_actionable" }),
         ),
       ).toBe(false);
     });

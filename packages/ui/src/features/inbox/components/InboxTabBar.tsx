@@ -4,8 +4,10 @@ import {
   INBOX_TAB_LIST_ROUTE,
   type InboxTabCounts,
   type InboxTabKey,
+  isStaffOnlyInboxTab,
 } from "@posthog/core/inbox/reportMembership";
 import { Tabs, TabsList, TabsTrigger } from "@posthog/quill";
+import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
 import { InboxScopeSelect } from "@posthog/ui/features/inbox/components/InboxScopeSelect";
 import { Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
@@ -15,6 +17,11 @@ interface InboxTabBarProps {
 }
 
 function activeTabFromPath(pathname: string): InboxTabKey {
+  // Check "not-actionable" before "reports": the former is not a prefix of the
+  // latter, but keeping the more specific routes first guards against future
+  // overlaps.
+  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE["not-actionable"]))
+    return "not-actionable";
   if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.reports)) return "reports";
   if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.runs)) return "runs";
   if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.dismissed)) return "dismissed";
@@ -25,6 +32,11 @@ export function InboxTabBar({ counts }: InboxTabBarProps) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const activeKey = activeTabFromPath(pathname);
+  const { data: currentUser } = useMeQuery();
+  const isStaff = currentUser?.is_staff === true;
+  const visibleTabKeys = INBOX_TAB_KEYS.filter(
+    (key) => isStaff || !isStaffOnlyInboxTab(key),
+  );
 
   return (
     <Flex align="center" justify="between" className="min-w-0">
@@ -39,7 +51,7 @@ export function InboxTabBar({ counts }: InboxTabBarProps) {
           variant="line"
           className="h-auto gap-0.5 [&_.quill-tabs__indicator]:transition-[transform,width]! [&_.quill-tabs__indicator]:duration-100! [&_.quill-tabs__indicator]:ease-out!"
         >
-          {INBOX_TAB_KEYS.map((key) => {
+          {visibleTabKeys.map((key) => {
             const isActive = key === activeKey;
             return (
               <TabsTrigger
@@ -50,18 +62,21 @@ export function InboxTabBar({ counts }: InboxTabBarProps) {
                 <span className="font-medium text-[13px]">
                   {INBOX_TAB_LABEL[key]}
                 </span>
-                {/* Runs and the open-ended Archive don't get a running total — it adds no signal. */}
-                {key !== "runs" && key !== "dismissed" && counts[key] > 0 && (
-                  <span
-                    className={
-                      isActive
-                        ? "text-[12px] text-gray-11 tabular-nums"
-                        : "text-[12px] text-gray-10 tabular-nums"
-                    }
-                  >
-                    {counts[key]}
-                  </span>
-                )}
+                {/* Runs, Not actionable, and the open-ended Archive don't get a running total — it adds no signal. */}
+                {key !== "runs" &&
+                  key !== "dismissed" &&
+                  key !== "not-actionable" &&
+                  counts[key] > 0 && (
+                    <span
+                      className={
+                        isActive
+                          ? "text-[12px] text-gray-11 tabular-nums"
+                          : "text-[12px] text-gray-10 tabular-nums"
+                      }
+                    >
+                      {counts[key]}
+                    </span>
+                  )}
               </TabsTrigger>
             );
           })}

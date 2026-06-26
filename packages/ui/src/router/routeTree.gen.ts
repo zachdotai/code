@@ -37,6 +37,7 @@ import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId
 import { Route as CodeInboxRunsRouteImport } from './routes/code/inbox/runs'
 import { Route as CodeInboxReportsRouteImport } from './routes/code/inbox/reports'
 import { Route as CodeInboxPullsRouteImport } from './routes/code/inbox/pulls'
+import { Route as CodeInboxNotActionableRouteImport } from './routes/code/inbox/not-actionable'
 import { Route as CodeInboxDismissedRouteImport } from './routes/code/inbox/dismissed'
 import { Route as CodeInboxAgentsRouteImport } from './routes/code/inbox/agents'
 import { Route as CodeAgentsScoutsRouteImport } from './routes/code/agents/scouts'
@@ -44,6 +45,7 @@ import { Route as CodeAgentsApplicationsRouteImport } from './routes/code/agents
 import { Route as CodeInboxRunsIndexRouteImport } from './routes/code/inbox/runs.index'
 import { Route as CodeInboxReportsIndexRouteImport } from './routes/code/inbox/reports.index'
 import { Route as CodeInboxPullsIndexRouteImport } from './routes/code/inbox/pulls.index'
+import { Route as CodeInboxNotActionableIndexRouteImport } from './routes/code/inbox/not-actionable.index'
 import { Route as CodeInboxDismissedIndexRouteImport } from './routes/code/inbox/dismissed.index'
 import { Route as CodeAgentsScoutsIndexRouteImport } from './routes/code/agents/scouts.index'
 import { Route as CodeAgentsApplicationsIndexRouteImport } from './routes/code/agents/applications/index'
@@ -53,6 +55,7 @@ import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pen
 import { Route as CodeInboxRunsReportIdRouteImport } from './routes/code/inbox/runs.$reportId'
 import { Route as CodeInboxReportsReportIdRouteImport } from './routes/code/inbox/reports.$reportId'
 import { Route as CodeInboxPullsReportIdRouteImport } from './routes/code/inbox/pulls.$reportId'
+import { Route as CodeInboxNotActionableReportIdRouteImport } from './routes/code/inbox/not-actionable.$reportId'
 import { Route as CodeInboxDismissedReportIdRouteImport } from './routes/code/inbox/dismissed.$reportId'
 import { Route as CodeAgentsScoutsSkillNameRouteImport } from './routes/code/agents/scouts.$skillName'
 import { Route as CodeAgentsApplicationsApprovalsRouteImport } from './routes/code/agents/applications/approvals'
@@ -208,6 +211,11 @@ const CodeInboxPullsRoute = CodeInboxPullsRouteImport.update({
   path: '/pulls',
   getParentRoute: () => CodeInboxRoute,
 } as any)
+const CodeInboxNotActionableRoute = CodeInboxNotActionableRouteImport.update({
+  id: '/not-actionable',
+  path: '/not-actionable',
+  getParentRoute: () => CodeInboxRoute,
+} as any)
 const CodeInboxDismissedRoute = CodeInboxDismissedRouteImport.update({
   id: '/dismissed',
   path: '/dismissed',
@@ -243,6 +251,12 @@ const CodeInboxPullsIndexRoute = CodeInboxPullsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => CodeInboxPullsRoute,
 } as any)
+const CodeInboxNotActionableIndexRoute =
+  CodeInboxNotActionableIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CodeInboxNotActionableRoute,
+  } as any)
 const CodeInboxDismissedIndexRoute = CodeInboxDismissedIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -292,6 +306,12 @@ const CodeInboxPullsReportIdRoute = CodeInboxPullsReportIdRouteImport.update({
   path: '/$reportId',
   getParentRoute: () => CodeInboxPullsRoute,
 } as any)
+const CodeInboxNotActionableReportIdRoute =
+  CodeInboxNotActionableReportIdRouteImport.update({
+    id: '/$reportId',
+    path: '/$reportId',
+    getParentRoute: () => CodeInboxNotActionableRoute,
+  } as any)
 const CodeInboxDismissedReportIdRoute =
   CodeInboxDismissedReportIdRouteImport.update({
     id: '/$reportId',
@@ -401,6 +421,7 @@ export interface FileRoutesByFullPath {
   '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/inbox/dismissed': typeof CodeInboxDismissedRouteWithChildren
+  '/code/inbox/not-actionable': typeof CodeInboxNotActionableRouteWithChildren
   '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
@@ -414,6 +435,7 @@ export interface FileRoutesByFullPath {
   '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
   '/code/inbox/dismissed/$reportId': typeof CodeInboxDismissedReportIdRoute
+  '/code/inbox/not-actionable/$reportId': typeof CodeInboxNotActionableReportIdRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
   '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
@@ -423,6 +445,7 @@ export interface FileRoutesByFullPath {
   '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
   '/code/agents/scouts/': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/dismissed/': typeof CodeInboxDismissedIndexRoute
+  '/code/inbox/not-actionable/': typeof CodeInboxNotActionableIndexRoute
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
@@ -463,6 +486,7 @@ export interface FileRoutesByTo {
   '/website/$channelId': typeof WebsiteChannelIdIndexRoute
   '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/inbox/dismissed/$reportId': typeof CodeInboxDismissedReportIdRoute
+  '/code/inbox/not-actionable/$reportId': typeof CodeInboxNotActionableReportIdRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
   '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
@@ -472,6 +496,7 @@ export interface FileRoutesByTo {
   '/code/agents/applications': typeof CodeAgentsApplicationsIndexRoute
   '/code/agents/scouts': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/dismissed': typeof CodeInboxDismissedIndexRoute
+  '/code/inbox/not-actionable': typeof CodeInboxNotActionableIndexRoute
   '/code/inbox/pulls': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
@@ -511,6 +536,7 @@ export interface FileRoutesById {
   '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/inbox/dismissed': typeof CodeInboxDismissedRouteWithChildren
+  '/code/inbox/not-actionable': typeof CodeInboxNotActionableRouteWithChildren
   '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
@@ -524,6 +550,7 @@ export interface FileRoutesById {
   '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
   '/code/inbox/dismissed/$reportId': typeof CodeInboxDismissedReportIdRoute
+  '/code/inbox/not-actionable/$reportId': typeof CodeInboxNotActionableReportIdRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
   '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
@@ -533,6 +560,7 @@ export interface FileRoutesById {
   '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
   '/code/agents/scouts/': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/dismissed/': typeof CodeInboxDismissedIndexRoute
+  '/code/inbox/not-actionable/': typeof CodeInboxNotActionableIndexRoute
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
@@ -573,6 +601,7 @@ export interface FileRouteTypes {
     | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/inbox/dismissed'
+    | '/code/inbox/not-actionable'
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
@@ -586,6 +615,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/approvals'
     | '/code/agents/scouts/$skillName'
     | '/code/inbox/dismissed/$reportId'
+    | '/code/inbox/not-actionable/$reportId'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
     | '/code/inbox/runs/$reportId'
@@ -595,6 +625,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/'
     | '/code/agents/scouts/'
     | '/code/inbox/dismissed/'
+    | '/code/inbox/not-actionable/'
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
@@ -635,6 +666,7 @@ export interface FileRouteTypes {
     | '/website/$channelId'
     | '/code/agents/applications/approvals'
     | '/code/inbox/dismissed/$reportId'
+    | '/code/inbox/not-actionable/$reportId'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
     | '/code/inbox/runs/$reportId'
@@ -644,6 +676,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications'
     | '/code/agents/scouts'
     | '/code/inbox/dismissed'
+    | '/code/inbox/not-actionable'
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
@@ -682,6 +715,7 @@ export interface FileRouteTypes {
     | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/inbox/dismissed'
+    | '/code/inbox/not-actionable'
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
@@ -695,6 +729,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/approvals'
     | '/code/agents/scouts/$skillName'
     | '/code/inbox/dismissed/$reportId'
+    | '/code/inbox/not-actionable/$reportId'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
     | '/code/inbox/runs/$reportId'
@@ -704,6 +739,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/'
     | '/code/agents/scouts/'
     | '/code/inbox/dismissed/'
+    | '/code/inbox/not-actionable/'
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
@@ -935,6 +971,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeInboxPullsRouteImport
       parentRoute: typeof CodeInboxRoute
     }
+    '/code/inbox/not-actionable': {
+      id: '/code/inbox/not-actionable'
+      path: '/not-actionable'
+      fullPath: '/code/inbox/not-actionable'
+      preLoaderRoute: typeof CodeInboxNotActionableRouteImport
+      parentRoute: typeof CodeInboxRoute
+    }
     '/code/inbox/dismissed': {
       id: '/code/inbox/dismissed'
       path: '/dismissed'
@@ -983,6 +1026,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/inbox/pulls/'
       preLoaderRoute: typeof CodeInboxPullsIndexRouteImport
       parentRoute: typeof CodeInboxPullsRoute
+    }
+    '/code/inbox/not-actionable/': {
+      id: '/code/inbox/not-actionable/'
+      path: '/'
+      fullPath: '/code/inbox/not-actionable/'
+      preLoaderRoute: typeof CodeInboxNotActionableIndexRouteImport
+      parentRoute: typeof CodeInboxNotActionableRoute
     }
     '/code/inbox/dismissed/': {
       id: '/code/inbox/dismissed/'
@@ -1046,6 +1096,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/inbox/pulls/$reportId'
       preLoaderRoute: typeof CodeInboxPullsReportIdRouteImport
       parentRoute: typeof CodeInboxPullsRoute
+    }
+    '/code/inbox/not-actionable/$reportId': {
+      id: '/code/inbox/not-actionable/$reportId'
+      path: '/$reportId'
+      fullPath: '/code/inbox/not-actionable/$reportId'
+      preLoaderRoute: typeof CodeInboxNotActionableReportIdRouteImport
+      parentRoute: typeof CodeInboxNotActionableRoute
     }
     '/code/inbox/dismissed/$reportId': {
       id: '/code/inbox/dismissed/$reportId'
@@ -1294,6 +1351,22 @@ const CodeInboxDismissedRouteChildren: CodeInboxDismissedRouteChildren = {
 const CodeInboxDismissedRouteWithChildren =
   CodeInboxDismissedRoute._addFileChildren(CodeInboxDismissedRouteChildren)
 
+interface CodeInboxNotActionableRouteChildren {
+  CodeInboxNotActionableReportIdRoute: typeof CodeInboxNotActionableReportIdRoute
+  CodeInboxNotActionableIndexRoute: typeof CodeInboxNotActionableIndexRoute
+}
+
+const CodeInboxNotActionableRouteChildren: CodeInboxNotActionableRouteChildren =
+  {
+    CodeInboxNotActionableReportIdRoute: CodeInboxNotActionableReportIdRoute,
+    CodeInboxNotActionableIndexRoute: CodeInboxNotActionableIndexRoute,
+  }
+
+const CodeInboxNotActionableRouteWithChildren =
+  CodeInboxNotActionableRoute._addFileChildren(
+    CodeInboxNotActionableRouteChildren,
+  )
+
 interface CodeInboxPullsRouteChildren {
   CodeInboxPullsReportIdRoute: typeof CodeInboxPullsReportIdRoute
   CodeInboxPullsIndexRoute: typeof CodeInboxPullsIndexRoute
@@ -1338,6 +1411,7 @@ const CodeInboxRunsRouteWithChildren = CodeInboxRunsRoute._addFileChildren(
 interface CodeInboxRouteChildren {
   CodeInboxAgentsRoute: typeof CodeInboxAgentsRoute
   CodeInboxDismissedRoute: typeof CodeInboxDismissedRouteWithChildren
+  CodeInboxNotActionableRoute: typeof CodeInboxNotActionableRouteWithChildren
   CodeInboxPullsRoute: typeof CodeInboxPullsRouteWithChildren
   CodeInboxReportsRoute: typeof CodeInboxReportsRouteWithChildren
   CodeInboxRunsRoute: typeof CodeInboxRunsRouteWithChildren
@@ -1347,6 +1421,7 @@ interface CodeInboxRouteChildren {
 const CodeInboxRouteChildren: CodeInboxRouteChildren = {
   CodeInboxAgentsRoute: CodeInboxAgentsRoute,
   CodeInboxDismissedRoute: CodeInboxDismissedRouteWithChildren,
+  CodeInboxNotActionableRoute: CodeInboxNotActionableRouteWithChildren,
   CodeInboxPullsRoute: CodeInboxPullsRouteWithChildren,
   CodeInboxReportsRoute: CodeInboxReportsRouteWithChildren,
   CodeInboxRunsRoute: CodeInboxRunsRouteWithChildren,

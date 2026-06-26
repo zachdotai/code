@@ -82,11 +82,17 @@ export function countInboxScopeReports(
   return reports.filter((report) => matchesInboxScope(report, scope)).length;
 }
 
-export type InboxTabKey = "pulls" | "reports" | "runs" | "dismissed";
+export type InboxTabKey =
+  | "pulls"
+  | "reports"
+  | "not-actionable"
+  | "runs"
+  | "dismissed";
 
 export const INBOX_TAB_KEYS: InboxTabKey[] = [
   "pulls",
   "reports",
+  "not-actionable",
   "runs",
   "dismissed",
 ];
@@ -94,9 +100,24 @@ export const INBOX_TAB_KEYS: InboxTabKey[] = [
 export const INBOX_TAB_LABEL: Record<InboxTabKey, string> = {
   pulls: "Pull requests",
   reports: "Reports",
+  "not-actionable": "Not actionable",
   runs: "Runs",
   dismissed: "Archive",
 };
+
+/**
+ * Tabs only shown to staff (internal) users. Non-staff see Pull requests,
+ * Reports, Runs and Archive. The Not actionable tab is an internal signal-quality
+ * audit surface — reports the agent judged not worth acting on — so it stays
+ * behind the staff flag, matching the PostHog Cloud inbox.
+ */
+export const INBOX_STAFF_ONLY_TAB_KEYS = new Set<InboxTabKey>([
+  "not-actionable",
+]);
+
+export function isStaffOnlyInboxTab(key: InboxTabKey): boolean {
+  return INBOX_STAFF_ONLY_TAB_KEYS.has(key);
+}
 
 /**
  * Canonical inbox tab list routes. Use these constants instead of hard-coding
@@ -112,6 +133,7 @@ export const INBOX_TAB_LIST_ROUTE: Record<
 > = {
   pulls: "/code/inbox/pulls",
   reports: "/code/inbox/reports",
+  "not-actionable": "/code/inbox/not-actionable",
   runs: "/code/inbox/runs",
   dismissed: "/code/inbox/dismissed",
 };
@@ -231,7 +253,29 @@ export function isReportTabReport(report: SignalReport): boolean {
   // rather than reappearing as a Report.
   if (report.implementation_pr_url) return false;
   if (isAgentRunReport(report)) return false;
+  // Reports the agent judged not worth acting on get their own (staff-only)
+  // tab and are kept out of the main Reports list, matching the Cloud inbox.
+  if (isNotActionableReport(report)) return false;
   return true;
+}
+
+/**
+ * Not-actionable tab membership: reports the agentic actionability judgment
+ * marked `not_actionable`. A staff-only signal-quality audit surface. These are
+ * still in-pipeline reports (the judgment is an artefact, not a status), so this
+ * partitions the same main list the other report tabs read — it just keeps them
+ * out of the Reports tab via the check in `isReportTabReport`.
+ */
+export function isNotActionableReport(report: SignalReport): boolean {
+  if (isExcludedFromInbox(report)) return false;
+  if (report.status === "failed") return false; // failed runs live in the Runs tab only
+  if (report.implementation_pr_url) return false;
+  // In-flight (queued/live) runs belong to the Runs tab until they settle, even
+  // if a not_actionable judgment is already attached. Mirror the gate order in
+  // `isReportTabReport` so the two predicates classify a report the same way and
+  // it can't show in both the Runs and Not actionable tabs at once.
+  if (isAgentRunReport(report)) return false;
+  return report.actionability === "not_actionable";
 }
 
 export function matchesReviewerScope(

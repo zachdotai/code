@@ -15,14 +15,23 @@ The main objects are:
 
 ## Information Architecture
 
-Inbox has four tabs and one reviewer-scope control:
+Inbox has five tabs and one reviewer-scope control:
 
 | Tab | Route | Membership |
 | --- | --- | --- |
 | Pull requests | `/code/inbox/pulls` | Reports with `implementation_pr_url` set |
-| Reports | `/code/inbox/reports` | Reports without a PR and not currently running |
+| Reports | `/code/inbox/reports` | Reports without a PR, not running, and not judged not-actionable |
+| Not actionable | `/code/inbox/not-actionable` | Reports the judgment marked `actionability === "not_actionable"` (**staff-only**) |
 | Runs | `/code/inbox/runs` | Reports that are still in progress or waiting on input |
 | Archive | `/code/inbox/dismissed` | Terminal reports: archived/suppressed (`status === "suppressed"`) and resolved-by-merged-PR (`status === "resolved"`) |
+
+The **Not actionable** tab is gated to staff (internal) users via
+`INBOX_STAFF_ONLY_TAB_KEYS` (see `isStaffOnlyInboxTab`); `InboxTabBar` hides it
+for non-staff, keyed off `user.is_staff`. It's an internal signal-quality audit
+surface and mirrors the same staff-only tab in `PostHog/posthog`. It reuses the
+shared `InboxReportListTab` shell (same as Reports/Pulls); cards link to its own
+detail route so back-navigation stays on the tab. `isReportTabReport` excludes
+not-actionable reports so they don't double-list in Reports.
 
 Detail pages live under the same tab: `/code/inbox/<tab>/$reportId`.
 
@@ -76,6 +85,7 @@ The tab components are intentionally simple:
 
 - `PullRequestsTab` partitions scoped reports with `isPullRequestReport`.
 - `ReportsTab` partitions with `isReportTabReport`.
+- `NotActionableTab` (staff-only) partitions with `isNotActionableReport`.
 - `RunsTab` partitions with `isAgentRunReport`.
 - `DismissedTab` (the "Archive" tab) lists its own `useInboxDismissedReports` query (matching `isDismissedReport`); read-only detail route, restore action per card.
 

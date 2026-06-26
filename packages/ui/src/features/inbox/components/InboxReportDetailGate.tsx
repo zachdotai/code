@@ -1,5 +1,6 @@
 import {
   isDismissedReport,
+  isNotActionableReport,
   isPullRequestReport,
   isReportTabReport,
 } from "@posthog/core/inbox/reportMembership";
@@ -21,6 +22,7 @@ interface InboxReportDetailGateProps {
   backTo:
     | "/code/inbox/pulls"
     | "/code/inbox/reports"
+    | "/code/inbox/not-actionable"
     | "/code/inbox/runs"
     | "/code/inbox/dismissed";
   backLabel: string;
@@ -31,6 +33,7 @@ interface InboxReportDetailGateProps {
 type InboxDetailRoute =
   | "/code/inbox/pulls/$reportId"
   | "/code/inbox/reports/$reportId"
+  | "/code/inbox/not-actionable/$reportId"
   | "/code/inbox/runs/$reportId"
   | "/code/inbox/dismissed/$reportId";
 
@@ -43,6 +46,8 @@ type InboxDetailRoute =
  */
 function nonSuppressedDetailRoute(report: SignalReport): InboxDetailRoute {
   if (isPullRequestReport(report)) return "/code/inbox/pulls/$reportId";
+  if (isNotActionableReport(report))
+    return "/code/inbox/not-actionable/$reportId";
   if (isReportTabReport(report)) return "/code/inbox/reports/$reportId";
   return "/code/inbox/runs/$reportId";
 }
@@ -165,7 +170,11 @@ function tabFromBackTo(
 ): InboxDetailTab | null {
   if (backTo === "/code/inbox/pulls") return "pulls";
   if (backTo === "/code/inbox/runs") return "runs";
+  // Archive and the staff-only Not actionable tab aren't part of the triage
+  // funnel, so their detail opens aren't tracked (rank would be measured against
+  // the wrong list).
   if (backTo === "/code/inbox/dismissed") return null;
+  if (backTo === "/code/inbox/not-actionable") return null;
   return "reports";
 }
 

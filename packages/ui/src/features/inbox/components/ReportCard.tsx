@@ -40,6 +40,10 @@ interface DefaultReportCardProps extends BaseReportCardProps {
   onDismiss: () => void;
   dismissDisabledReason?: string | null;
   isDismissPending?: boolean;
+  // Which tab the card's detail link (and back navigation) should target.
+  // Defaults to the Reports tab; the Not actionable tab passes its own key so
+  // its detail view returns there instead of to Reports.
+  detailTab?: "reports" | "not-actionable";
 }
 
 /**
@@ -63,15 +67,21 @@ export function ReportCard(props: ReportCardProps) {
   // Archive tab for reference, badged as resolved, with no restore action.
   const isResolved = report.status === "resolved";
 
+  const detailTab = props.variant === "archived" ? "reports" : props.detailTab;
   const detailRoute = isArchived
     ? {
         to: "/code/inbox/dismissed/$reportId" as const,
         params: { reportId: report.id },
       }
-    : {
-        to: "/code/inbox/reports/$reportId" as const,
-        params: { reportId: report.id },
-      };
+    : detailTab === "not-actionable"
+      ? {
+          to: "/code/inbox/not-actionable/$reportId" as const,
+          params: { reportId: report.id },
+        }
+      : {
+          to: "/code/inbox/reports/$reportId" as const,
+          params: { reportId: report.id },
+        };
   const { prefetch, pointerHandlers } = useInboxReportDetailPrefetch(
     report,
     detailRoute,

@@ -14,6 +14,10 @@ export type InboxDetailRoute =
       params: { reportId: string };
     }
   | {
+      to: "/code/inbox/not-actionable/$reportId";
+      params: { reportId: string };
+    }
+  | {
       to: "/code/inbox/runs/$reportId";
       params: { reportId: string };
     }
