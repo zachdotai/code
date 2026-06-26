@@ -1,4 +1,11 @@
 import type { McpServerStatus, Query } from "@anthropic-ai/claude-agent-sdk";
+import {
+  buildMcpToolKey,
+  normalizeMcpToolKey,
+  parseMcpToolKey,
+  resolveMcpStoreToolKey,
+  sanitizeMcpServerName,
+} from "../../../mcp-store/tool-keys";
 import { Logger } from "../../../utils/logger";
 
 export type McpToolApprovalState = "approved" | "needs_approval" | "do_not_use";
@@ -9,22 +16,25 @@ export type McpToolApprovals = Record<string, McpToolApprovalState>;
 export interface McpToolMetadata {
   readOnly: boolean;
   name: string;
+  serverName?: string;
   description?: string;
   approvalState?: McpToolApprovalState;
 }
 
 const mcpToolMetadataCache: Map<string, McpToolMetadata> = new Map();
 
+// Per-tool approval state lives in its own store, keyed by normalized tool key.
+// It must outlive the metadata cache: `clearMcpToolMetadataCache()` runs on
+// every MCP server refresh/reconnect, and approval state is session config
+// (set once from the start payload), not volatile per-connection metadata.
+// Keeping them separate means a reconnect can't silently drop approvals and
+// let a needs_approval tool slip through the gate.
+const mcpToolApprovalCache: Map<string, McpToolApprovalState> = new Map();
+
 const PENDING_RETRY_INTERVAL_MS = 1_000;
 const PENDING_MAX_RETRIES = 10;
 
-export function sanitizeMcpServerName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
-function buildToolKey(serverName: string, toolName: string): string {
-  return `mcp__${serverName}__${toolName}`;
-}
+export { sanitizeMcpServerName };
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,15 +66,17 @@ export async function fetchMcpToolMetadata(
 
       let readOnlyCount = 0;
       for (const tool of server.tools) {
-        const toolKey = buildToolKey(server.name, tool.name);
+        const toolKey = buildMcpToolKey(server.name, tool.name);
         const readOnly = tool.annotations?.readOnly === true;
 
         const existing = mcpToolMetadataCache.get(toolKey);
         mcpToolMetadataCache.set(toolKey, {
           readOnly,
           name: tool.name,
+          serverName: server.name,
           description: tool.description,
-          approvalState: existing?.approvalState,
+          approvalState:
+            mcpToolApprovalCache.get(toolKey) ?? existing?.approvalState,
         });
         if (readOnly) readOnlyCount++;
       }
@@ -99,11 +111,24 @@ export async function fetchMcpToolMetadata(
 export function getMcpToolMetadata(
   toolName: string,
 ): McpToolMetadata | undefined {
-  return mcpToolMetadataCache.get(toolName);
+  const key = getMcpToolMetadataKey(toolName);
+  return key ? mcpToolMetadataCache.get(key) : undefined;
+}
+
+export function getMcpToolMetadataKey(toolName: string): string | undefined {
+  const resolvedKey = resolveMcpStoreToolKey(toolName, {
+    approvals: Object.fromEntries(
+      [...mcpToolMetadataCache.keys()].map((key) => [key, true]),
+    ),
+  });
+  const normalizedToolName = normalizeMcpToolKey(toolName);
+  if (mcpToolMetadataCache.has(toolName)) return toolName;
+  if (mcpToolMetadataCache.has(normalizedToolName)) return normalizedToolName;
+  return resolvedKey ?? undefined;
 }
 
 export function isMcpToolReadOnly(toolName: string): boolean {
-  const metadata = mcpToolMetadataCache.get(toolName);
+  const metadata = getMcpToolMetadata(toolName);
   return metadata?.readOnly === true;
 }
 
@@ -125,18 +150,41 @@ export function getCachedMcpTools(): McpToolMetadata[] {
 export function getMcpToolApprovalState(
   toolName: string,
 ): McpToolApprovalState | undefined {
-  return mcpToolMetadataCache.get(toolName)?.approvalState;
+  if (mcpToolApprovalCache.size === 0) {
+    return undefined;
+  }
+  // Direct/normalized hit first, then resolve server-name or title variants
+  // against the known approval keys. Reads the approval store (not the
+  // metadata cache) so it survives MCP metadata refreshes.
+  const direct =
+    mcpToolApprovalCache.get(toolName) ??
+    mcpToolApprovalCache.get(normalizeMcpToolKey(toolName));
+  if (direct) {
+    return direct;
+  }
+  const resolvedKey = resolveMcpStoreToolKey(toolName, {
+    approvals: Object.fromEntries(
+      [...mcpToolApprovalCache.keys()].map((key) => [key, true]),
+    ),
+  });
+  return resolvedKey ? mcpToolApprovalCache.get(resolvedKey) : undefined;
 }
 
 export function setMcpToolApprovalStates(approvals: McpToolApprovals): void {
   for (const [toolKey, approvalState] of Object.entries(approvals)) {
-    const existing = mcpToolMetadataCache.get(toolKey);
+    const normalizedToolKey = normalizeMcpToolKey(toolKey);
+    mcpToolApprovalCache.set(normalizedToolKey, approvalState);
+    // Mirror onto the metadata cache entry when present so UI/debug reads stay
+    // consistent; the approval store above remains the source of truth.
+    const existing = mcpToolMetadataCache.get(normalizedToolKey);
     if (existing) {
       existing.approvalState = approvalState;
     } else {
-      mcpToolMetadataCache.set(toolKey, {
+      const parsed = parseMcpToolKey(normalizedToolKey);
+      mcpToolMetadataCache.set(normalizedToolKey, {
         readOnly: false,
-        name: toolKey,
+        name: parsed?.toolName ?? normalizedToolKey,
+        serverName: parsed?.serverName,
         approvalState,
       });
     }
@@ -145,4 +193,10 @@ export function setMcpToolApprovalStates(approvals: McpToolApprovals): void {
 
 export function clearMcpToolMetadataCache(): void {
   mcpToolMetadataCache.clear();
+}
+
+/** Reset per-tool approval state. Approvals survive metadata refreshes, so
+ *  this is only for session teardown and tests — not the per-refresh clear. */
+export function clearMcpToolApprovalCache(): void {
+  mcpToolApprovalCache.clear();
 }

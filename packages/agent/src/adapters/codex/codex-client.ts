@@ -34,6 +34,7 @@ import {
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
 import type { PermissionMode } from "../../execution-mode";
+import { resolveMcpStoreToolKey } from "../../mcp-store/tool-keys";
 import type { Logger } from "../../utils/logger";
 import type { CodexSessionState } from "./session-state";
 import {
@@ -75,6 +76,57 @@ function toRecord(value: unknown): Record<string, unknown> | null {
     return value as Record<string, unknown>;
   }
   return null;
+}
+
+function getMcpToolNameFromPermissionRequest(
+  sessionState: CodexSessionState,
+  params: RequestPermissionRequest,
+): string | null {
+  const rawInput = toRecord(params.toolCall?.rawInput);
+  const meta = toRecord(params.toolCall?._meta);
+  const claudeCode = toRecord(meta?.claudeCode);
+  const candidates = [
+    typeof rawInput?.toolName === "string" ? rawInput.toolName : null,
+    typeof rawInput?.name === "string" ? rawInput.name : null,
+    typeof meta?.toolName === "string" ? meta.toolName : null,
+    typeof claudeCode?.toolName === "string" ? claudeCode.toolName : null,
+    typeof params.toolCall?.title === "string" ? params.toolCall.title : null,
+  ];
+
+  for (const candidate of candidates) {
+    const toolName = resolveMcpStoreToolKey(candidate, {
+      approvals: sessionState.mcpToolApprovals,
+      installations: sessionState.mcpToolInstallations,
+    });
+    if (toolName) return toolName;
+  }
+
+  return null;
+}
+
+function withMcpToolName(
+  params: RequestPermissionRequest,
+  toolName: string,
+): RequestPermissionRequest {
+  if (!params.toolCall) return params;
+  return {
+    ...params,
+    toolCall: {
+      ...params.toolCall,
+      rawInput: {
+        ...(toRecord(params.toolCall.rawInput) ?? {}),
+        toolName,
+      },
+    },
+  };
+}
+
+function isAllowResponse(response: RequestPermissionResponse): boolean {
+  return (
+    response.outcome?.outcome === "selected" &&
+    (response.outcome.optionId === "allow" ||
+      response.outcome.optionId === "allow_always")
+  );
 }
 
 const AUTO_APPROVED_KINDS: Record<PermissionMode, Set<ToolKind>> = {
@@ -143,6 +195,36 @@ export function createCodexClient(
       params: RequestPermissionRequest,
     ): Promise<RequestPermissionResponse> {
       const kind = params.toolCall?.kind as ToolKind | null | undefined;
+      const mcpToolName = getMcpToolNameFromPermissionRequest(
+        sessionState,
+        params,
+      );
+      const mcpApprovalState = mcpToolName
+        ? sessionState.mcpToolApprovals?.[mcpToolName]
+        : undefined;
+
+      if (mcpToolName && mcpApprovalState === "do_not_use") {
+        return {
+          outcome: { outcome: "cancelled" },
+          _meta: {
+            message:
+              "This tool has been blocked. To re-enable it, go to Settings > MCP Servers in PostHog Code.",
+          },
+        };
+      }
+
+      if (mcpToolName && mcpApprovalState === "needs_approval") {
+        const response = await upstreamClient.requestPermission(
+          withMcpToolName(params, mcpToolName),
+        );
+        if (isAllowResponse(response)) {
+          sessionState.mcpToolApprovals = {
+            ...sessionState.mcpToolApprovals,
+            [mcpToolName]: "approved",
+          };
+        }
+        return response;
+      }
 
       if (shouldAutoApprove(sessionState.permissionMode, kind)) {
         logger.debug("Auto-approving permission", {

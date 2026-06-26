@@ -7,6 +7,7 @@ import type { Logger } from "../../utils/logger";
 import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../signed-commit-shared";
 import { stripCatLineNumbers } from "./conversion/sdk-to-acp";
 import type { TaskState } from "./conversion/task-state";
+import { getMcpToolApprovalState } from "./mcp/tool-metadata";
 import {
   extractPostHogSubTool,
   isPostHogDestructiveSubTool,
@@ -408,6 +409,45 @@ export const createPreToolUseHook =
       logger.info(
         `[PreToolUseHook] Tool: ${toolName}, Decision: ${permissionCheck.decision}, Rule: ${permissionCheck.rule}`,
       );
+    }
+
+    // MCP Store per-tool approval. Cloud sessions run in bypassPermissions,
+    // which skips canUseTool entirely — so this PreToolUse hook is the only
+    // gate that runs for these tools. Force a decision here: deny blocked
+    // tools outright, and route needs_approval tools back through canUseTool
+    // (via "ask") so handleMcpApprovalFlow relays the approval dialog to the
+    // desktop and persists the result to the backend. An explicit allow rule
+    // (e.g. a prior "always allow") takes precedence so the prompt sticks.
+    const mcpApprovalState = getMcpToolApprovalState(toolName);
+    if (mcpApprovalState === "do_not_use") {
+      logger.info(`[PreToolUseHook] Blocking do_not_use MCP tool: ${toolName}`);
+      return {
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse" as const,
+          permissionDecision: "deny" as const,
+          permissionDecisionReason:
+            "This tool has been blocked. To re-enable it, go to Settings > MCP Servers in PostHog Code.",
+        },
+      };
+    }
+    if (
+      mcpApprovalState === "needs_approval" &&
+      permissionCheck.decision !== "allow" &&
+      permissionCheck.decision !== "deny"
+    ) {
+      logger.info(
+        `[PreToolUseHook] Routing needs_approval MCP tool to canUseTool: ${toolName}`,
+      );
+      return {
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse" as const,
+          permissionDecision: "ask" as const,
+          permissionDecisionReason:
+            "This MCP tool requires approval before it can be used.",
+        },
+      };
     }
 
     // Defer destructive PostHog exec sub-tools to canUseTool so the

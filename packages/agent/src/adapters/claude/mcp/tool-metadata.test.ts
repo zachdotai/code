@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  clearMcpToolApprovalCache,
   clearMcpToolMetadataCache,
   getMcpToolApprovalState,
   getMcpToolMetadata,
+  getMcpToolMetadataKey,
   isMcpToolReadOnly,
   sanitizeMcpServerName,
   setMcpToolApprovalStates,
@@ -11,6 +13,7 @@ import {
 describe("tool-metadata approval states", () => {
   beforeEach(() => {
     clearMcpToolMetadataCache();
+    clearMcpToolApprovalCache();
   });
 
   describe("setMcpToolApprovalStates", () => {
@@ -56,11 +59,49 @@ describe("tool-metadata approval states", () => {
       expect(getMcpToolApprovalState("mcp__server__unknown")).toBeUndefined();
     });
 
+    it("normalizes MCP server names before looking up approval state", () => {
+      setMcpToolApprovalStates({
+        mcp__Granola_Meetings__query_granola_meetings: "needs_approval",
+      });
+
+      expect(
+        getMcpToolApprovalState(
+          "mcp__Granola Meetings__query_granola_meetings",
+        ),
+      ).toBe("needs_approval");
+    });
+
+    it("resolves a bare upstream tool name when it uniquely maps to an MCP Store tool", () => {
+      setMcpToolApprovalStates({
+        mcp__Granola_Meetings__query_granola_meetings: "needs_approval",
+      });
+
+      expect(getMcpToolApprovalState("query_granola_meetings")).toBe(
+        "needs_approval",
+      );
+      expect(getMcpToolMetadataKey("query_granola_meetings")).toBe(
+        "mcp__Granola_Meetings__query_granola_meetings",
+      );
+    });
+
     it("returns the correct state", () => {
       setMcpToolApprovalStates({
         mcp__s__t: "needs_approval",
       });
       expect(getMcpToolApprovalState("mcp__s__t")).toBe("needs_approval");
+    });
+
+    it("survives a metadata cache clear (MCP server refresh/reconnect)", () => {
+      setMcpToolApprovalStates({
+        mcp__granola__query_granola_meetings: "needs_approval",
+      });
+
+      // A server reconnect wipes the metadata cache mid-session.
+      clearMcpToolMetadataCache();
+
+      expect(
+        getMcpToolApprovalState("mcp__granola__query_granola_meetings"),
+      ).toBe("needs_approval");
     });
   });
 

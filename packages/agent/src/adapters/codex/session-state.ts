@@ -1,5 +1,9 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { PermissionMode } from "../../execution-mode";
+import type {
+  McpToolApprovalsConfig,
+  McpToolInstallationsConfig,
+} from "../../server/schemas";
 import type { ContextBreakdownBaseline } from "../claude/context-breakdown";
 
 export interface CodexUsage {
@@ -22,6 +26,8 @@ export interface CodexSessionState {
   permissionMode: PermissionMode;
   taskRunId?: string;
   taskId?: string;
+  mcpToolApprovals?: McpToolApprovalsConfig;
+  mcpToolInstallations?: McpToolInstallationsConfig;
 }
 
 export function createSessionState(
@@ -33,6 +39,8 @@ export function createSessionState(
     modeId?: string;
     modelId?: string;
     permissionMode?: PermissionMode;
+    mcpToolApprovals?: McpToolApprovalsConfig;
+    mcpToolInstallations?: McpToolInstallationsConfig;
   },
 ): CodexSessionState {
   return {
@@ -50,6 +58,8 @@ export function createSessionState(
     permissionMode: opts?.permissionMode ?? "auto",
     taskRunId: opts?.taskRunId,
     taskId: opts?.taskId,
+    mcpToolApprovals: opts?.mcpToolApprovals,
+    mcpToolInstallations: opts?.mcpToolInstallations,
   };
 }
 
@@ -66,6 +76,8 @@ export function resetSessionState(
     modeId?: string;
     modelId?: string;
     permissionMode?: PermissionMode;
+    mcpToolApprovals?: McpToolApprovalsConfig;
+    mcpToolInstallations?: McpToolInstallationsConfig;
   },
 ): void {
   state.sessionId = sessionId;
@@ -85,6 +97,8 @@ export function resetSessionState(
   state.permissionMode = opts?.permissionMode ?? "auto";
   state.taskRunId = opts?.taskRunId;
   state.taskId = opts?.taskId;
+  state.mcpToolApprovals = opts?.mcpToolApprovals;
+  state.mcpToolInstallations = opts?.mcpToolInstallations;
 }
 
 export function resetUsage(state: CodexSessionState): void {

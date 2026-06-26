@@ -424,6 +424,123 @@ describe("Question relay", () => {
           "approved",
         );
       });
+
+      it("recognizes MCP Store approval requests by bare upstream tool name", async () => {
+        const appendRawLine = vi.fn();
+        const approvalSpy = vi
+          .spyOn(server.posthogAPI, "updateMcpToolApproval")
+          .mockResolvedValue(undefined);
+
+        server.config.mcpToolApprovals = {
+          mcp__Granola__query_granola_meetings: "needs_approval",
+        };
+        server.config.mcpToolInstallations = {
+          mcp__Granola__query_granola_meetings: {
+            installationId: "inst-1",
+            toolName: "query_granola_meetings",
+          },
+        };
+        server.session = {
+          payload: TEST_PAYLOAD,
+          sseController: null,
+          hasDesktopConnected: false,
+          permissionMode: "bypassPermissions",
+          logWriter: { appendRawLine },
+        };
+
+        const client = server.createCloudClient(TEST_PAYLOAD);
+        const permissionPromise = client.requestPermission({
+          options: ALLOW_OPTIONS,
+          toolCall: {
+            toolCallId: "tool-1",
+            title: "query_granola_meetings",
+            kind: "other",
+            rawInput: { query: "today" },
+          },
+        });
+
+        const request = appendRawLine.mock.calls
+          .map(([, line]) => JSON.parse(line))
+          .find((n) => n?.method === "_posthog/permission_request");
+        expect(request).toBeTruthy();
+        expect(request.params.toolCallId).toBe("tool-1");
+
+        expect(
+          server.resolvePermission(request.params.requestId, "allow"),
+        ).toBe(true);
+
+        await expect(permissionPromise).resolves.toMatchObject({
+          outcome: { outcome: "selected", optionId: "allow" },
+        });
+        expect(approvalSpy).toHaveBeenCalledWith(
+          "inst-1",
+          "query_granola_meetings",
+          "approved",
+        );
+        expect(
+          server.config.mcpToolApprovals.mcp__Granola__query_granola_meetings,
+        ).toBe("approved");
+      });
+
+      it("recognizes MCP Store approval requests with unsanitized MCP server names", async () => {
+        const appendRawLine = vi.fn();
+        const approvalSpy = vi
+          .spyOn(server.posthogAPI, "updateMcpToolApproval")
+          .mockResolvedValue(undefined);
+
+        server.config.mcpToolApprovals = {
+          mcp__Granola_Meetings__query_granola_meetings: "needs_approval",
+        };
+        server.config.mcpToolInstallations = {
+          mcp__Granola_Meetings__query_granola_meetings: {
+            installationId: "inst-1",
+            toolName: "query_granola_meetings",
+          },
+        };
+        server.session = {
+          payload: TEST_PAYLOAD,
+          sseController: null,
+          hasDesktopConnected: false,
+          permissionMode: "bypassPermissions",
+          logWriter: { appendRawLine },
+        };
+
+        const client = server.createCloudClient(TEST_PAYLOAD);
+        const permissionPromise = client.requestPermission({
+          options: ALLOW_OPTIONS,
+          toolCall: {
+            toolCallId: "tool-1",
+            title:
+              "The agent wants to call query_granola_meetings (Granola Meetings)",
+            kind: "other",
+            rawInput: {
+              toolName: "mcp__Granola Meetings__query_granola_meetings",
+            },
+          },
+        });
+
+        const request = appendRawLine.mock.calls
+          .map(([, line]) => JSON.parse(line))
+          .find((n) => n?.method === "_posthog/permission_request");
+        expect(request).toBeTruthy();
+
+        expect(
+          server.resolvePermission(request.params.requestId, "allow"),
+        ).toBe(true);
+
+        await expect(permissionPromise).resolves.toMatchObject({
+          outcome: { outcome: "selected", optionId: "allow" },
+        });
+        expect(approvalSpy).toHaveBeenCalledWith(
+          "inst-1",
+          "query_granola_meetings",
+          "approved",
+        );
+        expect(
+          server.config.mcpToolApprovals
+            .mcp__Granola_Meetings__query_granola_meetings,
+        ).toBe("approved");
+      });
     });
 
     describe("with createPr disabled", () => {

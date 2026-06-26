@@ -112,6 +112,138 @@ describe("createCodexClient readTextFile", () => {
   });
 });
 
+describe("createCodexClient MCP Store permissions", () => {
+  const logger = new Logger({ debug: false, prefix: "[test]" });
+  const ALLOW_OPTIONS = [
+    { kind: "allow_once" as const, optionId: "allow", name: "Allow" },
+    { kind: "reject_once" as const, optionId: "reject", name: "Reject" },
+  ];
+
+  function makePermissionUpstream(
+    response = {
+      outcome: { outcome: "selected" as const, optionId: "allow" },
+    },
+  ): AgentSideConnection & { requestPermission: ReturnType<typeof vi.fn> } {
+    return {
+      sessionUpdate: vi.fn(async () => {}),
+      requestPermission: vi.fn(async () => response),
+      readTextFile: vi.fn(),
+      writeTextFile: vi.fn(),
+      createTerminal: vi.fn(),
+      terminalOutput: vi.fn(),
+      releaseTerminal: vi.fn(),
+      waitForTerminalExit: vi.fn(),
+      killTerminal: vi.fn(),
+      extMethod: vi.fn(),
+      extNotification: vi.fn(),
+    } as unknown as AgentSideConnection & {
+      requestPermission: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  test("relays needs_approval MCP tools by bare title even in full-access mode", async () => {
+    const toolName = "mcp__Granola__query_granola_meetings";
+    const upstream = makePermissionUpstream();
+    const sessionState = createSessionState("sess", "/tmp", {
+      permissionMode: "full-access",
+      mcpToolApprovals: { [toolName]: "needs_approval" },
+      mcpToolInstallations: {
+        [toolName]: {
+          installationId: "inst-1",
+          toolName: "query_granola_meetings",
+        },
+      },
+    });
+    const client = createCodexClient(upstream, logger, sessionState);
+
+    const result = await client.requestPermission?.({
+      options: ALLOW_OPTIONS,
+      toolCall: {
+        toolCallId: "tc-1",
+        title: "query_granola_meetings",
+        kind: "other",
+        rawInput: { search: "today" },
+      },
+    } as never);
+
+    expect(result?.outcome.outcome).toBe("selected");
+    expect(upstream.requestPermission).toHaveBeenCalledTimes(1);
+    expect(upstream.requestPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          rawInput: expect.objectContaining({
+            search: "today",
+            toolName,
+          }),
+        }),
+      }),
+    );
+    expect(sessionState.mcpToolApprovals?.[toolName]).toBe("approved");
+  });
+
+  test("relays needs_approval MCP tools with unsanitized MCP server names", async () => {
+    const toolName = "mcp__Granola_Meetings__query_granola_meetings";
+    const upstream = makePermissionUpstream();
+    const sessionState = createSessionState("sess", "/tmp", {
+      permissionMode: "full-access",
+      mcpToolApprovals: { [toolName]: "needs_approval" },
+      mcpToolInstallations: {
+        [toolName]: {
+          installationId: "inst-1",
+          toolName: "query_granola_meetings",
+        },
+      },
+    });
+    const client = createCodexClient(upstream, logger, sessionState);
+
+    await client.requestPermission?.({
+      options: ALLOW_OPTIONS,
+      toolCall: {
+        toolCallId: "tc-1",
+        title: "mcp__Granola Meetings__query_granola_meetings",
+        kind: "other",
+      },
+    } as never);
+
+    expect(upstream.requestPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          rawInput: expect.objectContaining({ toolName }),
+        }),
+      }),
+    );
+    expect(sessionState.mcpToolApprovals?.[toolName]).toBe("approved");
+  });
+
+  test("cancels blocked MCP tools before they reach the upstream permission flow", async () => {
+    const toolName = "mcp__Granola__query_granola_meetings";
+    const upstream = makePermissionUpstream();
+    const sessionState = createSessionState("sess", "/tmp", {
+      permissionMode: "full-access",
+      mcpToolApprovals: { [toolName]: "do_not_use" },
+      mcpToolInstallations: {
+        [toolName]: {
+          installationId: "inst-1",
+          toolName: "query_granola_meetings",
+        },
+      },
+    });
+    const client = createCodexClient(upstream, logger, sessionState);
+
+    const result = await client.requestPermission?.({
+      options: ALLOW_OPTIONS,
+      toolCall: {
+        toolCallId: "tc-1",
+        title: "query_granola_meetings",
+        kind: "other",
+      },
+    } as never);
+
+    expect(result?.outcome.outcome).toBe("cancelled");
+    expect(upstream.requestPermission).not.toHaveBeenCalled();
+  });
+});
+
 describe("createCodexClient onStructuredOutput", () => {
   const logger = new Logger({ debug: false, prefix: "[test]" });
   const sessionState = createSessionState("sess", "/tmp");

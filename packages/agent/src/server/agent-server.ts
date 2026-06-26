@@ -40,6 +40,7 @@ import {
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
+import { resolveMcpStoreToolKey } from "../mcp-store/tool-keys";
 import { PostHogAPIClient } from "../posthog-api";
 import { findPrUrl, wasCreatedRecently } from "../pr-url-detector";
 import {
@@ -364,6 +365,13 @@ export class AgentServer {
     return mode === "default" || mode === "auto" || mode === "read-only";
   }
 
+  private resolveMcpToolName(candidate: string | null): string | null {
+    return resolveMcpStoreToolKey(candidate, {
+      approvals: this.config.mcpToolApprovals,
+      installations: this.config.mcpToolInstallations,
+    });
+  }
+
   private getMcpToolNameFromPermissionRequest(
     params: RequestPermissionRequest,
   ): string | null {
@@ -375,8 +383,17 @@ export class AgentServer {
         : null;
     const rawInputToolName =
       typeof rawInput?.toolName === "string" ? rawInput.toolName : null;
-    if (rawInputToolName?.startsWith("mcp__")) {
-      return rawInputToolName;
+    const toolNameFromRawInputToolName =
+      this.resolveMcpToolName(rawInputToolName);
+    if (toolNameFromRawInputToolName) {
+      return toolNameFromRawInputToolName;
+    }
+
+    const rawInputName =
+      typeof rawInput?.name === "string" ? rawInput.name : null;
+    const toolNameFromRawInputName = this.resolveMcpToolName(rawInputName);
+    if (toolNameFromRawInputName) {
+      return toolNameFromRawInputName;
     }
 
     const meta =
@@ -391,16 +408,26 @@ export class AgentServer {
       !Array.isArray(meta.claudeCode)
         ? (meta.claudeCode as Record<string, unknown>)
         : null;
+    const topLevelMetaToolName =
+      typeof meta?.toolName === "string" ? meta.toolName : null;
+    const toolNameFromTopLevelMeta =
+      this.resolveMcpToolName(topLevelMetaToolName);
+    if (toolNameFromTopLevelMeta) {
+      return toolNameFromTopLevelMeta;
+    }
+
     const metaToolName =
       typeof claudeCode?.toolName === "string" ? claudeCode.toolName : null;
-    if (metaToolName?.startsWith("mcp__")) {
-      return metaToolName;
+    const toolNameFromMeta = this.resolveMcpToolName(metaToolName);
+    if (toolNameFromMeta) {
+      return toolNameFromMeta;
     }
 
     const title =
       typeof params.toolCall?.title === "string" ? params.toolCall.title : null;
-    if (title?.startsWith("mcp__")) {
-      return title;
+    const toolNameFromTitle = this.resolveMcpToolName(title);
+    if (toolNameFromTitle) {
+      return toolNameFromTitle;
     }
 
     return null;

@@ -79,6 +79,62 @@ describe("canUseTool MCP approval enforcement", () => {
     );
   });
 
+  it("routes needs_approval MCP tools when the runtime tool name has an unsanitized server name", async () => {
+    setMcpToolApprovalStates({
+      mcp__Granola_Meetings__query_granola_meetings: "needs_approval",
+    });
+
+    const context = createContext(
+      "mcp__Granola Meetings__query_granola_meetings",
+    );
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          rawInput: expect.objectContaining({
+            toolName: "mcp__Granola_Meetings__query_granola_meetings",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("routes needs_approval MCP tools when Claude reports the bare upstream tool name", async () => {
+    setMcpToolApprovalStates({
+      mcp__Granola_Meetings__query_granola_meetings: "needs_approval",
+    });
+
+    const context = createContext("query_granola_meetings");
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          title:
+            "The agent wants to call query_granola_meetings (Granola_Meetings)",
+          rawInput: expect.objectContaining({
+            toolName: "mcp__Granola_Meetings__query_granola_meetings",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("does not treat built-in Claude tools as bare MCP Store matches", async () => {
+    setMcpToolApprovalStates({
+      mcp__server__Read: "needs_approval",
+    });
+
+    const context = createContext("Read");
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).not.toHaveBeenCalled();
+  });
+
   it("allows approved MCP tools through normal flow", async () => {
     setMcpToolApprovalStates({
       mcp__server__approved_tool: "approved",

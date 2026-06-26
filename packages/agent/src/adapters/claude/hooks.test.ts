@@ -16,6 +16,11 @@ import {
   createTaskHook,
   type EnrichedReadCache,
 } from "./hooks";
+import {
+  clearMcpToolApprovalCache,
+  clearMcpToolMetadataCache,
+  setMcpToolApprovalStates,
+} from "./mcp/tool-metadata";
 import type {
   PermissionCheckResult,
   SettingsManager,
@@ -312,6 +317,81 @@ describe("createPreToolUseHook", () => {
     expect(result).toMatchObject({
       hookSpecificOutput: { permissionDecision: "ask" },
     });
+  });
+
+  test("routes needs_approval MCP Store tool to canUseTool via ask", async () => {
+    clearMcpToolMetadataCache();
+    clearMcpToolApprovalCache();
+    setMcpToolApprovalStates({
+      mcp__granola__query_granola_meetings: "needs_approval",
+    });
+    const settingsManager = buildSettingsManagerStub({ decision: "ask" });
+    const hook = createPreToolUseHook(settingsManager, logger);
+    const result = await hook(
+      buildPreToolUseHookInput("mcp__granola__query_granola_meetings", {}),
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toMatchObject({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "ask",
+      },
+    });
+    clearMcpToolMetadataCache();
+    clearMcpToolApprovalCache();
+  });
+
+  test("denies do_not_use MCP Store tool", async () => {
+    clearMcpToolMetadataCache();
+    clearMcpToolApprovalCache();
+    setMcpToolApprovalStates({
+      mcp__granola__query_granola_meetings: "do_not_use",
+    });
+    const settingsManager = buildSettingsManagerStub({ decision: "ask" });
+    const hook = createPreToolUseHook(settingsManager, logger);
+    const result = await hook(
+      buildPreToolUseHookInput("mcp__granola__query_granola_meetings", {}),
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toMatchObject({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+      },
+    });
+    clearMcpToolMetadataCache();
+    clearMcpToolApprovalCache();
+  });
+
+  test("respects an explicit allow rule for a needs_approval MCP Store tool", async () => {
+    clearMcpToolMetadataCache();
+    clearMcpToolApprovalCache();
+    setMcpToolApprovalStates({
+      mcp__granola__query_granola_meetings: "needs_approval",
+    });
+    const settingsManager = buildSettingsManagerStub({
+      decision: "allow",
+      rule: "mcp__granola__query_granola_meetings",
+      source: "allow",
+    });
+    const hook = createPreToolUseHook(settingsManager, logger);
+    const result = await hook(
+      buildPreToolUseHookInput("mcp__granola__query_granola_meetings", {}),
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toMatchObject({
+      hookSpecificOutput: { permissionDecision: "allow" },
+    });
+    clearMcpToolMetadataCache();
+    clearMcpToolApprovalCache();
   });
 });
 

@@ -12,6 +12,7 @@ import { toolInfoFromToolUse } from "../conversion/tool-use-to-acp";
 import {
   getMcpToolApprovalState,
   getMcpToolMetadata,
+  getMcpToolMetadataKey,
 } from "../mcp/tool-metadata";
 import {
   getClaudePlansDir,
@@ -25,7 +26,15 @@ import {
   OPTION_PREFIX,
   type QuestionItem,
 } from "../questions/utils";
-import { isToolAllowedForMode, WRITE_TOOLS } from "../tools";
+import {
+  AGENT_TOOLS,
+  BASH_TOOLS,
+  isToolAllowedForMode,
+  READ_TOOLS,
+  SEARCH_TOOLS,
+  WEB_TOOLS,
+  WRITE_TOOLS,
+} from "../tools";
 import type { Session } from "../types";
 import {
   buildExitPlanModePermissionOptions,
@@ -429,13 +438,33 @@ function parseMcpToolName(toolName: string): {
   };
 }
 
+const CLAUDE_BUILTIN_TOOLS = new Set([
+  ...READ_TOOLS,
+  ...WRITE_TOOLS,
+  ...BASH_TOOLS,
+  ...SEARCH_TOOLS,
+  ...WEB_TOOLS,
+  ...AGENT_TOOLS,
+  "EnterPlanMode",
+  "ExitPlanMode",
+  "AskUserQuestion",
+]);
+
+function shouldCheckMcpStoreApproval(toolName: string): boolean {
+  return toolName.startsWith("mcp__") || !CLAUDE_BUILTIN_TOOLS.has(toolName);
+}
+
 async function handleMcpApprovalFlow(
   context: ToolHandlerContext,
 ): Promise<ToolPermissionResult> {
   const { toolName, toolInput, toolUseID, client, sessionId } = context;
 
-  const { serverName, tool: displayTool } = parseMcpToolName(toolName);
+  const approvalToolName = getMcpToolMetadataKey(toolName) ?? toolName;
   const metadata = getMcpToolMetadata(toolName);
+  const { serverName: parsedServerName, tool: parsedToolName } =
+    parseMcpToolName(approvalToolName);
+  const serverName = metadata?.serverName ?? parsedServerName;
+  const displayTool = metadata?.name ?? parsedToolName;
   const description = metadata?.description
     ? `\n\n${metadata.description}`
     : "";
@@ -463,7 +492,10 @@ async function handleMcpApprovalFlow(
       content: description
         ? [{ type: "content" as const, content: text(description) }]
         : [],
-      rawInput: { ...(toolInput as Record<string, unknown>), toolName },
+      rawInput: {
+        ...(toolInput as Record<string, unknown>),
+        toolName: approvalToolName,
+      },
     },
   });
 
@@ -669,7 +701,7 @@ export async function canUseTool(
     }
   }
 
-  if (toolName.startsWith("mcp__")) {
+  if (shouldCheckMcpStoreApproval(toolName)) {
     const approvalState = getMcpToolApprovalState(toolName);
 
     if (approvalState === "do_not_use") {
@@ -682,7 +714,9 @@ export async function canUseTool(
     if (approvalState === "needs_approval") {
       return handleMcpApprovalFlow(context);
     }
+  }
 
+  if (toolName.startsWith("mcp__")) {
     if (isPostHogExecTool(toolName)) {
       const subTool = extractPostHogSubTool(toolInput);
       if (subTool && isPostHogDestructiveSubTool(subTool)) {

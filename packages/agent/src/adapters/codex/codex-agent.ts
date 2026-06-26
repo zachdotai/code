@@ -57,6 +57,10 @@ import {
   isCodexNativeMode,
   type PermissionMode,
 } from "../../execution-mode";
+import type {
+  McpToolApprovalsConfig,
+  McpToolInstallationsConfig,
+} from "../../server/schemas";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../../types";
 import { isCloudRun } from "../../utils/common";
 import { resolveGithubToken } from "../../utils/github-token";
@@ -122,6 +126,8 @@ interface NewSessionMeta {
   disableBuiltInTools?: boolean;
   allowedDomains?: string[];
   jsonSchema?: Record<string, unknown> | null;
+  mcpToolApprovals?: McpToolApprovalsConfig;
+  mcpToolInstallations?: McpToolInstallationsConfig;
 }
 
 export interface CodexAcpAgentOptions {
@@ -462,6 +468,8 @@ export class CodexAcpAgent extends BaseAcpAgent {
       modeId: response.modes?.currentModeId ?? "auto",
       modelId: modelIdFromConfigOptions(response.configOptions),
       permissionMode: requestedPermissionMode,
+      mcpToolApprovals: meta?.mcpToolApprovals,
+      mcpToolInstallations: meta?.mcpToolInstallations,
     });
     this.sessionId = response.sessionId;
     this.sessionState.configOptions = response.configOptions ?? [];
@@ -518,6 +526,8 @@ export class CodexAcpAgent extends BaseAcpAgent {
       taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
       permissionMode: currentPermissionMode,
+      mcpToolApprovals: meta?.mcpToolApprovals,
+      mcpToolInstallations: meta?.mcpToolInstallations,
     });
     this.sessionId = params.sessionId;
     this.sessionState.configOptions = response.configOptions ?? [];
@@ -565,6 +575,8 @@ export class CodexAcpAgent extends BaseAcpAgent {
       taskId: resolveTaskId(meta),
       modeId: loadResponse.modes?.currentModeId ?? "auto",
       permissionMode: currentPermissionMode,
+      mcpToolApprovals: meta?.mcpToolApprovals,
+      mcpToolInstallations: meta?.mcpToolInstallations,
     });
     this.sessionId = params.sessionId;
     this.sessionState.configOptions = loadResponse.configOptions ?? [];
@@ -612,6 +624,8 @@ export class CodexAcpAgent extends BaseAcpAgent {
       taskId: resolveTaskId(meta),
       modeId: newResponse.modes?.currentModeId ?? "auto",
       permissionMode: requestedPermissionMode,
+      mcpToolApprovals: meta?.mcpToolApprovals,
+      mcpToolInstallations: meta?.mcpToolInstallations,
     });
     this.sessionId = newResponse.sessionId;
     this.sessionState.configOptions = newResponse.configOptions ?? [];
