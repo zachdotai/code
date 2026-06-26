@@ -1,19 +1,29 @@
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Capture the mutationFn the hook hands to react-query so we can exercise the
-// create-draft-vs-patch branching directly, without a live QueryClient.
+// Capture the mutationFn and onSuccess the hook hands to react-query so we can
+// exercise the create-draft-vs-patch branching and the cache invalidation
+// directly, without a live QueryClient.
 let mutationFn: (vars: {
   revision: { id: string; state: string };
   spec: unknown;
 }) => Promise<unknown>;
+let onSuccess: (() => void) | undefined;
+let invalidateQueries: ReturnType<typeof vi.fn>;
 
 vi.mock("@tanstack/react-query", () => ({
-  useMutation: (opts: { mutationFn: typeof mutationFn }) => {
+  useMutation: (opts: {
+    mutationFn: typeof mutationFn;
+    onSuccess?: () => void;
+  }) => {
     mutationFn = opts.mutationFn;
+    onSuccess = opts.onSuccess;
     return { mutate: vi.fn() };
   },
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => {
+    invalidateQueries = vi.fn();
+    return { invalidateQueries };
+  },
 }));
 
 const client = {
@@ -29,6 +39,7 @@ vi.mock("../../auth/store", () => ({
   useAuthStateValue: () => 1,
 }));
 
+import { agentApplicationsKeys } from "./agentApplicationsKeys";
 import { useApplyAgentSpec } from "./useApplyAgentSpec";
 
 describe("useApplyAgentSpec", () => {
@@ -44,7 +55,7 @@ describe("useApplyAgentSpec", () => {
       state: "draft",
     });
     renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
-    const spec = { mcps: [{ id: "incident", connection: "c1" }] };
+    const spec = { models: { mode: "auto", level: "high" } };
 
     await mutationFn({ revision: { id: "d1", state: "draft" }, spec });
 
@@ -66,7 +77,7 @@ describe("useApplyAgentSpec", () => {
       state: "draft",
     });
     renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
-    const spec = { mcps: [{ id: "incident", connection: "c1" }] };
+    const spec = { models: { mode: "manual", models: [{ model: "x" }] } };
 
     await mutationFn({ revision: { id: "live-1", state: "live" }, spec });
 
@@ -95,7 +106,7 @@ describe("useApplyAgentSpec", () => {
       id: "new-draft",
       state: "draft",
     });
-    const patchErr = new Error("spec.mcps: invalid");
+    const patchErr = new Error("spec.models: invalid");
     client.updateAgentRevisionSpec.mockRejectedValue(patchErr);
     client.transitionAgentRevision.mockResolvedValue({ id: "new-draft" });
     renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
@@ -103,6 +114,7 @@ describe("useApplyAgentSpec", () => {
     await expect(
       mutationFn({ revision: { id: "live-1", state: "live" }, spec: {} }),
     ).rejects.toThrow(patchErr);
+    // The just-cloned, never-landed draft gets archived as cleanup.
     expect(client.transitionAgentRevision).toHaveBeenCalledWith(
       "agent-slug",
       "new-draft",
@@ -119,5 +131,26 @@ describe("useApplyAgentSpec", () => {
     ).rejects.toThrow(/boom/);
     expect(client.createAgentDraftRevisionFrom).not.toHaveBeenCalled();
     expect(client.transitionAgentRevision).not.toHaveBeenCalled();
+  });
+
+  it("onSuccess invalidates the detail, revisions, and per-revision caches via the shared key factory", () => {
+    // projectId is mocked to 1 (useAuthStateValue). Asserting against the
+    // factory rather than literal arrays means these keys can't silently drift
+    // from the fetch hooks that own the caches — the gap when useMutation is
+    // mocked away.
+    renderHook(() => useApplyAgentSpec("agent-slug", "app-1"));
+    expect(onSuccess).toBeDefined();
+    onSuccess?.();
+
+    const invalidated = invalidateQueries.mock.calls.map((c) => c[0].queryKey);
+    expect(invalidated).toContainEqual(
+      agentApplicationsKeys.detail(1, "agent-slug"),
+    );
+    expect(invalidated).toContainEqual(
+      agentApplicationsKeys.revisions(1, "agent-slug"),
+    );
+    expect(invalidated).toContainEqual(
+      agentApplicationsKeys.revisionPrefix(1, "agent-slug"),
+    );
   });
 });

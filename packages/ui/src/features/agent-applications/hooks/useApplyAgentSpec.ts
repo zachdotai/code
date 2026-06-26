@@ -14,8 +14,8 @@ import { agentApplicationsKeys } from "./agentApplicationsKeys";
  * fresh draft first and PATCH that. Freeze/promote stay separate (the revision
  * bar's lifecycle buttons) — this only lands the edit on an editable draft.
  *
- * Returns the revision the change landed on so the caller can select it (a new
- * draft whenever the source wasn't a draft).
+ * Returns the revision the change landed on so the caller can select it (it's a
+ * new draft whenever the source wasn't a draft).
  */
 export function useApplyAgentSpec(
   idOrSlug: string,
@@ -46,9 +46,10 @@ export function useApplyAgentSpec(
       try {
         return await client.updateAgentRevisionSpec(idOrSlug, targetId, spec);
       } catch (err) {
-        // Cloned-then-failed leaves an orphan draft (a copy with no edit
-        // landed). Archive it best-effort so repeated failed applies don't pile
-        // up empty drafts; never mask the original error. A pre-existing draft
+        // If we cloned a fresh draft and the spec PATCH then failed, that
+        // draft is an orphan (a copy of the source with no edit landed).
+        // Archive it best-effort so repeated failed applies don't pile up
+        // empty drafts; never mask the original error. A pre-existing draft
         // passed in by the caller is left untouched.
         if (clonedDraft) {
           await client
