@@ -58,11 +58,14 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 
 const fetchMcpToolMetadataMock = vi.fn().mockResolvedValue(undefined);
 const clearMcpToolMetadataCacheMock = vi.fn();
+const clearMcpToolApprovalCacheMock = vi.fn();
 vi.mock("./mcp/tool-metadata", () => ({
   fetchMcpToolMetadata: fetchMcpToolMetadataMock,
   getConnectedMcpServerNames: vi.fn().mockReturnValue([]),
   getCachedMcpTools: vi.fn().mockReturnValue([]),
   clearMcpToolMetadataCache: clearMcpToolMetadataCacheMock,
+  clearMcpToolApprovalCache: clearMcpToolApprovalCacheMock,
+  setMcpToolApprovalStates: vi.fn(),
 }));
 
 // Import after the mocks so ClaudeAcpAgent resolves the mocked SDK
@@ -169,6 +172,7 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     });
     fetchMcpToolMetadataMock.mockClear();
     clearMcpToolMetadataCacheMock.mockClear();
+    clearMcpToolApprovalCacheMock.mockClear();
   });
 
   it("returns methodNotFound for unknown extension methods", async () => {
@@ -428,6 +432,7 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     });
 
     expect(clearMcpToolMetadataCacheMock).toHaveBeenCalledTimes(1);
+    expect(clearMcpToolApprovalCacheMock).not.toHaveBeenCalled();
   });
 });
 
@@ -437,6 +442,7 @@ describe("ClaudeAcpAgent self-heal: ensureLocalToolsConnected", () => {
   beforeEach(() => {
     clearMcpToolMetadataCacheMock.mockClear();
     fetchMcpToolMetadataMock.mockClear();
+    clearMcpToolApprovalCacheMock.mockClear();
   });
 
   function callHeal(agent: Agent, trigger = "test"): Promise<boolean> {

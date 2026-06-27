@@ -96,6 +96,7 @@ import {
 import type { EnrichedReadCache } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
+  clearMcpToolApprovalCache,
   clearMcpToolMetadataCache,
   fetchMcpToolMetadata,
   getCachedMcpTools,
@@ -1687,6 +1688,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
 
+    clearMcpToolApprovalCache();
     if (meta?.mcpToolApprovals) {
       setMcpToolApprovalStates(meta.mcpToolApprovals);
     }

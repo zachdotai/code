@@ -38,6 +38,8 @@ function makeQueryHandle(): SdkQueryHandle {
 }
 
 const createdQueries: SdkQueryHandle[] = [];
+const clearMcpToolApprovalCacheMock = vi.fn();
+const setMcpToolApprovalStatesMock = vi.fn();
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: vi.fn(() => {
@@ -58,7 +60,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 vi.mock("./mcp/tool-metadata", () => ({
   fetchMcpToolMetadata: vi.fn().mockResolvedValue(undefined),
   getConnectedMcpServerNames: vi.fn().mockReturnValue([]),
-  setMcpToolApprovalStates: vi.fn(),
+  getCachedMcpTools: vi.fn().mockReturnValue([]),
+  clearMcpToolMetadataCache: vi.fn(),
+  clearMcpToolApprovalCache: clearMcpToolApprovalCacheMock,
+  setMcpToolApprovalStates: setMcpToolApprovalStatesMock,
   getMcpToolApprovalState: vi.fn().mockReturnValue("approved"),
   getMcpToolMetadata: vi.fn().mockReturnValue(undefined),
 }));
@@ -117,6 +122,8 @@ describe("ClaudeAcpAgent session model on resume", () => {
     // kept as a custom option — mirrors the gateway-outage failure mode.
     delete process.env.ANTHROPIC_BASE_URL;
     process.env.CLAUDE_CONFIG_DIR = configDir;
+    clearMcpToolApprovalCacheMock.mockClear();
+    setMcpToolApprovalStatesMock.mockClear();
   });
 
   // The SDK does not carry the model across resume — without an explicit
@@ -193,6 +200,23 @@ describe("ClaudeAcpAgent session model on resume", () => {
     } else {
       expect(warnSpy).not.toHaveBeenCalled();
     }
+  });
+
+  it("clears stale MCP tool approval cache before applying the session snapshot", async () => {
+    const agent = makeAgent();
+    const approvals = { mcp__Linear__search: "needs_approval" as const };
+
+    await agent.newSession({
+      cwd,
+      mcpServers: [],
+      _meta: { taskRunId: "run-approvals", mcpToolApprovals: approvals },
+    });
+
+    expect(clearMcpToolApprovalCacheMock).toHaveBeenCalledTimes(1);
+    expect(setMcpToolApprovalStatesMock).toHaveBeenCalledWith(approvals);
+    expect(
+      clearMcpToolApprovalCacheMock.mock.invocationCallOrder[0],
+    ).toBeLessThan(setMcpToolApprovalStatesMock.mock.invocationCallOrder[0]);
   });
 
   // The timeout *message* (RequestError "... timed out after ...") is covered

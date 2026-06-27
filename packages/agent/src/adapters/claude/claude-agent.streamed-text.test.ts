@@ -16,6 +16,7 @@ vi.mock("./mcp/tool-metadata", () => ({
   getConnectedMcpServerNames: vi.fn().mockReturnValue([]),
   getCachedMcpTools: vi.fn().mockReturnValue([]),
   clearMcpToolMetadataCache: vi.fn(),
+  clearMcpToolApprovalCache: vi.fn(),
   setMcpToolApprovalStates: vi.fn(),
   isMcpToolReadOnly: vi.fn().mockReturnValue(false),
   getMcpToolMetadata: vi.fn().mockReturnValue(undefined),

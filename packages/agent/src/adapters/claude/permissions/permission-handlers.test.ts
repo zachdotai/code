@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clearMcpToolApprovalCache,
   clearMcpToolMetadataCache,
+  getMcpToolApprovalState,
   setMcpToolApprovalStates,
 } from "../mcp/tool-metadata";
 import { canUseTool } from "./permission-handlers";
@@ -44,6 +46,7 @@ function createContext(
 describe("canUseTool MCP approval enforcement", () => {
   beforeEach(() => {
     clearMcpToolMetadataCache();
+    clearMcpToolApprovalCache();
   });
 
   it("denies do_not_use MCP tools with correct message", async () => {
@@ -121,6 +124,18 @@ describe("canUseTool MCP approval enforcement", () => {
         }),
       }),
     );
+  });
+
+  it("updates the approval cache after the user approves a tool", async () => {
+    const toolName = "mcp__Linear__search";
+    setMcpToolApprovalStates({
+      [toolName]: "needs_approval",
+    });
+
+    const result = await canUseTool(createContext(toolName));
+
+    expect(result.behavior).toBe("allow");
+    expect(getMcpToolApprovalState(toolName)).toBe("approved");
   });
 
   it("does not treat built-in Claude tools as bare MCP Store matches", async () => {

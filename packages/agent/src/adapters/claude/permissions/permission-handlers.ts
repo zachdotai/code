@@ -13,6 +13,7 @@ import {
   getMcpToolApprovalState,
   getMcpToolMetadata,
   getMcpToolMetadataKey,
+  setMcpToolApprovalStates,
 } from "../mcp/tool-metadata";
 import {
   getClaudePlansDir,
@@ -508,6 +509,7 @@ async function handleMcpApprovalFlow(
     (response.outcome.optionId === "allow" ||
       response.outcome.optionId === "allow_always")
   ) {
+    setMcpToolApprovalStates({ [approvalToolName]: "approved" });
     if (response.outcome.optionId === "allow_always") {
       return {
         behavior: "allow",
