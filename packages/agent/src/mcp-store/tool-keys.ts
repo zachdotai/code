@@ -11,15 +11,52 @@ interface ParsedMcpToolKey {
   toolName: string;
 }
 
+function isAlphaNumeric(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122)
+  );
+}
+
+function isWhitespace(char: string | undefined): boolean {
+  return (
+    char === " " ||
+    char === "\t" ||
+    char === "\n" ||
+    char === "\r" ||
+    char === "\f"
+  );
+}
+
 export function sanitizeMcpServerName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_-]/g, "_");
+  let sanitized = "";
+  for (const char of name) {
+    sanitized +=
+      isAlphaNumeric(char) || char === "_" || char === "-" ? char : "_";
+  }
+  return sanitized;
 }
 
 function serverIdentity(name: string): string {
-  return sanitizeMcpServerName(name)
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase();
+  let identity = "";
+  let previousWasUnderscore = false;
+
+  for (const char of sanitizeMcpServerName(name)) {
+    if (char === "_") {
+      if (identity.length > 0 && !previousWasUnderscore) {
+        identity += char;
+      }
+      previousWasUnderscore = true;
+      continue;
+    }
+
+    identity += char.toLowerCase();
+    previousWasUnderscore = false;
+  }
+
+  return identity.endsWith("_") ? identity.slice(0, -1) : identity;
 }
 
 export function buildMcpToolKey(serverName: string, toolName: string): string {
@@ -107,11 +144,34 @@ function parseApprovalTitle(title: string): {
   serverName: string;
   toolName: string;
 } | null {
-  const match = title.match(/^The agent wants to call\s+(.+?)\s+\((.+)\)$/);
-  if (!match) {
+  const prefix = "The agent wants to call";
+  if (!title.startsWith(prefix) || !title.endsWith(")")) {
     return null;
   }
-  return { toolName: match[1], serverName: match[2] };
+
+  let toolStart = prefix.length;
+  if (!isWhitespace(title[toolStart])) {
+    return null;
+  }
+
+  while (isWhitespace(title[toolStart])) {
+    toolStart++;
+  }
+
+  const serverEnd = title.length - 1;
+  for (let index = toolStart + 1; index < serverEnd; index++) {
+    if (title[index] !== "(" || !isWhitespace(title[index - 1])) {
+      continue;
+    }
+
+    const toolName = title.slice(toolStart, index).trimEnd();
+    const serverName = title.slice(index + 1, serverEnd);
+    if (toolName && serverName) {
+      return { toolName, serverName };
+    }
+  }
+
+  return null;
 }
 
 export function resolveMcpStoreToolKey(

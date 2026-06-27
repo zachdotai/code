@@ -23,7 +23,7 @@ import {
   type TestRepo,
 } from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
-import type { StoredEntry, TaskRun } from "../types";
+import type { StoredEntry, Task, TaskRun } from "../types";
 import {
   AgentServer,
   isTurnCompleteNotification,
@@ -228,6 +228,13 @@ interface TestableServer {
   buildClaudeCodeSessionMeta(
     runtimeAdapter: "claude" | "codex",
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
+  buildCloudSessionMeta(params: {
+    payload: JwtPayload;
+    sessionSystemPrompt: string | { append: string };
+    preTask: Task | null;
+    permissionMode: PermissionMode;
+    runtimeAdapter: "claude" | "codex";
+  }): Record<string, unknown>;
 }
 
 interface NativeResumeTestServer {
@@ -1336,6 +1343,50 @@ describe("AgentServer HTTP Mode", () => {
 
       expect(meta?.claudeCode.options).toEqual({
         plugins: [{ type: "local", path: "/tmp/plugin" }],
+      });
+    });
+  });
+
+  describe("buildCloudSessionMeta", () => {
+    it("passes MCP approval and installation config to the adapter", () => {
+      const s = createServer({
+        runtimeAdapter: "codex",
+        mcpToolApprovals: {
+          mcp__Granola__query_granola_meetings: "needs_approval",
+        },
+        mcpToolInstallations: {
+          mcp__Granola__query_granola_meetings: {
+            installationId: "inst-1",
+            toolName: "query_granola_meetings",
+          },
+        },
+      });
+
+      const meta = (s as unknown as TestableServer).buildCloudSessionMeta({
+        payload: {
+          run_id: "test-run-id",
+          task_id: "test-task-id",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "test-distinct-id",
+          mode: "interactive",
+        },
+        sessionSystemPrompt: "Do the task",
+        preTask: null,
+        permissionMode: "auto",
+        runtimeAdapter: "codex",
+      });
+
+      expect(meta).toMatchObject({
+        mcpToolApprovals: {
+          mcp__Granola__query_granola_meetings: "needs_approval",
+        },
+        mcpToolInstallations: {
+          mcp__Granola__query_granola_meetings: {
+            installationId: "inst-1",
+            toolName: "query_granola_meetings",
+          },
+        },
       });
     });
   });

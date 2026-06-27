@@ -108,6 +108,22 @@ type MessageCallback = (message: unknown) => void;
 
 export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
 
+interface CloudSessionMeta extends Record<string, unknown> {
+  sessionId: string;
+  taskRunId: string;
+  taskId: string;
+  environment: "cloud";
+  systemPrompt: string | { append: string };
+  model?: string;
+  allowedDomains?: string[];
+  jsonSchema: Task["json_schema"] | null;
+  permissionMode: PermissionMode;
+  mcpToolApprovals?: AgentServerConfig["mcpToolApprovals"];
+  mcpToolInstallations?: AgentServerConfig["mcpToolInstallations"];
+  baseBranch?: string;
+  claudeCode?: { options: Record<string, unknown> };
+}
+
 class NdJsonTap {
   private decoder = new TextDecoder();
   private buffer = "";
@@ -1299,22 +1315,13 @@ export class AgentServer {
           ? "auto"
           : "bypassPermissions";
     const sessionCwd = this.config.repositoryPath ?? "/tmp/workspace";
-    const sessionMeta = {
-      sessionId: payload.run_id,
-      taskRunId: payload.run_id,
-      taskId: payload.task_id,
-      environment: "cloud",
-      systemPrompt: sessionSystemPrompt,
-      ...(this.config.model && { model: this.config.model }),
-      allowedDomains: this.config.allowedDomains,
-      jsonSchema: preTask?.json_schema ?? null,
+    const sessionMeta = this.buildCloudSessionMeta({
+      payload,
+      sessionSystemPrompt,
+      preTask,
       permissionMode: initialPermissionMode,
-      ...(this.config.mcpToolApprovals && {
-        mcpToolApprovals: this.config.mcpToolApprovals,
-      }),
-      ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
-      ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
-    };
+      runtimeAdapter,
+    });
 
     const nativeResume = await this.prepareNativeResume(
       payload,
@@ -2072,6 +2079,34 @@ export class AgentServer {
       options.effort = effort;
     }
     return { claudeCode: { options } };
+  }
+
+  private buildCloudSessionMeta(params: {
+    payload: JwtPayload;
+    sessionSystemPrompt: string | { append: string };
+    preTask: Task | null;
+    permissionMode: PermissionMode;
+    runtimeAdapter: "claude" | "codex";
+  }): CloudSessionMeta {
+    return {
+      sessionId: params.payload.run_id,
+      taskRunId: params.payload.run_id,
+      taskId: params.payload.task_id,
+      environment: "cloud",
+      systemPrompt: params.sessionSystemPrompt,
+      ...(this.config.model && { model: this.config.model }),
+      allowedDomains: this.config.allowedDomains,
+      jsonSchema: params.preTask?.json_schema ?? null,
+      permissionMode: params.permissionMode,
+      ...(this.config.mcpToolApprovals && {
+        mcpToolApprovals: this.config.mcpToolApprovals,
+      }),
+      ...(this.config.mcpToolInstallations && {
+        mcpToolInstallations: this.config.mcpToolInstallations,
+      }),
+      ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
+      ...this.buildClaudeCodeSessionMeta(params.runtimeAdapter),
+    };
   }
 
   private getCloudInteractionOrigin(): string | undefined {

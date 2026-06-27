@@ -116,14 +116,15 @@ export function getMcpToolMetadata(
 }
 
 export function getMcpToolMetadataKey(toolName: string): string | undefined {
+  if (mcpToolMetadataCache.has(toolName)) return toolName;
+  const normalizedToolName = normalizeMcpToolKey(toolName);
+  if (mcpToolMetadataCache.has(normalizedToolName)) return normalizedToolName;
+
   const resolvedKey = resolveMcpStoreToolKey(toolName, {
     approvals: Object.fromEntries(
       [...mcpToolMetadataCache.keys()].map((key) => [key, true]),
     ),
   });
-  const normalizedToolName = normalizeMcpToolKey(toolName);
-  if (mcpToolMetadataCache.has(toolName)) return toolName;
-  if (mcpToolMetadataCache.has(normalizedToolName)) return normalizedToolName;
   return resolvedKey ?? undefined;
 }
 
