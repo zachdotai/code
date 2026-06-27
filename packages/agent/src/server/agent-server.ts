@@ -344,7 +344,7 @@ export class AgentServer {
     this.app = this.createApp();
   }
 
-  private getRuntimeAdapter(): "claude" | "codex" {
+  private getRuntimeAdapter(): "claude" | "codex" | "opencode" {
     return this.config.runtimeAdapter ?? "claude";
   }
 
@@ -609,7 +609,7 @@ export class AgentServer {
     payload: JwtPayload,
     posthogAPI: PostHogAPIClient,
     preTaskRun: TaskRun | null,
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: "claude" | "codex" | "opencode",
     cwd: string,
     permissionMode: PermissionMode,
   ): Promise<{ sessionId: string; warm: boolean } | null> {
@@ -1925,7 +1925,7 @@ export class AgentServer {
    * it cannot sit behind a plugins guard.
    */
   private buildClaudeCodeSessionMeta(
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: "claude" | "codex" | "opencode",
   ): { claudeCode: { options: Record<string, unknown> } } | undefined {
     const plugins = this.config.claudeCode?.plugins;
     const effort =

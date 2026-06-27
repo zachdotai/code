@@ -2,7 +2,7 @@ import { Robot } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
 
 interface AdapterIndicatorProps {
-  adapter: "claude" | "codex";
+  adapter: "claude" | "codex" | "opencode";
 }
 
 export function AdapterIndicator({ adapter }: AdapterIndicatorProps) {

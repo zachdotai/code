@@ -63,7 +63,7 @@ export type HandoffPreflightResult = z.infer<typeof handoffPreflightResult>;
 
 export const handoffExecuteInput = handoffApiInput.extend({
   sessionId: z.string().optional(),
-  adapter: z.enum(["claude", "codex"]).optional(),
+  adapter: z.enum(["claude", "codex", "opencode"]).optional(),
   localGitState: handoffLocalGitStateSchema.optional(),
 });
 

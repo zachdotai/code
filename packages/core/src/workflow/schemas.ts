@@ -59,7 +59,7 @@ export const workflowAction = z
     label: z.string().min(1).max(120),
     skillId: z.string(),
     prompt: z.string().min(1).max(8_000),
-    adapter: z.enum(["claude", "codex"]).optional(),
+    adapter: z.enum(["claude", "codex", "opencode"]).optional(),
     model: z.string().min(1).optional(),
   })
   .strict();

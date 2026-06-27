@@ -1,7 +1,7 @@
 import { getEffortOptions as getClaudeEffortOptions } from "./claude/session/models";
 import { getReasoningEffortOptions as getCodexReasoningEffortOptions } from "./codex/models";
 
-export type RuntimeAdapter = "claude" | "codex";
+export type RuntimeAdapter = "claude" | "codex" | "opencode";
 
 export type SupportedReasoningEffort =
   | "low"
@@ -19,6 +19,9 @@ export function getReasoningEffortOptions(
   adapter: RuntimeAdapter,
   modelId: string,
 ): ReasoningEffortOption[] | null {
+  // opencode runs GLM, which has no reasoning/effort tiers.
+  if (adapter === "opencode") return null;
+
   const options =
     adapter === "codex"
       ? getCodexReasoningEffortOptions(modelId)

@@ -54,7 +54,8 @@ export function buildCloudDefaultConfigOptions(
 ): SessionConfigOption[] {
   const modes =
     adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
-  const fallbackMode = adapter === "codex" ? "auto" : "plan";
+  const fallbackMode =
+    adapter === "codex" || adapter === "opencode" ? "auto" : "plan";
   const currentMode =
     typeof initialMode === "string" &&
     modes.some((mode) => mode.id === initialMode)

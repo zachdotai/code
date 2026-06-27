@@ -19,7 +19,7 @@ const log = logger.scope("resolve-default-model");
 export async function resolveDefaultModel(
   queryClient: QueryClient,
   apiHost: string,
-  adapter: "claude" | "codex",
+  adapter: "claude" | "codex" | "opencode",
   modelResolver: ReportModelResolver,
   preferredModel?: string | null,
 ): Promise<string | undefined> {

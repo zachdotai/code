@@ -49,15 +49,19 @@ export interface ProcessSpawnedCallback {
 
 export interface TaskExecutionOptions {
   repositoryPath?: string;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
   model?: string;
   gatewayUrl?: string;
   codexBinaryPath?: string;
   codexHome?: string;
+  /** opencode-only: path to the native `opencode-<platform>-<arch>/bin/opencode` binary. */
+  opencodeBinaryPath?: string;
+  /** opencode-only: run-private dir holding the generated opencode.json + isolated XDG state. */
+  opencodeConfigDir?: string;
   reasoningEffort?: EffortLevel;
   /**
-   * Codex-only. Appended on top of the model's base prompt via the Codex
-   * `developer_instructions` config key, preserving Codex's native base prompt.
+   * Codex/opencode. Appended on top of the model's base prompt via the harness's
+   * developer-instructions config, preserving the native base prompt.
    */
   developerInstructions?: string;
   processCallbacks?: ProcessSpawnedCallback;

@@ -39,7 +39,7 @@ function getOptionByCategory(
  * Returns config options as local state with a setter for local updates.
  */
 export function usePreviewConfig(
-  adapter: "claude" | "codex",
+  adapter: "claude" | "codex" | "opencode",
 ): PreviewConfigResult {
   const hostClient = useHostTRPCClient();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);

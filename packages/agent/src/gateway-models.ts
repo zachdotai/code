@@ -19,6 +19,10 @@ export const DEFAULT_GATEWAY_MODEL = "claude-opus-4-8";
 
 export const DEFAULT_CODEX_MODEL = "gpt-5.5";
 
+// GLM (open-source, Cloudflare Workers AI) is served Chat-Completions-native and
+// runs on the opencode adapter. Currently a single model id.
+export const DEFAULT_OPENCODE_MODEL = "@cf/zai-org/glm-5.2";
+
 const BLOCKED_MODELS = new Set([
   "gpt-5-mini",
   "openai/gpt-5-mini",
@@ -117,6 +121,16 @@ export function isOpenAIModel(model: GatewayModel): boolean {
   return model.id.startsWith("gpt-") || model.id.startsWith("openai/");
 }
 
+// GLM/Cloudflare models surface from the gateway with owned_by="cloudflare" and
+// ids like "@cf/zai-org/glm-5.2". Kept provider-specific (not "everything not
+// anthropic/openai") so a future provider doesn't leak into the opencode picker.
+export function isGlmModel(model: GatewayModel): boolean {
+  if (model.owned_by) {
+    return model.owned_by === "cloudflare";
+  }
+  return model.id.startsWith("@cf/") || model.id.includes("zai");
+}
+
 export interface ModelInfo {
   id: string;
   owned_by?: string;
@@ -178,6 +192,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   "google-vertex": "Gemini",
+  cloudflare: "GLM",
 };
 
 export function getProviderName(ownedBy: string): string {
@@ -205,11 +220,21 @@ export function getClaudeModelRecency(modelId: string): number {
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];
 
 export function formatGatewayModelName(model: GatewayModel): string {
+  if (isGlmModel(model)) {
+    return formatGlmModelName(model.id);
+  }
+
   if (isOpenAIModel(model)) {
     return stripProviderPrefix(model.id).toLowerCase();
   }
 
   return formatModelId(model.id);
+}
+
+// GLM/Cloudflare ids are slash-paths ("@cf/zai-org/glm-5.2") that the generic
+// formatter's "-"/"_" word-splitter mangles; take the final path segment.
+export function formatGlmModelName(modelId: string): string {
+  return (modelId.split("/").pop() ?? modelId).toLowerCase();
 }
 
 function stripProviderPrefix(modelId: string): string {

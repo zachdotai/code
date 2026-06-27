@@ -29,7 +29,7 @@ export interface TaskCreationInput {
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
   model?: string;
   reasoningLevel?: string;
   environmentId?: string;

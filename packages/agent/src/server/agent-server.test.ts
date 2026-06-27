@@ -224,9 +224,9 @@ interface TestableServer {
     inboxReportUrl?: string | null,
   ): string | { append: string };
   buildCodexInstructions(systemPrompt: string | { append: string }): string;
-  getRuntimeAdapter(): "claude" | "codex";
+  getRuntimeAdapter(): "claude" | "codex" | "opencode";
   buildClaudeCodeSessionMeta(
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: "claude" | "codex" | "opencode",
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
 }
 
@@ -236,7 +236,7 @@ interface NativeResumeTestServer {
     payload: JwtPayload,
     posthogAPI: PostHogAPIClient,
     preTaskRun: TaskRun | null,
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: "claude" | "codex" | "opencode",
     cwd: string,
     permissionMode: PermissionMode,
   ): Promise<{ sessionId: string; warm: boolean } | null>;

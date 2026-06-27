@@ -61,7 +61,7 @@ interface UseTaskCreationOptions {
   branch?: string | null;
   editorIsEmpty: boolean;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;

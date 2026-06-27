@@ -14,7 +14,7 @@ import { flattenSelectOptions } from "../sessionStore";
 
 interface ReasoningLevelSelectorProps {
   thoughtOption?: SessionConfigOption;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
   onChange?: (value: string) => void;
   disabled?: boolean;
 }

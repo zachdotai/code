@@ -41,7 +41,7 @@ export interface HandoffSagaDeps extends HandoffBaseDeps {
     projectId: number;
     logUrl: string;
     sessionId?: string;
-    adapter?: "claude" | "codex";
+    adapter?: "claude" | "codex" | "opencode";
   }): Promise<{ sessionId: string } | null>;
   closeCloudRun(
     taskId: string,

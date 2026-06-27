@@ -1,11 +1,28 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_OPENCODE_MODEL,
   fetchGatewayModels,
   fetchModelsList,
   formatGatewayModelName,
+  formatGlmModelName,
+  type GatewayModel,
   getClaudeModelRecency,
+  getProviderName,
   isBlockedModelId,
+  isGlmModel,
 } from "./gateway-models";
+
+function model(
+  partial: Partial<GatewayModel> & Pick<GatewayModel, "id">,
+): GatewayModel {
+  return {
+    owned_by: "",
+    context_window: 200000,
+    supports_streaming: true,
+    supports_vision: false,
+    ...partial,
+  };
+}
 
 describe("formatGatewayModelName", () => {
   it("keeps Claude models in friendly title case", () => {
@@ -59,6 +76,46 @@ describe("formatGatewayModelName", () => {
     expect(isBlockedModelId("openai/gpt-5.2")).toBe(true);
     expect(isBlockedModelId("OPENAI/GPT-5.3")).toBe(true);
     expect(isBlockedModelId("OPENAI/GPT-5.3-CODEX")).toBe(true);
+  });
+});
+
+describe("GLM / opencode models", () => {
+  it("detects GLM by owned_by=cloudflare", () => {
+    expect(
+      isGlmModel(model({ id: "@cf/zai-org/glm-5.2", owned_by: "cloudflare" })),
+    ).toBe(true);
+  });
+
+  it("detects GLM by id prefix/contents when owned_by is absent", () => {
+    expect(isGlmModel(model({ id: "@cf/zai-org/glm-5.2" }))).toBe(true);
+    expect(isGlmModel(model({ id: "zai/glm-5.2" }))).toBe(true);
+  });
+
+  it("does not treat Anthropic/OpenAI models as GLM", () => {
+    expect(
+      isGlmModel(model({ id: "claude-opus-4-8", owned_by: "anthropic" })),
+    ).toBe(false);
+    expect(isGlmModel(model({ id: "gpt-5.5", owned_by: "openai" }))).toBe(
+      false,
+    );
+  });
+
+  it("formats the slash-path GLM id to its final segment", () => {
+    expect(formatGlmModelName("@cf/zai-org/glm-5.2")).toBe("glm-5.2");
+    expect(
+      formatGatewayModelName(
+        model({ id: "@cf/zai-org/glm-5.2", owned_by: "cloudflare" }),
+      ),
+    ).toBe("glm-5.2");
+  });
+
+  it("names the cloudflare provider 'GLM'", () => {
+    expect(getProviderName("cloudflare")).toBe("GLM");
+  });
+
+  it("default opencode model is GLM and is not blocked", () => {
+    expect(DEFAULT_OPENCODE_MODEL).toBe("@cf/zai-org/glm-5.2");
+    expect(isBlockedModelId(DEFAULT_OPENCODE_MODEL)).toBe(false);
   });
 });
 

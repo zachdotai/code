@@ -2,7 +2,7 @@ import { electronStorage } from "@posthog/ui/shell/rendererStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-type AdapterType = "claude" | "codex";
+type AdapterType = "claude" | "codex" | "opencode";
 
 interface SessionAdapterState {
   adaptersByRunId: Record<string, AdapterType>;

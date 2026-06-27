@@ -5,6 +5,7 @@ import type {
 import {
   ArrowsClockwise,
   CaretDown,
+  Code,
   Cpu,
   Robot,
   Spinner,
@@ -20,23 +21,27 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { flattenSelectOptions } from "@posthog/ui/features/sessions/sessionStore";
 import type { AgentAdapter } from "@posthog/ui/features/settings/settingsStore";
 import { Fragment, useMemo, useRef, useState } from "react";
 
+/** Gates the opencode harness (GLM). Auto-on in dev; off for everyone else. */
+const OPENCODE_FLAG = "posthog-code-opencode-harness";
+
 const ADAPTER_ICONS: Record<AgentAdapter, React.ReactNode> = {
   claude: <Robot size={14} weight="regular" />,
   codex: <Cpu size={14} weight="regular" />,
+  opencode: <Code size={14} weight="regular" />,
 };
 
 const ADAPTER_LABELS: Record<AgentAdapter, string> = {
   claude: "Claude",
   codex: "Codex",
+  opencode: "OpenCode",
 };
 
-function getOtherAdapter(adapter: AgentAdapter): AgentAdapter {
-  return adapter === "claude" ? "codex" : "claude";
-}
+const ALL_ADAPTERS: AgentAdapter[] = ["claude", "codex", "opencode"];
 
 interface UnifiedModelSelectorProps {
   modelOption?: SessionConfigOption;
@@ -73,7 +78,11 @@ export function UnifiedModelSelector({
   const currentLabel =
     options.find((opt) => opt.value === currentValue)?.name ?? currentValue;
 
-  const otherAdapter = getOtherAdapter(adapter);
+  // opencode is gated behind a flag; never offer switching to it when off.
+  const opencodeEnabled = useFeatureFlag(OPENCODE_FLAG) || import.meta.env.DEV;
+  const switchableAdapters = ALL_ADAPTERS.filter(
+    (a) => a !== adapter && (a !== "opencode" || opencodeEnabled),
+  );
 
   if (isConnecting) {
     return (
@@ -154,10 +163,12 @@ export function UnifiedModelSelector({
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuItem onClick={() => onAdapterChange(otherAdapter)}>
-          <ArrowsClockwise size={12} weight="bold" />
-          Switch to {ADAPTER_LABELS[otherAdapter]}
-        </DropdownMenuItem>
+        {switchableAdapters.map((a) => (
+          <DropdownMenuItem key={a} onClick={() => onAdapterChange(a)}>
+            <ArrowsClockwise size={12} weight="bold" />
+            Switch to {ADAPTER_LABELS[a]}
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -74,7 +74,7 @@ export interface TaskCreateProperties {
   uses_worktree_link?: boolean;
   /** Worktree mode: repo has a non-empty .worktreeinclude file */
   uses_worktree_include?: boolean;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
 }
 
 export interface TaskViewProperties {

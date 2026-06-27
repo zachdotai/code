@@ -11,8 +11,10 @@ import { ClaudeAcpAgent } from "./claude/claude-agent";
 import type { GatewayEnv } from "./claude/session/options";
 import { CodexAcpAgent } from "./codex/codex-agent";
 import type { CodexProcessOptions } from "./codex/spawn";
+import { OpencodeAcpAgent } from "./opencode/opencode-agent";
+import type { OpencodeProcessOptions } from "./opencode/spawn";
 
-type AgentAdapter = "claude" | "codex";
+type AgentAdapter = "claude" | "codex" | "opencode";
 
 export type AcpConnectionConfig = {
   adapter?: AgentAdapter;
@@ -24,6 +26,7 @@ export type AcpConnectionConfig = {
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
   codexOptions?: CodexProcessOptions;
+  opencodeOptions?: OpencodeProcessOptions;
   allowedModelIds?: Set<string>;
   /** Callback invoked when the agent calls the create_output tool for structured output */
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
@@ -56,6 +59,10 @@ export function createAcpConnection(
 
   if (adapterType === "codex") {
     return createCodexConnection(config);
+  }
+
+  if (adapterType === "opencode") {
+    return createOpencodeConnection(config);
   }
 
   return createClaudeConnection(config);
@@ -223,6 +230,86 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
     },
     cleanup: async () => {
       logger.info("Cleaning up Codex connection");
+
+      if (agent) {
+        await agent.closeSession();
+      }
+
+      try {
+        await streams.client.writable.close();
+      } catch {
+        // Stream may already be closed
+      }
+      try {
+        await streams.agent.writable.close();
+      } catch {
+        // Stream may already be closed
+      }
+    },
+  };
+}
+
+/**
+ * Creates an ACP connection to the `opencode acp` subprocess via an in-process
+ * proxy agent. opencode speaks ACP natively, so OpencodeAcpAgent forwards over a
+ * ClientSideConnection — the same shape as the codex connection.
+ */
+function createOpencodeConnection(config: AcpConnectionConfig): AcpConnection {
+  const logger =
+    config.logger?.child("OpencodeConnection") ??
+    new Logger({ debug: true, prefix: "[OpencodeConnection]" });
+
+  const { logWriter } = config;
+  const streams = createBidirectionalStreams();
+
+  let agentWritable = streams.agent.writable;
+  let clientWritable = streams.client.writable;
+
+  if (config.taskRunId && logWriter) {
+    if (!logWriter.isRegistered(config.taskRunId)) {
+      logWriter.register(config.taskRunId, {
+        taskId: config.taskId ?? config.taskRunId,
+        runId: config.taskRunId,
+        deviceType: config.deviceType,
+      });
+    }
+
+    const taskRunId = config.taskRunId;
+    agentWritable = createTappedWritableStream(streams.agent.writable, {
+      onMessage: (line) => {
+        logWriter.appendRawLine(taskRunId, line);
+      },
+      logger,
+    });
+
+    clientWritable = createTappedWritableStream(streams.client.writable, {
+      onMessage: (line) => {
+        logWriter.appendRawLine(taskRunId, line);
+      },
+      logger,
+    });
+  }
+
+  const agentStream = ndJsonStream(agentWritable, streams.agent.readable);
+
+  let agent: OpencodeAcpAgent | null = null;
+  const agentConnection = new AgentSideConnection((client) => {
+    agent = new OpencodeAcpAgent(client, {
+      opencodeProcessOptions: config.opencodeOptions ?? {},
+      processCallbacks: config.processCallbacks,
+      logger: config.logger?.child("OpencodeAcpAgent"),
+    });
+    return agent;
+  }, agentStream);
+
+  return {
+    agentConnection,
+    clientStreams: {
+      readable: streams.client.readable,
+      writable: clientWritable,
+    },
+    cleanup: async () => {
+      logger.info("Cleaning up Opencode connection");
 
       if (agent) {
         await agent.closeSession();

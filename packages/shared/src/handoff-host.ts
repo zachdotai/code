@@ -21,7 +21,7 @@ export interface HandoffReconnectParams {
   projectId: number;
   logUrl: string;
   sessionId?: string;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
 }
 
 export interface HandoffResumeStateResult {

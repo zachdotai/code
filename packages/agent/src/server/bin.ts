@@ -27,7 +27,9 @@ const envSchema = z.object({
     })
     .regex(/^\d+$/, "POSTHOG_PROJECT_ID must be a numeric string")
     .transform((val) => parseInt(val, 10)),
-  POSTHOG_CODE_RUNTIME_ADAPTER: z.enum(["claude", "codex"]).optional(),
+  POSTHOG_CODE_RUNTIME_ADAPTER: z
+    .enum(["claude", "codex", "opencode"])
+    .optional(),
   POSTHOG_CODE_MODEL: z.string().optional(),
   POSTHOG_CODE_REASONING_EFFORT: z
     .enum(["low", "medium", "high", "xhigh", "max"])

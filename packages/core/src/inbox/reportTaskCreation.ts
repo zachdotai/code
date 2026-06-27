@@ -72,7 +72,7 @@ export interface BuildSignalReportTaskInput {
   reportId: string;
   cloudRepository: string;
   githubUserIntegrationId: string;
-  adapter: "claude" | "codex";
+  adapter: "claude" | "codex" | "opencode";
   model: string;
   reasoningLevel?: string;
   baseBranch?: string | null;

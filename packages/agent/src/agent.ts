@@ -6,6 +6,7 @@ import type { GatewayEnv } from "./adapters/claude/session/options";
 import {
   DEFAULT_CODEX_MODEL,
   DEFAULT_GATEWAY_MODEL,
+  DEFAULT_OPENCODE_MODEL,
   fetchModelsList,
   isBlockedModelId,
 } from "./gateway-models";
@@ -106,12 +107,28 @@ export class Agent {
           : codexModelIds[0];
       }
     }
-    if (!sanitizedModel && options.adapter !== "codex") {
+    // opencode only serves GLM (no /v1/models discovery). Normalize away any
+    // `posthog/` provider prefix and ignore a non-GLM model id that leaked in
+    // from another adapter's session — always resolve to a bare GLM id.
+    if (options.adapter === "opencode") {
+      const candidate = options.model?.replace(/^posthog\//, "");
+      const isGlm =
+        !!candidate &&
+        (candidate.startsWith("@cf/") || candidate.includes("zai"));
+      sanitizedModel = isGlm ? candidate : DEFAULT_OPENCODE_MODEL;
+    }
+    if (
+      !sanitizedModel &&
+      options.adapter !== "codex" &&
+      options.adapter !== "opencode"
+    ) {
       sanitizedModel = DEFAULT_GATEWAY_MODEL;
     }
 
     const claudeGatewayEnv: GatewayEnv | undefined =
-      options.adapter !== "codex" && gatewayConfig
+      options.adapter !== "codex" &&
+      options.adapter !== "opencode" &&
+      gatewayConfig
         ? {
             anthropicBaseUrl: gatewayConfig.gatewayUrl,
             anthropicAuthToken: gatewayConfig.apiKey,
@@ -143,6 +160,19 @@ export class Agent {
               codexHome: options.codexHome,
               model: sanitizedModel,
               reasoningEffort: options.reasoningEffort,
+              developerInstructions: options.developerInstructions,
+              additionalDirectories: options.additionalDirectories,
+            }
+          : undefined,
+      opencodeOptions:
+        options.adapter === "opencode" && gatewayConfig
+          ? {
+              cwd: options.repositoryPath,
+              apiBaseUrl: `${gatewayConfig.gatewayUrl}/v1`,
+              apiKey: gatewayConfig.apiKey,
+              model: sanitizedModel,
+              binaryPath: options.opencodeBinaryPath,
+              configDir: options.opencodeConfigDir,
               developerInstructions: options.developerInstructions,
               additionalDirectories: options.additionalDirectories,
             }

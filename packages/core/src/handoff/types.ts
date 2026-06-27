@@ -17,7 +17,7 @@ export interface HandoffSagaInput {
   apiHost: string;
   teamId: number;
   sessionId?: string;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
   localGitState?: HandoffLocalGitState;
 }
 

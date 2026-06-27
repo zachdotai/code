@@ -5,7 +5,7 @@ export interface CreateTaskRunClientOptions {
   environment?: "local" | "cloud";
   mode?: "interactive" | "background";
   branch?: string | null;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;

@@ -25,7 +25,7 @@ export interface ReportModelResolver {
    */
   resolveDefaultModel(
     apiHost: string,
-    adapter: "claude" | "codex",
+    adapter: "claude" | "codex" | "opencode",
     preferredModel?: string | null,
   ): Promise<string | undefined>;
 }

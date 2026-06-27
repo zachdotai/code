@@ -463,7 +463,7 @@ export interface FinalizedTaskArtifactUpload {
   uploaded_at?: string;
 }
 
-type CloudRuntimeAdapter = "claude" | "codex";
+type CloudRuntimeAdapter = "claude" | "codex" | "opencode";
 
 interface CloudRunOptions {
   adapter?: CloudRuntimeAdapter;

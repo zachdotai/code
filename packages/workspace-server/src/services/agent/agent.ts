@@ -85,6 +85,11 @@ import {
   AGENT_REPO_FILES,
   AGENT_SLEEP_COORDINATOR,
 } from "./identifiers";
+import {
+  cleanupOpencodeConfig,
+  prepareOpencodeConfig,
+  resolveOpencodeBinaryPath,
+} from "./opencode-config";
 import type {
   AgentLogger,
   AgentMcpApps,
@@ -259,7 +264,7 @@ interface SessionConfig {
   logUrl?: string;
   /** The agent's session ID (for resume - SDK session ID for Claude, Codex's session ID for Codex) */
   sessionId?: string;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
   /** Permission mode to use for the session */
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
@@ -409,6 +414,14 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   private getCodexBinaryPath(): string {
     const binary = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
     return this.bundledResources.resolve(`.vite/build/codex-acp/${binary}`);
+  }
+
+  private getOpencodeBinaryPath(): string | undefined {
+    const binary = process.platform === "win32" ? "opencode.exe" : "opencode";
+    const bundled = this.bundledResources.resolve(
+      `.vite/build/opencode/${binary}`,
+    );
+    return resolveOpencodeBinaryPath(bundled);
   }
 
   /**
@@ -783,18 +796,40 @@ If a repository IS genuinely required, attach one in this priority order:
         }
       }
 
+      let opencodeConfigDir: string | undefined;
+      if (adapter === "opencode") {
+        try {
+          opencodeConfigDir = await prepareOpencodeConfig({
+            appDataPath: this.storagePaths.appDataPath,
+            taskRunId,
+          });
+        } catch (err) {
+          // A prep failure must not kill the session; the spawn step will
+          // surface a clear error if the dir is genuinely unusable.
+          this.log.warn("Failed to prepare opencode config dir", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      const isCodexOrOpencode = adapter === "codex" || adapter === "opencode";
       const acpConnection = await agent.run(taskId, taskRunId, {
         adapter,
         gatewayUrl: proxyUrl,
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
         codexHome,
+        opencodeBinaryPath:
+          adapter === "opencode" ? this.getOpencodeBinaryPath() : undefined,
+        opencodeConfigDir,
         model,
         reasoningEffort: adapter === "codex" ? effort : undefined,
-        developerInstructions:
-          adapter === "codex" ? systemPrompt.append : undefined,
-        additionalDirectories:
-          adapter === "codex" ? additionalDirectories : undefined,
+        developerInstructions: isCodexOrOpencode
+          ? systemPrompt.append
+          : undefined,
+        additionalDirectories: isCodexOrOpencode
+          ? additionalDirectories
+          : undefined,
         onStructuredOutput: jsonSchema
           ? async (output) => {
               const posthogAPI = agent.getPosthogAPI();
@@ -1566,6 +1601,12 @@ For git operations while detached:
       await cleanupCodexHome(this.storagePaths.appDataPath, taskRunId).catch(
         () => this.log.debug("Codex home cleanup failed", { taskRunId }),
       );
+      await cleanupOpencodeConfig(
+        this.storagePaths.appDataPath,
+        taskRunId,
+      ).catch(() =>
+        this.log.debug("Opencode config cleanup failed", { taskRunId }),
+      );
 
       this.sessions.delete(taskRunId);
 
@@ -1814,7 +1855,7 @@ For git operations while detached:
           } = params as {
             taskRunId: string;
             sessionId: string;
-            adapter: "claude" | "codex";
+            adapter: "claude" | "codex" | "opencode";
           };
           const session = this.sessions.get(notifTaskRunId);
           if (session) {
@@ -2127,7 +2168,7 @@ For git operations while detached:
 
   async getPreviewConfigOptions(
     apiHost: string,
-    adapter: "claude" | "codex" = "claude",
+    adapter: "claude" | "codex" | "opencode" = "claude",
   ): Promise<SessionConfigOption[]> {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
     const gatewayModels = await fetchGatewayModels({ gatewayUrl });

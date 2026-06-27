@@ -24,7 +24,7 @@ interface ModelSelectorProps {
   taskId?: string;
   disabled?: boolean;
   onModelChange?: (modelId: string) => void;
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
 }
 
 export function ModelSelector({

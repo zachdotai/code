@@ -18,7 +18,7 @@ function seedSessionContext(taskId: string | undefined) {
 
 function seedSessionAvailableCommands(
   commands: { name: string; description: string }[],
-  adapter?: "claude" | "codex",
+  adapter?: "claude" | "codex" | "opencode",
 ) {
   const events: AcpMessage[] = [
     {
@@ -68,7 +68,7 @@ interface Scenario {
   name: string;
   contextTaskId?: string;
   sessionCommands?: { name: string; description: string }[];
-  adapter?: "claude" | "codex";
+  adapter?: "claude" | "codex" | "opencode";
   draftCommands?: { name: string; description: string }[];
   expectContains: string[];
   expectNotContains?: string[];

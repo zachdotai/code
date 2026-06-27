@@ -12,7 +12,7 @@ import { persist } from "zustand/middleware";
 
 export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
-export type AgentAdapter = "claude" | "codex";
+export type AgentAdapter = "claude" | "codex" | "opencode";
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
 export type DefaultReasoningEffort =

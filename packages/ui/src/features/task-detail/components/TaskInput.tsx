@@ -567,7 +567,8 @@ export function TaskInput({
   // Defaults ensure values are always passed even before the preview config loads.
   const currentModel =
     modelOption?.type === "select" ? modelOption.currentValue : undefined;
-  const adapterDefault = adapter === "codex" ? "auto" : "plan";
+  const adapterDefault =
+    adapter === "codex" || adapter === "opencode" ? "auto" : "plan";
   const modeFallback =
     defaultInitialTaskMode === "last_used" &&
     lastUsedInitialTaskMode &&

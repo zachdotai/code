@@ -326,7 +326,9 @@ export class TaskCreationSaga extends Saga<
             homeQuickAction: input.homeQuickActionLabel,
             initialPermissionMode: input.adapter
               ? (input.executionMode ??
-                (input.adapter === "codex" ? "auto" : "plan"))
+                (input.adapter === "codex" || input.adapter === "opencode"
+                  ? "auto"
+                  : "plan"))
               : input.executionMode,
           });
           if (!taskRun?.id) {

@@ -11,7 +11,7 @@ import type { ExecutionMode } from "./exec-types";
 import type { AcpMessage } from "./session-events";
 import type { TaskRunStatus } from "./task";
 
-export type Adapter = "claude" | "codex";
+export type Adapter = "claude" | "codex" | "opencode";
 
 export type PermissionRequest = Omit<RequestPermissionRequest, "sessionId"> & {
   taskRunId: string;

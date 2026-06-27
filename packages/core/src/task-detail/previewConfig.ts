@@ -1,7 +1,7 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { flattenConfigValues } from "@posthog/core/task-detail/configOptions";
 
-export type PreviewAdapter = "claude" | "codex";
+export type PreviewAdapter = "claude" | "codex" | "opencode";
 
 export interface PreviewSettingsSnapshot {
   defaultInitialTaskMode: string;
@@ -72,7 +72,8 @@ export function deriveInitialConfig(
   ) {
     initialMode = lastUsedInitialTaskMode;
   } else {
-    const fallbackDefault = adapter === "codex" ? "auto" : "plan";
+    const fallbackDefault =
+      adapter === "codex" || adapter === "opencode" ? "auto" : "plan";
     initialMode =
       typeof serverDefault === "string" &&
       availableValues.includes(serverDefault)

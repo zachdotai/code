@@ -27,7 +27,7 @@ export interface CreateSignalReportTaskInput {
   githubUserIntegrationId: string | null;
   cloudRegion: CloudRegion | null;
   projectId?: number | null;
-  adapter: "claude" | "codex";
+  adapter: "claude" | "codex" | "opencode";
   modelOverride?: string | null;
   reasoningLevel?: string;
   question?: string;

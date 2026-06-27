@@ -108,7 +108,7 @@ const reportModelResolverLog = logger.scope("report-model-resolver");
 container.bind<ReportModelResolver>(REPORT_MODEL_RESOLVER).toConstantValue({
   async resolveDefaultModel(
     apiHost: string,
-    adapter: "claude" | "codex",
+    adapter: "claude" | "codex" | "opencode",
     preferredModel?: string | null,
   ): Promise<string | undefined> {
     try {
