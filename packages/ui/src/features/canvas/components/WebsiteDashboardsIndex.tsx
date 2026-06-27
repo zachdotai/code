@@ -50,17 +50,23 @@ const PREVIEW_VIEWPORT = { once: false, rootMargin: "400px 0px" } as const;
 export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
   // Resolve the channel's path from the (already-loaded) channels list so the
   // list query shares its cache key with the sidebar's and the service can skip
-  // the getEntry path-resolve round-trip.
-  const { channels } = useChannels();
+  // the getEntry path-resolve round-trip. Hold the dashboards query until
+  // channels have loaded so it fires once with the resolved path — otherwise a
+  // cold start fetches first with `channelPath: undefined`, then re-fetches
+  // under a new key once the path lands, flashing the grid back to loading.
+  const { channels, isLoading: channelsLoading } = useChannels();
   const channelPath = channels.find((c) => c.id === channelId)?.path;
-  const { dashboards, isLoading } = useDashboards(channelId, channelPath);
+  const { dashboards, isLoading } = useDashboards(
+    channelsLoading ? undefined : channelId,
+    channelPath,
+  );
 
   // templateId -> display name, for the per-card badge ("Freeform (React)", …).
   // Falls back to the raw id for any template not in the registry.
   const templates = useCanvasTemplates();
   const templateLabels = new Map(templates.map((t) => [t.id, t.name]));
 
-  if (isLoading) return null;
+  if (channelsLoading || isLoading) return null;
 
   if (dashboards.length === 0) {
     return (

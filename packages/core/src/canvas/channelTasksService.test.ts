@@ -31,26 +31,30 @@ function fakeFs(rows: FsEntryBase[]) {
 }
 
 describe("ChannelTasksService.list", () => {
-  it("uses a known channelPath without resolving it via getEntry", async () => {
+  it.each([
+    {
+      name: "skips getEntry when a channelPath is supplied",
+      channelPath: "marketing/team" as string | undefined,
+      getEntryCalls: 0,
+    },
+    {
+      name: "resolves the path via getEntry when none is supplied",
+      channelPath: undefined as string | undefined,
+      getEntryCalls: 1,
+    },
+  ])("$name", async ({ channelPath, getEntryCalls }) => {
     const { fs, fetch, getEntry } = fakeFs([]);
     const service = new ChannelTasksService(fs);
 
-    await service.list("chan-1", "marketing/team");
+    await service.list("chan-1", channelPath);
 
-    // The path was supplied, so no getEntry round-trip; the list GET uses it.
-    expect(getEntry).not.toHaveBeenCalled();
+    expect(getEntry).toHaveBeenCalledTimes(getEntryCalls);
+    // The list GET filters by task type under the resolved/supplied path.
     const [suffix] = fetch.mock.calls[0];
-    expect(suffix).toContain(encodeURIComponent("marketing/team"));
+    expect(suffix).toContain(
+      encodeURIComponent(channelPath ?? "Channels/chan-1"),
+    );
     expect(suffix).toContain("type=task");
-  });
-
-  it("falls back to resolving the path via getEntry when none is given", async () => {
-    const { fs, getEntry } = fakeFs([]);
-    const service = new ChannelTasksService(fs);
-
-    await service.list("chan-1");
-
-    expect(getEntry).toHaveBeenCalledTimes(1);
   });
 
   it("maps rows to records sorted by createdAt descending, dropping ref-less rows", async () => {

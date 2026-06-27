@@ -60,5 +60,10 @@
       "biome check --write --unsafe --files-ignore-unknown=true --no-errors-on-unmatched",
       "bash -c 'pnpm typecheck'"
     ]
+  },
+  "pnpm": {
+    "overrides": {
+      "@tanstack/query-core": "5.90.20"
+    }
   }
 }

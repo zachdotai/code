@@ -55,25 +55,28 @@ describe("DashboardsService.list", () => {
     expect(query).toContain("type=dashboard");
   });
 
-  it("uses a known channelPath without resolving it via getEntry", async () => {
+  it.each([
+    {
+      name: "skips getEntry when a channelPath is supplied",
+      channelPath: "marketing/team" as string | undefined,
+      getEntryCalls: 0,
+    },
+    {
+      name: "resolves the path via getEntry when none is supplied",
+      channelPath: undefined as string | undefined,
+      getEntryCalls: 1,
+    },
+  ])("$name", async ({ channelPath, getEntryCalls }) => {
     const { fs, listByQuery, getEntry } = fakeFs([]);
     const service = new DashboardsService(fs, {} as never);
 
-    await service.list("chan-1", "marketing/team");
+    await service.list("chan-1", channelPath);
 
-    // The path was supplied, so no getEntry round-trip; the list query uses it.
-    expect(getEntry).not.toHaveBeenCalled();
+    expect(getEntry).toHaveBeenCalledTimes(getEntryCalls);
     const [query] = listByQuery.mock.calls[0];
-    expect(query).toContain(encodeURIComponent("marketing/team"));
-  });
-
-  it("falls back to resolving the path via getEntry when none is given", async () => {
-    const { fs, getEntry } = fakeFs([]);
-    const service = new DashboardsService(fs, {} as never);
-
-    await service.list("chan-1");
-
-    expect(getEntry).toHaveBeenCalledTimes(1);
+    expect(query).toContain(
+      encodeURIComponent(channelPath ?? "Channels/chan-1"),
+    );
   });
 
   it("maps rows to summaries sorted by updatedAt descending", async () => {

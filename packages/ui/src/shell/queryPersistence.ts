@@ -4,8 +4,8 @@ import type {
 } from "@tanstack/react-query-persist-client";
 
 // Only the fields the predicate reads. Declared structurally (rather than
-// importing `Query`) so it stays assignable to `shouldDehydrateQuery` even when
-// react-query and the persist client resolve different copies of query-core.
+// importing `Query`) so the predicate stays assignable to `shouldDehydrateQuery`
+// without coupling to query-core's exact `Query` type.
 type PersistableQuery = {
   queryKey: readonly unknown[];
   state: { status: string };

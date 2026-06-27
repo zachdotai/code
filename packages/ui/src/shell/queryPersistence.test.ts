@@ -10,53 +10,48 @@ function fakeQuery(queryKey: unknown, status = "success"): PredicateArg {
 }
 
 describe("shouldPersistCanvasQuery", () => {
-  it("persists the channels list", () => {
-    expect(shouldPersistCanvasQuery(fakeQuery(["canvas-channels"]))).toBe(true);
+  it.each([
+    { name: "channels list", key: ["canvas-channels"], expected: true },
+    {
+      name: "dashboards.list",
+      key: [["dashboards", "list"], { input: {}, type: "query" }],
+      expected: true,
+    },
+    {
+      name: "dashboards.get",
+      key: [["dashboards", "get"], { input: {}, type: "query" }],
+      expected: true,
+    },
+    {
+      name: "channelTasks.list",
+      key: [["channelTasks", "list"], { input: {}, type: "query" }],
+      expected: true,
+    },
+    {
+      name: "auth current-user",
+      key: ["auth", "current-user", "us:2"],
+      expected: false,
+    },
+    {
+      name: "sessions.list",
+      key: [["sessions", "list"], { input: {}, type: "query" }],
+      expected: false,
+    },
+    {
+      name: "dashboards.saveFreeform (mutation-shaped)",
+      key: [["dashboards", "saveFreeform"], { input: {} }],
+      expected: false,
+    },
+  ])("$name → $expected", ({ key, expected }) => {
+    expect(shouldPersistCanvasQuery(fakeQuery(key))).toBe(expected);
   });
 
-  it("persists tRPC dashboards.list and dashboards.get", () => {
-    expect(
-      shouldPersistCanvasQuery(
-        fakeQuery([["dashboards", "list"], { input: {}, type: "query" }]),
-      ),
-    ).toBe(true);
-    expect(
-      shouldPersistCanvasQuery(
-        fakeQuery([["dashboards", "get"], { input: {}, type: "query" }]),
-      ),
-    ).toBe(true);
-  });
-
-  it("persists tRPC channelTasks.list", () => {
-    expect(
-      shouldPersistCanvasQuery(
-        fakeQuery([["channelTasks", "list"], { input: {}, type: "query" }]),
-      ),
-    ).toBe(true);
-  });
-
-  it("does not persist non-canvas queries", () => {
-    expect(
-      shouldPersistCanvasQuery(fakeQuery(["auth", "current-user", "us:2"])),
-    ).toBe(false);
-    expect(
-      shouldPersistCanvasQuery(
-        fakeQuery([["sessions", "list"], { input: {}, type: "query" }]),
-      ),
-    ).toBe(false);
-    expect(
-      shouldPersistCanvasQuery(
-        fakeQuery([["dashboards", "saveFreeform"], { input: {} }]),
-      ),
-    ).toBe(false);
-  });
-
-  it("does not persist queries that have not succeeded", () => {
-    expect(
-      shouldPersistCanvasQuery(fakeQuery(["canvas-channels"], "pending")),
-    ).toBe(false);
-    expect(
-      shouldPersistCanvasQuery(fakeQuery(["canvas-channels"], "error")),
-    ).toBe(false);
-  });
+  it.each(["pending", "error"])(
+    "does not persist a canvas query in %s state",
+    (status) => {
+      expect(
+        shouldPersistCanvasQuery(fakeQuery(["canvas-channels"], status)),
+      ).toBe(false);
+    },
+  );
 });
