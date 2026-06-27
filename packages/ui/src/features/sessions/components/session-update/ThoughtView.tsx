@@ -23,6 +23,11 @@ export const ThoughtView = memo(function ThoughtView({
       <ToolRow
         icon={Brain}
         isLoading={isLoading}
+        // Thinking has no useful one-line summary, so a collapsed "Thinking"
+        // header conveys nothing — show the text inline. The surrounding chip /
+        // collapse mode already decides whether the thought is revealed at all;
+        // once it is, the reasoning itself is what's worth reading.
+        defaultOpen
         content={hasContent ? <ContentPre>{content}</ContentPre> : undefined}
       >
         Thinking

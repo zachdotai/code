@@ -15,6 +15,12 @@ interface ToolCallGroupChipProps {
   expanded: boolean;
   turnComplete: boolean;
   onToggle: () => void;
+  /**
+   * Whether the chip can be expanded. False when the group has no renderable
+   * body (e.g. a turn whose only activity was a blank thinking block) — the
+   * chip then reads as a plain summary line with no caret. Defaults to true.
+   */
+  expandable?: boolean;
   /** Rendered group items, shown inside the ToolRow's box when expanded. */
   children?: ReactNode;
 }
@@ -30,6 +36,7 @@ export function ToolCallGroupChip({
   expanded,
   turnComplete,
   onToggle,
+  expandable = true,
   children,
 }: ToolCallGroupChipProps) {
   const reduceMotion = useReducedMotion();
@@ -56,17 +63,19 @@ export function ToolCallGroupChip({
       className="pl-3"
     >
       <ToolRow
-        collapsible
-        open={expanded}
-        onOpenChange={onToggle}
-        content={children}
+        collapsible={expandable}
+        open={expandable ? expanded : undefined}
+        onOpenChange={expandable ? onToggle : undefined}
+        content={expandable ? children : undefined}
         leading={
-          <span className="shrink-0 pt-1">
-            <Caret
-              size={12}
-              weight="bold"
-              className="text-gray-10 transition-colors group-hover:text-gray-12"
-            />
+          <span className="flex w-3 shrink-0 justify-center pt-1">
+            {expandable ? (
+              <Caret
+                size={12}
+                weight="bold"
+                className="text-gray-10 transition-colors group-hover:text-gray-12"
+              />
+            ) : null}
           </span>
         }
         trailing={

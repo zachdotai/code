@@ -2,7 +2,10 @@ import type {
   ConversationItem,
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import { buildThreadGroups } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
+import {
+  buildThreadGroups,
+  groupItemRendersContent,
+} from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 import { describe, expect, it } from "vitest";
 
 const activeContext: TurnContext = {
@@ -21,7 +24,10 @@ const completeContext: TurnContext = {
 
 function thought(
   id: string,
-  { thoughtComplete }: { thoughtComplete?: boolean },
+  {
+    thoughtComplete,
+    text = "pondering",
+  }: { thoughtComplete?: boolean; text?: string },
   turnContext: TurnContext = activeContext,
 ): ConversationItem {
   return {
@@ -31,7 +37,7 @@ function thought(
     thoughtComplete,
     update: {
       sessionUpdate: "agent_thought_chunk",
-      content: { type: "text", text: "pondering" },
+      content: { type: "text", text },
     },
   };
 }
@@ -112,5 +118,35 @@ describe("buildThreadGroups summary — thinking awareness", () => {
     expect(summary.liveLabel).toBe(liveLabel);
     expect(summary.hasCountableWork).toBe(hasCountableWork);
     expect(summary.doneLabel).toBe(doneLabel);
+  });
+});
+
+describe("groupItemRendersContent", () => {
+  it.each([
+    {
+      name: "a completed thought with text renders",
+      item: thought("th", { thoughtComplete: true, text: "reasoned" }),
+      expected: true,
+    },
+    {
+      // The bug source: blank extended-thinking streams as a text-less thought
+      // chunk, which renders nothing once complete — so it must not keep the
+      // chip's bordered box alive.
+      name: "a completed blank thought renders nothing",
+      item: thought("th", { thoughtComplete: true, text: "   " }),
+      expected: false,
+    },
+    {
+      name: "a blank thought still streaming renders (its spinner)",
+      item: thought("th", { thoughtComplete: false, text: "" }),
+      expected: true,
+    },
+    {
+      name: "a tool call renders",
+      item: toolItem("t1", completeContext),
+      expected: true,
+    },
+  ])("$name", ({ item, expected }) => {
+    expect(groupItemRendersContent(item)).toBe(expected);
   });
 });

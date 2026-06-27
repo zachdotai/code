@@ -129,6 +129,27 @@ export function isGroupableItem(item: ConversationItem): boolean {
   return true;
 }
 
+/**
+ * Whether a grouped item renders anything visible inside an expanded chip.
+ * Mirrors the `null`-returning branches of SessionUpdateView / ThoughtView so
+ * the chip can drop its bordered box when expanding would reveal nothing —
+ * otherwise a turn whose only activity was an empty thinking block (blank
+ * extended-thinking streams as a text-less thought chunk) shows an empty box.
+ */
+export function groupItemRendersContent(item: ConversationItem): boolean {
+  if (item.type !== "session_update") return true;
+  const update = item.update;
+  if (update.sessionUpdate === "user_message_chunk") return false;
+  if (update.sessionUpdate === "agent_thought_chunk") {
+    const hasText =
+      update.content.type === "text" && update.content.text.trim().length > 0;
+    // A blank thought still renders a spinner while streaming; only a blank
+    // *completed* thought collapses to nothing (see ThoughtView).
+    return hasText || item.thoughtComplete !== true;
+  }
+  return true;
+}
+
 function summarize(items: ConversationItem[]): GroupSummary {
   const counts: GroupCounts = {
     execute: 0,

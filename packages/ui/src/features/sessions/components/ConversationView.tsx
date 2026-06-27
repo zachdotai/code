@@ -18,9 +18,10 @@ import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
-import type {
-  ThreadGrouping,
-  ThreadRow,
+import {
+  groupItemRendersContent,
+  type ThreadGrouping,
+  type ThreadRow,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { createIncrementalThreadGrouper } from "@posthog/ui/features/sessions/components/new-thread/incrementalThreadGrouping";
@@ -294,17 +295,28 @@ export function ConversationView({
   const renderRow = useCallback(
     (row: ThreadRow) => {
       if (row.kind === "item") return renderItem(row.item);
+      // Only items that actually render content reach the chip body — otherwise
+      // a turn whose sole activity was a blank thinking block would expand to an
+      // empty bordered box (the box draws whenever it has children, even hidden
+      // ones). When nothing is renderable the chip is a plain summary line with
+      // no expand affordance, rather than a caret that opens onto nothing.
+      const hasVisibleContent = row.items.some(groupItemRendersContent);
+      const visibleItems =
+        row.expanded && hasVisibleContent
+          ? row.items.filter(groupItemRendersContent)
+          : [];
       return (
         <ToolCallGroupChip
           summary={row.summary}
           expanded={row.expanded}
+          expandable={hasVisibleContent}
           turnComplete={row.turnComplete}
           onToggle={() =>
             sessionViewActions.setGroupOverride(row.id, !row.expanded)
           }
         >
-          {row.expanded
-            ? row.items.map((it) => {
+          {visibleItems.length > 0
+            ? visibleItems.map((it) => {
                 // Plain assistant text inside the group has no leading icon, so
                 // pad it to line up with the tool titles (the text-next-to-icon
                 // column = ToolCallBlock's pl-3 + the icon/gap width). Tool and
