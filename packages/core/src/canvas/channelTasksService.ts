@@ -25,8 +25,13 @@ export class ChannelTasksService {
     private readonly fs: DesktopFsClient,
   ) {}
 
-  async list(channelId: string): Promise<ChannelTaskRecord[]> {
-    const channelPath = await this.channelPath(channelId);
+  async list(
+    channelId: string,
+    knownChannelPath?: string,
+  ): Promise<ChannelTaskRecord[]> {
+    // The caller usually already knows the channel path (it rides on the channel
+    // row from useChannels), so accept it to skip the getEntry resolve.
+    const channelPath = knownChannelPath ?? (await this.channelPath(channelId));
     const entries = await this.listUnderParent(channelPath);
     return entries
       .filter((e) => !!e.ref)

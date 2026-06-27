@@ -1,10 +1,14 @@
 import { HostTRPCProvider } from "@posthog/host-router/react";
 import { ThemeWrapper } from "@posthog/ui/primitives/ThemeWrapper";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { buildCanvasPersistOptions } from "@posthog/ui/shell/queryPersistence";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import type React from "react";
 import { HotkeysProvider } from "react-hotkeys-hook";
 import { queryClient } from "./web-container";
+import { queryPersister } from "./web-persister";
 import { hostTrpcClient } from "./web-trpc";
+
+const persistOptions = buildCanvasPersistOptions(queryPersister);
 
 // Web transport wiring — the per-host counterpart of apps/code's Providers.tsx.
 // @posthog/ui consumes the HOST router context (useHostTRPCClient), so web only
@@ -15,11 +19,14 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   return (
     <HotkeysProvider>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={persistOptions}
+      >
         <HostTRPCProvider trpcClient={hostTrpcClient} queryClient={queryClient}>
           <ThemeWrapper>{children}</ThemeWrapper>
         </HostTRPCProvider>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </HotkeysProvider>
   );
 };

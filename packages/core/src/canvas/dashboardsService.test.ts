@@ -30,11 +30,15 @@ function fakeFs(rows: FsEntryBase[]) {
   const listByQuery = vi.fn(
     async (_query: string, _errorLabel: string): Promise<FsEntryBase[]> => rows,
   );
+  const getEntry = vi.fn(async (id: string) => ({
+    id,
+    path: `Channels/${id}`,
+  }));
   const fs = {
-    getEntry: async (id: string) => ({ id, path: `Channels/${id}` }),
+    getEntry,
     listByQuery,
   };
-  return { fs: fs as unknown as DesktopFsClient, listByQuery };
+  return { fs: fs as unknown as DesktopFsClient, listByQuery, getEntry };
 }
 
 describe("DashboardsService.list", () => {
@@ -49,6 +53,27 @@ describe("DashboardsService.list", () => {
     expect(query).toContain("parent=");
     expect(query).toContain(encodeURIComponent("Channels/chan-1"));
     expect(query).toContain("type=dashboard");
+  });
+
+  it("uses a known channelPath without resolving it via getEntry", async () => {
+    const { fs, listByQuery, getEntry } = fakeFs([]);
+    const service = new DashboardsService(fs, {} as never);
+
+    await service.list("chan-1", "marketing/team");
+
+    // The path was supplied, so no getEntry round-trip; the list query uses it.
+    expect(getEntry).not.toHaveBeenCalled();
+    const [query] = listByQuery.mock.calls[0];
+    expect(query).toContain(encodeURIComponent("marketing/team"));
+  });
+
+  it("falls back to resolving the path via getEntry when none is given", async () => {
+    const { fs, getEntry } = fakeFs([]);
+    const service = new DashboardsService(fs, {} as never);
+
+    await service.list("chan-1");
+
+    expect(getEntry).toHaveBeenCalledTimes(1);
   });
 
   it("maps rows to summaries sorted by updatedAt descending", async () => {

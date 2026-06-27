@@ -8,6 +8,7 @@ import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "@posthog/ui/shell/queryClient";
+import { removePersistedCache } from "@posthog/ui/shell/queryPersistence";
 import { ANONYMOUS_AUTH_STATE, getAuthIdentity, useAuthStore } from "./store";
 
 export type { AuthState };
@@ -45,4 +46,7 @@ export function clearAuthScopedQueries(): void {
   queryClient().removeQueries({
     predicate: (query) => query.meta?.authScoped === true,
   });
+  // Also drop the on-disk query cache so persisted, project-scoped canvas data
+  // can't be restored into a different project/account on the next reload.
+  void removePersistedCache();
 }

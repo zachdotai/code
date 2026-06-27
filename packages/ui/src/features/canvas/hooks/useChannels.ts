@@ -49,6 +49,9 @@ export function useChannels(options?: { enabled?: boolean }): {
     (client) => client.getDesktopFileSystemChannels(),
     {
       enabled: options?.enabled ?? true,
+      // Match the poll interval so a remount within the window serves the cached
+      // (or persisted) list instead of refetching and flashing a loading state.
+      staleTime: CHANNELS_POLL_INTERVAL_MS,
       refetchInterval: CHANNELS_POLL_INTERVAL_MS,
     },
   );

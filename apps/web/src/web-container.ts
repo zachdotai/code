@@ -45,7 +45,17 @@ interface WebBindings {
   [MCP_SANDBOX_PROXY_URL]: McpSandboxProxyUrlProvider;
 }
 
-export const queryClient = new QueryClient();
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      // Match the persist maxAge so PersistQueryClientProvider can restore the
+      // canvas cache on reload (see queryPersistence.CANVAS_PERSIST_MAX_AGE).
+      gcTime: 1000 * 60 * 60 * 24,
+      refetchOnWindowFocus: true,
+    },
+  },
+});
 
 export const container = new TypedContainer<WebBindings>({
   defaultScope: "Singleton",

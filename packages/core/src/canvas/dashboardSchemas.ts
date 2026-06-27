@@ -78,7 +78,14 @@ export const dashboardSummarySchema = z.object({
 });
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
 
-export const listDashboardsInput = z.object({ channelId: z.string().min(1) });
+export const listDashboardsInput = z.object({
+  channelId: z.string().min(1),
+  // The channel folder's file-system path, if the caller already knows it (it
+  // rides on the channel row from `useChannels`). Lets the service skip the
+  // extra getEntry round-trip that resolves channelId → path. Optional so older
+  // callers and tests still work; the service falls back to resolving it.
+  channelPath: z.string().optional(),
+});
 
 export const createDashboardInput = z.object({
   channelId: z.string().min(1),

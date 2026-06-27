@@ -115,6 +115,7 @@
     "@posthog/quill": "catalog:",
     "@radix-ui/themes": "catalog:",
     "@tanstack/react-query": "catalog:",
+    "@tanstack/react-query-persist-client": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
   },
@@ -124,6 +125,7 @@
     "@posthog/tsconfig": "workspace:*",
     "@radix-ui/themes": "catalog:",
     "@tanstack/react-query": "catalog:",
+    "@tanstack/react-query-persist-client": "catalog:",
     "@tanstack/router-generator": "catalog:",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",

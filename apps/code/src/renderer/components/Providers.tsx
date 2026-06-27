@@ -1,5 +1,6 @@
 import { HostTRPCProvider } from "@posthog/host-router/react";
 import { ThemeWrapper } from "@posthog/ui/primitives/ThemeWrapper";
+import { buildCanvasPersistOptions } from "@posthog/ui/shell/queryPersistence";
 import { WorkspaceClientProvider } from "@posthog/workspace-client/provider";
 import {
   hostTrpcClient,
@@ -7,17 +8,16 @@ import {
   trpcClient,
   useTRPC,
 } from "@renderer/trpc/client";
-import {
-  QueryClientProvider,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { queryClient } from "@utils/queryClient";
+import { queryPersister } from "@utils/queryPersister";
 import type React from "react";
 import { useCallback, useState } from "react";
 import { HotkeysProvider } from "react-hotkeys-hook";
+
+const persistOptions = buildCanvasPersistOptions(queryPersister);
 
 function WorkspaceServerErrorBanner({
   onRetry,
@@ -107,7 +107,10 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   return (
     <HotkeysProvider>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={persistOptions}
+      >
         <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
           <HostTRPCProvider
             trpcClient={hostTrpcClient}
@@ -118,7 +121,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({
             </ConnectedWorkspaceProvider>
           </HostTRPCProvider>
         </TRPCProvider>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </HotkeysProvider>
   );
 };

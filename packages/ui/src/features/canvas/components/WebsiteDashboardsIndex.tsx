@@ -18,6 +18,7 @@ import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasM
 import { FreeformCanvas } from "@posthog/ui/features/canvas/freeform/FreeformCanvas";
 import { handleFreeformDataRequest } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
 import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useDashboardMutations,
   useDashboards,
@@ -47,7 +48,12 @@ const PREVIEW_VIEWPORT = { once: false, rootMargin: "400px 0px" } as const;
 // A channel's dashboards index: a grid of cards, each showing a scaled-down
 // live preview. Clicking a card opens the full dashboard.
 export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
-  const { dashboards, isLoading } = useDashboards(channelId);
+  // Resolve the channel's path from the (already-loaded) channels list so the
+  // list query shares its cache key with the sidebar's and the service can skip
+  // the getEntry path-resolve round-trip.
+  const { channels } = useChannels();
+  const channelPath = channels.find((c) => c.id === channelId)?.path;
+  const { dashboards, isLoading } = useDashboards(channelId, channelPath);
 
   // templateId -> display name, for the per-card badge ("Freeform (React)", …).
   // Falls back to the raw id for any template not in the registry.

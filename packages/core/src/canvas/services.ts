@@ -26,7 +26,9 @@ export interface ICanvasTemplatesService {
 }
 
 export interface IDashboardsService {
-  list(channelId: string): Promise<DashboardSummary[]>;
+  // channelPath is an optional optimization: when the caller already knows the
+  // channel folder's path, the service skips the getEntry round-trip.
+  list(channelId: string, channelPath?: string): Promise<DashboardSummary[]>;
   get(id: string): Promise<DashboardRecord | null>;
   create(input: {
     channelId: string;
@@ -61,7 +63,9 @@ export interface ICanvasDataService {
 }
 
 export interface IChannelTasksService {
-  list(channelId: string): Promise<ChannelTaskRecord[]>;
+  // channelPath is an optional optimization: when the caller already knows the
+  // channel folder's path, the service skips the getEntry round-trip.
+  list(channelId: string, channelPath?: string): Promise<ChannelTaskRecord[]>;
   file(input: {
     channelId: string;
     taskId: string;

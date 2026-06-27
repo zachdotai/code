@@ -68,12 +68,17 @@ export class DashboardsService {
     return this.fs.getEntry<FsEntry>(id, "dashboard");
   }
 
-  async list(channelId: string): Promise<DashboardSummary[]> {
+  async list(
+    channelId: string,
+    knownChannelPath?: string,
+  ): Promise<DashboardSummary[]> {
     // Fetch only this channel's dashboards via a server-side filter
     // (`parent=<channelPath>&type=dashboard`) rather than walking the whole
     // project file system and filtering client-side. Dashboards are created as
     // direct children of the channel folder, so the parent filter matches them.
-    const channelPath = await this.channelPath(channelId);
+    // The caller usually already knows the channel path (it rides on the channel
+    // row from useChannels), so accept it to skip the getEntry resolve.
+    const channelPath = knownChannelPath ?? (await this.channelPath(channelId));
     const entries = await this.fs.listByQuery<FsEntry>(
       `parent=${encodeURIComponent(channelPath)}&type=${DASHBOARD_TYPE}`,
       "dashboards",

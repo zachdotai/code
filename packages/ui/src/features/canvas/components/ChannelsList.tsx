@@ -1004,16 +1004,22 @@ function ChannelSection({
 
   // Lazy: a channel's canvases and filed tasks are only fetched once it's
   // expanded, so the tree doesn't fire one query per channel on mount.
-  const { dashboards } = useDashboards(open ? channel.id : undefined);
-  const { tasks: filedTasks } = useChannelTasks(open ? channel.id : undefined);
+  const { dashboards } = useDashboards(
+    open ? channel.id : undefined,
+    channel.path,
+  );
+  const { tasks: filedTasks } = useChannelTasks(
+    open ? channel.id : undefined,
+    channel.path,
+  );
   // Warm both caches on hover/focus so the first expand is instant instead of
   // popping in after a cold fetch. No-ops once the data is fresh or loaded.
   const prefetchDashboards = usePrefetchDashboards();
   const prefetchChannelTasks = usePrefetchChannelTasks();
   const prefetchContents = () => {
     if (open) return;
-    prefetchDashboards(channel.id);
-    prefetchChannelTasks(channel.id);
+    prefetchDashboards(channel.id, channel.path);
+    prefetchChannelTasks(channel.id, channel.path);
   };
   // Tasks are private to each user. A task filed by someone else won't be in
   // `tasks` (it isn't shared with me), so hide it rather than rendering an

@@ -1,4 +1,5 @@
 import { useHostTRPC } from "@posthog/host-router/react";
+import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/authQueries";
 import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -22,8 +23,8 @@ export function useTaskChannelMap(
   const results = useQueries({
     queries: channels.map((channel) =>
       trpc.channelTasks.list.queryOptions(
-        { channelId: channel.id },
-        { enabled, staleTime: 5_000 },
+        { channelId: channel.id, channelPath: channel.path },
+        { enabled, staleTime: 5_000, meta: AUTH_SCOPED_QUERY_META },
       ),
     ),
   });

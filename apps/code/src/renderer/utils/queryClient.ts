@@ -5,6 +5,10 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 5,
+      // Keep entries around for a day so the persisted cache can be restored on
+      // reload — PersistQueryClientProvider only restores a query whose gcTime
+      // is >= the persist maxAge (see queryPersistence.CANVAS_PERSIST_MAX_AGE).
+      gcTime: 1000 * 60 * 60 * 24,
       refetchOnWindowFocus: true,
     },
   },

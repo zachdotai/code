@@ -16,7 +16,7 @@ export const channelTasksRouter = router({
     .query(({ ctx, input }) =>
       ctx.container
         .get<IChannelTasksService>(CHANNEL_TASKS_SERVICE)
-        .list(input.channelId),
+        .list(input.channelId, input.channelPath),
     ),
   file: publicProcedure
     .input(fileChannelTaskInput)

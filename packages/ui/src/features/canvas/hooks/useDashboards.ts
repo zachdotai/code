@@ -4,6 +4,7 @@ import type {
 } from "@posthog/core/canvas/dashboardSchemas";
 import type { FreeformVersion } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/authQueries";
 import { useDashboardEditStore } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { logger } from "@posthog/ui/shell/logger";
@@ -24,16 +25,23 @@ export function isPlaceholderCanvasName(name: string): boolean {
   return trimmed === UNTITLED_CANVAS_NAME || trimmed === "Untitled dashboard";
 }
 
-/** Saved canvases for a channel (file-backed freeform React apps). */
-export function useDashboards(channelId: string | undefined): {
+/**
+ * Saved canvases for a channel (file-backed freeform React apps). Pass the
+ * channel's known `channelPath` (from useChannels) so the service can skip the
+ * getEntry round-trip that resolves the path from the id.
+ */
+export function useDashboards(
+  channelId: string | undefined,
+  channelPath?: string,
+): {
   dashboards: DashboardSummary[];
   isLoading: boolean;
 } {
   const trpc = useHostTRPC();
   const { data, isLoading } = useQuery(
     trpc.dashboards.list.queryOptions(
-      { channelId: channelId ?? "" },
-      { enabled: !!channelId, staleTime: 5_000 },
+      { channelId: channelId ?? "", channelPath },
+      { enabled: !!channelId, staleTime: 5_000, meta: AUTH_SCOPED_QUERY_META },
     ),
   );
   return { dashboards: data ?? [], isLoading };
@@ -44,13 +52,19 @@ export function useDashboards(channelId: string | undefined): {
  * hover), so expanding the channel shows its canvases without a cold fetch.
  * Respects the same staleTime, so it no-ops when the data is already fresh.
  */
-export function usePrefetchDashboards(): (channelId: string) => void {
+export function usePrefetchDashboards(): (
+  channelId: string,
+  channelPath?: string,
+) => void {
   const trpc = useHostTRPC();
   const queryClient = useQueryClient();
   return useCallback(
-    (channelId: string) => {
+    (channelId: string, channelPath?: string) => {
       void queryClient.prefetchQuery(
-        trpc.dashboards.list.queryOptions({ channelId }, { staleTime: 5_000 }),
+        trpc.dashboards.list.queryOptions(
+          { channelId, channelPath },
+          { staleTime: 5_000, meta: AUTH_SCOPED_QUERY_META },
+        ),
       );
     },
     [trpc, queryClient],
@@ -67,7 +81,7 @@ export function useDashboard(id: string | undefined): {
   const { data, isLoading, isFetching } = useQuery(
     trpc.dashboards.get.queryOptions(
       { id: id ?? "" },
-      { enabled: !!id, staleTime: 5_000 },
+      { enabled: !!id, staleTime: 5_000, meta: AUTH_SCOPED_QUERY_META },
     ),
   );
   return { dashboard: data, isLoading, isFetching };

@@ -21,7 +21,7 @@ export const dashboardsRouter = router({
     .query(({ ctx, input }) =>
       ctx.container
         .get<IDashboardsService>(DASHBOARDS_SERVICE)
-        .list(input.channelId),
+        .list(input.channelId, input.channelPath),
     ),
   get: publicProcedure
     .input(dashboardIdInput)
