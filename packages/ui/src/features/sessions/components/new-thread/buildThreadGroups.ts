@@ -11,6 +11,9 @@ import {
   SUBAGENT_ICON,
 } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 
+/** Live label for a turn that is mid extended-thinking (no tool call yet). */
+const THINKING_LIVE_LABEL = "Thinking…";
+
 export interface GroupIconEntry {
   Icon: Icon;
   key: GroupIconKey;
@@ -202,8 +205,24 @@ function summarize(items: ConversationItem[]): GroupSummary {
     }
   }
 
+  // The agent's extended thinking streams as thought chunks, which carry no
+  // tool status or title. Without accounting for them, a turn that is mid-
+  // thought (before its first tool call) summarizes as "Worked" with no
+  // spinner — reading as finished while the agent is actively thinking. Treat a
+  // trailing, still-streaming thought as live work so the collapsed chip shows
+  // "Thinking…" and spins. `thoughtComplete` is the same flag ThoughtView uses
+  // to drive its own loading state.
+  const last = items[items.length - 1];
+  const streamingThought =
+    last?.type === "session_update" &&
+    last.update.sessionUpdate === "agent_thought_chunk" &&
+    last.thoughtComplete !== true;
+  if (streamingThought) liveLabel = THINKING_LIVE_LABEL;
+
   const active =
-    lastToolStatus === "pending" || lastToolStatus === "in_progress";
+    streamingThought ||
+    lastToolStatus === "pending" ||
+    lastToolStatus === "in_progress";
   const hasCountableWork =
     counts.execute +
       counts.read +
