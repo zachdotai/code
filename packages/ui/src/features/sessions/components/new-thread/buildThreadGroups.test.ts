@@ -58,7 +58,8 @@ function toolItem(
 function summaryOf(items: ConversationItem[]) {
   const { rows } = buildThreadGroups(items, "all", {});
   const group = rows.find((r) => r.kind === "tool_group");
-  if (group?.kind !== "tool_group") throw new Error("expected a tool_group row");
+  if (group?.kind !== "tool_group")
+    throw new Error("expected a tool_group row");
   return group.summary;
 }
 
