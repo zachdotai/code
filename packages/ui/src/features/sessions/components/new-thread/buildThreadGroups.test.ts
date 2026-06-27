@@ -64,51 +64,53 @@ function summaryOf(items: ConversationItem[]) {
 }
 
 describe("buildThreadGroups summary — thinking awareness", () => {
-  it("reads a turn mid extended-thinking as live, not 'Worked'", () => {
-    // A still-streaming thought (thoughtComplete falsy) is the only activity so
-    // far: the chip must say it's thinking, not fall back to the done label.
-    const summary = summaryOf([thought("th1", { thoughtComplete: false })]);
+  it.each([
+    {
+      // A still-streaming thought is the only activity so far: the chip must say
+      // it's thinking, not fall back to the done label.
+      name: "reads a turn mid extended-thinking as live, not 'Worked'",
+      items: [thought("th1", { thoughtComplete: false })],
+      active: true,
+      liveLabel: "Thinking…",
+      hasCountableWork: false,
+      doneLabel: "Worked",
+    },
+    {
+      // Thought, then an in-flight tool call: the tool is the latest activity,
+      // so its title wins over the thinking label.
+      name: "keeps the tool's live label when a tool runs after thinking",
+      items: [thought("th1", { thoughtComplete: true }), toolItem("t1")],
+      active: true,
+      liveLabel: "Read file.ts",
+      hasCountableWork: true,
+      doneLabel: "Read a file",
+    },
+    {
+      // Tool finished, agent is thinking once more: countable work plus a live
+      // thinking label, so the chip can read "Read a file · Thinking…".
+      name: "shows thinking again when a thought trails completed tool work",
+      items: [toolItem("t1"), thought("th1", { thoughtComplete: false })],
+      active: true,
+      liveLabel: "Thinking…",
+      hasCountableWork: true,
+      doneLabel: "Read a file",
+    },
+    {
+      // A finished turn whose only activity was thinking: no live label, falls
+      // back to the "Worked" done label (there is no countable tool work).
+      name: "does not treat a completed thought as live work",
+      items: [thought("th1", { thoughtComplete: true }, completeContext)],
+      active: false,
+      liveLabel: null,
+      hasCountableWork: false,
+      doneLabel: "Worked",
+    },
+  ])("$name", ({ items, active, liveLabel, hasCountableWork, doneLabel }) => {
+    const summary = summaryOf(items);
 
-    expect(summary.active).toBe(true);
-    expect(summary.liveLabel).toBe("Thinking…");
-    expect(summary.hasCountableWork).toBe(false);
-  });
-
-  it("keeps the tool's live label when a tool runs after thinking", () => {
-    // Thought, then an in-flight tool call: the tool is the latest activity, so
-    // its title wins over the thinking label.
-    const summary = summaryOf([
-      thought("th1", { thoughtComplete: true }),
-      toolItem("t1"),
-    ]);
-
-    expect(summary.active).toBe(true);
-    expect(summary.liveLabel).toBe("Read file.ts");
-  });
-
-  it("shows thinking again when a thought trails completed tool work", () => {
-    // Tool finished, agent is thinking once more: countable work plus a live
-    // thinking label, so the chip can read "Read a file · Thinking…".
-    const summary = summaryOf([
-      toolItem("t1"),
-      thought("th1", { thoughtComplete: false }),
-    ]);
-
-    expect(summary.active).toBe(true);
-    expect(summary.liveLabel).toBe("Thinking…");
-    expect(summary.hasCountableWork).toBe(true);
-    expect(summary.doneLabel).toBe("Read a file");
-  });
-
-  it("does not treat a completed thought as live work", () => {
-    // A finished turn whose only activity was thinking: no live label, falls
-    // back to the "Worked" done label (there is no countable tool work).
-    const summary = summaryOf([
-      thought("th1", { thoughtComplete: true }, completeContext),
-    ]);
-
-    expect(summary.active).toBe(false);
-    expect(summary.liveLabel).toBeNull();
-    expect(summary.doneLabel).toBe("Worked");
+    expect(summary.active).toBe(active);
+    expect(summary.liveLabel).toBe(liveLabel);
+    expect(summary.hasCountableWork).toBe(hasCountableWork);
+    expect(summary.doneLabel).toBe(doneLabel);
   });
 });
