@@ -1,5 +1,4 @@
 import { ArrowRightIcon, CompassIcon } from "@phosphor-icons/react";
-import { mostRecentEmittedRuns } from "@posthog/core/scouts/scoutFindings";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
@@ -17,8 +16,12 @@ import { useScoutRuns } from "../hooks/useScoutRuns";
 export function FleetFindingsCallout() {
   const { data: runsWindow } = useScoutRuns();
 
+  // Every emitted run in the window — uncapped. The page caps its per-run
+  // emissions fan-out, but this card only sums the cheap `emitted_count`
+  // metadata, so it must count the whole fleet or larger fleets undercount.
   const emittedRuns = useMemo(
-    () => mostRecentEmittedRuns(runsWindow?.runs ?? []),
+    () =>
+      (runsWindow?.runs ?? []).filter((run) => (run.emitted_count ?? 0) > 0),
     [runsWindow],
   );
 
@@ -30,10 +33,11 @@ export function FleetFindingsCallout() {
     return null;
   }
 
-  // Emitted runs are newest-first, so the head dates the most recent finding.
-  const latestRun = emittedRuns[0];
-  const lastEmittedAt =
-    latestRun?.completed_at ?? latestRun?.started_at ?? null;
+  // The newest emitted run dates the most recent finding.
+  const lastEmittedAt = emittedRuns.reduce<string | null>((latest, run) => {
+    const at = run.completed_at ?? run.started_at;
+    return at && (!latest || at > latest) ? at : latest;
+  }, null);
 
   return (
     <Link

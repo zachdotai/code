@@ -85,7 +85,13 @@ export function useScoutFindings(): ScoutFindings {
 
   const reportResults = useQueries({
     queries: emittedRuns.map((run) => ({
-      queryKey: scoutQueryKeys.emissionReports(projectId, run.run_id),
+      // emitted_count in the key alongside the emissions query, so a run that
+      // emits more refetches its report links too — otherwise the newly loaded
+      // findings would show without their inbox-report chip until focus/retry.
+      queryKey: [
+        ...scoutQueryKeys.emissionReports(projectId, run.run_id),
+        run.emitted_count ?? 0,
+      ],
       queryFn: async (): Promise<ScoutEmissionReportLink[]> => {
         if (!client) throw new Error("Not authenticated");
         if (!projectId) return [];
@@ -137,8 +143,10 @@ export function useScoutFindings(): ScoutFindings {
         const result = emissionsResults[index];
         if (!result) return count;
         if (result.isError) return count + 1;
-        const empty = (result.data?.length ?? 0) === 0;
-        if (result.isSuccess && empty && (run.emitted_count ?? 0) > 0) {
+        // Promised more findings than it returned — empty, or a partial
+        // response (eventual-consistency lag). Either undercounts the list.
+        const loaded = result.data?.length ?? 0;
+        if (result.isSuccess && loaded < (run.emitted_count ?? 0)) {
           return count + 1;
         }
         return count;
