@@ -2,6 +2,7 @@ import type { Icon } from "@phosphor-icons/react";
 import {
   CaretDownIcon,
   CompassIcon,
+  GithubLogoIcon,
   PlusIcon,
   SparkleIcon,
 } from "@phosphor-icons/react";
@@ -21,8 +22,15 @@ import {
   SCOUT_RUNS_WINDOW_SPAN,
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
+import { Button } from "@posthog/quill";
 import type { ScoutChatType } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
+import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import {
+  resolveDefaultCloudRepository,
+  useSettingsStore,
+} from "@posthog/ui/features/settings/settingsStore";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
@@ -155,6 +163,23 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
   const [hideDisabled, setHideDisabled] = useState(false);
   useTrackFleetViewed(configs);
 
+  // "Make a scout" creates an auto-mode cloud task that runs under the user's
+  // personal GitHub identity, so it needs a *user-level* repository (distinct
+  // from the team integration the agents page shows as "connected"). Without
+  // one, the runner would silently bail with a confusing toast – gate the chip
+  // on a resolvable repo and point the user to where they connect it instead.
+  const { repositories, isLoadingRepos } = useUserRepositoryIntegration();
+  const lastUsedCloudRepository = useSettingsStore(
+    (state) => state.lastUsedCloudRepository,
+  );
+  const cloudRepository = useMemo(
+    () => resolveDefaultCloudRepository(repositories, lastUsedCloudRepository),
+    [repositories, lastUsedCloudRepository],
+  );
+  // While repos resolve, keep the CTAs (avoids a flash of the notice); only show
+  // the connect prompt once we know no user-level repo is available.
+  const showConnectNotice = !isLoadingRepos && !cloudRepository;
+
   const runs = runsWindow?.runs;
   const rollups = useMemo(() => computeScoutRollups(runs ?? []), [runs]);
   const summary = useMemo(
@@ -218,15 +243,22 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
           loggerScope="scout-recent-signals"
           chatType="recent_signals"
         />
-        <ScoutChatCta
-          label="Make a scout"
-          prompt={SCOUT_AUTHOR_PROMPT}
-          taskLabel="scout authoring"
-          loggerScope="scout-author"
-          chatType="author_scout"
-          icon={PlusIcon}
-        />
+        {/* Authoring a scout needs a personal GitHub repo to run the cloud
+            task; swap the chip for a connect prompt when none is available so it
+            can't fail silently. The question chips above stay put. */}
+        {showConnectNotice ? null : (
+          <ScoutChatCta
+            label="Make a scout"
+            prompt={SCOUT_AUTHOR_PROMPT}
+            taskLabel="scout authoring"
+            loggerScope="scout-author"
+            chatType="author_scout"
+            icon={PlusIcon}
+          />
+        )}
       </Flex>
+
+      {showConnectNotice ? <ScoutChatConnectNotice /> : null}
 
       {/* Fleet memory: renders only once scouts have written scratchpad notes. */}
       <FleetMemoryCallout />
@@ -254,6 +286,47 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
         </Text>
         <ScoutHelperSkillLinks surface="fleet_list" />
       </Flex>
+    </Flex>
+  );
+}
+
+/**
+ * Shown in place of the "Make a scout" chip when no user-level GitHub repository
+ * is connected. Authoring a scout needs a *personal* GitHub installation (the
+ * team integration the agents page shows as "connected" is not enough), and the
+ * only place to add one is Settings → GitHub – so link the user straight there
+ * instead of letting the cloud-task runner fail with a confusing toast.
+ */
+function ScoutChatConnectNotice() {
+  return (
+    <Flex
+      align="center"
+      justify="between"
+      gap="3"
+      wrap="wrap"
+      className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5"
+    >
+      <Flex align="center" gap="3" className="min-w-0">
+        <GithubLogoIcon size={20} className="shrink-0 text-gray-11" />
+        <Text className="text-[12.5px] text-gray-11 leading-snug">
+          Connect a personal GitHub repository to make a scout.
+        </Text>
+      </Flex>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="shrink-0"
+        onClick={() => {
+          track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+            action_type: "open_settings",
+            surface: "fleet_list",
+          });
+          openSettings("github");
+        }}
+      >
+        Open GitHub settings
+      </Button>
     </Flex>
   );
 }
