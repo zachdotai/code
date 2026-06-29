@@ -139,60 +139,6 @@ function bashCommandFromToolUse(
   return typeof command === "string" ? command : undefined;
 }
 
-const TOOL_ARGS_PREVIEW_LIMIT = 240;
-
-const TOOL_ARGS_PREVIEW_KEYS = [
-  "file_path",
-  "notebook_path",
-  "path",
-  "code", // MCP exec / hogql / sql payloads
-  "query", // search queries
-  "pattern", // grep / glob patterns
-  "url",
-  "description",
-  "prompt", // Task / Agent sub-agent prompt
-  "name", // schema lookups
-  "title",
-];
-
-function toolArgsPreview(
-  chunk: ToolUseCache[string],
-  bashCommand: string | undefined,
-): string {
-  const input = chunk.input as Record<string, unknown> | undefined;
-  const tryField = (key: string): string | undefined => {
-    const v = input?.[key];
-    return typeof v === "string" && v ? v : undefined;
-  };
-
-  let raw = bashCommand;
-  if (!raw) {
-    for (const key of TOOL_ARGS_PREVIEW_KEYS) {
-      const v = tryField(key);
-      if (v) {
-        raw = v;
-        break;
-      }
-    }
-  }
-  // Fallback: take the first short-string arg of the input. Avoids returning
-  // the empty string when an MCP tool uses an arg name we don't enumerate
-  // above. Bound by ``TOOL_ARGS_PREVIEW_LIMIT`` after the truncation below.
-  if (!raw && input) {
-    for (const value of Object.values(input)) {
-      if (typeof value === "string" && value.trim()) {
-        raw = value;
-        break;
-      }
-    }
-  }
-  if (!raw) return "";
-  const oneLine = raw.replace(/\s+/g, " ").trim();
-  return oneLine.length > TOOL_ARGS_PREVIEW_LIMIT
-    ? `${oneLine.slice(0, TOOL_ARGS_PREVIEW_LIMIT - 1)}…`
-    : oneLine;
-}
-
 function handleTextChunk(
   chunk: { text: string },
   role: Role,
@@ -305,30 +251,6 @@ function handleToolUseChunk(
     cachedFileContent: ctx.fileContentCache,
     cwd: ctx.cwd,
   });
-
-  // Broadcast a live "agent is doing X" status when a tool first starts so
-  // downstream consumers (the Slack orchestrator) can render it as a status
-  // line in the thread without inferring intent from raw tool names. The
-  // `tool_name` + `tool_args_preview` fields let renderers show the bare tool
-  // name on the plan-block step and a short preview of the args (file path,
-  // command, query) on the `details` line — same shape as Slack's
-  // task_update chunk.
-  if (!alreadyCached && toolInfo.title) {
-    void ctx.client
-      .extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
-        sessionId: ctx.sessionId,
-        status: "tool_use",
-        text: toolInfo.title,
-        tool_name: chunk.name,
-        tool_args_preview: toolArgsPreview(
-          chunk,
-          bashCommandFromToolUse(chunk),
-        ),
-      })
-      .catch(() => {
-        // Best-effort — a failed status broadcast must not break tool execution.
-      });
-  }
 
   const meta: Record<string, unknown> = {
     ...toolMeta(
