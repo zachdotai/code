@@ -770,7 +770,11 @@ export function TaskInput({
         height="100%"
         className={clsx("relative px-4", compact && "overflow-y-auto")}
       >
-        <DotPatternBackground className="h-[100.333%]" />
+        {/* The dot pattern is absolutely anchored to the bottom; in compact
+            mode the parent scrolls, so it would stay pinned to the visible
+            edge instead of tracking content. It's purely decorative, so skip
+            it there rather than fight the scroll container. */}
+        {!compact && <DotPatternBackground className="h-[100.333%]" />}
         <div
           style={
             compact
