@@ -10,6 +10,7 @@ import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
+import clsx from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
@@ -108,6 +109,14 @@ interface TaskInputProps {
    * the chip is non-interactive (only dismissable).
    */
   onContextChipClick?: () => void;
+  /**
+   * Embedded/compact layout for small containers (e.g. a Command Center tile).
+   * Instead of vertically centering the input with the repo/branch selectors
+   * floated above and the suggestions floated below — which overflow and become
+   * unreachable inside a clipped tile — the selectors, input, and suggestions
+   * stack in normal flow inside a vertically scrollable column.
+   */
+  compact?: boolean;
 }
 
 export function TaskInput({
@@ -125,6 +134,7 @@ export function TaskInput({
   suggestions,
   onSuggestionSelect,
   onContextChipClick,
+  compact = false,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
@@ -755,24 +765,41 @@ export function TaskInput({
       className="relative h-full w-full"
     >
       <DropZoneOverlay isVisible={isDraggingFile} />
-      <Flex height="100%" className="relative px-4">
+      <Flex
+        direction={compact ? "column" : undefined}
+        height="100%"
+        className={clsx("relative px-4", compact && "overflow-y-auto")}
+      >
         <DotPatternBackground className="h-[100.333%]" />
         <div
-          style={{
-            // Raise the input when the suggestion cards are shown so the longer
-            // list below it isn't squished against the bottom of the viewport.
-            // Note: this is NOT tied to `editorIsEmpty` — the input keeps its
-            // position as the user types so the box doesn't jump down when the
-            // suggestions fade out (and back in when the prompt is cleared).
-            top: suggestions && suggestions.length > 0 ? "38%" : "50%",
-            transform: "translate(-50%, -50%)",
-          }}
-          className="absolute left-1/2 z-[1] flex w-[calc(100%-2rem)] max-w-[600px] flex-col gap-2"
+          style={
+            compact
+              ? undefined
+              : {
+                  // Raise the input when the suggestion cards are shown so the
+                  // longer list below it isn't squished against the bottom of
+                  // the viewport. Note: this is NOT tied to `editorIsEmpty` —
+                  // the input keeps its position as the user types so the box
+                  // doesn't jump down when the suggestions fade out (and back
+                  // in when the prompt is cleared).
+                  top: suggestions && suggestions.length > 0 ? "38%" : "50%",
+                  transform: "translate(-50%, -50%)",
+                }
+          }
+          className={clsx(
+            "z-[1] flex max-w-[600px] flex-col gap-2",
+            compact
+              ? "mx-auto w-full py-6"
+              : "absolute left-1/2 w-[calc(100%-2rem)]",
+          )}
         >
           <Flex
             gap="2"
             align="center"
-            className="absolute bottom-full left-0 mb-2 min-w-0"
+            className={clsx(
+              "min-w-0",
+              compact ? "flex-wrap" : "absolute bottom-full left-0 mb-2",
+            )}
           >
             <WorkspaceModeSelect
               value={workspaceMode}
@@ -907,7 +934,7 @@ export function TaskInput({
               ref={editorRef}
               sessionId={promptSessionId}
               placeholder={`What do you want to ship? ${hints}`}
-              editorHeight="large"
+              editorHeight={compact ? "default" : "large"}
               disabled={isCreatingTask}
               isLoading={isCreatingTask}
               autoFocus
@@ -1028,7 +1055,12 @@ export function TaskInput({
                 </div>
               )}
           </Flex>
-          <div className="absolute top-full right-0 left-0 z-10">
+          <div
+            className={clsx(
+              "z-10",
+              !compact && "absolute top-full right-0 left-0",
+            )}
+          >
             {suggestions ? (
               <AnimatePresence>
                 {suggestions.length > 0 && editorIsEmpty && (

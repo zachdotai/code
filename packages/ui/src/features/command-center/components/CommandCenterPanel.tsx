@@ -153,7 +153,11 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
           </button>
         </Flex>
         <Flex direction="column" className="min-h-0 flex-1">
-          <TaskInput sessionId={sessionId} onTaskCreated={handleTaskCreated} />
+          <TaskInput
+            sessionId={sessionId}
+            onTaskCreated={handleTaskCreated}
+            compact
+          />
         </Flex>
       </Flex>
     );
