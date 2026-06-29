@@ -1502,6 +1502,10 @@ function McpBody({
       : connection
         ? "agent"
         : "principal";
+  // Whether the chosen `auth.provider` is actually declared in
+  // `spec.identity_providers[]` — drives the preview card's status/badge.
+  const identityDeclared =
+    !!provider && providers.some((p) => providerId(p) === provider);
 
   const {
     installations,
@@ -1765,7 +1769,7 @@ function McpBody({
             section.
           </Muted>
           {providers.length > 0 ? (
-            <Flex direction="column" gap="1.5" className="mt-1.5">
+            <Flex direction="column" gap="2" className="mt-1.5">
               <Select.Root
                 value={provider}
                 onValueChange={setIdentityProvider}
@@ -1773,28 +1777,39 @@ function McpBody({
               >
                 <Select.Trigger
                   placeholder="Choose an identity"
-                  className="min-w-[220px]"
+                  className="min-w-60"
                 />
                 <Select.Content>
                   {providers.map((p) => {
                     const pid = providerId(p);
                     return (
                       <Select.Item key={pid} value={pid}>
-                        {pid}
+                        <Flex align="center" gap="2">
+                          <FingerprintIcon {...ICON} />
+                          {pid}
+                        </Flex>
                       </Select.Item>
                     );
                   })}
                 </Select.Content>
               </Select.Root>
               {provider ? (
-                <Button
-                  size="1"
-                  variant="ghost"
-                  className="self-start"
+                <JumpRow
+                  icon={<FingerprintIcon {...ICON} />}
+                  title={provider}
+                  mono
+                  subtitle={
+                    identityDeclared
+                      ? "per-asker linked identity — each asker connects as themselves"
+                      : "not declared in identities"
+                  }
+                  trailing={
+                    identityDeclared ? undefined : (
+                      <Badge color="amber">undeclared</Badge>
+                    )
+                  }
                   onClick={() => ctx.onSelect(`cfg:identity/${provider}`)}
-                >
-                  View {provider} identity →
-                </Button>
+                />
               ) : (
                 <Text className="block text-[12px] text-amber-11">
                   Principal-level needs a linked identity — choose one above.
