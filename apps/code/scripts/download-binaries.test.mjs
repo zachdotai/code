@@ -16,8 +16,10 @@ vi.mock("node:fs", () => {
     createWriteStream: vi.fn(() => ({})),
     existsSync: vi.fn(() => true),
     mkdirSync: vi.fn(),
+    readFileSync: vi.fn(() => ""),
     realpathSync: vi.fn(() => "/not/the/entrypoint"),
     rmSync: vi.fn(),
+    writeFileSync: vi.fn(),
   };
   return { ...fns, default: fns };
 });

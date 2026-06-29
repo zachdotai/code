@@ -6,8 +6,10 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -21,7 +23,7 @@ const DEST_DIR = join(__dirname, "..", "resources", "codex-acp");
 const BINARIES = [
   {
     name: "codex-acp",
-    version: "0.14.0",
+    version: "0.16.0",
     getUrl: (version, target) => {
       const ext = target.includes("windows") ? "zip" : "tar.gz";
       return `https://github.com/zed-industries/codex-acp/releases/download/v${version}/codex-acp-${version}-${target}.${ext}`;
@@ -140,12 +142,22 @@ async function downloadBinary(binary) {
   const binaryName =
     process.platform === "win32" ? `${binary.name}.exe` : binary.name;
   const binaryPath = join(DEST_DIR, binaryName);
+  const versionPath = join(DEST_DIR, `${binary.name}.version`);
 
   console.log(`\n[${binary.name}] v${binary.version}`);
 
   if (existsSync(binaryPath)) {
-    console.log(`  Already exists: ${binaryPath}`);
-    return;
+    const currentVersion = existsSync(versionPath)
+      ? readFileSync(versionPath, "utf8").trim()
+      : null;
+    if (currentVersion === binary.version) {
+      console.log(`  Already exists: ${binaryPath}`);
+      return;
+    }
+    console.log(
+      `  Replacing existing ${binary.name}${currentVersion ? ` v${currentVersion}` : ""} with v${binary.version}`,
+    );
+    rmSync(binaryPath, { force: true });
   }
 
   const target = binary.getTarget();
@@ -170,6 +182,7 @@ async function downloadBinary(binary) {
   if (process.platform === "darwin") {
     signForMacOS(binaryPath);
   }
+  writeFileSync(versionPath, `${binary.version}\n`);
 
   console.log(`  Ready: ${binaryPath}`);
 }

@@ -57,9 +57,10 @@ import {
   isCodexNativeMode,
   type PermissionMode,
 } from "../../execution-mode";
-import type {
-  McpToolApprovalsConfig,
-  McpToolInstallationsConfig,
+import {
+  type McpToolApprovalsConfig,
+  type McpToolInstallationsConfig,
+  mcpToolApprovalsSchema,
 } from "../../server/schemas";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../../types";
 import { isCloudRun } from "../../utils/common";
@@ -881,11 +882,28 @@ export class CodexAcpAgent extends BaseAcpAgent {
       throw RequestError.methodNotFound(method);
     }
 
-    // Trust boundary: refresh is only safe when the caller is trusted infra
-    // (e.g. the sandbox agent-server). Do not route this method from
-    // untrusted clients — mcpServers contents are forwarded verbatim to
-    // codex-acp with no URL/command validation.
+    const approvalResult =
+      params.mcpToolApprovals === undefined
+        ? undefined
+        : mcpToolApprovalsSchema.safeParse(params.mcpToolApprovals);
+    if (approvalResult && !approvalResult.success) {
+      throw new RequestError(
+        -32602,
+        "refresh_session: mcpToolApprovals must be an object of approval states",
+      );
+    }
+    if (approvalResult) {
+      this.sessionState.mcpToolApprovals = {
+        ...this.sessionState.mcpToolApprovals,
+        ...approvalResult.data,
+      };
+    }
+
+    // Trust boundary: server refresh is only safe when the caller is trusted
+    // infra. Do not route mcpServers from untrusted clients — contents are
+    // forwarded verbatim to codex-acp with no URL/command validation.
     if (params.mcpServers === undefined) {
+      if (approvalResult) return { refreshed: true };
       throw new RequestError(
         -32602,
         "refresh_session requires at least one refreshable field (e.g. mcpServers)",

@@ -4,7 +4,7 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import { dispatchBulkApproval } from "@posthog/core/mcp-servers/toolBulk";
 import { shouldAutoRefreshTools } from "@posthog/core/mcp-servers/toolRefresh";
-import { useHostTRPC } from "@posthog/host-router/react";
+import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useQueryClient } from "@tanstack/react-query";
@@ -28,6 +28,7 @@ export function useMcpInstallationTools(
   options: UseMcpInstallationToolsOptions = {},
 ) {
   const trpc = useHostTRPC();
+  const trpcClient = useHostTRPCClient();
   const queryClient = useQueryClient();
 
   const queryKey = [
@@ -68,8 +69,16 @@ export function useMcpInstallationTools(
       );
     },
     {
-      onSuccess: () => {
+      onSuccess: (_data, vars) => {
         invalidate();
+        if (!installationId) return;
+        void trpcClient.agent.updateMcpToolApprovalForActiveSessions
+          .mutate({
+            installationId,
+            toolName: vars.toolName,
+            approvalState: vars.approval_state,
+          })
+          .catch(() => undefined);
       },
       onError: (error: Error) => {
         toast.error(error.message || "Failed to update tool approval");
@@ -96,8 +105,19 @@ export function useMcpInstallationTools(
       );
     },
     {
-      onSuccess: () => {
+      onSuccess: (_data, vars) => {
         invalidate();
+        if (!installationId) return;
+        const changedTools = vars.targetTools ?? tools ?? [];
+        for (const tool of changedTools) {
+          void trpcClient.agent.updateMcpToolApprovalForActiveSessions
+            .mutate({
+              installationId,
+              toolName: tool.tool_name,
+              approvalState: vars.approval_state,
+            })
+            .catch(() => undefined);
+        }
       },
       onError: (error: Error) => {
         toast.error(error.message || "Failed to update tool approvals");

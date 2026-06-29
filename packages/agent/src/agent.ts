@@ -141,6 +141,7 @@ export class Agent {
               apiKey: gatewayConfig.apiKey,
               binaryPath: options.codexBinaryPath,
               codexHome: options.codexHome,
+              codexMcpApprovalHook: options.codexMcpApprovalHook,
               model: sanitizedModel,
               reasoningEffort: options.reasoningEffort,
               developerInstructions: options.developerInstructions,

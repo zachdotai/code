@@ -4,6 +4,10 @@ import { delimiter, dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import type { ProcessSpawnedCallback } from "../../types";
 import { Logger } from "../../utils/logger";
+import {
+  CODEX_MCP_APPROVAL_HOOK_ENV,
+  type CodexMcpApprovalHookEnv,
+} from "./mcp-approval-hook";
 import type { CodexSettings } from "./settings";
 
 export interface CodexProcessOptions {
@@ -20,6 +24,7 @@ export interface CodexProcessOptions {
   developerInstructions?: string;
   binaryPath?: string;
   codexHome?: string;
+  codexMcpApprovalHook?: CodexMcpApprovalHookEnv;
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
   settings?: CodexSettings;
@@ -38,6 +43,9 @@ function buildConfigArgs(options: CodexProcessOptions): string[] {
   const args: string[] = [];
 
   args.push("-c", `features.remote_models=false`);
+  if (options.codexMcpApprovalHook) {
+    args.push("-c", `features.hooks=true`);
+  }
 
   // Disable the user's local MCPs one-by-one so Codex only uses the MCPs we
   // provide via ACP. We can't use `-c mcp_servers={}` because that makes Codex
@@ -125,6 +133,13 @@ export function spawnCodexProcess(options: CodexProcessOptions): CodexProcess {
 
   if (options.codexHome) {
     env.CODEX_HOME = options.codexHome;
+  }
+
+  if (options.codexMcpApprovalHook) {
+    env[CODEX_MCP_APPROVAL_HOOK_ENV.bridgeUrl] =
+      options.codexMcpApprovalHook.bridgeUrl;
+    env[CODEX_MCP_APPROVAL_HOOK_ENV.bridgeToken] =
+      options.codexMcpApprovalHook.bridgeToken;
   }
 
   const { command, args } = findCodexBinary(options);

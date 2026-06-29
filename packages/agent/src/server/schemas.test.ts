@@ -260,7 +260,17 @@ describe("validateCommandParams", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects refresh_session without mcpServers", () => {
+  it("accepts refresh_session with only MCP approval updates", () => {
+    const result = validateCommandParams("_posthog/refresh_session", {
+      mcpToolApprovals: {
+        mcp__Linear__search: "needs_approval",
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects refresh_session without refreshable fields", () => {
     const result = validateCommandParams("_posthog/refresh_session", {});
 
     expect(result.success).toBe(false);

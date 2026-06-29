@@ -15,9 +15,19 @@ import {
 import {
   isMcpToolReadOnly,
   isNotification,
+  POSTHOG_METHODS,
   POSTHOG_NOTIFICATIONS,
 } from "@posthog/agent";
-import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
+import {
+  CodexMcpApprovalHookBridge,
+  type CodexMcpApprovalHookDecision,
+  type CodexMcpApprovalHookEnv,
+  type CodexMcpApprovalHookInput,
+} from "@posthog/agent/adapters/codex/mcp-approval-hook";
+import type {
+  McpToolApprovalState,
+  McpToolApprovals,
+} from "@posthog/agent/adapters/claude/mcp/tool-metadata";
 import { hydrateSessionJsonl } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
 import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
 import { Agent } from "@posthog/agent/agent";
@@ -35,6 +45,7 @@ import {
   isAnthropicModel,
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
+import { resolveMcpStoreToolKey } from "@posthog/agent/mcp-store/tool-keys";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import { findPrUrl, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
@@ -298,14 +309,26 @@ interface ManagedSession {
   configOptions?: SessionConfigOption[];
   /** Tracks in-flight MCP tool calls (toolCallId → toolKey) for cancellation */
   inFlightMcpToolCalls: Map<string, string>;
+  /** One-time backend approvals to restore after their tool call finishes */
+  temporaryMcpToolApprovals: Map<string, TemporaryMcpToolApproval>;
   /** MCP tool approval states fetched at session start */
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
+  codexMcpApprovalHookBridge?: CodexMcpApprovalHookBridge;
   // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
   prAttributed: boolean;
   evaluatedPrUrls: Set<string>;
 }
+
+interface TemporaryMcpToolApproval {
+  toolKey: string;
+  installationId: string;
+  toolName: string;
+  restoreApprovalState: McpToolApprovalState;
+}
+
+type McpToolApprovalApplication = "none" | "persisted" | "temporary" | "failed";
 
 /** Get the agent session ID from a managed session, throwing if not set. */
 function getAgentSessionId(session: ManagedSession): string {
@@ -327,6 +350,25 @@ export function buildAutoApproveOutcome(
     return { outcome: "cancelled" };
   }
   return { outcome: "selected", optionId };
+}
+
+function getSelectedPermissionOption(
+  options: RequestPermissionRequest["options"],
+  response: RequestPermissionResponse,
+): RequestPermissionRequest["options"][number] | undefined {
+  if (response.outcome?.outcome !== "selected") return undefined;
+  const { optionId } = response.outcome;
+  return options.find((option) => option.optionId === optionId);
+}
+
+function isSelectedPermissionOption(
+  response: RequestPermissionResponse,
+  optionId: string,
+): boolean {
+  return (
+    response.outcome?.outcome === "selected" &&
+    response.outcome.optionId === optionId
+  );
 }
 
 interface PendingPermission {
@@ -452,6 +494,307 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
 
     this.pendingPermissions.delete(key);
     this.recordActivity(taskRunId);
+  }
+
+  public async updateMcpToolApprovalForActiveSessions(input: {
+    installationId: string;
+    toolName: string;
+    approvalState: McpToolApprovalState;
+  }): Promise<void> {
+    const refreshes: Promise<void>[] = [];
+
+    for (const session of this.sessions.values()) {
+      const patch: McpToolApprovals = {};
+      for (const [toolKey, ref] of Object.entries(session.toolInstallations)) {
+        if (
+          ref.installationId === input.installationId &&
+          ref.toolName === input.toolName
+        ) {
+          patch[toolKey] = input.approvalState;
+        }
+      }
+
+      if (Object.keys(patch).length === 0) continue;
+
+      session.mcpToolApprovals = {
+        ...session.mcpToolApprovals,
+        ...patch,
+      };
+
+      refreshes.push(
+        session.clientSideConnection
+          .extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+            mcpToolApprovals: patch,
+          })
+          .then(() => undefined)
+          .catch(() => undefined),
+      );
+    }
+
+    await Promise.all(refreshes);
+  }
+
+  private async applyMcpToolApprovalResponse(
+    session: ManagedSession | undefined,
+    toolCallId: string,
+    toolKey: string,
+    options: RequestPermissionRequest["options"],
+    response: RequestPermissionResponse,
+  ): Promise<McpToolApprovalApplication> {
+    if (
+      !session ||
+      !toolCallId ||
+      session.mcpToolApprovals?.[toolKey] !== "needs_approval"
+    ) {
+      return "none";
+    }
+
+    const selectedOption = getSelectedPermissionOption(options, response);
+    const selectedOptionId =
+      response.outcome?.outcome === "selected"
+        ? response.outcome.optionId
+        : undefined;
+    const shouldPersistApproval =
+      selectedOption?.kind === "allow_always" ||
+      selectedOptionId === "allow_always";
+    const shouldAllowOnce =
+      selectedOption?.kind === "allow_once" || selectedOptionId === "allow";
+
+    if (!shouldPersistApproval && !shouldAllowOnce) return "none";
+
+    const installation = session.toolInstallations[toolKey];
+    if (!installation) {
+      return "failed";
+    }
+
+    try {
+      await this.agentAuthAdapter.updateMcpToolApproval(
+        session.config.credentials,
+        installation.installationId,
+        installation.toolName,
+        "approved",
+      );
+    } catch {
+      return "failed";
+    }
+
+    if (shouldPersistApproval) {
+      session.mcpToolApprovals[toolKey] = "approved";
+      session.temporaryMcpToolApprovals.delete(toolCallId);
+      return "persisted";
+    }
+
+    session.temporaryMcpToolApprovals.set(toolCallId, {
+      toolKey,
+      installationId: installation.installationId,
+      toolName: installation.toolName,
+      restoreApprovalState: "needs_approval",
+    });
+    return "temporary";
+  }
+
+  private hasOtherTemporaryMcpApproval(
+    session: ManagedSession,
+    toolCallId: string,
+    approval: TemporaryMcpToolApproval,
+  ): boolean {
+    for (const [
+      otherToolCallId,
+      otherApproval,
+    ] of session.temporaryMcpToolApprovals) {
+      if (otherToolCallId === toolCallId) continue;
+      if (
+        otherApproval.installationId === approval.installationId &&
+        otherApproval.toolName === approval.toolName
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async restoreTemporaryMcpToolApproval(
+    session: ManagedSession,
+    toolCallId: string,
+    _reason: string,
+  ): Promise<void> {
+    const approval = session.temporaryMcpToolApprovals.get(toolCallId);
+    if (!approval) return;
+
+    session.temporaryMcpToolApprovals.delete(toolCallId);
+
+    if (this.hasOtherTemporaryMcpApproval(session, toolCallId, approval)) {
+      return;
+    }
+
+    if (
+      session.mcpToolApprovals?.[approval.toolKey] !==
+      approval.restoreApprovalState
+    ) {
+      return;
+    }
+
+    try {
+      await this.agentAuthAdapter.updateMcpToolApproval(
+        session.config.credentials,
+        approval.installationId,
+        approval.toolName,
+        approval.restoreApprovalState,
+      );
+    } catch {}
+  }
+
+  private async restoreTemporaryMcpToolApprovals(
+    session: ManagedSession,
+    reason: string,
+  ): Promise<void> {
+    const toolCallIds = Array.from(session.temporaryMcpToolApprovals.keys());
+    for (const toolCallId of toolCallIds) {
+      await this.restoreTemporaryMcpToolApproval(session, toolCallId, reason);
+    }
+  }
+
+  private resolveCodexHookMcpToolKey(
+    session: ManagedSession,
+    input: CodexMcpApprovalHookInput,
+  ): string | null {
+    return resolveMcpStoreToolKey(input.toolName, {
+      approvals: session.mcpToolApprovals,
+      installations: session.toolInstallations,
+    });
+  }
+
+  private async approveCodexMcpToolUse(
+    taskRunId: string,
+    input: CodexMcpApprovalHookInput,
+  ): Promise<CodexMcpApprovalHookDecision> {
+    const session = this.sessions.get(taskRunId);
+    if (!session) {
+      return {
+        action: "deny",
+        message: "MCP tool call cannot proceed because the session is gone.",
+      };
+    }
+
+    const toolKey = this.resolveCodexHookMcpToolKey(session, input);
+    if (!toolKey) {
+      return { action: "allow" };
+    }
+
+    const installation = session.toolInstallations[toolKey];
+    const displayToolName = installation?.toolName ?? input.toolName;
+    const approvalState = session.mcpToolApprovals?.[toolKey];
+    if (approvalState === "approved") {
+      return { action: "allow" };
+    }
+    if (approvalState === "do_not_use") {
+      return {
+        action: "deny",
+        message: `Tool '${displayToolName}' has been disabled by the user`,
+      };
+    }
+    if (approvalState !== "needs_approval") {
+      return { action: "allow" };
+    }
+
+    if (!input.toolUseId) {
+      return {
+        action: "deny",
+        message:
+          "MCP tool call cannot proceed because Codex did not provide a tool call id.",
+      };
+    }
+
+    const toolCallId = input.toolUseId;
+    const options: RequestPermissionRequest["options"] = [
+      { kind: "allow_once", optionId: "allow", name: "Allow" },
+      {
+        kind: "allow_always",
+        optionId: "allow_always",
+        name: "Always allow",
+      },
+      { kind: "reject_once", optionId: "reject", name: "Reject" },
+    ];
+
+    this.sleepService.release(taskRunId);
+    try {
+      const response = await new Promise<RequestPermissionResponse>(
+        (resolve, reject) => {
+          const key = `${taskRunId}:${toolCallId}`;
+          this.pendingPermissions.set(key, {
+            resolve,
+            reject,
+            taskRunId,
+            toolCallId,
+          });
+
+          this.emit(AgentServiceEvent.PermissionRequest, {
+            taskRunId,
+            options,
+            toolCall: {
+              toolCallId,
+              title: displayToolName,
+              kind: "other",
+              rawInput: { toolName: toolKey, name: displayToolName },
+            },
+          });
+        },
+      );
+
+      const selectedOption = getSelectedPermissionOption(options, response);
+      const shouldAllow =
+        selectedOption?.kind === "allow_once" ||
+        selectedOption?.kind === "allow_always" ||
+        isSelectedPermissionOption(response, "allow") ||
+        isSelectedPermissionOption(response, "allow_always");
+
+      if (!shouldAllow) {
+        const feedback = (response._meta as Record<string, unknown> | undefined)
+          ?.customInput;
+        return {
+          action: "deny",
+          message:
+            typeof feedback === "string" && feedback.trim()
+              ? `User refused permission to run tool with feedback: ${feedback.trim()}`
+              : "User refused permission to run tool",
+        };
+      }
+
+      const application = await this.applyMcpToolApprovalResponse(
+        session,
+        toolCallId,
+        toolKey,
+        options,
+        response,
+      );
+
+      if (application === "failed") {
+        return {
+          action: "deny",
+          message:
+            "MCP tool approval could not be applied before calling the tool.",
+        };
+      }
+
+      return { action: "allow" };
+    } finally {
+      if (this.sessions.has(taskRunId)) {
+        this.sleepService.acquire(taskRunId);
+      }
+    }
+  }
+
+  private async completeCodexMcpToolUse(
+    taskRunId: string,
+    input: CodexMcpApprovalHookInput,
+  ): Promise<void> {
+    const session = this.sessions.get(taskRunId);
+    if (!session || !input.toolUseId) return;
+    await this.restoreTemporaryMcpToolApproval(
+      session,
+      input.toolUseId,
+      "codex_post_tool_use",
+    );
   }
 
   /**
@@ -748,6 +1091,7 @@ If a repository IS genuinely required, attach one in this priority order:
       debug: isDevBuild(),
       onLog: this.onAgentLog,
     });
+    let codexMcpApprovalHookBridge: CodexMcpApprovalHookBridge | undefined;
 
     try {
       const systemPrompt = this.buildSystemPrompt(
@@ -766,21 +1110,25 @@ If a repository IS genuinely required, attach one in this priority order:
       );
 
       let codexHome: string | undefined;
+      let codexMcpApprovalHook: CodexMcpApprovalHookEnv | undefined;
       if (adapter === "codex") {
-        try {
-          codexHome = await prepareCodexHome({
-            appDataPath: this.storagePaths.appDataPath,
-            taskRunId,
-            bundledSkillsDir,
-            log: this.log,
-          });
-        } catch (err) {
-          // A skills-prep failure must not kill the session; Codex falls back
-          // to its default home and the user's own ~/.agents/skills.
-          this.log.warn("Failed to prepare codex home", {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
+        codexMcpApprovalHookBridge = new CodexMcpApprovalHookBridge(
+          {
+            preToolUse: (input) =>
+              this.approveCodexMcpToolUse(taskRunId, input),
+            postToolUse: (input) =>
+              this.completeCodexMcpToolUse(taskRunId, input),
+          },
+          this.log,
+        );
+        codexMcpApprovalHook = await codexMcpApprovalHookBridge.start();
+        codexHome = await prepareCodexHome({
+          appDataPath: this.storagePaths.appDataPath,
+          taskRunId,
+          bundledSkillsDir,
+          hookRuntimeCommand: process.execPath,
+          log: this.log,
+        });
       }
 
       const acpConnection = await agent.run(taskId, taskRunId, {
@@ -789,6 +1137,7 @@ If a repository IS genuinely required, attach one in this priority order:
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
         codexHome,
+        codexMcpApprovalHook,
         model,
         reasoningEffort: adapter === "codex" ? effort : undefined,
         developerInstructions:
@@ -1053,8 +1402,10 @@ If a repository IS genuinely required, attach one in this priority order:
         promptPending: false,
         configOptions,
         inFlightMcpToolCalls: new Map(),
+        temporaryMcpToolApprovals: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
+        codexMcpApprovalHookBridge,
         prAttributed: false,
         evaluatedPrUrls: new Set(),
       };
@@ -1067,6 +1418,11 @@ If a repository IS genuinely required, attach one in this priority order:
       }
       return session;
     } catch (err) {
+      await codexMcpApprovalHookBridge?.stop().catch(() => {
+        this.log.debug("Codex MCP approval hook bridge cleanup failed", {
+          taskRunId,
+        });
+      });
       try {
         await agent.cleanup();
       } catch {
@@ -1556,7 +1912,13 @@ For git operations while detached:
         });
       }
       this.cancelInFlightMcpToolCalls(session);
+      await this.restoreTemporaryMcpToolApprovals(session, "session_cleanup");
       this.sleepService.release(taskRunId);
+      await session.codexMcpApprovalHookBridge?.stop().catch(() => {
+        this.log.debug("Codex MCP approval hook bridge cleanup failed", {
+          taskRunId,
+        });
+      });
       try {
         await session.agent.cleanup();
       } catch {
@@ -1681,36 +2043,14 @@ For git operations while detached:
               },
             );
 
-            const approved =
-              response.outcome?.outcome === "selected" &&
-              (response.outcome.optionId === "allow" ||
-                response.outcome.optionId === "allow_always");
-            if (approved && toolName) {
-              const session = service.sessions.get(taskRunId);
-              if (
-                session?.mcpToolApprovals?.[toolName] === "needs_approval" &&
-                session.toolInstallations[toolName]
-              ) {
-                const { installationId, toolName: rawToolName } =
-                  session.toolInstallations[toolName];
-                try {
-                  await service.agentAuthAdapter.updateMcpToolApproval(
-                    session.config.credentials,
-                    installationId,
-                    rawToolName,
-                    "approved",
-                  );
-                  session.mcpToolApprovals[toolName] = "approved";
-                } catch (err) {
-                  service.log.warn(
-                    "Failed to update tool approval on backend",
-                    {
-                      toolName,
-                      error: err instanceof Error ? err.message : String(err),
-                    },
-                  );
-                }
-              }
+            if (toolName) {
+              await service.applyMcpToolApprovalResponse(
+                service.sessions.get(taskRunId),
+                toolCallId,
+                toolName,
+                params.options,
+                response,
+              );
             }
 
             return response;
@@ -1793,6 +2133,13 @@ For git operations while detached:
           update.status === "failed"
         ) {
           session?.inFlightMcpToolCalls.delete(update.toolCallId);
+          if (session) {
+            await service.restoreTemporaryMcpToolApproval(
+              session,
+              update.toolCallId,
+              update.status,
+            );
+          }
           service.mcpAppsService.notifyToolResult(
             toolName,
             update.toolCallId,

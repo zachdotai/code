@@ -60,6 +60,7 @@ import {
   POSTHOG_PRODUCTS,
   type PostHogProductId,
 } from "../../posthog-products";
+import { mcpToolApprovalsSchema } from "../../server/schemas";
 import type { PostHogAPIConfig } from "../../types";
 import {
   isCloudRun,
@@ -1231,10 +1232,25 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       throw RequestError.methodNotFound(method);
     }
 
-    // Trust boundary: refresh is only safe when the caller is trusted infra
-    // (e.g. the sandbox agent-server). Do not route this method from
-    // untrusted clients — parseMcpServers does no URL/command validation.
+    const approvalResult =
+      params.mcpToolApprovals === undefined
+        ? undefined
+        : mcpToolApprovalsSchema.safeParse(params.mcpToolApprovals);
+    if (approvalResult && !approvalResult.success) {
+      throw new RequestError(
+        -32602,
+        "refresh_session: mcpToolApprovals must be an object of approval states",
+      );
+    }
+    if (approvalResult) {
+      setMcpToolApprovalStates(approvalResult.data);
+    }
+
+    // Trust boundary: server refresh is only safe when the caller is trusted
+    // infra. Do not route mcpServers from untrusted clients — parseMcpServers
+    // does no URL/command validation.
     if (params.mcpServers === undefined) {
+      if (approvalResult) return { refreshed: true };
       throw new RequestError(
         -32602,
         "refresh_session requires at least one refreshable field (e.g. mcpServers)",

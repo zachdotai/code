@@ -20,6 +20,10 @@
       "types": "./dist/gateway-models.d.ts",
       "import": "./dist/gateway-models.js"
     },
+    "./mcp-store/tool-keys": {
+      "types": "./dist/mcp-store/tool-keys.d.ts",
+      "import": "./dist/mcp-store/tool-keys.js"
+    },
     "./posthog-api": {
       "types": "./dist/posthog-api.d.ts",
       "import": "./dist/posthog-api.js"
@@ -67,6 +71,10 @@
     "./adapters/claude/mcp/tool-metadata": {
       "types": "./dist/adapters/claude/mcp/tool-metadata.d.ts",
       "import": "./dist/adapters/claude/mcp/tool-metadata.js"
+    },
+    "./adapters/codex/mcp-approval-hook": {
+      "types": "./dist/adapters/codex/mcp-approval-hook.d.ts",
+      "import": "./dist/adapters/codex/mcp-approval-hook.js"
     },
     "./execution-mode": {
       "types": "./dist/execution-mode.d.ts",

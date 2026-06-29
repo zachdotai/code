@@ -1,3 +1,8 @@
+import type {
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+  SessionNotification,
+} from "@agentclientprotocol/sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- Hoisted mocks ---
@@ -22,6 +27,7 @@ const mockClientSideConnection = vi.hoisted(() =>
     this.newSession = mockNewSession;
     this.loadSession = vi.fn().mockResolvedValue({ configOptions: [] });
     this.resumeSession = vi.fn().mockResolvedValue({ configOptions: [] });
+    this.extMethod = vi.fn().mockResolvedValue({ refreshed: true });
   }),
 );
 
@@ -45,6 +51,20 @@ const mockAgentConstructor = vi.hoisted(() =>
   }),
 );
 
+const mockCodexHome = vi.hoisted(() => ({
+  prepareCodexHome: vi.fn().mockResolvedValue("/mock/codex-home"),
+  cleanupCodexHome: vi.fn().mockResolvedValue(undefined),
+}));
+
+const mockCodexHookBridge = vi.hoisted(() => ({
+  start: vi.fn().mockResolvedValue({
+    bridgeUrl: "http://127.0.0.1:4567",
+    bridgeToken: "hook-token",
+  }),
+  stop: vi.fn().mockResolvedValue(undefined),
+  constructor: vi.fn(),
+}));
+
 // --- Module mocks ---
 
 vi.mock("electron", () => ({
@@ -63,6 +83,14 @@ vi.mock("@agentclientprotocol/sdk", () => ({
 
 vi.mock("@posthog/agent", () => ({
   isMcpToolReadOnly: vi.fn(() => false),
+  isNotification: vi.fn(() => false),
+  POSTHOG_METHODS: {
+    REFRESH_SESSION: "_posthog/refresh_session",
+  },
+  POSTHOG_NOTIFICATIONS: {
+    SDK_SESSION: "_posthog/sdk_session",
+    USAGE_UPDATE: "_posthog/usage_update",
+  },
 }));
 
 vi.mock("@posthog/agent/posthog-api", () => ({
@@ -80,6 +108,22 @@ vi.mock("@posthog/agent/gateway-models", () => ({
 
 vi.mock("@posthog/agent/adapters/claude/session/jsonl-hydration", () => ({
   hydrateSessionJsonl: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@posthog/agent/adapters/codex/mcp-approval-hook", () => ({
+  CodexMcpApprovalHookBridge: vi.fn().mockImplementation(function (
+    this: Record<string, unknown>,
+    handler,
+  ) {
+    mockCodexHookBridge.constructor(handler);
+    this.start = mockCodexHookBridge.start;
+    this.stop = mockCodexHookBridge.stop;
+  }),
+}));
+
+vi.mock("./codex-home", () => ({
+  prepareCodexHome: mockCodexHome.prepareCodexHome,
+  cleanupCodexHome: mockCodexHome.cleanupCodexHome,
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -101,6 +145,7 @@ vi.mock("node:fs", async (importOriginal) => {
 // --- Import after mocks ---
 import type { RegisteredFolder } from "../folders/schemas";
 import { AgentService, buildAutoApproveOutcome } from "./agent";
+import { AgentServiceEvent } from "./schemas";
 
 // --- Test helpers ---
 
@@ -145,6 +190,7 @@ function createMockDependencies() {
         toolApprovals: {},
         toolInstallations: {},
       }),
+      updateMcpToolApproval: vi.fn().mockResolvedValue(undefined),
     },
     mcpAppsService: {
       setServerConfigs: vi.fn(),
@@ -199,12 +245,62 @@ const baseSessionParams = {
   projectId: 1,
 };
 
+type TestAcpClient = {
+  requestPermission(
+    params: RequestPermissionRequest,
+  ): Promise<RequestPermissionResponse>;
+  sessionUpdate(params: SessionNotification): Promise<void>;
+};
+
+function getCreatedAcpClient(): TestAcpClient {
+  const latestCall =
+    mockClientSideConnection.mock.calls[
+      mockClientSideConnection.mock.calls.length - 1
+    ];
+  const createClient = latestCall?.[0] as
+    | ((agent: unknown) => TestAcpClient)
+    | undefined;
+  if (!createClient) {
+    throw new Error("No ACP client connection was created");
+  }
+  return createClient({});
+}
+
 describe("AgentService", () => {
   let service: AgentService;
   let deps: ReturnType<typeof createMockDependencies>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockNewSession.mockResolvedValue({
+      sessionId: "test-session-id",
+      configOptions: [],
+    });
+    mockClientSideConnection.mockImplementation(function (
+      this: Record<string, unknown>,
+    ) {
+      this.initialize = vi.fn().mockResolvedValue({});
+      this.newSession = mockNewSession;
+      this.loadSession = vi.fn().mockResolvedValue({ configOptions: [] });
+      this.resumeSession = vi.fn().mockResolvedValue({ configOptions: [] });
+      this.extMethod = vi.fn().mockResolvedValue({ refreshed: true });
+    });
+    mockAgentRun.mockImplementation(() =>
+      Promise.resolve({
+        clientStreams: {
+          readable: new ReadableStream(),
+          writable: new WritableStream(),
+        },
+      }),
+    );
+    mockAgentConstructor.mockImplementation(function (
+      this: Record<string, unknown>,
+    ) {
+      this.run = mockAgentRun;
+      this.cleanup = vi.fn().mockResolvedValue(undefined);
+      this.getPosthogAPI = vi.fn();
+      this.flushAllLogs = vi.fn().mockResolvedValue(undefined);
+    });
 
     // The Codex MCP reachability probe hits the network; default it to "reachable"
     // so unrelated session tests stay deterministic and offline-safe.
@@ -344,6 +440,342 @@ describe("AgentService", () => {
         }),
       );
     });
+
+    it("pushes MCP approval changes into active sessions", async () => {
+      deps.agentAuthAdapter.buildMcpServers.mockResolvedValueOnce({
+        servers: [
+          {
+            name: "posthog",
+            type: "http",
+            url: "https://mcp.posthog.com/mcp",
+            headers: [],
+          },
+        ],
+        toolApprovals: {
+          mcp__Linear__search: "approved",
+        },
+        toolInstallations: {
+          mcp__Linear__search: {
+            installationId: "inst-1",
+            toolName: "search",
+          },
+        },
+      });
+
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+      });
+
+      await service.updateMcpToolApprovalForActiveSessions({
+        installationId: "inst-1",
+        toolName: "search",
+        approvalState: "needs_approval",
+      });
+
+      const connection = mockClientSideConnection.mock.instances[0] as {
+        extMethod: ReturnType<typeof vi.fn>;
+      };
+      expect(connection.extMethod).toHaveBeenCalledWith(
+        "_posthog/refresh_session",
+        {
+          mcpToolApprovals: {
+            mcp__Linear__search: "needs_approval",
+          },
+        },
+      );
+    });
+
+    it("temporarily approves an MCP Store tool for allow once and restores it after the tool call", async () => {
+      const toolKey = "mcp__Granola__query_granola_meetings";
+      deps.agentAuthAdapter.buildMcpServers.mockResolvedValueOnce({
+        servers: [
+          {
+            name: "granola",
+            type: "http",
+            url: "https://mcp.posthog.com/granola",
+            headers: [],
+          },
+        ],
+        toolApprovals: {
+          [toolKey]: "needs_approval",
+        },
+        toolInstallations: {
+          [toolKey]: {
+            installationId: "inst-granola",
+            toolName: "query_granola_meetings",
+          },
+        },
+      });
+
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+      });
+
+      const client = getCreatedAcpClient();
+      const permissionPromise = client.requestPermission({
+        sessionId: "test-session-id",
+        options: [
+          { kind: "allow_once", optionId: "allow", name: "Allow" },
+          {
+            kind: "allow_always",
+            optionId: "allow_always",
+            name: "Always allow",
+          },
+        ],
+        toolCall: {
+          toolCallId: "tc-granola",
+          title: "query_granola_meetings",
+          kind: "read",
+          rawInput: { toolName: toolKey },
+        },
+      });
+
+      service.respondToPermission("run-1", "tc-granola", "allow");
+
+      await expect(permissionPromise).resolves.toMatchObject({
+        outcome: { outcome: "selected", optionId: "allow" },
+      });
+      expect(deps.agentAuthAdapter.updateMcpToolApproval).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiHost: "https://app.posthog.com",
+          projectId: 1,
+        }),
+        "inst-granola",
+        "query_granola_meetings",
+        "approved",
+      );
+
+      await client.sessionUpdate({
+        sessionId: "test-session-id",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "tc-granola",
+          status: "completed",
+          rawOutput: { ok: true },
+          _meta: {
+            claudeCode: {
+              toolName: toolKey,
+            },
+          },
+        },
+      });
+
+      expect(deps.agentAuthAdapter.updateMcpToolApproval).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiHost: "https://app.posthog.com",
+          projectId: 1,
+        }),
+        "inst-granola",
+        "query_granola_meetings",
+        "needs_approval",
+      );
+      expect(deps.mcpAppsService.notifyToolResult).toHaveBeenCalledWith(
+        toolKey,
+        "tc-granola",
+        { ok: true },
+        false,
+      );
+    });
+
+    it("persists MCP Store approval for allow always without restoring it", async () => {
+      const toolKey = "mcp__Granola__query_granola_meetings";
+      deps.agentAuthAdapter.buildMcpServers.mockResolvedValueOnce({
+        servers: [
+          {
+            name: "granola",
+            type: "http",
+            url: "https://mcp.posthog.com/granola",
+            headers: [],
+          },
+        ],
+        toolApprovals: {
+          [toolKey]: "needs_approval",
+        },
+        toolInstallations: {
+          [toolKey]: {
+            installationId: "inst-granola",
+            toolName: "query_granola_meetings",
+          },
+        },
+      });
+
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+      });
+
+      const client = getCreatedAcpClient();
+      const permissionPromise = client.requestPermission({
+        sessionId: "test-session-id",
+        options: [
+          { kind: "allow_once", optionId: "allow", name: "Allow" },
+          {
+            kind: "allow_always",
+            optionId: "allow_always",
+            name: "Always allow",
+          },
+        ],
+        toolCall: {
+          toolCallId: "tc-granola",
+          title: "query_granola_meetings",
+          kind: "read",
+          rawInput: { toolName: toolKey },
+        },
+      });
+
+      service.respondToPermission("run-1", "tc-granola", "allow_always");
+
+      await expect(permissionPromise).resolves.toMatchObject({
+        outcome: { outcome: "selected", optionId: "allow_always" },
+      });
+
+      await client.sessionUpdate({
+        sessionId: "test-session-id",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "tc-granola",
+          status: "completed",
+          rawOutput: { ok: true },
+          _meta: {
+            claudeCode: {
+              toolName: toolKey,
+            },
+          },
+        },
+      });
+
+      expect(deps.agentAuthAdapter.updateMcpToolApproval).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(deps.agentAuthAdapter.updateMcpToolApproval).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiHost: "https://app.posthog.com",
+          projectId: 1,
+        }),
+        "inst-granola",
+        "query_granola_meetings",
+        "approved",
+      );
+    });
+
+    it("prompts and temporarily approves Codex MCP Store calls through the PreToolUse hook", async () => {
+      const toolKey = "mcp__Granola__query_granola_meetings";
+      deps.agentAuthAdapter.buildMcpServers.mockResolvedValueOnce({
+        servers: [
+          {
+            name: "granola",
+            type: "http",
+            url: "https://mcp.posthog.com/granola",
+            headers: [],
+          },
+        ],
+        toolApprovals: {
+          [toolKey]: "needs_approval",
+        },
+        toolInstallations: {
+          [toolKey]: {
+            installationId: "inst-granola",
+            toolName: "query_granola_meetings",
+          },
+        },
+      });
+
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+      });
+
+      expect(mockAgentRun).toHaveBeenCalledWith(
+        "task-1",
+        "run-1",
+        expect.objectContaining({
+          codexHome: "/mock/codex-home",
+          codexMcpApprovalHook: {
+            bridgeUrl: "http://127.0.0.1:4567",
+            bridgeToken: "hook-token",
+          },
+        }),
+      );
+
+      const hookHandler = mockCodexHookBridge.constructor.mock.calls[0]?.[0] as
+        | {
+            preToolUse(input: {
+              hookEventName: "PreToolUse";
+              toolName: string;
+              toolUseId: string;
+              raw: Record<string, unknown>;
+            }): Promise<{ action: "allow" | "deny"; message?: string }>;
+            postToolUse(input: {
+              hookEventName: "PostToolUse";
+              toolName: string;
+              toolUseId: string;
+              raw: Record<string, unknown>;
+            }): Promise<void>;
+          }
+        | undefined;
+      expect(hookHandler).toBeDefined();
+
+      const decisionPromise = hookHandler?.preToolUse({
+        hookEventName: "PreToolUse",
+        toolName: toolKey,
+        toolUseId: "tc-granola",
+        raw: {},
+      });
+      await Promise.resolve();
+
+      const permissionRequest = (
+        service.emit as ReturnType<typeof vi.fn>
+      ).mock.calls.find(
+        ([eventName]) => eventName === AgentServiceEvent.PermissionRequest,
+      )?.[1] as
+        | {
+            taskRunId: string;
+            toolCall?: { toolCallId?: string; rawInput?: unknown };
+          }
+        | undefined;
+      expect(permissionRequest?.taskRunId).toBe("run-1");
+      expect(permissionRequest?.toolCall?.rawInput).toEqual({
+        toolName: toolKey,
+        name: "query_granola_meetings",
+      });
+
+      service.respondToPermission(
+        "run-1",
+        permissionRequest?.toolCall?.toolCallId ?? "",
+        "allow",
+      );
+
+      const decision = await decisionPromise;
+      expect(decision?.action).toBe("allow");
+      expect(deps.agentAuthAdapter.updateMcpToolApproval).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiHost: "https://app.posthog.com",
+          projectId: 1,
+        }),
+        "inst-granola",
+        "query_granola_meetings",
+        "approved",
+      );
+
+      await hookHandler?.postToolUse({
+        hookEventName: "PostToolUse",
+        toolName: toolKey,
+        toolUseId: "tc-granola",
+        raw: {},
+      });
+
+      expect(deps.agentAuthAdapter.updateMcpToolApproval).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiHost: "https://app.posthog.com",
+          projectId: 1,
+        }),
+        "inst-granola",
+        "query_granola_meetings",
+        "needs_approval",
+      );
+    });
   });
 
   describe("idle timeout", () => {
@@ -366,6 +798,7 @@ describe("AgentService", () => {
         config: {},
         promptPending: false,
         inFlightMcpToolCalls: new Map(),
+        temporaryMcpToolApprovals: new Map(),
         mcpToolApprovals: {},
         toolInstallations: {},
         ...overrides,

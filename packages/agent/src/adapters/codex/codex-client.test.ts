@@ -141,7 +141,7 @@ describe("createCodexClient MCP Store permissions", () => {
     };
   }
 
-  test("relays needs_approval MCP tools by bare title even in full-access mode", async () => {
+  test("relays needs_approval MCP tools by bare title even in full-access mode without promoting allow once", async () => {
     const toolName = "mcp__Granola__query_granola_meetings";
     const upstream = makePermissionUpstream();
     const sessionState = createSessionState("sess", "/tmp", {
@@ -178,12 +178,14 @@ describe("createCodexClient MCP Store permissions", () => {
         }),
       }),
     );
-    expect(sessionState.mcpToolApprovals?.[toolName]).toBe("approved");
+    expect(sessionState.mcpToolApprovals?.[toolName]).toBe("needs_approval");
   });
 
-  test("relays needs_approval MCP tools with unsanitized MCP server names", async () => {
+  test("promotes needs_approval MCP tools only when the user chooses always allow", async () => {
     const toolName = "mcp__Granola_Meetings__query_granola_meetings";
-    const upstream = makePermissionUpstream();
+    const upstream = makePermissionUpstream({
+      outcome: { outcome: "selected" as const, optionId: "allow_always" },
+    });
     const sessionState = createSessionState("sess", "/tmp", {
       permissionMode: "full-access",
       mcpToolApprovals: { [toolName]: "needs_approval" },

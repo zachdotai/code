@@ -1,4 +1,5 @@
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -27,6 +28,13 @@ import {
   getSessionJsonlPath,
   hydrateSessionJsonl,
 } from "../adapters/claude/session/jsonl-hydration";
+import {
+  CodexMcpApprovalHookBridge,
+  type CodexMcpApprovalHookDecision,
+  type CodexMcpApprovalHookEnv,
+  type CodexMcpApprovalHookInput,
+  installCodexMcpApprovalHook,
+} from "../adapters/codex/mcp-approval-hook";
 import type { GatewayEnv } from "../adapters/claude/session/options";
 import {
   type AgentErrorClassification,
@@ -77,6 +85,7 @@ import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
 import {
   handoffLocalGitStateSchema,
   jsonRpcRequestSchema,
+  type RemoteMcpServer,
   validateCommandParams,
 } from "./schemas";
 import type { AgentServerConfig } from "./types";
@@ -108,6 +117,19 @@ type MessageCallback = (message: unknown) => void;
 
 export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
 
+const CODEX_MCP_APPROVAL_INSTRUCTIONS = `## MCP Tool Approvals
+
+Some MCP tools may pause for explicit user approval. When an MCP tool call is waiting for approval, wait for the permission result before continuing. If permission is denied or unavailable, explain that the tool cannot be used without approval.`;
+
+function getSelectedPermissionOption(
+  options: RequestPermissionRequest["options"],
+  response: RequestPermissionResponse,
+): RequestPermissionRequest["options"][number] | undefined {
+  if (response.outcome?.outcome !== "selected") return undefined;
+  const { optionId } = response.outcome;
+  return options.find((option) => option.optionId === optionId);
+}
+
 interface CloudSessionMeta extends Record<string, unknown> {
   sessionId: string;
   taskRunId: string;
@@ -122,6 +144,13 @@ interface CloudSessionMeta extends Record<string, unknown> {
   mcpToolInstallations?: AgentServerConfig["mcpToolInstallations"];
   baseBranch?: string;
   claudeCode?: { options: Record<string, unknown> };
+}
+
+interface TemporaryMcpStoreToolApproval {
+  toolKey: string;
+  installationId: string;
+  toolName: string;
+  restoreApprovalState: "needs_approval";
 }
 
 class NdJsonTap {
@@ -250,6 +279,8 @@ interface ActiveSession {
   permissionMode: PermissionMode;
   /** Whether a desktop client has ever connected via SSE during this session */
   hasDesktopConnected: boolean;
+  codexMcpApprovalHookBridge?: CodexMcpApprovalHookBridge;
+  codexHome?: string;
   pendingHandoffGitState?: HandoffLocalGitState;
 }
 
@@ -292,6 +323,10 @@ export class AgentServer {
   // causing a second session to be created and duplicate Slack messages to be sent.
   private initializationPromise: Promise<void> | null = null;
   private pendingEvents: Record<string, unknown>[] = [];
+  private temporaryMcpStoreToolApprovals = new Map<
+    string,
+    TemporaryMcpStoreToolApproval
+  >();
   private pendingPermissions = new Map<
     string,
     {
@@ -456,35 +491,42 @@ export class AgentServer {
     );
   }
 
-  private async approveMcpStoreToolIfNeeded(
+  private async applyMcpStoreToolApprovalResponse(
     params: RequestPermissionRequest,
     response: RequestPermissionResponse,
-  ): Promise<void> {
-    const approved =
-      response.outcome?.outcome === "selected" &&
-      (response.outcome.optionId === "allow" ||
-        response.outcome.optionId === "allow_always");
-    if (!approved) {
-      return;
-    }
-
+  ): Promise<"none" | "temporary" | "persisted" | "failed"> {
     const toolName = this.getMcpToolNameFromPermissionRequest(params);
     if (
       !toolName ||
       this.config.mcpToolApprovals?.[toolName] !== "needs_approval"
     ) {
-      return;
+      return "none";
+    }
+
+    const selectedOption = getSelectedPermissionOption(
+      params.options,
+      response,
+    );
+    const selectedOptionId =
+      response.outcome?.outcome === "selected"
+        ? response.outcome.optionId
+        : undefined;
+    const shouldPersistApproval =
+      selectedOption?.kind === "allow_always" ||
+      selectedOptionId === "allow_always";
+    const shouldAllowOnce =
+      selectedOption?.kind === "allow_once" || selectedOptionId === "allow";
+
+    if (!shouldPersistApproval && !shouldAllowOnce) return "none";
+
+    const toolCallId = params.toolCall?.toolCallId;
+    if (shouldAllowOnce && !toolCallId) {
+      return "failed";
     }
 
     const installation = this.config.mcpToolInstallations?.[toolName];
     if (!installation) {
-      this.logger.warn(
-        "Cannot persist MCP Store tool approval: missing installation ref",
-        {
-          toolName,
-        },
-      );
-      return;
+      return "failed";
     }
 
     try {
@@ -493,17 +535,205 @@ export class AgentServer {
         installation.toolName,
         "approved",
       );
+      if (shouldAllowOnce && toolCallId) {
+        this.temporaryMcpStoreToolApprovals.set(toolCallId, {
+          toolKey: toolName,
+          installationId: installation.installationId,
+          toolName: installation.toolName,
+          restoreApprovalState: "needs_approval",
+        });
+        return "temporary";
+      }
+
       this.config.mcpToolApprovals = {
         ...this.config.mcpToolApprovals,
         [toolName]: "approved",
       };
-      this.logger.info("Persisted MCP Store tool approval", { toolName });
-    } catch (error) {
-      this.logger.warn("Failed to persist MCP Store tool approval", {
-        toolName,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (toolCallId) {
+        this.temporaryMcpStoreToolApprovals.delete(toolCallId);
+      }
+      return "persisted";
+    } catch {
+      return "failed";
     }
+  }
+
+  private hasOtherTemporaryMcpStoreApproval(
+    toolCallId: string,
+    approval: TemporaryMcpStoreToolApproval,
+  ): boolean {
+    for (const [otherToolCallId, otherApproval] of this
+      .temporaryMcpStoreToolApprovals) {
+      if (otherToolCallId === toolCallId) continue;
+      if (
+        otherApproval.installationId === approval.installationId &&
+        otherApproval.toolName === approval.toolName
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async restoreTemporaryMcpStoreToolApproval(
+    toolCallId: string,
+    _reason: string,
+  ): Promise<void> {
+    const approval = this.temporaryMcpStoreToolApprovals.get(toolCallId);
+    if (!approval) return;
+
+    this.temporaryMcpStoreToolApprovals.delete(toolCallId);
+
+    if (this.hasOtherTemporaryMcpStoreApproval(toolCallId, approval)) {
+      return;
+    }
+
+    if (
+      this.config.mcpToolApprovals?.[approval.toolKey] !==
+      approval.restoreApprovalState
+    ) {
+      return;
+    }
+
+    try {
+      await this.posthogAPI.updateMcpToolApproval(
+        approval.installationId,
+        approval.toolName,
+        approval.restoreApprovalState,
+      );
+    } catch {}
+  }
+
+  private async restoreTemporaryMcpStoreToolApprovals(
+    reason: string,
+  ): Promise<void> {
+    const toolCallIds = Array.from(this.temporaryMcpStoreToolApprovals.keys());
+    for (const toolCallId of toolCallIds) {
+      await this.restoreTemporaryMcpStoreToolApproval(toolCallId, reason);
+    }
+  }
+
+  private isAllowPermissionResponse(
+    options: RequestPermissionRequest["options"],
+    response: RequestPermissionResponse,
+  ): boolean {
+    const selectedOption = getSelectedPermissionOption(options, response);
+    const selectedOptionId =
+      response.outcome?.outcome === "selected"
+        ? response.outcome.optionId
+        : undefined;
+    return (
+      selectedOption?.kind === "allow_once" ||
+      selectedOption?.kind === "allow_always" ||
+      selectedOptionId === "allow" ||
+      selectedOptionId === "allow_always"
+    );
+  }
+
+  private resolveCodexHookMcpToolKey(
+    input: CodexMcpApprovalHookInput,
+  ): string | null {
+    return resolveMcpStoreToolKey(input.toolName, {
+      approvals: this.config.mcpToolApprovals,
+      installations: this.config.mcpToolInstallations,
+    });
+  }
+
+  private async approveCodexMcpToolUse(
+    input: CodexMcpApprovalHookInput,
+  ): Promise<CodexMcpApprovalHookDecision> {
+    const toolKey = this.resolveCodexHookMcpToolKey(input);
+    if (!toolKey) {
+      return { action: "allow" };
+    }
+
+    const installation = this.config.mcpToolInstallations?.[toolKey];
+    const displayToolName = installation?.toolName ?? input.toolName;
+    const approvalState = this.config.mcpToolApprovals?.[toolKey];
+
+    if (approvalState === "approved") {
+      return { action: "allow" };
+    }
+    if (approvalState === "do_not_use") {
+      return {
+        action: "deny",
+        message: `Tool '${displayToolName}' has been disabled by the user`,
+      };
+    }
+    if (approvalState !== "needs_approval") {
+      return { action: "allow" };
+    }
+    if (!this.session) {
+      return {
+        action: "deny",
+        message: "MCP tool call cannot proceed because the session is gone.",
+      };
+    }
+    if (!input.toolUseId) {
+      return {
+        action: "deny",
+        message:
+          "MCP tool call cannot proceed because Codex did not provide a tool call id.",
+      };
+    }
+
+    const toolCallId = input.toolUseId;
+    const options: RequestPermissionRequest["options"] = [
+      { kind: "allow_once", optionId: "allow", name: "Allow" },
+      {
+        kind: "allow_always",
+        optionId: "allow_always",
+        name: "Always allow",
+      },
+      { kind: "reject_once", optionId: "reject", name: "Reject" },
+    ];
+    const permissionRequest: RequestPermissionRequest = {
+      sessionId: this.session.acpSessionId,
+      options,
+      toolCall: {
+        toolCallId,
+        title: displayToolName,
+        kind: "other",
+        rawInput: { toolName: toolKey, name: displayToolName },
+      },
+    };
+
+    const response = await this.relayPermissionToClient(permissionRequest);
+    if (!this.isAllowPermissionResponse(options, response)) {
+      const feedback = (response._meta as Record<string, unknown> | undefined)
+        ?.customInput;
+      return {
+        action: "deny",
+        message:
+          typeof feedback === "string" && feedback.trim()
+            ? `User refused permission to run tool with feedback: ${feedback.trim()}`
+            : "User refused permission to run tool",
+      };
+    }
+
+    const application = await this.applyMcpStoreToolApprovalResponse(
+      permissionRequest,
+      response,
+    );
+    if (application === "failed") {
+      return {
+        action: "deny",
+        message:
+          "MCP tool approval could not be applied before calling the tool.",
+      };
+    }
+
+    return { action: "allow" };
+  }
+
+  private async completeCodexMcpToolUse(
+    input: CodexMcpApprovalHookInput,
+  ): Promise<void> {
+    if (!input.toolUseId) return;
+    await this.restoreTemporaryMcpStoreToolApproval(
+      input.toolUseId,
+      "codex_post_tool_use",
+    );
   }
 
   private createApp(): Hono {
@@ -1051,6 +1281,12 @@ export class AgentServer {
         const mcpServers = Array.isArray(params.mcpServers)
           ? params.mcpServers
           : [];
+        const mcpToolApprovals =
+          params.mcpToolApprovals &&
+          typeof params.mcpToolApprovals === "object" &&
+          !Array.isArray(params.mcpToolApprovals)
+            ? (params.mcpToolApprovals as AgentServerConfig["mcpToolApprovals"])
+            : undefined;
         const refreshedCredentials = Array.isArray(params.refreshedCredentials)
           ? (params.refreshedCredentials as string[])
           : [];
@@ -1064,7 +1300,20 @@ export class AgentServer {
           );
         }
 
+        if (mcpToolApprovals) {
+          this.config.mcpToolApprovals = {
+            ...this.config.mcpToolApprovals,
+            ...mcpToolApprovals,
+          };
+        }
+
         if (mcpServers.length === 0) {
+          if (mcpToolApprovals) {
+            return await this.session.clientConnection.extMethod(
+              POSTHOG_METHODS.REFRESH_SESSION,
+              { mcpToolApprovals },
+            );
+          }
           return { refreshed: true };
         }
 
@@ -1074,7 +1323,10 @@ export class AgentServer {
 
         return await this.session.clientConnection.extMethod(
           POSTHOG_METHODS.REFRESH_SESSION,
-          { mcpServers },
+          {
+            mcpServers: mcpServers as RemoteMcpServer[],
+            ...(mcpToolApprovals && { mcpToolApprovals }),
+          },
         );
       }
 
@@ -1237,197 +1489,245 @@ export class AgentServer {
       logger: new Logger({ debug: true, prefix: "[SessionLogWriter]" }),
     });
 
-    const acpConnection = createAcpConnection({
-      adapter: runtimeAdapter,
-      taskRunId: payload.run_id,
-      taskId: payload.task_id,
-      deviceType: deviceInfo.type,
-      logWriter,
-      logger: this.logger,
-      claudeGatewayEnv: runtimeAdapter !== "codex" ? gatewayEnv : undefined,
-      codexOptions:
-        runtimeAdapter === "codex"
-          ? {
-              cwd: this.config.repositoryPath ?? "/tmp/workspace",
-              apiBaseUrl: gatewayEnv.openaiBaseUrl,
-              apiKey: this.config.apiKey,
-              model: this.config.model ?? DEFAULT_CODEX_MODEL,
-              reasoningEffort: this.config.reasoningEffort,
-              developerInstructions: codexInstructions,
-            }
-          : undefined,
-      onStructuredOutput: async (output) => {
-        await this.posthogAPI.setTaskRunOutput(
-          payload.task_id,
-          payload.run_id,
+    let codexHome: string | undefined;
+    let codexMcpApprovalHookBridge: CodexMcpApprovalHookBridge | undefined;
+    let codexMcpApprovalHook: CodexMcpApprovalHookEnv | undefined;
+    let sessionCreated = false;
+    try {
+      if (runtimeAdapter === "codex") {
+        codexMcpApprovalHookBridge = new CodexMcpApprovalHookBridge(
           {
-            output,
+            preToolUse: (input) => this.approveCodexMcpToolUse(input),
+            postToolUse: (input) => this.completeCodexMcpToolUse(input),
           },
+          this.logger,
         );
-      },
-    });
-
-    // Tap both streams to broadcast all ACP messages via SSE (mimics local transport)
-    this.adapterEmittedTurnComplete = false;
-    const onAcpMessage = (message: unknown) => {
-      if (isTurnCompleteNotification(message)) {
-        this.adapterEmittedTurnComplete = true;
+        codexMcpApprovalHook = await codexMcpApprovalHookBridge.start();
+        codexHome = await mkdtemp(join(tmpdir(), "posthog-codex-home-"));
+        await installCodexMcpApprovalHook({
+          codexHome,
+          runtimeCommand: process.execPath,
+        });
       }
+
+      const acpConnection = createAcpConnection({
+        adapter: runtimeAdapter,
+        taskRunId: payload.run_id,
+        taskId: payload.task_id,
+        deviceType: deviceInfo.type,
+        logWriter,
+        logger: this.logger,
+        claudeGatewayEnv: runtimeAdapter !== "codex" ? gatewayEnv : undefined,
+        codexOptions:
+          runtimeAdapter === "codex"
+            ? {
+                cwd: this.config.repositoryPath ?? "/tmp/workspace",
+                apiBaseUrl: gatewayEnv.openaiBaseUrl,
+                apiKey: this.config.apiKey,
+                codexHome,
+                codexMcpApprovalHook,
+                model: this.config.model ?? DEFAULT_CODEX_MODEL,
+                reasoningEffort: this.config.reasoningEffort,
+                developerInstructions: codexInstructions,
+              }
+            : undefined,
+        onStructuredOutput: async (output) => {
+          await this.posthogAPI.setTaskRunOutput(
+            payload.task_id,
+            payload.run_id,
+            {
+              output,
+            },
+          );
+        },
+      });
+
+      // Tap both streams to broadcast all ACP messages via SSE (mimics local transport)
+      this.adapterEmittedTurnComplete = false;
+      const onAcpMessage = (message: unknown) => {
+        if (isTurnCompleteNotification(message)) {
+          this.adapterEmittedTurnComplete = true;
+        }
+        this.broadcastEvent({
+          type: "notification",
+          timestamp: new Date().toISOString(),
+          notification: message,
+        });
+      };
+
+      const tappedReadable = createTappedReadableStream(
+        acpConnection.clientStreams.readable as ReadableStream<Uint8Array>,
+        onAcpMessage,
+        this.logger,
+      );
+
+      const tappedWritable = createTappedWritableStream(
+        acpConnection.clientStreams.writable as WritableStream<Uint8Array>,
+        onAcpMessage,
+        this.logger,
+      );
+
+      const clientStream = ndJsonStream(tappedWritable, tappedReadable);
+
+      const clientConnection = new ClientSideConnection(
+        () => this.createCloudClient(payload),
+        clientStream,
+      );
+
+      await clientConnection.initialize({
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: {},
+      });
+
+      const runState = preTaskRun?.state as Record<string, unknown> | undefined;
+      // Preserve native Codex modes for cloud runs so they behave the same as
+      // local sessions. Claude keeps the historical auto-approved default when
+      // PostHog Code has not explicitly selected a mode.
+      const initialPermissionMode: PermissionMode =
+        typeof runState?.initial_permission_mode === "string"
+          ? (runState.initial_permission_mode as PermissionMode)
+          : runtimeAdapter === "codex"
+            ? "auto"
+            : "bypassPermissions";
+      const sessionCwd = this.config.repositoryPath ?? "/tmp/workspace";
+      const sessionMeta = this.buildCloudSessionMeta({
+        payload,
+        sessionSystemPrompt,
+        preTask,
+        permissionMode: initialPermissionMode,
+        runtimeAdapter,
+      });
+
+      const nativeResume = await this.prepareNativeResume(
+        payload,
+        posthogAPI,
+        preTaskRun,
+        runtimeAdapter,
+        sessionCwd,
+        initialPermissionMode,
+      );
+
+      let acpSessionId: string;
+      const sessionMcpServers = this.config.mcpServers ?? [];
+      if (nativeResume) {
+        await clientConnection.resumeSession({
+          sessionId: nativeResume.sessionId,
+          cwd: sessionCwd,
+          mcpServers: sessionMcpServers,
+          _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
+        });
+        acpSessionId = nativeResume.sessionId;
+        this.nativeResume = nativeResume;
+        this.logger.debug("ACP session resumed", {
+          acpSessionId,
+          runId: payload.run_id,
+          warm: nativeResume.warm,
+        });
+      } else {
+        const sessionResponse = await clientConnection.newSession({
+          cwd: sessionCwd,
+          mcpServers: sessionMcpServers,
+          _meta: sessionMeta,
+        });
+        acpSessionId = sessionResponse.sessionId;
+        this.logger.debug("ACP session created", {
+          acpSessionId,
+          runId: payload.run_id,
+        });
+      }
+
+      this.evaluatedPrUrls.clear();
+      this.prAttributionChain = Promise.resolve();
+
+      this.session = {
+        payload,
+        acpSessionId,
+        acpConnection,
+        clientConnection,
+        sseController,
+        deviceInfo,
+        logWriter,
+        permissionMode: initialPermissionMode,
+        hasDesktopConnected: sseController !== null,
+        codexMcpApprovalHookBridge,
+        codexHome,
+        pendingHandoffGitState: undefined,
+      };
+      sessionCreated = true;
+
+      this.logger = new Logger({
+        debug: true,
+        prefix: "[AgentServer]",
+        onLog: (level, scope, message, data) => {
+          this.emitConsoleLog(level, scope, message, data);
+        },
+      });
+
+      this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
+      this.logger.debug("Session initialized successfully", {
+        bootMs: this.sessionReadyBootMs,
+      });
+      this.logger.debug(
+        `Agent version: ${this.config.version ?? packageJson.version}`,
+      );
+      await logAgentshRuntimeInfo(this.logger);
+      this.logger.debug(`Initial permission mode: ${initialPermissionMode}`);
+
+      // Lifecycle handshake: clients gate "agent is ready to accept user
+      // messages" on this notification. Persisted to the session log so
+      // warm reconnects (sandbox restart with snapshot resume) replay it
+      // and see the agent come online again.
+      const runStartedNotification = {
+        jsonrpc: "2.0" as const,
+        method: POSTHOG_NOTIFICATIONS.RUN_STARTED,
+        params: {
+          sessionId: acpSessionId,
+          runId: payload.run_id,
+          taskId: payload.task_id,
+          agentVersion: this.config.version ?? packageJson.version,
+        },
+      };
       this.broadcastEvent({
         type: "notification",
         timestamp: new Date().toISOString(),
-        notification: message,
+        notification: runStartedNotification,
       });
-    };
-
-    const tappedReadable = createTappedReadableStream(
-      acpConnection.clientStreams.readable as ReadableStream<Uint8Array>,
-      onAcpMessage,
-      this.logger,
-    );
-
-    const tappedWritable = createTappedWritableStream(
-      acpConnection.clientStreams.writable as WritableStream<Uint8Array>,
-      onAcpMessage,
-      this.logger,
-    );
-
-    const clientStream = ndJsonStream(tappedWritable, tappedReadable);
-
-    const clientConnection = new ClientSideConnection(
-      () => this.createCloudClient(payload),
-      clientStream,
-    );
-
-    await clientConnection.initialize({
-      protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: {},
-    });
-
-    const runState = preTaskRun?.state as Record<string, unknown> | undefined;
-    // Preserve native Codex modes for cloud runs so they behave the same as
-    // local sessions. Claude keeps the historical auto-approved default when
-    // PostHog Code has not explicitly selected a mode.
-    const initialPermissionMode: PermissionMode =
-      typeof runState?.initial_permission_mode === "string"
-        ? (runState.initial_permission_mode as PermissionMode)
-        : runtimeAdapter === "codex"
-          ? "auto"
-          : "bypassPermissions";
-    const sessionCwd = this.config.repositoryPath ?? "/tmp/workspace";
-    const sessionMeta = this.buildCloudSessionMeta({
-      payload,
-      sessionSystemPrompt,
-      preTask,
-      permissionMode: initialPermissionMode,
-      runtimeAdapter,
-    });
-
-    const nativeResume = await this.prepareNativeResume(
-      payload,
-      posthogAPI,
-      preTaskRun,
-      runtimeAdapter,
-      sessionCwd,
-      initialPermissionMode,
-    );
-
-    let acpSessionId: string;
-    if (nativeResume) {
-      await clientConnection.resumeSession({
-        sessionId: nativeResume.sessionId,
-        cwd: sessionCwd,
-        mcpServers: this.config.mcpServers ?? [],
-        _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
-      });
-      acpSessionId = nativeResume.sessionId;
-      this.nativeResume = nativeResume;
-      this.logger.debug("ACP session resumed", {
-        acpSessionId,
-        runId: payload.run_id,
-        warm: nativeResume.warm,
-      });
-    } else {
-      const sessionResponse = await clientConnection.newSession({
-        cwd: sessionCwd,
-        mcpServers: this.config.mcpServers ?? [],
-        _meta: sessionMeta,
-      });
-      acpSessionId = sessionResponse.sessionId;
-      this.logger.debug("ACP session created", {
-        acpSessionId,
-        runId: payload.run_id,
-      });
-    }
-
-    this.evaluatedPrUrls.clear();
-    this.prAttributionChain = Promise.resolve();
-
-    this.session = {
-      payload,
-      acpSessionId,
-      acpConnection,
-      clientConnection,
-      sseController,
-      deviceInfo,
-      logWriter,
-      permissionMode: initialPermissionMode,
-      hasDesktopConnected: sseController !== null,
-      pendingHandoffGitState: undefined,
-    };
-
-    this.logger = new Logger({
-      debug: true,
-      prefix: "[AgentServer]",
-      onLog: (level, scope, message, data) => {
-        this.emitConsoleLog(level, scope, message, data);
-      },
-    });
-
-    this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
-    this.logger.debug("Session initialized successfully", {
-      bootMs: this.sessionReadyBootMs,
-    });
-    this.logger.debug(
-      `Agent version: ${this.config.version ?? packageJson.version}`,
-    );
-    await logAgentshRuntimeInfo(this.logger);
-    this.logger.debug(`Initial permission mode: ${initialPermissionMode}`);
-
-    // Lifecycle handshake: clients gate "agent is ready to accept user
-    // messages" on this notification. Persisted to the session log so
-    // warm reconnects (sandbox restart with snapshot resume) replay it
-    // and see the agent come online again.
-    const runStartedNotification = {
-      jsonrpc: "2.0" as const,
-      method: POSTHOG_NOTIFICATIONS.RUN_STARTED,
-      params: {
-        sessionId: acpSessionId,
-        runId: payload.run_id,
-        taskId: payload.task_id,
-        agentVersion: this.config.version ?? packageJson.version,
-      },
-    };
-    this.broadcastEvent({
-      type: "notification",
-      timestamp: new Date().toISOString(),
-      notification: runStartedNotification,
-    });
-    this.session.logWriter.appendRawLine(
-      payload.run_id,
-      JSON.stringify(runStartedNotification),
-    );
-
-    // Signal in_progress so the UI can start polling for updates
-    this.posthogAPI
-      .updateTaskRun(payload.task_id, payload.run_id, {
-        status: "in_progress",
-      })
-      .catch((err) =>
-        this.logger.debug("Failed to set task run to in_progress", err),
+      this.session.logWriter.appendRawLine(
+        payload.run_id,
+        JSON.stringify(runStartedNotification),
       );
 
-    await this.sendInitialTaskMessage(payload, preTaskRun);
+      // Signal in_progress so the UI can start polling for updates
+      this.posthogAPI
+        .updateTaskRun(payload.task_id, payload.run_id, {
+          status: "in_progress",
+        })
+        .catch((err) =>
+          this.logger.debug("Failed to set task run to in_progress", err),
+        );
+
+      await this.sendInitialTaskMessage(payload, preTaskRun);
+    } catch (error) {
+      if (!sessionCreated) {
+        await codexMcpApprovalHookBridge?.stop().catch((stopError) => {
+          this.logger.debug(
+            "Failed to stop Codex MCP approval hook bridge after init failure",
+            { error: stopError },
+          );
+        });
+        if (codexHome) {
+          await rm(codexHome, { recursive: true, force: true }).catch(
+            (rmError) => {
+              this.logger.debug(
+                "Failed to remove Codex home after init failure",
+                { error: rmError },
+              );
+            },
+          );
+        }
+      }
+      throw error;
+    }
   }
 
   private extractErrorClassification(error: unknown): {
@@ -2050,9 +2350,11 @@ export class AgentServer {
   private buildCodexInstructions(
     systemPrompt: string | { append: string },
   ): string {
-    return typeof systemPrompt === "string"
-      ? systemPrompt
-      : systemPrompt.append;
+    const instructions =
+      typeof systemPrompt === "string" ? systemPrompt : systemPrompt.append;
+    return [instructions, CODEX_MCP_APPROVAL_INSTRUCTIONS]
+      .filter(Boolean)
+      .join("\n\n");
   }
 
   /**
@@ -2640,7 +2942,7 @@ ${signedCommitInstructions}
               sessionPermissionMode,
             });
             const response = await this.relayPermissionToClient(params);
-            await this.approveMcpStoreToolIfNeeded(params, response);
+            await this.applyMcpStoreToolApprovalResponse(params, response);
             return response;
           }
         }
@@ -2694,9 +2996,25 @@ ${signedCommitInstructions}
           const meta = (params.update?._meta as Record<string, unknown>)
             ?.claudeCode as Record<string, unknown> | undefined;
           const toolName = meta?.toolName as string | undefined;
+          const toolCallId =
+            typeof params.update?.toolCallId === "string"
+              ? params.update.toolCallId
+              : undefined;
+          const status =
+            typeof params.update?.status === "string"
+              ? params.update.status
+              : undefined;
           const toolResponse = meta?.toolResponse as
             | Record<string, unknown>
             | undefined;
+
+          if (
+            toolName?.startsWith("mcp__") &&
+            toolCallId &&
+            (status === "completed" || status === "failed")
+          ) {
+            await this.restoreTemporaryMcpStoreToolApproval(toolCallId, status);
+          }
 
           if (
             (toolName === "Write" ||
@@ -2939,6 +3257,20 @@ ${signedCommitInstructions}
       });
     }
     this.pendingPermissions.clear();
+
+    await this.restoreTemporaryMcpStoreToolApprovals("session_cleanup");
+    await this.session.codexMcpApprovalHookBridge?.stop().catch((error) => {
+      this.logger.debug("Failed to stop Codex MCP approval hook bridge", {
+        error,
+      });
+    });
+    if (this.session.codexHome) {
+      await rm(this.session.codexHome, { recursive: true, force: true }).catch(
+        (error) => {
+          this.logger.debug("Failed to remove Codex home", { error });
+        },
+      );
+    }
 
     try {
       await this.session.acpConnection.cleanup();

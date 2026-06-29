@@ -126,13 +126,34 @@ describe("canUseTool MCP approval enforcement", () => {
     );
   });
 
-  it("updates the approval cache after the user approves a tool", async () => {
+  it("keeps needs_approval after the user allows a tool once", async () => {
     const toolName = "mcp__Linear__search";
     setMcpToolApprovalStates({
       [toolName]: "needs_approval",
     });
 
     const result = await canUseTool(createContext(toolName));
+
+    expect(result.behavior).toBe("allow");
+    expect(getMcpToolApprovalState(toolName)).toBe("needs_approval");
+  });
+
+  it("updates the approval cache after the user always allows a tool", async () => {
+    const toolName = "mcp__Linear__search";
+    setMcpToolApprovalStates({
+      [toolName]: "needs_approval",
+    });
+
+    const result = await canUseTool(
+      createContext(toolName, {
+        client: {
+          sessionUpdate: vi.fn().mockResolvedValue(undefined),
+          requestPermission: vi.fn().mockResolvedValue({
+            outcome: { outcome: "selected", optionId: "allow_always" },
+          }),
+        },
+      }),
+    );
 
     expect(result.behavior).toBe("allow");
     expect(getMcpToolApprovalState(toolName)).toBe("approved");

@@ -20,6 +20,10 @@ interface TestableAgentServer {
       outcome: { outcome: string; optionId?: string };
       _meta?: { message?: string };
     }>;
+    sessionUpdate: (params: {
+      sessionId: string;
+      update?: Record<string, unknown>;
+    }) => Promise<void>;
   };
   questionRelayedToSlack: boolean;
   session: unknown;
@@ -409,11 +413,11 @@ describe("Question relay", () => {
         expect(request.params.toolCallId).toBe("tool-1");
 
         expect(
-          server.resolvePermission(request.params.requestId, "allow"),
+          server.resolvePermission(request.params.requestId, "allow_always"),
         ).toBe(true);
 
         await expect(permissionPromise).resolves.toMatchObject({
-          outcome: { outcome: "selected", optionId: "allow" },
+          outcome: { outcome: "selected", optionId: "allow_always" },
         });
         expect(approvalSpy).toHaveBeenCalledWith(
           "inst-1",
@@ -423,6 +427,126 @@ describe("Question relay", () => {
         expect(server.config.mcpToolApprovals.mcp__Linear__search).toBe(
           "approved",
         );
+      });
+
+      it("temporarily approves MCP Store tools for allow once and restores after the tool call", async () => {
+        const appendRawLine = vi.fn();
+        const approvalSpy = vi
+          .spyOn(server.posthogAPI, "updateMcpToolApproval")
+          .mockResolvedValue(undefined);
+
+        server.config.mcpToolApprovals = {
+          mcp__Granola__query_granola_meetings: "needs_approval",
+        };
+        server.config.mcpToolInstallations = {
+          mcp__Granola__query_granola_meetings: {
+            installationId: "inst-1",
+            toolName: "query_granola_meetings",
+          },
+        };
+        server.session = {
+          payload: TEST_PAYLOAD,
+          sseController: null,
+          hasDesktopConnected: false,
+          permissionMode: "default",
+          logWriter: { appendRawLine },
+        };
+
+        const client = server.createCloudClient(TEST_PAYLOAD);
+        const permissionPromise = client.requestPermission({
+          options: ALLOW_OPTIONS,
+          toolCall: {
+            toolCallId: "tool-1",
+            title: "query_granola_meetings",
+            kind: "other",
+            rawInput: { toolName: "mcp__Granola__query_granola_meetings" },
+          },
+        });
+
+        const request = appendRawLine.mock.calls
+          .map(([, line]) => JSON.parse(line))
+          .find((n) => n?.method === "_posthog/permission_request");
+        expect(request).toBeTruthy();
+        expect(request.params.toolCallId).toBe("tool-1");
+
+        expect(
+          server.resolvePermission(request.params.requestId, "allow"),
+        ).toBe(true);
+
+        await expect(permissionPromise).resolves.toMatchObject({
+          outcome: { outcome: "selected", optionId: "allow" },
+        });
+        expect(approvalSpy).toHaveBeenCalledWith(
+          "inst-1",
+          "query_granola_meetings",
+          "approved",
+        );
+        expect(
+          server.config.mcpToolApprovals.mcp__Granola__query_granola_meetings,
+        ).toBe("needs_approval");
+
+        await client.sessionUpdate({
+          sessionId: "test-session-id",
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "tool-1",
+            status: "completed",
+            _meta: {
+              claudeCode: {
+                toolName: "mcp__Granola__query_granola_meetings",
+              },
+            },
+          },
+        });
+
+        expect(approvalSpy).toHaveBeenCalledWith(
+          "inst-1",
+          "query_granola_meetings",
+          "needs_approval",
+        );
+      });
+
+      it("does not relay a permission request after a backend MCP approval failure", async () => {
+        const appendRawLine = vi.fn();
+        const approvalSpy = vi
+          .spyOn(server.posthogAPI, "updateMcpToolApproval")
+          .mockResolvedValue(undefined);
+
+        server.config.mcpToolApprovals = {
+          mcp__Granola__query_granola_meetings: "needs_approval",
+        };
+        server.config.mcpToolInstallations = {
+          mcp__Granola__query_granola_meetings: {
+            installationId: "inst-1",
+            toolName: "query_granola_meetings",
+          },
+        };
+        server.session = {
+          payload: TEST_PAYLOAD,
+          acpSessionId: "codex-session-id",
+          sseController: null,
+          hasDesktopConnected: false,
+          permissionMode: "auto",
+          logWriter: { appendRawLine },
+        };
+
+        const client = server.createCloudClient(TEST_PAYLOAD);
+        await client.sessionUpdate({
+          sessionId: "codex-session-id",
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "call-granola",
+            status: "failed",
+            rawOutput:
+              "tool call error: tool call failed for `granola/query_granola_meetings`\n\nCaused by:\n    Mcp error: -32001: Tool 'query_granola_meetings' requires approval before it can be called",
+          },
+        });
+
+        expect(appendRawLine).not.toHaveBeenCalled();
+        expect(approvalSpy).not.toHaveBeenCalled();
+        expect(
+          server.config.mcpToolApprovals.mcp__Granola__query_granola_meetings,
+        ).toBe("needs_approval");
       });
 
       it("recognizes MCP Store approval requests by bare upstream tool name", async () => {
@@ -466,11 +590,11 @@ describe("Question relay", () => {
         expect(request.params.toolCallId).toBe("tool-1");
 
         expect(
-          server.resolvePermission(request.params.requestId, "allow"),
+          server.resolvePermission(request.params.requestId, "allow_always"),
         ).toBe(true);
 
         await expect(permissionPromise).resolves.toMatchObject({
-          outcome: { outcome: "selected", optionId: "allow" },
+          outcome: { outcome: "selected", optionId: "allow_always" },
         });
         expect(approvalSpy).toHaveBeenCalledWith(
           "inst-1",
@@ -525,11 +649,11 @@ describe("Question relay", () => {
         expect(request).toBeTruthy();
 
         expect(
-          server.resolvePermission(request.params.requestId, "allow"),
+          server.resolvePermission(request.params.requestId, "allow_always"),
         ).toBe(true);
 
         await expect(permissionPromise).resolves.toMatchObject({
-          outcome: { outcome: "selected", optionId: "allow" },
+          outcome: { outcome: "selected", optionId: "allow_always" },
         });
         expect(approvalSpy).toHaveBeenCalledWith(
           "inst-1",

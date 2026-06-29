@@ -416,8 +416,8 @@ export const createPreToolUseHook =
     // gate that runs for these tools. Force a decision here: deny blocked
     // tools outright, and route needs_approval tools back through canUseTool
     // (via "ask") so handleMcpApprovalFlow relays the approval dialog to the
-    // desktop and persists the result to the backend. An explicit allow rule
-    // (e.g. a prior "always allow") takes precedence so the prompt sticks.
+    // desktop and persists the result to the backend. A later Settings change
+    // back to needs_approval must override any old local allow rule.
     const mcpApprovalState = getMcpToolApprovalState(toolName);
     if (mcpApprovalState === "do_not_use") {
       logger.info(`[PreToolUseHook] Blocking do_not_use MCP tool: ${toolName}`);
@@ -433,7 +433,6 @@ export const createPreToolUseHook =
     }
     if (
       mcpApprovalState === "needs_approval" &&
-      permissionCheck.decision !== "allow" &&
       permissionCheck.decision !== "deny"
     ) {
       logger.info(

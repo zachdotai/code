@@ -59,13 +59,14 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 const fetchMcpToolMetadataMock = vi.fn().mockResolvedValue(undefined);
 const clearMcpToolMetadataCacheMock = vi.fn();
 const clearMcpToolApprovalCacheMock = vi.fn();
+const setMcpToolApprovalStatesMock = vi.fn();
 vi.mock("./mcp/tool-metadata", () => ({
   fetchMcpToolMetadata: fetchMcpToolMetadataMock,
   getConnectedMcpServerNames: vi.fn().mockReturnValue([]),
   getCachedMcpTools: vi.fn().mockReturnValue([]),
   clearMcpToolMetadataCache: clearMcpToolMetadataCacheMock,
   clearMcpToolApprovalCache: clearMcpToolApprovalCacheMock,
-  setMcpToolApprovalStates: vi.fn(),
+  setMcpToolApprovalStates: setMcpToolApprovalStatesMock,
 }));
 
 // Import after the mocks so ClaudeAcpAgent resolves the mocked SDK
@@ -173,6 +174,7 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     fetchMcpToolMetadataMock.mockClear();
     clearMcpToolMetadataCacheMock.mockClear();
     clearMcpToolApprovalCacheMock.mockClear();
+    setMcpToolApprovalStatesMock.mockClear();
   });
 
   it("returns methodNotFound for unknown extension methods", async () => {
@@ -189,6 +191,25 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     await expect(
       agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {}),
     ).rejects.toThrow(/requires at least one refreshable field/);
+  });
+
+  it("updates MCP approval state without rebuilding when only approvals changed", async () => {
+    const agent = makeAgent();
+    const { oldQuery, endSpy } = installFakeSession(agent, "s-approval");
+
+    const result = await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpToolApprovals: {
+        mcp__Linear__search: "needs_approval",
+      },
+    });
+
+    expect(result).toEqual({ refreshed: true });
+    expect(setMcpToolApprovalStatesMock).toHaveBeenCalledWith({
+      mcp__Linear__search: "needs_approval",
+    });
+    expect(oldQuery.interrupt).not.toHaveBeenCalled();
+    expect(endSpy).not.toHaveBeenCalled();
+    expect(createdQueries).toHaveLength(0);
   });
 
   it("rejects when mcpServers is not an array", async () => {

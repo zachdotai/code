@@ -25,6 +25,7 @@ import {
   setConfigOptionInput,
   startSessionInput,
   subscribeSessionInput,
+  updateMcpToolApprovalForActiveSessionsInput,
 } from "@posthog/workspace-server/services/agent/schemas";
 import { PROCESS_TRACKING_SERVICE } from "@posthog/workspace-server/services/process-tracking/identifiers";
 import type { ProcessTrackingService } from "@posthog/workspace-server/services/process-tracking/process-tracking";
@@ -79,6 +80,14 @@ export const agentRouter = router({
       ctx.container
         .get<AgentService>(AGENT_SERVICE)
         .setSessionConfigOption(input.sessionId, input.configId, input.value),
+    ),
+
+  updateMcpToolApprovalForActiveSessions: publicProcedure
+    .input(updateMcpToolApprovalForActiveSessionsInput)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<AgentService>(AGENT_SERVICE)
+        .updateMcpToolApprovalForActiveSessions(input),
     ),
 
   onSessionEvent: publicProcedure

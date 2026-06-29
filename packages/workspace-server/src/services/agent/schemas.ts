@@ -277,6 +277,18 @@ export const respondToPermissionInput = z.object({
 
 export type RespondToPermissionInput = z.infer<typeof respondToPermissionInput>;
 
+const mcpToolApprovalStateSchema = z.enum([
+  "approved",
+  "needs_approval",
+  "do_not_use",
+]);
+
+export const updateMcpToolApprovalForActiveSessionsInput = z.object({
+  installationId: z.string().min(1),
+  toolName: z.string().min(1),
+  approvalState: mcpToolApprovalStateSchema,
+});
+
 // Permission cancellation input for tRPC
 export const cancelPermissionInput = z.object({
   taskRunId: z.string(),

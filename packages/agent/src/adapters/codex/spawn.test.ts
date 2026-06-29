@@ -100,3 +100,27 @@ describe("spawnCodexProcess codex home", () => {
     expect(env.CODEX_HOME).toBe(process.env.CODEX_HOME);
   });
 });
+
+describe("spawnCodexProcess MCP approval hook", () => {
+  it("enables hooks and passes the hook bridge environment when configured", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({
+      logger: new Logger({ debug: false }),
+      codexMcpApprovalHook: {
+        bridgeUrl: "http://127.0.0.1:4567",
+        bridgeToken: "secret-token",
+      },
+    });
+
+    const args: string[] = spawnMock.mock.calls[0][1];
+    expect(args).toContain("features.hooks=true");
+
+    const env = spawnMock.mock.calls[0][2].env;
+    expect(env.POSTHOG_CODEX_MCP_APPROVAL_BRIDGE_URL).toBe(
+      "http://127.0.0.1:4567",
+    );
+    expect(env.POSTHOG_CODEX_MCP_APPROVAL_BRIDGE_TOKEN).toBe("secret-token");
+  });
+});

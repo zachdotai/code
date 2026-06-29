@@ -3,6 +3,7 @@ import type {
   HandoffLocalGitState as GitHandoffLocalGitState,
   PostHogAPIConfig,
 } from "@posthog/shared";
+import type { CodexMcpApprovalHookEnv } from "./adapters/codex/mcp-approval-hook";
 import type { EffortLevel } from "@posthog/shared/domain-types";
 
 export type {
@@ -54,6 +55,7 @@ export interface TaskExecutionOptions {
   gatewayUrl?: string;
   codexBinaryPath?: string;
   codexHome?: string;
+  codexMcpApprovalHook?: CodexMcpApprovalHookEnv;
   reasoningEffort?: EffortLevel;
   /**
    * Codex-only. Appended on top of the model's base prompt via the Codex

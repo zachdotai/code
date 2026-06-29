@@ -121,6 +121,7 @@ type PrivateAgent = {
     };
     configOptions: unknown[];
     taskRunId?: string;
+    mcpToolApprovals?: Record<string, string>;
   };
   codexProcess: SpawnHandle;
   codexConnection: MockCodexConnection;
@@ -186,6 +187,24 @@ describe("CodexAcpAgent.extMethod refresh_session", () => {
     await expect(
       agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {}),
     ).rejects.toThrow(/at least one refreshable field/);
+  });
+
+  it("updates MCP approval state without respawning when only approvals changed", async () => {
+    const agent = makeAgent();
+    const { priv } = primeSession(agent, "s-approval");
+
+    const result = await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpToolApprovals: {
+        mcp__Linear__search: "needs_approval",
+      },
+    });
+
+    expect(result).toEqual({ refreshed: true });
+    expect(priv.sessionState.mcpToolApprovals).toEqual({
+      mcp__Linear__search: "needs_approval",
+    });
+    expect(spawnedProcesses).toHaveLength(1);
+    expect(createdConnections).toHaveLength(1);
   });
 
   it("rejects when mcpServers is not an array", async () => {

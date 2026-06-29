@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { installCodexMcpApprovalHook } from "@posthog/agent/adapters/codex/mcp-approval-hook";
 import {
   findSkillDirs,
   getUserSkillsDir,
@@ -55,6 +56,7 @@ export async function prepareCodexHome(options: {
   appDataPath: string;
   taskRunId: string;
   bundledSkillsDir: string;
+  hookRuntimeCommand?: string;
   log: AgentScopedLogger;
 }): Promise<string> {
   const codexHome = getCodexHomeDir(options.appDataPath, options.taskRunId);
@@ -90,6 +92,13 @@ export async function prepareCodexHome(options: {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  if (options.hookRuntimeCommand) {
+    await installCodexMcpApprovalHook({
+      codexHome,
+      runtimeCommand: options.hookRuntimeCommand,
+    });
   }
 
   return codexHome;

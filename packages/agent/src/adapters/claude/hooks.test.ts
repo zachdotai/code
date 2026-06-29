@@ -369,7 +369,7 @@ describe("createPreToolUseHook", () => {
     clearMcpToolApprovalCache();
   });
 
-  test("respects an explicit allow rule for a needs_approval MCP Store tool", async () => {
+  test("routes needs_approval MCP Store tools to ask even with an old allow rule", async () => {
     clearMcpToolMetadataCache();
     clearMcpToolApprovalCache();
     setMcpToolApprovalStates({
@@ -388,7 +388,7 @@ describe("createPreToolUseHook", () => {
     );
 
     expect(result).toMatchObject({
-      hookSpecificOutput: { permissionDecision: "allow" },
+      hookSpecificOutput: { permissionDecision: "ask" },
     });
     clearMcpToolMetadataCache();
     clearMcpToolApprovalCache();

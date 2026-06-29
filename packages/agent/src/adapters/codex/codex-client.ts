@@ -121,11 +121,10 @@ function withMcpToolName(
   };
 }
 
-function isAllowResponse(response: RequestPermissionResponse): boolean {
+function isAlwaysAllowResponse(response: RequestPermissionResponse): boolean {
   return (
     response.outcome?.outcome === "selected" &&
-    (response.outcome.optionId === "allow" ||
-      response.outcome.optionId === "allow_always")
+    response.outcome.optionId === "allow_always"
   );
 }
 
@@ -217,7 +216,7 @@ export function createCodexClient(
         const response = await upstreamClient.requestPermission(
           withMcpToolName(params, mcpToolName),
         );
-        if (isAllowResponse(response)) {
+        if (isAlwaysAllowResponse(response)) {
           sessionState.mcpToolApprovals = {
             ...sessionState.mcpToolApprovals,
             [mcpToolName]: "approved",

@@ -116,9 +116,16 @@ export const setConfigOptionParamsSchema = z.object({
   value: z.string().min(1, "value is required"),
 });
 
-export const refreshSessionParamsSchema = z.object({
-  mcpServers: mcpServersSchema,
-});
+export const refreshSessionParamsSchema = z
+  .object({
+    mcpServers: mcpServersSchema.optional(),
+    mcpToolApprovals: mcpToolApprovalsSchema.optional(),
+  })
+  .refine(
+    (params) =>
+      params.mcpServers !== undefined || params.mcpToolApprovals !== undefined,
+    { error: "refresh_session requires at least one refreshable field" },
+  );
 
 export const closeParamsSchema = z
   .object({

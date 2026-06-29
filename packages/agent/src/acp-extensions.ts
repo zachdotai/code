@@ -89,9 +89,9 @@ export const POSTHOG_NOTIFICATIONS = {
 export const POSTHOG_METHODS = {
   /**
    * Client requests a session refresh between turns. Payload may include
-   * `mcpServers` to trigger a resume-with-new-options reinit; future fields
-   * can extend this without adding new methods. Returns once the refresh has
-   * completed so the caller can safely send the next prompt.
+   * `mcpServers` to trigger a resume-with-new-options reinit or
+   * `mcpToolApprovals` to refresh the in-memory approval gate. Returns once
+   * the refresh has completed so the caller can safely send the next prompt.
    */
   REFRESH_SESSION: "_posthog/refresh_session",
 } as const;

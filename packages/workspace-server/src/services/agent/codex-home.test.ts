@@ -102,6 +102,39 @@ describe("prepareCodexHome", () => {
     expect(await readlink(link)).toBe(realpathSync(configPath));
   });
 
+  it("installs the Codex MCP approval hooks when a runtime command is provided", async () => {
+    const codexHome = await prepareCodexHome({
+      appDataPath,
+      taskRunId,
+      bundledSkillsDir,
+      hookRuntimeCommand: "/usr/local/bin/node",
+      log: noopLog,
+    });
+
+    const hooksJson = JSON.parse(
+      readFileSync(path.join(codexHome, "hooks.json"), "utf-8"),
+    ) as {
+      hooks: {
+        PreToolUse: Array<{
+          matcher: string;
+          hooks: Array<{ command: string }>;
+        }>;
+        PostToolUse: Array<{
+          matcher: string;
+          hooks: Array<{ command: string }>;
+        }>;
+      };
+    };
+    expect(hooksJson.hooks.PreToolUse[0].matcher).toBe("^mcp__.*");
+    expect(hooksJson.hooks.PostToolUse[0].matcher).toBe("^mcp__.*");
+    expect(hooksJson.hooks.PreToolUse[0].hooks[0].command).toContain(
+      "/usr/local/bin/node",
+    );
+    expect(
+      existsSync(path.join(codexHome, "hooks", "posthog-mcp-approval-hook.js")),
+    ).toBe(true);
+  });
+
   it("rebuilds the skills dir, dropping stale links", async () => {
     await createSkill(bundledSkillsDir, "first");
     await prepareCodexHome({

@@ -235,6 +235,33 @@ interface TestableServer {
     permissionMode: PermissionMode;
     runtimeAdapter: "claude" | "codex";
   }): Record<string, unknown>;
+  approveCodexMcpToolUse(input: {
+    hookEventName: "PreToolUse";
+    toolName: string;
+    toolUseId?: string;
+    raw: Record<string, unknown>;
+  }): Promise<{ action: "allow" | "deny"; message?: string }>;
+  completeCodexMcpToolUse(input: {
+    hookEventName: "PostToolUse";
+    toolName: string;
+    toolUseId?: string;
+    raw: Record<string, unknown>;
+  }): Promise<void>;
+  resolvePermission(requestId: string, optionId: string): boolean;
+  app: {
+    request: (url: string, init?: RequestInit) => Promise<Response>;
+  };
+  config: {
+    mcpToolApprovals?: Record<string, "approved" | "needs_approval">;
+    mcpToolInstallations?: Record<
+      string,
+      { installationId: string; toolName: string }
+    >;
+  };
+  posthogAPI: {
+    updateMcpToolApproval: ReturnType<typeof vi.fn>;
+  };
+  session: unknown;
 }
 
 interface NativeResumeTestServer {
@@ -436,6 +463,91 @@ describe("AgentServer HTTP Mode", () => {
         bootMs: expect.any(Number),
       });
     }, 30000);
+  });
+
+  describe("cloud Codex MCP approval hook", () => {
+    it("asks for approval before Codex MCP Store tool calls and restores allow-once approvals", async () => {
+      const testServer = createServer({
+        repositoryPath: undefined,
+        runtimeAdapter: "codex",
+        mcpToolApprovals: {
+          mcp__granola__query_granola_meetings: "needs_approval",
+        },
+        mcpToolInstallations: {
+          mcp__granola__query_granola_meetings: {
+            installationId: "inst-1",
+            toolName: "query_granola_meetings",
+          },
+        },
+      }) as unknown as TestableServer;
+      const appendRawLine = vi.fn();
+      const approvalSpy = vi.fn(async () => {});
+      testServer.posthogAPI = { updateMcpToolApproval: approvalSpy };
+      testServer.session = {
+        payload: {
+          run_id: "test-run-id",
+          task_id: "test-task-id",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "test-distinct-id",
+          mode: "interactive",
+        },
+        acpSessionId: "codex-session-id",
+        sseController: null,
+        hasDesktopConnected: false,
+        permissionMode: "auto",
+        logWriter: { appendRawLine, flush: vi.fn(async () => {}) },
+        acpConnection: { cleanup: vi.fn(async () => {}) },
+      };
+
+      const decisionPromise = testServer.approveCodexMcpToolUse({
+        hookEventName: "PreToolUse",
+        toolName: "mcp__granola__query_granola_meetings",
+        toolUseId: "tool-call-1",
+        raw: {},
+      });
+
+      await vi.waitFor(() => expect(appendRawLine).toHaveBeenCalled());
+
+      const request = appendRawLine.mock.calls
+        .map(([, line]) => JSON.parse(line))
+        .find((n) => n?.method === "_posthog/permission_request");
+      expect(request).toBeTruthy();
+      expect(request.params.toolCall.rawInput).toEqual({
+        toolName: "mcp__granola__query_granola_meetings",
+        name: "query_granola_meetings",
+      });
+
+      expect(
+        testServer.resolvePermission(request.params.requestId, "allow"),
+      ).toBe(true);
+
+      await expect(decisionPromise).resolves.toEqual({ action: "allow" });
+      expect(approvalSpy).toHaveBeenNthCalledWith(
+        1,
+        "inst-1",
+        "query_granola_meetings",
+        "approved",
+      );
+
+      await testServer.completeCodexMcpToolUse({
+        hookEventName: "PostToolUse",
+        toolName: "mcp__granola__query_granola_meetings",
+        toolUseId: "tool-call-1",
+        raw: {},
+      });
+
+      expect(approvalSpy).toHaveBeenNthCalledWith(
+        2,
+        "inst-1",
+        "query_granola_meetings",
+        "needs_approval",
+      );
+      expect(
+        testServer.config.mcpToolApprovals
+          ?.mcp__granola__query_granola_meetings,
+      ).toBe("needs_approval");
+    });
   });
 
   describe("turn completion", () => {
@@ -1282,6 +1394,12 @@ describe("AgentServer HTTP Mode", () => {
       expect(
         (s as unknown as TestableServer).buildCodexInstructions(sessionPrompt),
       ).toContain("Cloud Task Execution");
+      expect(
+        (s as unknown as TestableServer).buildCodexInstructions(sessionPrompt),
+      ).toContain("MCP Tool Approvals");
+      expect(
+        (s as unknown as TestableServer).buildCodexInstructions(sessionPrompt),
+      ).not.toContain("query_granola_meetings");
     });
   });
 
