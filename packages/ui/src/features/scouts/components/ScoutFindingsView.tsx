@@ -41,7 +41,7 @@ const SORT_OPTIONS: { value: FindingsSortKey; label: string }[] = [
  * so the two surfaces stay in parity as the backend evolves.
  */
 export function ScoutFindingsView() {
-  const { rows, isLoading, isError, partialFailedRuns, refetch } =
+  const { rows, isLoading, isError, incompleteRuns, windowTruncated, refetch } =
     useScoutFindings();
   const [searchText, setSearchText] = useState("");
   const [scoutFilter, setScoutFilter] = useState(FINDINGS_SCOUT_FILTER_ALL);
@@ -206,15 +206,16 @@ export function ScoutFindingsView() {
               </Select.Root>
             </Flex>
 
-            {partialFailedRuns > 0 ? (
+            {incompleteRuns > 0 || windowTruncated ? (
               <Flex
                 align="center"
                 gap="2"
                 className="rounded-(--radius-2) border border-(--amber-6) bg-(--amber-2) px-3 py-2 text-(--amber-11) text-[12px]"
               >
                 <Text className="flex-1 text-(--amber-11) text-[12px]">
-                  Some findings couldn&apos;t be loaded, so this list may be
-                  incomplete.
+                  {incompleteRuns > 0
+                    ? "Some findings couldn't be loaded, so this list may be incomplete."
+                    : "Showing the most recent runs only — older findings in this window may be missing."}
                 </Text>
                 <button
                   type="button"

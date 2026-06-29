@@ -22,10 +22,18 @@ export interface ScoutFindings {
   isLoading: boolean;
   /** True when the runs window failed, or every emitted run's emissions fetch failed. */
   isError: boolean;
-  /** Emitted runs whose emissions fetch failed while others succeeded — the list is incomplete. */
-  partialFailedRuns: number;
-  /** False when the runs-window pagination stopped early, so the run set may be incomplete. */
-  runsComplete: boolean;
+  /**
+   * Emitted runs whose promised findings are missing from the list — the
+   * emissions fetch either failed or resolved empty despite `emitted_count > 0`.
+   * Non-zero means the visible list is an undercount.
+   */
+  incompleteRuns: number;
+  /**
+   * True when the recent-runs set the page covers is itself clipped — pagination
+   * stopped early, or more emitted runs exist than the fan-out cap fetches. The
+   * window's own findings may therefore be missing, beyond {@link incompleteRuns}.
+   */
+  windowTruncated: boolean;
   refetch: () => void;
 }
 
@@ -43,6 +51,13 @@ export function useScoutFindings(): ScoutFindings {
   const projectId = useAuthStateValue((state) => state.currentProjectId);
   const runsQuery = useScoutRuns();
 
+  const allEmittedRuns = useMemo(
+    () =>
+      (runsQuery.data?.runs ?? []).filter(
+        (run) => (run.emitted_count ?? 0) > 0,
+      ),
+    [runsQuery.data],
+  );
   const emittedRuns = useMemo(
     () => mostRecentEmittedRuns(runsQuery.data?.runs ?? []),
     [runsQuery.data],
@@ -50,7 +65,13 @@ export function useScoutFindings(): ScoutFindings {
 
   const emissionsResults = useQueries({
     queries: emittedRuns.map((run) => ({
-      queryKey: scoutQueryKeys.emissions(projectId, run.run_id),
+      // emitted_count in the key so an in-progress run that emits more retriggers
+      // its fetch; completed runs hold a stable count and never refetch. The
+      // shared prefix stays intact for prefix-targeted invalidation.
+      queryKey: [
+        ...scoutQueryKeys.emissions(projectId, run.run_id),
+        run.emitted_count ?? 0,
+      ],
       queryFn: async (): Promise<ScoutEmission[]> => {
         if (!client) throw new Error("Not authenticated");
         if (!projectId) return [];
@@ -105,18 +126,36 @@ export function useScoutFindings(): ScoutFindings {
     emissionsResults.every((result) => result.isError);
   const isError = runsQuery.isError || allEmissionsFailed;
 
-  // Partial failure only matters when some runs did load — a total failure is
-  // reported as `isError` instead.
-  const partialFailedRuns = allEmissionsFailed
+  // Runs that promised findings (emitted_count > 0) but didn't deliver them:
+  // the fetch errored, or it resolved empty (eventual-consistency lag, or a
+  // backend quirk). Either way those findings are missing from the list, so
+  // the page can warn rather than imply completeness. Only meaningful when it
+  // isn't a total failure (that surfaces as `isError`).
+  const incompleteRuns = allEmissionsFailed
     ? 0
-    : emissionsResults.filter((result) => result.isError).length;
+    : emittedRuns.reduce((count, run, index) => {
+        const result = emissionsResults[index];
+        if (!result) return count;
+        if (result.isError) return count + 1;
+        const empty = (result.data?.length ?? 0) === 0;
+        if (result.isSuccess && empty && (run.emitted_count ?? 0) > 0) {
+          return count + 1;
+        }
+        return count;
+      }, 0);
+
+  // The run set itself is clipped when pagination stopped early, or when more
+  // emitted runs exist than the fan-out cap fetches.
+  const windowTruncated =
+    !(runsQuery.data?.complete ?? true) ||
+    allEmittedRuns.length > emittedRuns.length;
 
   return {
     rows,
     isLoading,
     isError,
-    partialFailedRuns,
-    runsComplete: runsQuery.data?.complete ?? true,
+    incompleteRuns,
+    windowTruncated,
     refetch: () => {
       void runsQuery.refetch();
       for (const result of emissionsResults) void result.refetch();

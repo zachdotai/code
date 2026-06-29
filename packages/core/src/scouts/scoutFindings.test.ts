@@ -9,6 +9,7 @@ import {
   emittedRunsKey,
   FINDINGS_SCOUT_FILTER_ALL,
   FINDINGS_SEVERITY_FILTER_ALL,
+  type FindingsSortKey,
   filterAndSortFindings,
   latestEmittedAt,
   mostRecentEmittedRuns,
@@ -244,51 +245,28 @@ describe("filterAndSortFindings", () => {
     },
   ]);
 
-  it("sorts newest-first by default", () => {
-    expect(filterAndSortFindings(rows, base).map((r) => r.emission.id)).toEqual(
-      ["b", "c", "a"],
-    );
-  });
-
-  it("sorts oldest-first", () => {
+  it.each<[FindingsSortKey, string[]]>([
+    ["newest", ["b", "c", "a"]],
+    ["oldest", ["a", "c", "b"]],
+    ["severity", ["a", "c", "b"]],
+    ["confidence", ["b", "c", "a"]],
+  ])("sorts by %s", (sortKey, expected) => {
     expect(
-      filterAndSortFindings(rows, { ...base, sortKey: "oldest" }).map(
+      filterAndSortFindings(rows, { ...base, sortKey }).map(
         (r) => r.emission.id,
       ),
-    ).toEqual(["a", "c", "b"]);
+    ).toEqual(expected);
   });
 
-  it("sorts by severity (most severe first)", () => {
+  it.each<[string, Partial<typeof base>, string[]]>([
+    ["scout", { scoutFilter: "signals-scout-web-analytics" }, ["b"]],
+    ["severity", { severityFilter: "P0" }, ["a"]],
+  ])("filters by %s", (_label, override, expected) => {
     expect(
-      filterAndSortFindings(rows, { ...base, sortKey: "severity" }).map(
+      filterAndSortFindings(rows, { ...base, ...override }).map(
         (r) => r.emission.id,
       ),
-    ).toEqual(["a", "c", "b"]);
-  });
-
-  it("sorts by confidence (highest first)", () => {
-    expect(
-      filterAndSortFindings(rows, { ...base, sortKey: "confidence" }).map(
-        (r) => r.emission.id,
-      ),
-    ).toEqual(["b", "c", "a"]);
-  });
-
-  it("filters by scout", () => {
-    expect(
-      filterAndSortFindings(rows, {
-        ...base,
-        scoutFilter: "signals-scout-web-analytics",
-      }).map((r) => r.emission.id),
-    ).toEqual(["b"]);
-  });
-
-  it("filters by severity", () => {
-    expect(
-      filterAndSortFindings(rows, { ...base, severityFilter: "P0" }).map(
-        (r) => r.emission.id,
-      ),
-    ).toEqual(["a"]);
+    ).toEqual(expected);
   });
 
   it("searches over description and prettified scout name", () => {

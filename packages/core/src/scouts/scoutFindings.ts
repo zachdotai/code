@@ -66,7 +66,6 @@ export function mostRecentEmittedRuns(
 ): ScoutRun[] {
   return runs
     .filter((run) => (run.emitted_count ?? 0) > 0)
-    .slice()
     .sort(byRunStartedDesc)
     .slice(0, cap);
 }
@@ -188,7 +187,7 @@ export function filterAndSortFindings(
     return true;
   });
 
-  return filtered.slice().sort((a, b) => {
+  return filtered.sort((a, b) => {
     if (sortKey === "oldest") {
       return -byEmittedDesc(a, b);
     }
