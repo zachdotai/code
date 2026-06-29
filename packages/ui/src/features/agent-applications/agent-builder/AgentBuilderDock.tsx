@@ -29,6 +29,7 @@ import {
   AGENT_BUILDER_CLIENT_TOOLS,
   useAgentBuilderClientTools,
 } from "./useAgentBuilderClientTools";
+import { useFollowSpecEdits } from "./useFollowSpecEdits";
 
 const CHAT_ID = AGENT_BUILDER_CHAT_ID;
 
@@ -108,6 +109,9 @@ export function AgentBuilderDock() {
         Math.floor(Math.random() * BUILDER_PLACEHOLDERS.length)
       ],
   );
+
+  // Refresh the viewed revision when the builder edits a spec (follow mode).
+  useFollowSpecEdits();
 
   const clientTools = useAgentBuilderClientTools();
   const chat = useAgentChat({
