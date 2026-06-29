@@ -1491,6 +1491,17 @@ function McpBody({
   const missing = mcpMissingSecrets(mcp, ctx.setKeys);
   const provider = mcpProvider(mcp);
   const connection = str(r.connection);
+  const providers = identityProviders(spec);
+  // `spec.mcps[].kind` is the authoritative, explicit credential model.
+  // Fall back to inferring from the credential fields for any legacy entry
+  // written before `kind` was required.
+  const declaredKind = str(r.kind);
+  const authMode: "agent" | "principal" =
+    declaredKind === "agent" || declaredKind === "principal"
+      ? declaredKind
+      : connection
+        ? "agent"
+        : "principal";
 
   const {
     installations,
@@ -1554,7 +1565,7 @@ function McpBody({
   const setConnection = (value: string) => {
     if (value === "none") {
       apply((entry) => {
-        const next = { ...entry };
+        const next: Record<string, unknown> = { ...entry, kind: "agent" };
         delete next.connection;
         return next;
       });
@@ -1563,8 +1574,41 @@ function McpBody({
     const install = (installations ?? []).find((i) => i.id === value);
     apply((entry) => ({
       ...entry,
+      kind: "agent",
       connection: value,
       url: install?.url ?? entry.url,
+    }));
+  };
+
+  // Switch the credential model. The two are mutually exclusive (enforced by
+  // the spec schema), so flipping clears the other side: → agent drops the
+  // per-asker identity (pick a connection next); → principal drops the shared
+  // connection and wires an identity provider (defaults to the current one,
+  // else the first declared).
+  const setAuthMode = (next: "agent" | "principal") => {
+    if (next === "agent") {
+      apply((entry) => {
+        const n: Record<string, unknown> = { ...entry, kind: "agent" };
+        delete n.auth;
+        return n;
+      });
+      return;
+    }
+    const fallback =
+      provider ?? (providers[0] ? providerId(providers[0]) : undefined);
+    apply((entry) => {
+      const n: Record<string, unknown> = { ...entry, kind: "principal" };
+      delete n.connection;
+      if (fallback) n.auth = { ...rec(entry.auth), provider: fallback };
+      return n;
+    });
+  };
+
+  const setIdentityProvider = (value: string) => {
+    apply((entry) => ({
+      ...entry,
+      kind: "principal",
+      auth: { ...rec(entry.auth), provider: value },
     }));
   };
 
@@ -1634,50 +1678,149 @@ function McpBody({
 
   return (
     <Flex direction="column" gap="3">
-      <div>
-        <Subhead>Connection</Subhead>
-        <Muted>
-          Agent-level: one shared credential an owner connects once (OAuth or
-          API key) and every asker reuses — askers never sign in. You set it up
-          here. For per-asker auth instead, leave this unset and wire a
-          principal identity provider (below) so each asker connects as
-          themselves.
-        </Muted>
-        <Flex align="center" gap="2" className="mt-1.5">
-          <Select.Root
-            value={connection ?? "none"}
-            onValueChange={setConnection}
-            disabled={!canEdit || saving || installationsLoading}
-          >
-            <Select.Trigger
-              placeholder="No connection"
-              className="min-w-[220px]"
-            />
-            <Select.Content>
-              <Select.Item value="none">No connection</Select.Item>
-              {(installations ?? []).map((i) => (
-                <Select.Item key={i.id} value={i.id}>
-                  {i.display_name || i.url || i.id}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select.Root>
+      <Flex align="center" justify="between" gap="2">
+        <Select.Root
+          value={authMode}
+          onValueChange={(v) => setAuthMode(v as "agent" | "principal")}
+          disabled={!canEdit || saving}
+        >
+          <Select.Trigger className="min-w-60" />
+          <Select.Content>
+            <Select.Item value="agent">
+              Agent-level — shared credential
+            </Select.Item>
+            <Select.Item value="principal">
+              Principal-level — per-asker identity
+            </Select.Item>
+          </Select.Content>
+        </Select.Root>
+        {canEdit ? (
           <Button
             size="1"
             variant="soft"
-            onClick={() => setShowAdd(true)}
-            disabled={connectCustomPending}
+            color="red"
+            onClick={removeMcp}
+            disabled={saving}
           >
-            Connect new
+            <TrashIcon size={12} />
+            Remove server
           </Button>
-        </Flex>
-        {connectionMissing ? (
-          <Text className="mt-1 block text-[12px] text-amber-11">
-            Referenced connection isn't in this project — reconnect it or pick
-            another.
-          </Text>
         ) : null}
-      </div>
+      </Flex>
+      <Muted>
+        {authMode === "agent"
+          ? "One shared credential every asker reuses — an OAuth/API-key connection, or a bring-your-own token."
+          : "Each asker acts as themselves through a linked identity provider."}
+      </Muted>
+
+      {authMode === "agent" ? (
+        <div>
+          <Subhead>Connection</Subhead>
+          <Muted>
+            One shared credential an owner connects once (OAuth or API key) and
+            every asker reuses — askers never sign in. Leave unset to bring your
+            own token via secrets + headers.
+          </Muted>
+          <Flex align="center" gap="2" className="mt-1.5">
+            <Select.Root
+              value={connection ?? "none"}
+              onValueChange={setConnection}
+              disabled={!canEdit || saving || installationsLoading}
+            >
+              <Select.Trigger
+                placeholder="No connection"
+                className="min-w-[220px]"
+              />
+              <Select.Content>
+                <Select.Item value="none">No connection</Select.Item>
+                {(installations ?? []).map((i) => (
+                  <Select.Item key={i.id} value={i.id}>
+                    {i.display_name || i.url || i.id}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+            <Button
+              size="1"
+              variant="soft"
+              onClick={() => setShowAdd(true)}
+              disabled={connectCustomPending}
+            >
+              Connect new
+            </Button>
+          </Flex>
+          {connectionMissing ? (
+            <Text className="mt-1 block text-[12px] text-amber-11">
+              Referenced connection isn't in this project — reconnect it or pick
+              another.
+            </Text>
+          ) : null}
+        </div>
+      ) : (
+        <div>
+          <Subhead>Acts as identity</Subhead>
+          <Muted>
+            Each asker connects as themselves through this identity provider —
+            required for principal-level. Manage providers in the identities
+            section.
+          </Muted>
+          {providers.length > 0 ? (
+            <Flex direction="column" gap="1.5" className="mt-1.5">
+              <Select.Root
+                value={provider}
+                onValueChange={setIdentityProvider}
+                disabled={!canEdit || saving}
+              >
+                <Select.Trigger
+                  placeholder="Choose an identity"
+                  className="min-w-[220px]"
+                />
+                <Select.Content>
+                  {providers.map((p) => {
+                    const pid = providerId(p);
+                    return (
+                      <Select.Item key={pid} value={pid}>
+                        {pid}
+                      </Select.Item>
+                    );
+                  })}
+                </Select.Content>
+              </Select.Root>
+              {provider ? (
+                <Button
+                  size="1"
+                  variant="ghost"
+                  className="self-start"
+                  onClick={() => ctx.onSelect(`cfg:identity/${provider}`)}
+                >
+                  View {provider} identity →
+                </Button>
+              ) : (
+                <Text className="block text-[12px] text-amber-11">
+                  Principal-level needs a linked identity — choose one above.
+                </Text>
+              )}
+            </Flex>
+          ) : (
+            <Attention>
+              <Text className="text-[12px] text-gray-12">
+                No identity providers declared. Add one in the identities
+                section to use principal-level auth.
+              </Text>
+              <Flex className="mt-1.5">
+                <Button
+                  size="1"
+                  variant="soft"
+                  color="amber"
+                  onClick={() => ctx.onSelect("cfg:identities")}
+                >
+                  Manage identities
+                </Button>
+              </Flex>
+            </Attention>
+          )}
+        </div>
+      )}
 
       <AddCustomServerDialog
         open={showAdd}
@@ -1691,9 +1834,6 @@ function McpBody({
 
       {str(r.url) ? (
         <Row label="url" value={str(r.url) as string} mono />
-      ) : null}
-      {!connection && provider ? (
-        <IdentityLink provider={provider} spec={spec} ctx={ctx} />
       ) : null}
       {!connection && missing.length > 0 ? (
         <Attention>
@@ -1779,21 +1919,6 @@ function McpBody({
           )}
         </div>
       )}
-
-      {canEdit ? (
-        <Flex justify="end" className="mt-1 border-border border-t pt-3">
-          <Button
-            size="1"
-            variant="soft"
-            color="red"
-            onClick={removeMcp}
-            disabled={saving}
-          >
-            <TrashIcon size={12} />
-            Remove server
-          </Button>
-        </Flex>
-      ) : null}
     </Flex>
   );
 }
