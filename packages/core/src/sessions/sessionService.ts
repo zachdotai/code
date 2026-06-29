@@ -472,6 +472,42 @@ function classifyTurnEventKind(
   return "other";
 }
 
+/**
+ * Whether the agent has begun working on the turn currently in flight.
+ *
+ * While the just-sent prompt is still optimistic (`hasOptimisticItems`, i.e. the
+ * `session/prompt` echo has not landed) no output is possible — refill is safe.
+ * Skipping this guard would let a prior completed turn's output look like the
+ * current turn's. Once the echo has landed, returns true if any agent
+ * text/output event follows the latest prompt. Reads only persisted state, so
+ * it is the same decision for local and cloud.
+ */
+export function hasAgentStartedTurn({
+  events,
+  hasOptimisticItems,
+}: {
+  events: AcpMessage[];
+  hasOptimisticItems: boolean;
+}): boolean {
+  if (hasOptimisticItems) return false;
+
+  let lastPromptIndex = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const msg = events[i].message;
+    if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
+      lastPromptIndex = i;
+      break;
+    }
+  }
+  if (lastPromptIndex === -1) return false;
+
+  for (let i = lastPromptIndex + 1; i < events.length; i++) {
+    const kind = classifyTurnEventKind(events[i].message);
+    if (kind === "text" || kind === "output") return true;
+  }
+  return false;
+}
+
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
@@ -2204,6 +2240,28 @@ export class SessionService {
       this.d.store.prependQueuedMessages(taskId, [message]);
       throw error;
     }
+  }
+
+  /**
+   * Whether the agent has produced any output for the latest turn.
+   *
+   * Used to decide if a just-cancelled message can be safely refilled into the
+   * composer: if the agent never started, the message is effectively lost from
+   * the user's point of view, so we put it back.
+   *
+   * While the prompt is still optimistic (the `session/prompt` echo has not
+   * landed) no output is possible, so this returns false — refill is safe.
+   * Once the echo has landed it looks for any agent text/output event after the
+   * latest prompt. Reads only persisted store events, so it works for both
+   * local and cloud (avoids the local-only `liveTurnContent`).
+   */
+  hasAgentStartedCurrentTurn(taskId: string): boolean {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return false;
+    return hasAgentStartedTurn({
+      events: session.events,
+      hasOptimisticItems: session.optimisticItems.length > 0,
+    });
   }
 
   /**

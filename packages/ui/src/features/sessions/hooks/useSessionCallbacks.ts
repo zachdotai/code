@@ -1,3 +1,4 @@
+import { xmlToContent } from "@posthog/core/message-editor/content";
 import {
   combineQueuedCloudPrompts,
   promptToQueuedEditorContent,
@@ -32,6 +33,11 @@ import { useCallback, useRef } from "react";
 
 const log = logger.scope("session-callbacks");
 
+function isViewingTask(taskId: string): boolean {
+  const view = getAppViewSnapshot();
+  return view?.type === "task-detail" && view?.taskId === taskId;
+}
+
 interface UseSessionCallbacksOptions {
   taskId: string;
   task: Task;
@@ -53,6 +59,10 @@ export function useSessionCallbacks({
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
+
+  // Serialized text of the in-flight message, captured on send so a cancel
+  // before the agent produces output can refill it into the composer.
+  const lastSentTextRef = useRef<string | null>(null);
 
   const messagingMode = useMessagingMode(taskId);
 
@@ -93,14 +103,15 @@ export function useSessionCallbacks({
       try {
         markAsViewed(taskId);
         markActivity(taskId);
-        await sessionService.sendPrompt(taskId, promptText ?? text, {
-          steer: messagingMode === "steer",
-        });
 
-        const view = getAppViewSnapshot();
-        const isViewingTask =
-          view?.type === "task-detail" && view?.taskId === taskId;
-        if (isViewingTask) {
+        const steer = messagingMode === "steer";
+        // A steer folds into the running turn rather than starting its own, so
+        // it isn't a candidate for refill-on-cancel.
+        lastSentTextRef.current = steer ? null : text;
+
+        await sessionService.sendPrompt(taskId, promptText ?? text, { steer });
+
+        if (isViewingTask(taskId)) {
           markAsViewed(taskId);
         }
       } catch (error) {
@@ -123,6 +134,13 @@ export function useSessionCallbacks({
   );
 
   const handleCancelPrompt = useCallback(async () => {
+    // Snapshot the refill inputs at cancel time: whether the agent had started,
+    // and the just-sent text. Null the stash so a repeated cancel can't refill
+    // the same message twice.
+    const agentStarted = sessionService.hasAgentStartedCurrentTurn(taskId);
+    const lastSentText = lastSentTextRef.current;
+    lastSentTextRef.current = null;
+
     const queuedMessages = sessionStoreSetters.dequeueMessages(taskId);
     const result = await sessionService.cancelPrompt(taskId);
     log.info("Prompt cancelled", { success: result });
@@ -144,6 +162,9 @@ export function useSessionCallbacks({
           };
 
       setPendingContent(taskId, pendingContent);
+    } else if (!agentStarted && lastSentText && isViewingTask(taskId)) {
+      // xmlToContent restores attachments and mentions as chips, not raw XML.
+      setPendingContent(taskId, xmlToContent(lastSentText));
     }
     requestFocus(taskId);
   }, [taskId, setPendingContent, requestFocus, sessionService]);
