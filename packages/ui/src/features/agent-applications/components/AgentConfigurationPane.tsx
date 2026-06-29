@@ -37,9 +37,9 @@ import { useMcpInstallationTools } from "@posthog/ui/features/mcp-servers/hooks/
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
+import { toast } from "@posthog/ui/primitives/toast";
 import { Flex, Select, Switch, Text } from "@radix-ui/themes";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentEnvKeys } from "../hooks/useAgentEnvKeys";
 import { useAgentRevision } from "../hooks/useAgentRevision";
