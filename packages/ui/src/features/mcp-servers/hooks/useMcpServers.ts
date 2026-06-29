@@ -15,10 +15,10 @@ import {
 } from "@posthog/ui/features/mcp-server-manager/useMcpConnect";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback, useMemo, useState } from "react";
-import { toast } from "sonner";
 
 // `mcpKeys` + `createOAuthCallback` now live in the shared mcp-server-manager
 // module (also used by the agent-applications builder). Re-exported here so

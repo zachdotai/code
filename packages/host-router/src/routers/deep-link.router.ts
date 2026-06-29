@@ -13,6 +13,7 @@ import {
   CANVAS_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  OPEN_TARGET_LINK_SERVICE,
   SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
 } from "@posthog/core/links/identifiers";
@@ -27,6 +28,10 @@ import {
   type NewTaskLinkService,
 } from "@posthog/core/links/new-task-link";
 import {
+  OpenTargetLinkEvent,
+  type OpenTargetLinkService,
+} from "@posthog/core/links/open-target-link";
+import {
   ScoutLinkEvent,
   type ScoutLinkPayload,
   type ScoutLinkService,
@@ -37,6 +42,7 @@ import {
   type TaskLinkService,
 } from "@posthog/core/links/task-link";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
+import type { NotificationTarget } from "@posthog/platform/notifications";
 
 export const deepLinkRouter = router({
   onOpenTask: publicProcedure.subscription(async function* (opts) {
@@ -132,6 +138,28 @@ export const deepLinkRouter = router({
       return ctx.container
         .get<ApprovalLinkService>(APPROVAL_LINK_SERVICE)
         .consumePendingDeepLink();
+    },
+  ),
+
+  // Generic "open this target" intents from clicked native notifications. The
+  // renderer subscribes and navigates by target kind (task / canvas / …).
+  onOpenTarget: publicProcedure.subscription(async function* (opts) {
+    const service = opts.ctx.container.get<OpenTargetLinkService>(
+      OPEN_TARGET_LINK_SERVICE,
+    );
+    const iterable = service.toIterable(OpenTargetLinkEvent.Open, {
+      signal: opts.signal,
+    });
+    for await (const data of iterable) {
+      yield data;
+    }
+  }),
+
+  getPendingOpenTarget: publicProcedure.query(
+    ({ ctx }): NotificationTarget | null => {
+      return ctx.container
+        .get<OpenTargetLinkService>(OPEN_TARGET_LINK_SERVICE)
+        .consumePending();
     },
   ),
 

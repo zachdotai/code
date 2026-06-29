@@ -11,17 +11,18 @@ import {
 import { useService } from "@posthog/di/react";
 import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
+import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { toast as sonnerToast } from "sonner";
 
 /** Variant-specific copy used in the toasts/errors emitted by the runner. */
 export interface InboxCloudTaskCopy {
@@ -106,10 +107,16 @@ export function useInboxCloudTaskRunner({
   const modelResolver = useService<ReportModelResolver>(REPORT_MODEL_RESOLVER);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const queryClient = useQueryClient();
+  const { isOnline } = useConnectivity();
 
   const run = useCallback(async () => {
     if (isRunning) return;
     const log = logger.scope(loggerScope);
+
+    if (!isOnline) {
+      showOfflineToast();
+      return;
+    }
 
     if (!cloudRepository) {
       toast.error(copy.errorTitle, { description: copy.missingRepository });
@@ -151,7 +158,7 @@ export function useInboxCloudTaskRunner({
     const model = resolvedModel ?? settings.lastUsedModel;
 
     if (!model) {
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
       toast.error(copy.errorTitle, { description: copy.missingModel });
       setIsRunning(false);
       return;
@@ -187,7 +194,7 @@ export function useInboxCloudTaskRunner({
       });
 
       if (result.success) {
-        sonnerToast.dismiss(toastId);
+        toast.dismiss(toastId);
         if (!redirectOnSuccess) {
           const task = createdTask;
           toast.success(copy.successTitle ?? "Task started", {
@@ -218,7 +225,7 @@ export function useInboxCloudTaskRunner({
           ...analyticsExtras,
         });
       } else {
-        sonnerToast.dismiss(toastId);
+        toast.dismiss(toastId);
         // Usage-limit blocks already show the upgrade modal; don't double-toast.
         if (!isUsageLimitResult(result)) {
           toast.error(copy.errorTitle, { description: result.error });
@@ -231,7 +238,7 @@ export function useInboxCloudTaskRunner({
         }
       }
     } catch (error) {
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
       const description =
         error instanceof Error ? error.message : "Unknown error";
       toast.error(copy.errorTitle, { description });
@@ -244,6 +251,7 @@ export function useInboxCloudTaskRunner({
     }
   }, [
     isRunning,
+    isOnline,
     loggerScope,
     cloudRepository,
     cloudRegion,

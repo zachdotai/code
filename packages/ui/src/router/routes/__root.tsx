@@ -25,7 +25,9 @@ import {
 import { useCanvasDeepLink } from "@posthog/ui/features/canvas/hooks/useCanvasDeepLink";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
+import { ConnectivityBanner } from "@posthog/ui/features/connectivity/ConnectivityBanner";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
+import { useOpenTargetDeepLink } from "@posthog/ui/features/deep-links/useOpenTargetDeepLink";
 import { useTaskDeepLink } from "@posthog/ui/features/deep-links/useTaskDeepLink";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxDeepLink } from "@posthog/ui/features/inbox/hooks/useInboxDeepLink";
@@ -193,6 +195,7 @@ function RootLayout() {
 
   useIntegrations();
   useTaskDeepLink();
+  useOpenTargetDeepLink();
   useInboxDeepLink();
   useScoutDeepLink();
   useCanvasDeepLink();
@@ -351,6 +354,7 @@ function RootLayout() {
             </Button>
           </Flex>
         </Flex>
+        <ConnectivityBanner />
         <Flex flexGrow="1" overflow="hidden">
           <ChannelsSidebar />
           {/* Content sits in a bordered, rounded card inset from the window
@@ -389,6 +393,7 @@ function RootLayout() {
   if (isSettingsRoute) {
     return (
       <Flex direction="column" height="100vh">
+        <ConnectivityBanner />
         <Outlet />
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <KeyboardShortcutsSheet
@@ -415,6 +420,7 @@ function RootLayout() {
     <Flex height="100vh">
       <Flex direction="column" flexGrow="1" overflow="hidden">
         <HeaderRow />
+        <ConnectivityBanner />
         <Flex flexGrow="1" overflow="hidden">
           <MainSidebar />
           <Box flexGrow="1" overflow="hidden">
