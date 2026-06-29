@@ -2613,12 +2613,43 @@ ${signedCommitInstructions}
     }
     message += "\nReply in this thread with your choice.";
 
+    // Stream the formatted question into the live Slack thread so the
+    // agent-design streaming path renders it inside the plan-block. The
+    // relay-endpoint call below still posts the same content as a
+    // standalone message; the backend suppresses it when the stream is
+    // active so the user sees exactly one copy.
+    this.broadcastQuestionStreamChunk(message);
+
     this.questionRelayedToSlack = true;
     this.posthogAPI
-      .relayMessage(payload.task_id, payload.run_id, message, "question")
+      .relayMessage(payload.task_id, payload.run_id, message)
       .catch((err) =>
         this.logger.debug("Failed to relay question to Slack", { err }),
       );
+  }
+
+  private broadcastQuestionStreamChunk(text: string): void {
+    if (!this.session) return;
+    const notification = {
+      jsonrpc: "2.0" as const,
+      method: "session/update",
+      params: {
+        sessionId: this.session.acpSessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      },
+    };
+    this.broadcastEvent({
+      type: "notification",
+      timestamp: new Date().toISOString(),
+      notification,
+    });
+    this.session.logWriter.appendRawLine(
+      this.session.payload.run_id,
+      JSON.stringify(notification),
+    );
   }
 
   private getFirstQuestionMeta(
