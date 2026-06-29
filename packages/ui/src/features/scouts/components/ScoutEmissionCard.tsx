@@ -3,6 +3,7 @@ import type {
   LinkedSignalReport,
   ScoutEmission,
 } from "@posthog/api-client/posthog-client";
+import { prettifyScoutSkillName } from "@posthog/core/scouts/scoutPresentation";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
@@ -20,6 +21,7 @@ export function ScoutEmissionCard({
   linkedReport,
   defaultExpanded = false,
   highlighted = false,
+  showScout = false,
 }: {
   emission: ScoutEmission;
   /** The emitting scout, attached to analytics events when known. */
@@ -37,6 +39,11 @@ export function ScoutEmissionCard({
   defaultExpanded?: boolean;
   /** True when a shared finding link targets this card – scrolls it into view. */
   highlighted?: boolean;
+  /**
+   * Cross-fleet surfaces (the findings page) mix scouts, so the header titles
+   * the card with the emitting scout instead of the generic "Finding".
+   */
+  showScout?: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -76,7 +83,11 @@ export function ScoutEmissionCard({
           className={`shrink-0 text-gray-9 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
         />
         <CompassIcon size={14} className="shrink-0 text-(--iris-9)" />
-        <Text className="font-medium text-[13px] text-gray-10">Finding</Text>
+        <Text className="truncate font-medium text-[13px] text-gray-10">
+          {showScout && skillName
+            ? prettifyScoutSkillName(skillName)
+            : "Finding"}
+        </Text>
         <SeverityBadge severity={emission.severity} />
         <Text className="text-[11px] text-gray-10">
           confidence {Math.round(emission.confidence * 100)}%
