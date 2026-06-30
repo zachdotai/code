@@ -18,7 +18,9 @@ import { useEffect, useMemo } from "react";
 type RecentTaskRow = {
   task: Task;
   channel: Channel | undefined;
-  updatedAt: number;
+  // null when `updated_at` can't be parsed — the row then omits the time
+  // rather than showing a misleading epoch (1970) date.
+  updatedAt: number | null;
 };
 
 // A cross-channel list of every task, most recent first. Each row shows the
@@ -26,7 +28,7 @@ type RecentTaskRow = {
 // and command palette render. Reached from the Channels-space nav ("Recent
 // tasks", below "Files").
 export function RecentTasksView() {
-  const { data: tasks } = useTasks();
+  const { data: tasks, isLoading } = useTasks();
   const { channels } = useChannels();
   const taskChannelMap = useTaskChannelMap(channels);
   const archivedTaskIds = useArchivedTaskIds();
@@ -39,14 +41,19 @@ export function RecentTasksView() {
   }, []);
 
   const rows = useMemo<RecentTaskRow[]>(() => {
-    return (tasks ?? [])
-      .filter((task) => !archivedTaskIds.has(task.id))
-      .map((task) => ({
+    // Filter + map in a single pass, then sort most-recent-first. A null
+    // `updatedAt` (unparseable date) sorts last.
+    const result: RecentTaskRow[] = [];
+    for (const task of tasks ?? []) {
+      if (archivedTaskIds.has(task.id)) continue;
+      const parsed = Date.parse(task.updated_at);
+      result.push({
         task,
         channel: taskChannelMap.get(task.id),
-        updatedAt: Date.parse(task.updated_at) || 0,
-      }))
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+        updatedAt: Number.isNaN(parsed) ? null : parsed,
+      });
+    }
+    return result.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   }, [tasks, taskChannelMap, archivedTaskIds]);
 
   return (
@@ -56,14 +63,19 @@ export function RecentTasksView() {
           Recent tasks
         </Text>
         {rows.length === 0 ? (
-          <div className="flex flex-col items-center gap-1 py-24 text-center">
-            <Text className="font-medium text-[14px] text-gray-12">
-              No tasks yet
-            </Text>
-            <Text className="text-[13px] text-gray-10">
-              Tasks you create show up here, most recent first.
-            </Text>
-          </div>
+          // Only the loaded-but-empty state shows the message; while the task
+          // list is still in flight the area stays blank so "No tasks yet"
+          // doesn't flash on every mount.
+          isLoading ? null : (
+            <div className="flex flex-col items-center gap-1 py-24 text-center">
+              <Text className="font-medium text-[14px] text-gray-12">
+                No tasks yet
+              </Text>
+              <Text className="text-[13px] text-gray-10">
+                Tasks you create show up here, most recent first.
+              </Text>
+            </div>
+          )
         ) : (
           <div className="flex flex-col gap-0.5">
             {rows.map((row) => (
@@ -118,8 +130,8 @@ function RecentTaskItemRow({ row }: { row: RecentTaskRow }) {
           {task.title || "Untitled task"}
         </span>
         <span className="truncate text-[11px] text-gray-10 leading-tight">
-          {channel ? channel.name : "No channel"} ·{" "}
-          {formatRelativeTimeLong(updatedAt)}
+          {channel ? channel.name : "No channel"}
+          {updatedAt !== null ? ` · ${formatRelativeTimeLong(updatedAt)}` : ""}
         </span>
       </span>
     </button>
