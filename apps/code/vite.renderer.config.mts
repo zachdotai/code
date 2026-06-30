@@ -18,10 +18,11 @@ const pkg = JSON.parse(
   readFileSync(path.resolve(__dirname, "package.json"), "utf-8"),
 );
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, path.resolve(__dirname, "../.."), "");
 
   return {
+    base: command === "build" ? "./" : "/",
     plugins: [
       // Source Inspector: hold Shift+Alt+Ctrl (⌘ on Mac) and click any element
       // in dev to jump to its source. Dev-only so the data-tsd-source attrs it
@@ -41,13 +42,14 @@ export default defineConfig(({ mode }) => {
       }),
       tailwindcss(),
       react(),
-      tsconfigPaths(),
+      tsconfigPaths({ ignoreConfigErrors: true }),
       createPosthogPlugin(env, "posthog-code-renderer"),
     ].filter(Boolean),
     worker: {
       format: "es",
     },
     build: {
+      outDir: path.join(__dirname, ".vite/renderer/main_window"),
       sourcemap: true,
     },
     envDir: path.resolve(__dirname, "../.."),

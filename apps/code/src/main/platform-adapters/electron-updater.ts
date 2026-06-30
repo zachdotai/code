@@ -1,9 +1,16 @@
 import type { IUpdater } from "@posthog/platform/updater";
-import { app, autoUpdater } from "electron";
+import { app } from "electron";
+import log from "electron-log/main";
+import { autoUpdater, type UpdateInfo } from "electron-updater";
 import { injectable } from "inversify";
 
 @injectable()
 export class ElectronUpdater implements IUpdater {
+  constructor() {
+    autoUpdater.logger = log;
+    autoUpdater.disableDifferentialDownload = true;
+  }
+
   public isSupported(): boolean {
     return (
       app.isPackaged &&
@@ -12,41 +19,34 @@ export class ElectronUpdater implements IUpdater {
     );
   }
 
-  public setFeedUrl(url: string): void {
-    autoUpdater.setFeedURL({ url });
-  }
-
   public check(): void {
-    autoUpdater.checkForUpdates();
+    void autoUpdater.checkForUpdates();
   }
 
   public quitAndInstall(): void {
-    autoUpdater.quitAndInstall();
+    autoUpdater.quitAndInstall(false, true);
   }
 
   public onCheckStart(handler: () => void): () => void {
-    const l = () => handler();
-    autoUpdater.on("checking-for-update", l);
-    return () => autoUpdater.off("checking-for-update", l);
+    autoUpdater.on("checking-for-update", handler);
+    return () => autoUpdater.off("checking-for-update", handler);
   }
 
   public onUpdateAvailable(handler: () => void): () => void {
-    const l = () => handler();
+    const l = (_info: UpdateInfo) => handler();
     autoUpdater.on("update-available", l);
     return () => autoUpdater.off("update-available", l);
   }
 
   public onUpdateDownloaded(handler: (version: string) => void): () => void {
-    const l = (_event: unknown, _releaseNotes: string, releaseName: string) =>
-      handler(releaseName);
+    const l = (info: UpdateInfo) => handler(info.version);
     autoUpdater.on("update-downloaded", l);
     return () => autoUpdater.off("update-downloaded", l);
   }
 
   public onNoUpdate(handler: () => void): () => void {
-    const l = () => handler();
-    autoUpdater.on("update-not-available", l);
-    return () => autoUpdater.off("update-not-available", l);
+    autoUpdater.on("update-not-available", handler);
+    return () => autoUpdater.off("update-not-available", handler);
   }
 
   public onError(handler: (error: Error) => void): () => void {

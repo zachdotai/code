@@ -12,6 +12,7 @@ import {
   statSync,
 } from "node:fs";
 import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import path, { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -506,7 +507,7 @@ function copyEnricherGrammars(): Plugin {
   return {
     name: "copy-enricher-grammars",
     writeBundle() {
-      // `.vite/grammars` is what the bundle resolves at dev-time; electron-forge
+      // `.vite/grammars` is what the bundle resolves at dev-time; electron-builder
       // only copies `.vite/build/**` into the packaged app, so we need both.
       const destDirs = [
         join(__dirname, ".vite/grammars"),
@@ -607,7 +608,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      tsconfigPaths(),
+      tsconfigPaths({ ignoreConfigErrors: true }),
       autoServicesPlugin(join(__dirname, "src/main/services")),
       fixFilenameCircularRef(),
       copyClaudeExecutable(),
@@ -635,9 +636,13 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: mainAliases,
+      conditions: ["node"],
+      mainFields: ["module", "jsnext:main", "jsnext"],
     },
     cacheDir: ".vite/cache",
     build: {
+      outDir: path.join(__dirname, ".vite/build"),
+      emptyOutDir: false,
       target: "node18",
       sourcemap: true,
       minify: false,
@@ -645,8 +650,17 @@ export default defineConfig(({ mode }) => {
       commonjsOptions: {
         transformMixedEsModules: true,
       },
+      lib: {
+        entry: path.resolve(__dirname, "src/main/bootstrap.ts"),
+        formats: ["cjs"],
+        fileName: () => "bootstrap.js",
+      },
       rollupOptions: {
         external: [
+          "electron",
+          "electron/main",
+          ...builtinModules,
+          ...builtinModules.map((m) => `node:${m}`),
           "node-pty",
           "@parcel/watcher",
           "file-icon",
@@ -654,6 +668,11 @@ export default defineConfig(({ mode }) => {
         ],
         onwarn(warning, warn) {
           if (warning.code === "UNUSED_EXTERNAL_IMPORT") return;
+          if (
+            warning.code === "EVAL" &&
+            warning.id?.includes("web-tree-sitter")
+          )
+            return;
           warn(warning);
         },
       },
