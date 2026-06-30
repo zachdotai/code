@@ -1879,6 +1879,12 @@ function McpBody({
             individual tools below. Allow = runs automatically · Approve = asks
             the approver each call · Deny = hidden from the agent.
           </Muted>
+          <Attention>
+            <Text className="text-[12px] text-gray-12">
+              These settings govern this agent. The connection owner's approval
+              marks are informational — they aren't enforced for this agent.
+            </Text>
+          </Attention>
           <div className="mt-2">
             <ToolPermissionList
               tools={displayTools}
