@@ -35,6 +35,9 @@ interface ChannelHomeComposerProps {
   channelName?: string;
   /** Channel CONTEXT.md, attached to the created task as background. */
   channelContext?: string;
+  /** Fires as the editor goes empty ⇄ non-empty, so the home page can fade out
+   * its suggestions / lists while the user is typing. */
+  onEmptyChange?: (isEmpty: boolean) => void;
   onTaskCreated: (task: Task) => void;
 }
 
@@ -48,13 +51,21 @@ export const ChannelHomeComposer = forwardRef<
   ChannelHomeComposerHandle,
   ChannelHomeComposerProps
 >(function ChannelHomeComposer(
-  { channelId, channelName, channelContext, onTaskCreated },
+  { channelId, channelName, channelContext, onEmptyChange, onTaskCreated },
   ref,
 ) {
   const sessionId = `channel-home:${channelId}`;
   const editorRef = useRef<EditorHandle>(null);
   const [editorIsEmpty, setEditorIsEmpty] = useState(true);
   const { isOnline } = useConnectivity();
+
+  const handleEmptyChange = useCallback(
+    (isEmpty: boolean) => {
+      setEditorIsEmpty(isEmpty);
+      onEmptyChange?.(isEmpty);
+    },
+    [onEmptyChange],
+  );
 
   const {
     lastUsedAdapter,
@@ -225,7 +236,7 @@ export const ChannelHomeComposer = forwardRef<
             />
           )
         }
-        onEmptyChange={setEditorIsEmpty}
+        onEmptyChange={handleEmptyChange}
         onSubmitClick={handleSubmit}
         onSubmit={() => {
           if (canSubmit) handleSubmit();
