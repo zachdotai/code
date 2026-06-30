@@ -37,7 +37,10 @@ export function useFileApmEnrichment({
       { filePath },
       {
         enabled,
-        staleTime: Number.POSITIVE_INFINITY,
+        // APM data is cheap to refresh; a bounded stale time lets React Query
+        // silently background-refresh so latency numbers don't go stale after a
+        // deploy, without causing visible loading flickers.
+        staleTime: 5 * 60 * 1000,
       },
     ),
   );
