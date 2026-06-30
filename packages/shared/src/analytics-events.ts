@@ -827,6 +827,8 @@ export interface ChannelActionProperties {
   channel_id?: string;
   /** For file/unfile/archive/open task actions. */
   task_id?: string;
+  /** For open_artifact when the artifact is a canvas. */
+  dashboard_id?: string;
   /** For file_task: destination channel when different from `channel_id`. */
   target_channel_id?: string;
   /** For nav_click: which destination ("home"|"inbox"|"canvas"|"agents"|"files"|"settings"). */

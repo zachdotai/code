@@ -126,6 +126,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             !composerEmpty && "pointer-events-none opacity-0",
           )}
           aria-hidden={!composerEmpty}
+          inert={!composerEmpty || undefined}
         >
           <div className="flex flex-col gap-2">
             <Text size="1" weight="medium" className="px-1 text-(--gray-11)">
@@ -158,8 +159,9 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
 // status icons. "All tasks" jumps to the Recents tab.
 function RecentTasksColumn({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
-  const { tasks: filedTasks } = useChannelTasks(channelId);
-  const { data: tasks } = useTasks();
+  const { tasks: filedTasks, isLoading: filedLoading } =
+    useChannelTasks(channelId);
+  const { data: tasks, isLoading: tasksLoading } = useTasks();
   const archivedTaskIds = useArchivedTaskIds();
 
   const recentTasks = useMemo(() => {
@@ -203,7 +205,11 @@ function RecentTasksColumn({ channelId }: { channelId: string }) {
           <ArrowRightIcon size={12} />
         </Link>
       }
-      empty={recentTasks.length === 0 ? "No tasks yet" : undefined}
+      empty={
+        !filedLoading && !tasksLoading && recentTasks.length === 0
+          ? "No tasks yet"
+          : undefined
+      }
     >
       {recentTasks.map(({ task, ts }) => (
         <ListRow
@@ -222,7 +228,7 @@ function RecentTasksColumn({ channelId }: { channelId: string }) {
 // dedicated page yet, so this is the only surface for them.
 function PinnedArtifactsColumn({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
-  const { dashboards } = useDashboards(channelId);
+  const { dashboards, isLoading } = useDashboards(channelId);
 
   const pinned = useMemo(
     () =>
@@ -239,6 +245,7 @@ function PinnedArtifactsColumn({ channelId }: { channelId: string }) {
         action_type: "open_artifact",
         surface: "channel_home",
         channel_id: channelId,
+        dashboard_id: dashboardId,
       });
       void navigate({
         to: "/website/$channelId/dashboards/$dashboardId",
@@ -251,7 +258,11 @@ function PinnedArtifactsColumn({ channelId }: { channelId: string }) {
   return (
     <ColumnShell
       title="Pinned"
-      empty={pinned.length === 0 ? "No pinned artifacts yet" : undefined}
+      empty={
+        !isLoading && pinned.length === 0
+          ? "No pinned artifacts yet"
+          : undefined
+      }
     >
       {pinned.map((d) => (
         <ListRow
