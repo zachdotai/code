@@ -44,7 +44,11 @@ export function activeTabIsBlank(snapshot: TabsSnapshot): boolean {
   if (!w?.activeTabId) return false;
   const t = snapshot.tabs.find((x) => x.id === w.activeTabId);
   return (
-    !!t && t.dashboardId == null && t.taskId == null && t.channelId == null
+    !!t &&
+    t.dashboardId == null &&
+    t.taskId == null &&
+    t.channelId == null &&
+    t.routeId == null
   );
 }
 
@@ -89,6 +93,8 @@ export type TabIdentity = {
   taskId: string | null;
   channelId: string | null;
   channelSection: string | null;
+  /** A standalone route (e.g. recent tasks) when the tab has no id target. */
+  routeId: string | null;
 };
 
 function sameIdentity(a: TabIdentity, b: TabIdentity): boolean {
@@ -96,7 +102,8 @@ function sameIdentity(a: TabIdentity, b: TabIdentity): boolean {
     a.dashboardId === b.dashboardId &&
     a.taskId === b.taskId &&
     a.channelId === b.channelId &&
-    a.channelSection === b.channelSection
+    a.channelSection === b.channelSection &&
+    a.routeId === b.routeId
   );
 }
 
@@ -111,16 +118,24 @@ export function openOrFocusTab(
     windowId: string;
     channelId: string | null;
     channelSection?: string | null;
+    routeId?: string | null;
     makeId: IdFactory;
     now: Clock;
   },
 ): OpenTabResult {
   const { windowId, dashboardId, taskId, channelId, makeId, now } = input;
   const channelSection = input.channelSection ?? null;
+  const routeId = input.routeId ?? null;
   const existing = snapshot.tabs.find(
     (t) =>
       t.windowId === windowId &&
-      sameIdentity(t, { dashboardId, taskId, channelId, channelSection }),
+      sameIdentity(t, {
+        dashboardId,
+        taskId,
+        channelId,
+        channelSection,
+        routeId,
+      }),
   );
   if (existing) {
     const ts = now();
@@ -143,6 +158,7 @@ export function openOrFocusTab(
     taskId,
     channelId,
     channelSection,
+    routeId,
     makeId,
     now,
   });
@@ -154,6 +170,7 @@ function appendTab(
     windowId: string;
     channelId: string | null;
     channelSection?: string | null;
+    routeId?: string | null;
     makeId: IdFactory;
     now: Clock;
   },
@@ -169,6 +186,7 @@ function appendTab(
     taskId,
     channelId,
     channelSection: input.channelSection ?? null,
+    routeId: input.routeId ?? null,
     position: lastPos + POSITION_GAP,
     scrollState: null,
     createdAt: ts,
@@ -212,6 +230,7 @@ export function setTabTarget(
     tabId: string;
     channelId: string | null;
     channelSection?: string | null;
+    routeId?: string | null;
     now: Clock;
   },
 ): TabsSnapshot {
@@ -228,6 +247,7 @@ export function setTabTarget(
             taskId: input.taskId,
             channelId: input.channelId,
             channelSection: input.channelSection ?? null,
+            routeId: input.routeId ?? null,
             lastActiveAt: ts,
           }
         : t,
@@ -348,6 +368,7 @@ export type TabNavDecision =
       taskId: string | null;
       channelId: string | null;
       channelSection: string | null;
+      routeId: string | null;
       stampTabId: string | null;
     }
   | {
@@ -356,6 +377,7 @@ export type TabNavDecision =
       taskId: string | null;
       channelId: string | null;
       channelSection: string | null;
+      routeId: string | null;
       stampTabId: string | null;
     }
   | { type: "stamp"; stampTabId: string }
@@ -373,6 +395,7 @@ export function decideTabNavigation(input: {
     taskId: string | null;
     channelId?: string | null;
     channelSection?: string | null;
+    routeId?: string | null;
   } | null;
   /** Canvas in the current route, if any. */
   routeDashboardId: string | null;
@@ -381,6 +404,8 @@ export function decideTabNavigation(input: {
   routeChannelId: string | null;
   /** Channel sub-section in the current route, if any. */
   routeChannelSection?: string | null;
+  /** Standalone Channels-space route (e.g. recent tasks) with no id target. */
+  routeRouteId?: string | null;
 }): TabNavDecision {
   const {
     historyTabId,
@@ -391,6 +416,7 @@ export function decideTabNavigation(input: {
     routeChannelId,
   } = input;
   const routeChannelSection = input.routeChannelSection ?? null;
+  const routeRouteId = input.routeRouteId ?? null;
 
   // Tagged entry for a DIFFERENT tab → a tab switch or a back/forward replay.
   // Focus it (this is how "back returns to the previous tab" resolves). When
@@ -409,8 +435,9 @@ export function decideTabNavigation(input: {
     taskId: routeTaskId,
     channelId: routeChannelId,
     channelSection: routeChannelSection,
+    routeId: routeRouteId,
   };
-  if (!routeDashboardId && !routeTaskId && !routeChannelId) {
+  if (!routeDashboardId && !routeTaskId && !routeChannelId && !routeRouteId) {
     return { type: "noop" };
   }
 
@@ -422,6 +449,7 @@ export function decideTabNavigation(input: {
         taskId: activeTab.taskId,
         channelId: activeTab.channelId ?? null,
         channelSection: activeTab.channelSection ?? null,
+        routeId: activeTab.routeId ?? null,
       },
       routeIdentity,
     )
@@ -433,6 +461,7 @@ export function decideTabNavigation(input: {
       taskId: routeTaskId,
       channelId: routeChannelId,
       channelSection: routeChannelSection,
+      routeId: routeRouteId,
       stampTabId: serverActiveTabId,
     };
   }
@@ -443,6 +472,7 @@ export function decideTabNavigation(input: {
       taskId: routeTaskId,
       channelId: routeChannelId,
       channelSection: routeChannelSection,
+      routeId: routeRouteId,
       stampTabId: serverActiveTabId,
     };
   }

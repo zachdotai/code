@@ -1,0 +1,1 @@
+ALTER TABLE `browser_tabs` ADD `route_id` text;

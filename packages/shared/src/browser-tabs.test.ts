@@ -106,6 +106,31 @@ describe("openOrFocusTab", () => {
     expect(inboxAgain.tabId).toBe(inbox.tabId);
   });
 
+  it("dedups a route-only tab (e.g. recent tasks) within a window", () => {
+    const first = openOrFocusTab(snapshot(), {
+      windowId: "w1",
+      dashboardId: null,
+      taskId: null,
+      channelId: null,
+      routeId: "/website/recent-tasks",
+      makeId,
+      now,
+    });
+    expect(first.opened).toBe(true);
+    const again = openOrFocusTab(first.snapshot, {
+      windowId: "w1",
+      dashboardId: null,
+      taskId: null,
+      channelId: null,
+      routeId: "/website/recent-tasks",
+      makeId,
+      now,
+    });
+    expect(again.opened).toBe(false);
+    expect(again.tabId).toBe(first.tabId);
+    expect(again.snapshot.tabs).toHaveLength(1);
+  });
+
   it("appends new tabs after existing ones", () => {
     const a = open(snapshot(), "w1", "dash-a");
     const b = open(a.snapshot, "w1", "dash-b");
@@ -174,6 +199,7 @@ describe("reorderTab", () => {
         taskId: null,
         channelId: null,
         channelSection: null,
+        routeId: null,
         position: 1,
         scrollState: null,
         createdAt: 0,
@@ -186,6 +212,7 @@ describe("reorderTab", () => {
         taskId: null,
         channelId: null,
         channelSection: null,
+        routeId: null,
         position: 2,
         scrollState: null,
         createdAt: 0,
@@ -319,6 +346,7 @@ describe("decideTabNavigation", () => {
       taskId: null,
       channelId: "c1",
       channelSection: null,
+      routeId: null,
       stampTabId: "tab-a",
     });
   });
@@ -342,6 +370,7 @@ describe("decideTabNavigation", () => {
       taskId: null,
       channelId: "c1",
       channelSection: null,
+      routeId: null,
       stampTabId: "tab-a",
     });
   });
@@ -359,6 +388,7 @@ describe("decideTabNavigation", () => {
       taskId: null,
       channelId: "c1",
       channelSection: null,
+      routeId: null,
       stampTabId: null,
     });
   });
@@ -386,6 +416,7 @@ describe("decideTabNavigation", () => {
       taskId: null,
       channelId: "c1",
       channelSection: "artifacts",
+      routeId: null,
       stampTabId: "tab-a",
     });
   });
@@ -403,6 +434,7 @@ describe("decideTabNavigation", () => {
       taskId: null,
       channelId: "c1",
       channelSection: "inbox",
+      routeId: null,
       stampTabId: null,
     });
   });
@@ -446,6 +478,59 @@ describe("decideTabNavigation", () => {
       }),
     ).toEqual({ type: "noop" });
   });
+
+  it("opens a route-only tab (e.g. recent tasks) when there is no active tab", () => {
+    expect(
+      decideTabNavigation({
+        ...base,
+        routeRouteId: "/website/recent-tasks",
+      }),
+    ).toEqual({
+      type: "open",
+      dashboardId: null,
+      taskId: null,
+      channelId: null,
+      channelSection: null,
+      routeId: "/website/recent-tasks",
+      stampTabId: null,
+    });
+  });
+
+  it("replaces the active tab when navigating to a route-only view", () => {
+    expect(
+      decideTabNavigation({
+        ...base,
+        serverActiveTabId: "tab-a",
+        activeTab: { id: "tab-a", dashboardId: "d1", taskId: null },
+        routeRouteId: "/website/recent-tasks",
+      }),
+    ).toEqual({
+      type: "replace",
+      tabId: "tab-a",
+      dashboardId: null,
+      taskId: null,
+      channelId: null,
+      channelSection: null,
+      routeId: "/website/recent-tasks",
+      stampTabId: "tab-a",
+    });
+  });
+
+  it("only stamps when the active tab already shows the route-only view", () => {
+    expect(
+      decideTabNavigation({
+        ...base,
+        serverActiveTabId: "tab-a",
+        activeTab: {
+          id: "tab-a",
+          dashboardId: null,
+          taskId: null,
+          routeId: "/website/recent-tasks",
+        },
+        routeRouteId: "/website/recent-tasks",
+      }),
+    ).toEqual({ type: "stamp", stampTabId: "tab-a" });
+  });
 });
 
 function openChannel(s: TabsSnapshot, windowId: string, channelId: string) {
@@ -472,6 +557,19 @@ describe("activeTabIsBlank", () => {
 
   it("is false when the active tab is a channel tab (channel home)", () => {
     const t = openChannel(snapshot(), "w1", "c1");
+    expect(activeTabIsBlank(t.snapshot)).toBe(false);
+  });
+
+  it("is false when the active tab is a route-only tab (recent tasks)", () => {
+    const t = openOrFocusTab(snapshot(), {
+      windowId: "w1",
+      dashboardId: null,
+      taskId: null,
+      channelId: null,
+      routeId: "/website/recent-tasks",
+      makeId,
+      now,
+    });
     expect(activeTabIsBlank(t.snapshot)).toBe(false);
   });
 

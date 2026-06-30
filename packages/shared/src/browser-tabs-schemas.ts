@@ -25,6 +25,13 @@ export const browserTabSchema = z.object({
    * blank). Pairs with `channelId`: the two together identify a channel tab.
    */
   channelSection: z.string().nullable().default(null),
+  /**
+   * Standalone Channels-space route this tab fronts when it isn't a canvas,
+   * task, or channel — e.g. `/website/recent-tasks`. Null for every id-backed
+   * tab and for a blank tab. Lets a route-only view be a first-class tab
+   * (labelled, deduped, restored) without a channel/task/canvas reference.
+   */
+  routeId: z.string().nullable().default(null),
   /** Gap-spaced ordering key within a window. Reindexed on collision. */
   position: z.number(),
   /**

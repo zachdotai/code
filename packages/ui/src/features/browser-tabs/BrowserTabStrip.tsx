@@ -1,4 +1,4 @@
-import { HashIcon } from "@phosphor-icons/react";
+import { ClockCounterClockwiseIcon, HashIcon } from "@phosphor-icons/react";
 import { browserTabsStore } from "@posthog/core/browser-tabs/browserTabsStore";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { decideTabNavigation, type TabsSnapshot } from "@posthog/shared";
@@ -18,7 +18,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { TabStrip, type TabView } from "./TabStrip";
 import { TaskTabIcon } from "./TaskTabIcon";
 import { useTabsSnapshot } from "./useBrowserTabs";
@@ -56,12 +56,28 @@ function primaryWindow(snapshot: TabsSnapshot) {
   return snapshot.windows.find((w) => w.isPrimary) ?? snapshot.windows[0];
 }
 
+/**
+ * Channels-space routes that are first-class tabs without a canvas/task/channel
+ * target (so they get a real label and survive a tab switch). Keyed by the
+ * route's pathname, which doubles as the tab's stored `routeId`.
+ */
+const STANDALONE_ROUTE_TABS: Record<
+  string,
+  { label: string; icon: ReactNode }
+> = {
+  "/website/recent-tasks": {
+    label: "Recent tasks",
+    icon: <ClockCounterClockwiseIcon size={14} />,
+  },
+};
+
 type TabRef = {
   id: string;
   dashboardId: string | null;
   taskId: string | null;
   channelId: string | null;
   channelSection: string | null;
+  routeId: string | null;
 };
 
 export function BrowserTabStrip() {
@@ -80,6 +96,11 @@ export function BrowserTabStrip() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const { channels } = useChannels();
+
+  // A standalone Channels-space route (e.g. recent tasks) the current location
+  // maps to — null for canvas/task/channel/blank routes. Drives a route-only
+  // tab's identity, label, and navigation.
+  const routeTabId = STANDALONE_ROUTE_TABS[pathname] ? pathname : null;
 
   // The active channel sub-section (inbox/artifacts/history/context) is the
   // route segment after the channelId. Null when on the channel home or a
@@ -168,12 +189,14 @@ export function BrowserTabStrip() {
             taskId: activeTab.taskId,
             channelId: activeTab.channelId,
             channelSection: activeTab.channelSection,
+            routeId: activeTab.routeId,
           }
         : null,
       routeDashboardId: params.dashboardId ?? null,
       routeTaskId: params.taskId ?? null,
       routeChannelId: params.channelId ?? null,
       routeChannelSection,
+      routeRouteId: routeTabId,
     });
     switch (decision.type) {
       case "activate":
@@ -186,6 +209,7 @@ export function BrowserTabStrip() {
           taskId: decision.taskId,
           channelId: decision.channelId,
           channelSection: decision.channelSection,
+          routeId: decision.routeId,
         });
         if (decision.stampTabId) stamp(decision.stampTabId);
         break;
@@ -196,6 +220,7 @@ export function BrowserTabStrip() {
           taskId: decision.taskId,
           channelId: decision.channelId,
           channelSection: decision.channelSection,
+          routeId: decision.routeId,
         });
         if (decision.stampTabId) stamp(decision.stampTabId);
         break;
@@ -211,6 +236,7 @@ export function BrowserTabStrip() {
     params.dashboardId,
     params.taskId,
     routeChannelSection,
+    routeTabId,
     activeTab,
     openOrFocus.mutate,
     setTabTarget.mutate,
@@ -253,6 +279,7 @@ export function BrowserTabStrip() {
         const dashId = isActive ? (params.dashboardId ?? null) : t.dashboardId;
         const channelId = isActive ? (params.channelId ?? null) : t.channelId;
         const section = isActive ? routeChannelSection : t.channelSection;
+        const routeId = isActive ? routeTabId : t.routeId;
         const channel = channelName(channelId);
         if (taskId) {
           const task = findTask(taskId);
@@ -284,6 +311,17 @@ export function BrowserTabStrip() {
             channelName: channel,
           };
         }
+        // A standalone route tab (e.g. Recent tasks): label + icon from the
+        // registry, no channel context.
+        if (routeId) {
+          const meta = STANDALONE_ROUTE_TABS[routeId];
+          return {
+            id: t.id,
+            label: meta?.label ?? "Tab",
+            icon: meta?.icon,
+            channelName: null,
+          };
+        }
         return { id: t.id, label: "New tab", channelName: null };
       });
   }, [
@@ -299,6 +337,7 @@ export function BrowserTabStrip() {
     params.dashboardId,
     params.taskId,
     routeChannelSection,
+    routeTabId,
   ]);
 
   // Navigate to a tab, tagging the history entry with its id so the switch is
@@ -336,6 +375,8 @@ export function BrowserTabStrip() {
         default:
           navigate({ to: "/website/$channelId", params, state });
       }
+    } else if (tab.routeId === "/website/recent-tasks") {
+      navigate({ to: "/website/recent-tasks", state });
     } else {
       navigate({ to: "/website", state });
     }
@@ -391,6 +432,7 @@ export function BrowserTabStrip() {
                   taskId: null,
                   channelId: null,
                   channelSection: null,
+                  routeId: null,
                 });
               }
             },

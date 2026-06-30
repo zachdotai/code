@@ -25,6 +25,7 @@ export interface IBrowserTabsService {
       windowId: string;
       channelId: string | null;
       channelSection?: string | null;
+      routeId?: string | null;
     },
   ): TabsSnapshot;
   newBlankTab(input: { windowId: string }): TabsSnapshot;
@@ -33,6 +34,7 @@ export interface IBrowserTabsService {
       tabId: string;
       channelId: string | null;
       channelSection?: string | null;
+      routeId?: string | null;
     },
   ): TabsSnapshot;
   close(tabId: string): TabsSnapshot;
@@ -97,6 +99,7 @@ export class BrowserTabsService
       windowId: string;
       channelId: string | null;
       channelSection?: string | null;
+      routeId?: string | null;
     },
   ): TabsSnapshot {
     const { snapshot } = openOrFocusTab(this.snapshot, {
@@ -121,6 +124,7 @@ export class BrowserTabsService
       tabId: string;
       channelId: string | null;
       channelSection?: string | null;
+      routeId?: string | null;
     },
   ): TabsSnapshot {
     return this.commit(setTabTarget(this.snapshot, { ...input, now }));

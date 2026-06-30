@@ -140,15 +140,15 @@ function RecentTaskItemRow({ row }: { row: RecentTaskRow }) {
           size={15}
         />
       </span>
-      <span className="min-w-0 flex-1 truncate font-medium text-[13px] text-gray-12">
-        {task.title || "Untitled task"}
-      </span>
-      <span className="flex shrink-0 items-center gap-3">
-        <span className="truncate text-[11px] text-gray-10">
-          {channel ? `#${channel.name}` : "No channel"}
-          {updatedAt !== null ? ` · ${formatRelativeTimeLong(updatedAt)}` : ""}
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="min-w-0 truncate font-medium text-[13px] text-gray-12">
+          {task.title || "Untitled task"}
         </span>
         <TaskArtifacts canvases={canvases} prUrl={prUrl} />
+      </span>
+      <span className="shrink-0 truncate text-[11px] text-gray-10">
+        {channel ? `#${channel.name}` : "No channel"}
+        {updatedAt !== null ? ` · ${formatRelativeTimeLong(updatedAt)}` : ""}
       </span>
     </button>
   );
@@ -156,8 +156,10 @@ function RecentTaskItemRow({ row }: { row: RecentTaskRow }) {
 
 // Small clickable icons for the artifacts a task produced — canvases it
 // generated and the pull request it opened. Each opens its artifact; they sit
-// at the far right of the row, after the channel/time metadata. NestedButton
-// keeps these interactive without nesting a <button> inside the row's <button>.
+// next to the task name. Colour-coded chips matching the channel artifacts/
+// history rows (canvas = violet, PR = green) so they read as artifacts at a
+// glance. NestedButton keeps these interactive without nesting a <button>
+// inside the row's <button>.
 function TaskArtifacts({
   canvases,
   prUrl,
@@ -173,7 +175,7 @@ function TaskArtifacts({
         <Tooltip key={canvas.id} content={`Open canvas: ${canvas.name}`}>
           <NestedButton
             aria-label={`Open canvas: ${canvas.name}`}
-            className="flex size-6 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+            className="flex size-6 cursor-pointer items-center justify-center rounded-md bg-violet-3 text-violet-9 transition-colors hover:bg-violet-4"
             onActivate={() =>
               navigateToChannelDashboard(canvas.channelId, canvas.id)
             }
@@ -186,7 +188,7 @@ function TaskArtifacts({
         <Tooltip content="Open pull request">
           <NestedButton
             aria-label="Open pull request"
-            className="flex size-6 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+            className="flex size-6 cursor-pointer items-center justify-center rounded-md bg-green-3 text-green-9 transition-colors hover:bg-green-4"
             onActivate={() => openExternalUrl(prUrl)}
           >
             <GitPullRequestIcon size={14} />
