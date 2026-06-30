@@ -1,3 +1,4 @@
+import { GitPullRequestIcon, SquaresFourIcon } from "@phosphor-icons/react";
 import type { Task, WorkspaceMode } from "@posthog/shared";
 import { formatRelativeTimeLong } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -5,13 +6,21 @@ import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTask
 import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
+import {
+  type CanvasArtifact,
+  useTaskCanvasArtifacts,
+} from "@posthog/ui/features/recent-tasks/useTaskCanvasArtifacts";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { NestedButton } from "@posthog/ui/primitives/NestedButton";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import {
+  navigateToChannelDashboard,
   navigateToChannelTask,
   navigateToTaskDetail,
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
+import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { Text } from "@radix-ui/themes";
 import { useEffect, useMemo } from "react";
 
@@ -21,6 +30,8 @@ type RecentTaskRow = {
   // null when `updated_at` can't be parsed — the row then omits the time
   // rather than showing a misleading epoch (1970) date.
   updatedAt: number | null;
+  canvases: CanvasArtifact[];
+  prUrl: string | undefined;
 };
 
 // A cross-channel list of every task, most recent first. Each row shows the
@@ -31,6 +42,7 @@ export function RecentTasksView() {
   const { data: tasks, isLoading } = useTasks();
   const { channels } = useChannels();
   const taskChannelMap = useTaskChannelMap(channels);
+  const canvasArtifacts = useTaskCanvasArtifacts(channels);
   const archivedTaskIds = useArchivedTaskIds();
 
   useEffect(() => {
@@ -47,14 +59,17 @@ export function RecentTasksView() {
     for (const task of tasks ?? []) {
       if (archivedTaskIds.has(task.id)) continue;
       const parsed = Date.parse(task.updated_at);
+      const prUrl = task.latest_run?.output?.pr_url;
       result.push({
         task,
         channel: taskChannelMap.get(task.id),
         updatedAt: Number.isNaN(parsed) ? null : parsed,
+        canvases: canvasArtifacts.get(task.id) ?? [],
+        prUrl: typeof prUrl === "string" ? prUrl : undefined,
       });
     }
     return result.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-  }, [tasks, taskChannelMap, archivedTaskIds]);
+  }, [tasks, taskChannelMap, canvasArtifacts, archivedTaskIds]);
 
   return (
     <div className="h-full overflow-y-auto bg-gray-1">
@@ -89,7 +104,7 @@ export function RecentTasksView() {
 }
 
 function RecentTaskItemRow({ row }: { row: RecentTaskRow }) {
-  const { task, channel, updatedAt } = row;
+  const { task, channel, updatedAt, canvases, prUrl } = row;
 
   // The status icon is derived straight from the task's latest_run, rather than
   // the sidebar's richer per-task session/workspace state, which isn't loaded
@@ -130,10 +145,54 @@ function RecentTaskItemRow({ row }: { row: RecentTaskRow }) {
           {task.title || "Untitled task"}
         </span>
         <span className="truncate text-[11px] text-gray-10 leading-tight">
-          {channel ? channel.name : "No channel"}
+          {channel ? `#${channel.name}` : "No channel"}
           {updatedAt !== null ? ` · ${formatRelativeTimeLong(updatedAt)}` : ""}
         </span>
       </span>
+      <TaskArtifacts canvases={canvases} prUrl={prUrl} />
     </button>
+  );
+}
+
+// Small clickable icons for the artifacts a task produced — canvases it
+// generated and the pull request it opened. Each opens its artifact; they sit
+// to the right of the row, opposite the metadata. NestedButton keeps these
+// interactive without nesting a <button> inside the row's <button>.
+function TaskArtifacts({
+  canvases,
+  prUrl,
+}: {
+  canvases: CanvasArtifact[];
+  prUrl: string | undefined;
+}) {
+  if (canvases.length === 0 && !prUrl) return null;
+
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {canvases.map((canvas) => (
+        <Tooltip key={canvas.id} content={`Open canvas: ${canvas.name}`}>
+          <NestedButton
+            aria-label={`Open canvas: ${canvas.name}`}
+            className="flex size-6 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+            onActivate={() =>
+              navigateToChannelDashboard(canvas.channelId, canvas.id)
+            }
+          >
+            <SquaresFourIcon size={14} />
+          </NestedButton>
+        </Tooltip>
+      ))}
+      {prUrl && (
+        <Tooltip content="Open pull request">
+          <NestedButton
+            aria-label="Open pull request"
+            className="flex size-6 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+            onActivate={() => openExternalUrl(prUrl)}
+          >
+            <GitPullRequestIcon size={14} />
+          </NestedButton>
+        </Tooltip>
+      )}
+    </span>
   );
 }
