@@ -20,31 +20,25 @@ function agentUpdate(
 }
 
 describe("hasAgentStartedTurn", () => {
-  it("is false while still optimistic (echo not landed)", () => {
+  it.each<[string, AcpMessage[], boolean]>([
     // A prior completed turn is present, but the just-sent prompt is still an
     // optimistic item — its echo has not landed, so the agent has not started.
-    const events = [
-      createUserMessageEvent("first", 1),
-      agentUpdate("agent_message_chunk", 2, { type: "text" }),
-    ];
-    expect(hasAgentStartedTurn({ events, hasOptimisticItems: true })).toBe(
+    [
+      "still optimistic (echo not landed)",
+      [
+        createUserMessageEvent("first", 1),
+        agentUpdate("agent_message_chunk", 2, { type: "text" }),
+      ],
+      true,
+    ],
+    ["there are no events", [], false],
+    [
+      "only the prompt echo has landed",
+      [createUserMessageEvent("hi", 1)],
       false,
-    );
-  });
-
-  it("is false with no events", () => {
-    expect(hasAgentStartedTurn({ events: [], hasOptimisticItems: false })).toBe(
-      false,
-    );
-  });
-
-  it("is false when only the prompt echo has landed", () => {
-    expect(
-      hasAgentStartedTurn({
-        events: [createUserMessageEvent("hi", 1)],
-        hasOptimisticItems: false,
-      }),
-    ).toBe(false);
+    ],
+  ])("is false when %s", (_label, events, hasOptimisticItems) => {
+    expect(hasAgentStartedTurn({ events, hasOptimisticItems })).toBe(false);
   });
 
   it.each([
@@ -64,26 +58,30 @@ describe("hasAgentStartedTurn", () => {
     ).toBe(true);
   });
 
-  it("ignores output from a previous turn (looks only after the latest prompt)", () => {
-    const events = [
-      createUserMessageEvent("first", 1),
-      agentUpdate("agent_message_chunk", 2, { type: "text" }),
-      createUserMessageEvent("second", 3),
-    ];
-    expect(hasAgentStartedTurn({ events, hasOptimisticItems: false })).toBe(
+  it.each<[string, AcpMessage[], boolean]>([
+    // Only looks after the latest prompt: the prior turn's output is ignored.
+    [
+      "prior turn has output but the latest prompt does not",
+      [
+        createUserMessageEvent("first", 1),
+        agentUpdate("agent_message_chunk", 2, { type: "text" }),
+        createUserMessageEvent("second", 3),
+      ],
       false,
-    );
-  });
-
-  it("is true when the latest turn has output after an earlier turn", () => {
-    const events = [
-      createUserMessageEvent("first", 1),
-      agentUpdate("agent_message_chunk", 2, { type: "text" }),
-      createUserMessageEvent("second", 3),
-      agentUpdate("tool_call", 4),
-    ];
-    expect(hasAgentStartedTurn({ events, hasOptimisticItems: false })).toBe(
+    ],
+    [
+      "the latest turn has output after an earlier turn",
+      [
+        createUserMessageEvent("first", 1),
+        agentUpdate("agent_message_chunk", 2, { type: "text" }),
+        createUserMessageEvent("second", 3),
+        agentUpdate("tool_call", 4),
+      ],
       true,
+    ],
+  ])("turn isolation: %s", (_label, events, expected) => {
+    expect(hasAgentStartedTurn({ events, hasOptimisticItems: false })).toBe(
+      expected,
     );
   });
 });
