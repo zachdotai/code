@@ -137,7 +137,7 @@ export function ReviewPage({ task }: ReviewPageProps) {
     expandAll,
     collapseAll,
     uncollapseFile,
-    viewedFiles,
+    viewedRecord,
     toggleViewed,
   } = useReviewState(changedFiles, allPaths, taskId);
 
@@ -192,7 +192,7 @@ export function ReviewPage({ task }: ReviewPageProps) {
       expandAll={expandAll}
       collapseAll={collapseAll}
       uncollapseFile={uncollapseFile}
-      viewedFiles={viewedFiles}
+      viewedRecord={viewedRecord}
       toggleViewed={toggleViewed}
       refetch={refetch}
       hasStagedFiles={hasStagedFiles}
@@ -227,7 +227,7 @@ function LocalReviewContent({
   expandAll,
   collapseAll,
   uncollapseFile,
-  viewedFiles,
+  viewedRecord,
   toggleViewed,
   refetch,
   hasStagedFiles,
@@ -258,8 +258,8 @@ function LocalReviewContent({
   expandAll: () => void;
   collapseAll: () => void;
   uncollapseFile: (filePath: string) => void;
-  viewedFiles: Set<string>;
-  toggleViewed: (key: string) => void;
+  viewedRecord: Record<string, string>;
+  toggleViewed: (key: string, sig: string | null) => void;
   refetch: () => void;
   hasStagedFiles: boolean;
   stagedParsedFiles: ReturnType<typeof parsePatchFiles>[number]["files"];
@@ -406,7 +406,7 @@ function LocalReviewContent({
       defaultBranch={defaultBranch}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
-      viewedFiles={viewedFiles}
+      viewedRecord={viewedRecord}
       onToggleViewed={toggleViewed}
     />
   );
@@ -495,7 +495,7 @@ function RemoteReviewPage({
       defaultBranch={defaultBranch}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
-      viewedFiles={reviewState.viewedFiles}
+      viewedRecord={reviewState.viewedRecord}
       onToggleViewed={reviewState.toggleViewed}
     />
   );
