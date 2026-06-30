@@ -1534,7 +1534,7 @@ export class AgentServer {
     if (!this.session || !this.resumeState) return;
     const resumeState = this.resumeState;
 
-    await this.runResumeTurn(payload, "Resume message", async () => {
+    await this.runResumeTurn(payload, taskRun, "Resume message", async () => {
       const conversationSummary = formatConversationForResume(
         resumeState.conversation,
       );
@@ -1603,40 +1603,46 @@ export class AgentServer {
   ): Promise<void> {
     if (!this.session) return;
 
-    await this.runResumeTurn(payload, "Resume continuation", async () => {
-      const checkpointApplied = this.nativeResume?.warm
-        ? false
-        : await this.applyResumeGitCheckpoint(payload);
+    await this.runResumeTurn(
+      payload,
+      taskRun,
+      "Resume continuation",
+      async () => {
+        const checkpointApplied = this.nativeResume?.warm
+          ? false
+          : await this.applyResumeGitCheckpoint(payload);
 
-      const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
-      const prompt: ContentBlock[] = pendingUserPrompt?.prompt.length
-        ? pendingUserPrompt.prompt
-        : [
-            {
-              type: "text",
-              text: "Continue from where you left off. The user is waiting for your response.",
-            },
-          ];
+        const pendingUserPrompt = await this.getPendingUserPrompt(taskRun);
+        const prompt: ContentBlock[] = pendingUserPrompt?.prompt.length
+          ? pendingUserPrompt.prompt
+          : [
+              {
+                type: "text",
+                text: "Continue from where you left off. The user is waiting for your response.",
+              },
+            ];
 
-      this.logger.debug("Sending resume continuation", {
-        taskId: payload.task_id,
-        sessionId: this.nativeResume?.sessionId,
-        warm: this.nativeResume?.warm,
-        checkpointApplied,
-        hasPendingUserMessage: !!pendingUserPrompt?.prompt.length,
-      });
+        this.logger.debug("Sending resume continuation", {
+          taskId: payload.task_id,
+          sessionId: this.nativeResume?.sessionId,
+          warm: this.nativeResume?.warm,
+          checkpointApplied,
+          hasPendingUserMessage: !!pendingUserPrompt?.prompt.length,
+        });
 
-      this.resumeState = null;
-      this.nativeResume = null;
-      return {
-        prompt,
-        ...(pendingUserPrompt?.meta ? { meta: pendingUserPrompt.meta } : {}),
-      };
-    });
+        this.resumeState = null;
+        this.nativeResume = null;
+        return {
+          prompt,
+          ...(pendingUserPrompt?.meta ? { meta: pendingUserPrompt.meta } : {}),
+        };
+      },
+    );
   }
 
   private async runResumeTurn(
     payload: JwtPayload,
+    taskRun: TaskRun | null,
     logLabel: string,
     buildPrompt: () => Promise<BuiltPrompt>,
   ): Promise<void> {
@@ -1656,6 +1662,8 @@ export class AgentServer {
       this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
       });
+
+      await this.clearPendingInitialPromptState(payload, taskRun);
 
       if (result.stopReason === "end_turn") {
         void this.syncCloudBranchMetadata(payload);
