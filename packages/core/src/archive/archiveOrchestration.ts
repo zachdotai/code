@@ -38,6 +38,7 @@ export interface ArchiveOrchestrationDeps {
   disableFocus(): Promise<void>;
   disconnectFromTask(taskId: string): Promise<void>;
   archive(taskId: string): Promise<void>;
+  clearReadState(taskId: string): void;
   logError(message: string, error: unknown): void;
   cache: ArchiveCacheWriter;
 }
@@ -97,9 +98,8 @@ export async function archiveTask(
   try {
     await deps.disconnectFromTask(taskId);
     await deps.archive(taskId);
-    // Destroying terminals is irreversible, so it waits for the archive to
-    // commit; a failed archive keeps its live terminals.
     deps.clearTerminalStates(taskId);
+    deps.clearReadState(taskId);
     // Non-optimistic flows keep the row visible during the request, then remove
     // it the moment the archive succeeds.
     if (!optimistic) {
