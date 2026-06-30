@@ -18,6 +18,7 @@ import { Route as WebsiteIndexRouteImport } from './routes/website/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as CodeIndexRouteImport } from './routes/code/index'
 import { Route as WebsiteSkillsRouteImport } from './routes/website/skills'
+import { Route as WebsiteRecentTasksRouteImport } from './routes/website/recent-tasks'
 import { Route as WebsiteNewRouteImport } from './routes/website/new'
 import { Route as WebsiteMcpServersRouteImport } from './routes/website/mcp-servers'
 import { Route as WebsiteHomeRouteImport } from './routes/website/home'
@@ -116,6 +117,11 @@ const CodeIndexRoute = CodeIndexRouteImport.update({
 const WebsiteSkillsRoute = WebsiteSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => WebsiteRoute,
+} as any)
+const WebsiteRecentTasksRoute = WebsiteRecentTasksRouteImport.update({
+  id: '/recent-tasks',
+  path: '/recent-tasks',
   getParentRoute: () => WebsiteRoute,
 } as any)
 const WebsiteNewRoute = WebsiteNewRouteImport.update({
@@ -426,6 +432,7 @@ export interface FileRoutesByFullPath {
   '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
   '/website/new': typeof WebsiteNewRoute
+  '/website/recent-tasks': typeof WebsiteRecentTasksRoute
   '/website/skills': typeof WebsiteSkillsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -488,6 +495,7 @@ export interface FileRoutesByTo {
   '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
   '/website/new': typeof WebsiteNewRoute
+  '/website/recent-tasks': typeof WebsiteRecentTasksRoute
   '/website/skills': typeof WebsiteSkillsRoute
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -546,6 +554,7 @@ export interface FileRoutesById {
   '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
   '/website/new': typeof WebsiteNewRoute
+  '/website/recent-tasks': typeof WebsiteRecentTasksRoute
   '/website/skills': typeof WebsiteSkillsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -613,6 +622,7 @@ export interface FileRouteTypes {
     | '/website/home'
     | '/website/mcp-servers'
     | '/website/new'
+    | '/website/recent-tasks'
     | '/website/skills'
     | '/code/'
     | '/settings/'
@@ -675,6 +685,7 @@ export interface FileRouteTypes {
     | '/website/home'
     | '/website/mcp-servers'
     | '/website/new'
+    | '/website/recent-tasks'
     | '/website/skills'
     | '/code'
     | '/settings'
@@ -732,6 +743,7 @@ export interface FileRouteTypes {
     | '/website/home'
     | '/website/mcp-servers'
     | '/website/new'
+    | '/website/recent-tasks'
     | '/website/skills'
     | '/code/'
     | '/settings/'
@@ -863,6 +875,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/website/skills'
       preLoaderRoute: typeof WebsiteSkillsRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/recent-tasks': {
+      id: '/website/recent-tasks'
+      path: '/recent-tasks'
+      fullPath: '/website/recent-tasks'
+      preLoaderRoute: typeof WebsiteRecentTasksRouteImport
       parentRoute: typeof WebsiteRoute
     }
     '/website/new': {
@@ -1251,6 +1270,7 @@ interface WebsiteRouteChildren {
   WebsiteHomeRoute: typeof WebsiteHomeRoute
   WebsiteMcpServersRoute: typeof WebsiteMcpServersRoute
   WebsiteNewRoute: typeof WebsiteNewRoute
+  WebsiteRecentTasksRoute: typeof WebsiteRecentTasksRoute
   WebsiteSkillsRoute: typeof WebsiteSkillsRoute
   WebsiteIndexRoute: typeof WebsiteIndexRoute
   WebsiteChannelIdArtifactsRoute: typeof WebsiteChannelIdArtifactsRoute
@@ -1269,6 +1289,7 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
   WebsiteHomeRoute: WebsiteHomeRoute,
   WebsiteMcpServersRoute: WebsiteMcpServersRoute,
   WebsiteNewRoute: WebsiteNewRoute,
+  WebsiteRecentTasksRoute: WebsiteRecentTasksRoute,
   WebsiteSkillsRoute: WebsiteSkillsRoute,
   WebsiteIndexRoute: WebsiteIndexRoute,
   WebsiteChannelIdArtifactsRoute: WebsiteChannelIdArtifactsRoute,

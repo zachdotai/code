@@ -18,6 +18,7 @@ export type AppViewType =
   | "command-center"
   | "skills"
   | "mcp-servers"
+  | "recent-tasks"
   | "settings";
 
 export interface AppView {
@@ -79,6 +80,8 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/mcp-servers":
     case "/website/mcp-servers":
       return { type: "mcp-servers" };
+    case "/website/recent-tasks":
+      return { type: "recent-tasks" };
     case "/settings/$category":
     case "/settings/":
       return { type: "settings" };

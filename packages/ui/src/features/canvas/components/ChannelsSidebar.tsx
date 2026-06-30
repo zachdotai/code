@@ -1,5 +1,6 @@
 import {
   BrainIcon,
+  ClockCounterClockwiseIcon,
   GearSixIcon,
   HouseIcon,
   RobotIcon,
@@ -20,6 +21,7 @@ import {
   navigateToAgents,
   navigateToCanvas,
   navigateToInbox,
+  navigateToRecentTasks,
   navigateToSkills,
   navigateToWebsiteHome,
 } from "@posthog/ui/router/navigationBridge";
@@ -46,6 +48,7 @@ const NON_CANVAS_WEBSITE_PREFIXES = [
   "/website/skills",
   "/website/mcp-servers",
   "/website/command-center",
+  "/website/recent-tasks",
 ];
 
 // The global nav brought over from the Code app — a single icon+label row each,
@@ -130,6 +133,18 @@ function ChannelsNav() {
         label="Files"
         isActive={view.type === "skills"}
         onClick={() => trackNav("files", navigateToSkills)}
+      />
+      <SidebarItem
+        depth={0}
+        icon={
+          <ClockCounterClockwiseIcon
+            size={16}
+            weight={view.type === "recent-tasks" ? "fill" : "regular"}
+          />
+        }
+        label="Recent tasks"
+        isActive={view.type === "recent-tasks"}
+        onClick={() => trackNav("recent-tasks", navigateToRecentTasks)}
       />
     </Flex>
   );

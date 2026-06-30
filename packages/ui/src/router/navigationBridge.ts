@@ -192,6 +192,11 @@ export function navigateToWebsiteSkills(): void {
   void getRouterOrNull()?.navigate({ to: "/website/skills" });
 }
 
+// The cross-channel "Recent tasks" list, a Channels-space surface.
+export function navigateToRecentTasks(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/recent-tasks" });
+}
+
 export function navigateToWebsiteMcpServers(): void {
   void getRouterOrNull()?.navigate({ to: "/website/mcp-servers" });
 }
