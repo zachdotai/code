@@ -83,6 +83,13 @@ export interface AgentSession {
   idleKilled?: boolean;
   agentVersion?: string;
   agentIdleForRunId?: string;
+  /**
+   * Model/effort config changes made via the picker while the cloud agent is
+   * idle between turns. Buffered here and flushed as `set_config_option`
+   * commands just before the next `user_message`, so picker interactions don't
+   * each fire a wasted round-trip. Keyed by config option id.
+   */
+  pendingConfigChanges?: Record<string, string>;
 }
 
 export function isSelectGroup(

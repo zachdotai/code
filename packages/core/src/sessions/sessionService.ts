@@ -2369,6 +2369,10 @@ export class SessionService {
     }
     const { auth } = authStatus;
 
+    // Apply any picker changes buffered while idle before the message goes out,
+    // so this turn runs with the chosen model/effort.
+    await this.flushPendingConfigChanges(session);
+
     this.watchCloudTask(
       session.taskId,
       session.taskRunId,
@@ -2810,6 +2814,28 @@ export class SessionService {
     });
   }
 
+  /**
+   * Dispatch any model/effort changes buffered while the agent was idle between
+   * turns. Called right before the next `user_message` so the new config takes
+   * effect for that turn. Clears the buffer up front so a failed command isn't
+   * re-sent on retry; `sendCloudCommand` surfaces errors itself.
+   */
+  private async flushPendingConfigChanges(
+    session: AgentSession,
+  ): Promise<void> {
+    const current = this.getSessionByRunId(session.taskRunId) ?? session;
+    const pending = current.pendingConfigChanges;
+    if (!pending || Object.keys(pending).length === 0) return;
+
+    this.d.store.updateSession(current.taskRunId, { pendingConfigChanges: {} });
+    for (const [configId, value] of Object.entries(pending)) {
+      await this.sendCloudCommand(current, "set_config_option", {
+        configId,
+        value,
+      });
+    }
+  }
+
   // --- Permissions ---
 
   private resolvePermission(session: AgentSession, toolCallId: string): void {
@@ -2977,6 +3003,20 @@ export class SessionService {
       configOptions: updatedOptions,
     });
     this.d.updatePersistedConfigOptionValue(session.taskRunId, configId, value);
+
+    // Cloud agent idle between turns: buffer the change instead of dispatching
+    // now. It's flushed just before the next `user_message` (see
+    // `flushPendingConfigChanges`), so picker interactions don't each cost a
+    // round-trip when the user hasn't sent anything yet.
+    if (session.isCloud && session.agentIdleForRunId === session.taskRunId) {
+      this.d.store.updateSession(session.taskRunId, {
+        pendingConfigChanges: {
+          ...(session.pendingConfigChanges ?? {}),
+          [configId]: value,
+        },
+      });
+      return;
+    }
 
     if (
       !session.isCloud &&
