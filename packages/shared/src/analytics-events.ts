@@ -792,7 +792,8 @@ export type ChannelsSurface =
   | "pinned"
   | "dashboards_grid"
   | "canvas"
-  | "context";
+  | "context"
+  | "recent_tasks";
 
 export type ChannelActionType =
   | "enter_space"
@@ -812,6 +813,7 @@ export type ChannelActionType =
   | "new_task_suggestion"
   | "view_context"
   | "view_history"
+  | "view_recent_tasks"
   | "view_artifacts"
   | "view_inbox"
   | "open_artifact"
