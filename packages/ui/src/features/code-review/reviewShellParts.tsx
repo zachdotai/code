@@ -2,8 +2,10 @@ import {
   ArrowCounterClockwise,
   ArrowSquareOut,
   CaretDown,
+  CheckSquare,
   Minus,
   Plus,
+  Square,
 } from "@phosphor-icons/react";
 import type { FileDiffMetadata } from "@pierre/diffs/react";
 import type { ResolvedDiffSource } from "@posthog/core/code-review/resolveDiffSource";
@@ -20,6 +22,8 @@ import { Tooltip } from "../../primitives/Tooltip";
 import { useThemeStore } from "../../shell/themeStore";
 import { useDiffViewerStore } from "../code-editor/diffViewerStore";
 import { computeDiffStats } from "../git-interaction/utils/diffStats";
+import { useReviewViewedContext } from "./reviewViewedContext";
+import { useReviewViewedStore } from "./reviewViewedStore";
 
 export type { DeferredReason } from "@posthog/core/code-review/reviewShellGeometry";
 export {
@@ -53,6 +57,7 @@ function useDiffOptions() {
 export function useReviewState(
   changedFiles: ChangedFile[],
   allPaths: string[],
+  taskId: string,
 ) {
   const diffOptions = useDiffOptions();
 
@@ -62,8 +67,43 @@ export function useReviewState(
   );
 
   const collapseState = useCollapseState(allPaths);
+  const viewedState = useViewedState(taskId, collapseState.setFileCollapsed);
 
-  return { diffOptions, linesAdded, linesRemoved, ...collapseState };
+  return {
+    diffOptions,
+    linesAdded,
+    linesRemoved,
+    ...collapseState,
+    ...viewedState,
+  };
+}
+
+function useViewedState(
+  taskId: string,
+  setFileCollapsed: (filePath: string, collapsed: boolean) => void,
+) {
+  const viewedRecord = useReviewViewedStore((s) => s.viewed[taskId]);
+  const toggleViewedStore = useReviewViewedStore((s) => s.toggleViewed);
+
+  const viewedFiles = useMemo(
+    () => new Set(Object.keys(viewedRecord ?? {})),
+    [viewedRecord],
+  );
+
+  // Toggling viewed mirrors GitHub: marking a file viewed collapses it,
+  // un-marking expands it again.
+  const toggleViewed = useCallback(
+    (key: string) => {
+      const wasViewed = Boolean(
+        useReviewViewedStore.getState().viewed[taskId]?.[key],
+      );
+      toggleViewedStore(taskId, key);
+      setFileCollapsed(key, !wasViewed);
+    },
+    [taskId, toggleViewedStore, setFileCollapsed],
+  );
+
+  return { viewedFiles, toggleViewed };
 }
 
 function useCollapseState(filePaths: string[]) {
@@ -89,6 +129,19 @@ function useCollapseState(filePaths: string[]) {
     });
   }, []);
 
+  const setFileCollapsed = useCallback(
+    (filePath: string, collapsed: boolean) => {
+      setCollapsedFiles((prev) => {
+        if (collapsed === prev.has(filePath)) return prev;
+        const next = new Set(prev);
+        if (collapsed) next.add(filePath);
+        else next.delete(filePath);
+        return next;
+      });
+    },
+    [],
+  );
+
   const expandAll = useCallback(() => setCollapsedFiles(new Set()), []);
 
   const collapseAll = useCallback(
@@ -100,6 +153,7 @@ function useCollapseState(filePaths: string[]) {
     collapsedFiles,
     toggleFile,
     uncollapseFile,
+    setFileCollapsed,
     expandAll,
     collapseAll,
   };
@@ -114,6 +168,8 @@ export interface ReviewShellProps {
   isEmpty: boolean;
   items: ReviewListItem[];
   itemIndexByFilePath: Map<string, number>;
+  viewedFiles: Set<string>;
+  onToggleViewed: (key: string) => void;
   onUncollapseFile?: (filePath: string) => void;
   allExpanded: boolean;
   onExpandAll: () => void;
@@ -139,6 +195,7 @@ export function FileHeaderRow({
   collapsed,
   onToggle,
   trailing,
+  viewedKey,
 }: {
   dirPath: string;
   fileName: string;
@@ -147,6 +204,7 @@ export function FileHeaderRow({
   collapsed: boolean;
   onToggle: () => void;
   trailing?: ReactNode;
+  viewedKey?: string;
 }) {
   return (
     <button
@@ -182,6 +240,35 @@ export function FileHeaderRow({
         {deletions > 0 && <span className="text-(--red-9)">-{deletions}</span>}
       </span>
       {trailing}
+      {viewedKey !== undefined && <ViewedCheckbox viewedKey={viewedKey} />}
+    </button>
+  );
+}
+
+function ViewedCheckbox({ viewedKey }: { viewedKey: string }) {
+  const ctx = useReviewViewedContext();
+  if (!ctx) return null;
+
+  const viewed = ctx.viewedFiles.has(viewedKey);
+
+  return (
+    <button
+      type="button"
+      aria-pressed={viewed}
+      aria-label="Viewed"
+      title={viewed ? "Mark as not viewed" : "Mark as viewed"}
+      onClick={(e) => {
+        e.stopPropagation();
+        ctx.toggleViewed(viewedKey);
+      }}
+      className="ml-[6px] flex shrink-0 cursor-pointer items-center gap-[3px] border-0 bg-transparent p-0 text-(--gray-9) hover:text-(--gray-11)"
+    >
+      {viewed ? (
+        <CheckSquare size={14} weight="fill" color="var(--accent-9)" />
+      ) : (
+        <Square size={14} />
+      )}
+      <span className="text-[10px]">Viewed</span>
     </button>
   );
 }
@@ -209,6 +296,7 @@ export function DiffFileHeader({
   onDiscard,
   onStage,
   staged,
+  viewedKey,
 }: {
   fileDiff: FileDiffMetadata;
   collapsed: boolean;
@@ -217,6 +305,7 @@ export function DiffFileHeader({
   onDiscard?: () => void;
   onStage?: () => void;
   staged?: boolean;
+  viewedKey?: string;
 }) {
   const fullPath =
     fileDiff.prevName && fileDiff.prevName !== fileDiff.name
@@ -233,6 +322,7 @@ export function DiffFileHeader({
       deletions={deletions}
       collapsed={collapsed}
       onToggle={onToggle}
+      viewedKey={viewedKey}
       trailing={
         (onStage || onDiscard || onOpenFile) && (
           <span className="ml-auto inline-flex items-center gap-[2px]">
@@ -294,6 +384,7 @@ export function DeferredDiffPlaceholder({
   onToggle,
   onShow,
   externalUrl,
+  viewedKey,
 }: {
   filePath: string;
   linesAdded: number;
@@ -303,6 +394,7 @@ export function DeferredDiffPlaceholder({
   onToggle: () => void;
   onShow?: () => void;
   externalUrl?: string;
+  viewedKey?: string;
 }) {
   const { dirPath, fileName } = splitFilePath(filePath);
 
@@ -315,6 +407,7 @@ export function DeferredDiffPlaceholder({
         deletions={linesRemoved}
         collapsed={collapsed}
         onToggle={onToggle}
+        viewedKey={viewedKey}
       />
       {!collapsed && (
         <div className="w-full border-b border-b-(--gray-5) bg-(--gray-2) p-[16px] text-center text-(--gray-9) text-xs">

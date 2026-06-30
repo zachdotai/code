@@ -137,7 +137,9 @@ export function ReviewPage({ task }: ReviewPageProps) {
     expandAll,
     collapseAll,
     uncollapseFile,
-  } = useReviewState(changedFiles, allPaths);
+    viewedFiles,
+    toggleViewed,
+  } = useReviewState(changedFiles, allPaths, taskId);
 
   const stagedPathSet = useMemo(
     () => new Set(stagedParsedFiles.map((f) => f.name ?? f.prevName ?? "")),
@@ -190,6 +192,8 @@ export function ReviewPage({ task }: ReviewPageProps) {
       expandAll={expandAll}
       collapseAll={collapseAll}
       uncollapseFile={uncollapseFile}
+      viewedFiles={viewedFiles}
+      toggleViewed={toggleViewed}
       refetch={refetch}
       hasStagedFiles={hasStagedFiles}
       stagedParsedFiles={stagedParsedFiles}
@@ -223,6 +227,8 @@ function LocalReviewContent({
   expandAll,
   collapseAll,
   uncollapseFile,
+  viewedFiles,
+  toggleViewed,
   refetch,
   hasStagedFiles,
   stagedParsedFiles,
@@ -252,6 +258,8 @@ function LocalReviewContent({
   expandAll: () => void;
   collapseAll: () => void;
   uncollapseFile: (filePath: string) => void;
+  viewedFiles: Set<string>;
+  toggleViewed: (key: string) => void;
   refetch: () => void;
   hasStagedFiles: boolean;
   stagedParsedFiles: ReturnType<typeof parsePatchFiles>[number]["files"];
@@ -398,6 +406,8 @@ function LocalReviewContent({
       defaultBranch={defaultBranch}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
+      viewedFiles={viewedFiles}
+      onToggleViewed={toggleViewed}
     />
   );
 }
@@ -442,7 +452,7 @@ function RemoteReviewPage({
     : prLoading && files.length === 0;
 
   const allPaths = useMemo(() => files.map((f) => f.path), [files]);
-  const reviewState = useReviewState(files, allPaths);
+  const reviewState = useReviewState(files, allPaths, taskId);
 
   const items = useMemo(
     () =>
@@ -485,6 +495,8 @@ function RemoteReviewPage({
       defaultBranch={defaultBranch}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
+      viewedFiles={reviewState.viewedFiles}
+      onToggleViewed={reviewState.toggleViewed}
     />
   );
 }
