@@ -31,7 +31,7 @@ const SSE_RECONNECT_MAX_DELAY_MS = 30_000;
 const SSE_HEALTHY_CONNECTION_MS = 60_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
-const SESSION_LOG_PAGE_LIMIT = 5_000;
+const SESSION_LOG_PAGE_LIMIT = 1_000;
 
 interface SessionLogsPage {
   entries: StoredLogEntry[];
