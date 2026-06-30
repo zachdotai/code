@@ -140,24 +140,24 @@ function RecentTaskItemRow({ row }: { row: RecentTaskRow }) {
           size={15}
         />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate font-medium text-[13px] text-gray-12 leading-tight">
-          {task.title || "Untitled task"}
-        </span>
-        <span className="truncate text-[11px] text-gray-10 leading-tight">
+      <span className="min-w-0 flex-1 truncate font-medium text-[13px] text-gray-12">
+        {task.title || "Untitled task"}
+      </span>
+      <span className="flex shrink-0 items-center gap-3">
+        <span className="truncate text-[11px] text-gray-10">
           {channel ? `#${channel.name}` : "No channel"}
           {updatedAt !== null ? ` · ${formatRelativeTimeLong(updatedAt)}` : ""}
         </span>
+        <TaskArtifacts canvases={canvases} prUrl={prUrl} />
       </span>
-      <TaskArtifacts canvases={canvases} prUrl={prUrl} />
     </button>
   );
 }
 
 // Small clickable icons for the artifacts a task produced — canvases it
 // generated and the pull request it opened. Each opens its artifact; they sit
-// to the right of the row, opposite the metadata. NestedButton keeps these
-// interactive without nesting a <button> inside the row's <button>.
+// at the far right of the row, after the channel/time metadata. NestedButton
+// keeps these interactive without nesting a <button> inside the row's <button>.
 function TaskArtifacts({
   canvases,
   prUrl,
