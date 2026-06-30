@@ -1,8 +1,11 @@
+import { FileText, X } from "@phosphor-icons/react";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import type { Task } from "@posthog/shared/domain-types";
+import { Tooltip } from "@radix-ui/themes";
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -58,6 +61,20 @@ export const ChannelHomeComposer = forwardRef<
   const editorRef = useRef<EditorHandle>(null);
   const [editorIsEmpty, setEditorIsEmpty] = useState(true);
   const { isOnline } = useConnectivity();
+
+  // The channel CONTEXT.md is attached to new tasks by default; the chip below
+  // the prompt surfaces that it's included and lets the user drop it from this
+  // task. Re-include whenever the source context changes (e.g. the doc loads or
+  // the channel switches) so a dismissal doesn't stick. Mirrors TaskInput.
+  const [channelContextDismissed, setChannelContextDismissed] = useState(false);
+  const lastChannelContextRef = useRef(channelContext);
+  useEffect(() => {
+    if (lastChannelContextRef.current !== channelContext) {
+      lastChannelContextRef.current = channelContext;
+      setChannelContextDismissed(false);
+    }
+  }, [channelContext]);
+  const includeChannelContext = !!channelContext && !channelContextDismissed;
 
   const handleEmptyChange = useCallback(
     (isEmpty: boolean) => {
@@ -136,7 +153,7 @@ export const ChannelHomeComposer = forwardRef<
     model: currentModel,
     reasoningLevel: currentReasoningLevel,
     allowNoRepo: true,
-    channelContext,
+    channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
     onTaskCreated,
   });
@@ -242,6 +259,28 @@ export const ChannelHomeComposer = forwardRef<
           if (canSubmit) handleSubmit();
         }}
       />
+
+      {includeChannelContext && (
+        <div className="mt-2 flex select-none flex-wrap items-center gap-1.5 self-start rounded-md border border-gray-6 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
+          <span className="shrink-0 text-gray-10">Using:</span>
+          <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
+            <FileText size={12} />
+            <span className="truncate">
+              {channelName ? `#${channelName} ` : ""}CONTEXT.md
+            </span>
+            <Tooltip content="Don't include this context">
+              <button
+                type="button"
+                onClick={() => setChannelContextDismissed(true)}
+                aria-label="Remove channel context from prompt"
+                className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
+              >
+                <X size={12} />
+              </button>
+            </Tooltip>
+          </span>
+        </div>
+      )}
     </div>
   );
 });

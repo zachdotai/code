@@ -809,6 +809,7 @@ export type ChannelActionType =
   | "unstar"
   | "edit_context_open"
   | "new_task_open"
+  | "select_suggestion_category"
   | "new_task_suggestion"
   | "view_context"
   | "view_history"
@@ -833,6 +834,9 @@ export interface ChannelActionProperties {
   target_channel_id?: string;
   /** For nav_click: which destination ("home"|"inbox"|"canvas"|"agents"|"files"|"settings"). */
   nav_target?: string;
+  /** For select_suggestion_category / new_task_suggestion: the suggestion
+   * category id (e.g. "code", "analysis", "debug", "canvas"). */
+  category?: string;
   /** For new_task_suggestion: the starter-prompt card label. */
   suggestion_label?: string;
   /** Whether the underlying mutation resolved successfully. */
