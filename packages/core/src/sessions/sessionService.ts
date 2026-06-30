@@ -1638,7 +1638,7 @@ export class SessionService {
       });
     }
 
-    if (isUserPromptEcho) {
+    if (isUserPromptEcho && !this.isSteerMessage(acpMsg.message)) {
       this.d.store.replaceOptimisticWithEvent(taskRunId, acpMsg);
     } else {
       this.d.store.appendEvents(taskRunId, [acpMsg]);
