@@ -61,6 +61,12 @@ test-results/
 # Downloaded binaries
 apps/code/resources/codex-acp/
 
+# Offline voice dictation: whisper.cpp build tree + generated/downloaded artifacts
+# (built via scripts/whisper-wasm; see that dir's README).
+scripts/whisper-wasm/.build/
+apps/code/public/whisper/
+apps/web/public/whisper/
+
 # Licensed fonts (downloaded from S3 during CI)
 apps/code/assets/fonts/BerkeleyMono/
 

@@ -35,7 +35,9 @@
     "clean": "pnpm -r clean",
     "knip": "knip",
     "skills:pull": "node scripts/pull-skills.mjs",
-    "update:phrocs": "rm -f bin/phrocs && bash scripts/ensure-phrocs.sh"
+    "update:phrocs": "rm -f bin/phrocs && bash scripts/ensure-phrocs.sh",
+    "whisper:build": "bash scripts/whisper-wasm/build.sh",
+    "whisper:model": "node scripts/whisper-wasm/download-model.mjs"
   },
   "keywords": [
     "posthog",
