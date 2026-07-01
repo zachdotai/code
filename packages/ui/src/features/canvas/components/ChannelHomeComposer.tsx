@@ -261,7 +261,7 @@ export const ChannelHomeComposer = forwardRef<
       />
 
       {includeChannelContext && (
-        <div className="mt-2 flex select-none flex-wrap items-center gap-1.5 self-start rounded-md border border-gray-6 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
+        <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
           <span className="shrink-0 text-gray-10">Using:</span>
           <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
             <FileText size={12} />
