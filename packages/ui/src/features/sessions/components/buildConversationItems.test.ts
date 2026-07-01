@@ -50,6 +50,24 @@ function userPromptMsg(ts: number, id: number, text: string): AcpMessage {
   };
 }
 
+function automatedCheckPromptMsg(
+  ts: number,
+  id: number,
+  text: string,
+  automatedCheck: Record<string, unknown>,
+): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      id,
+      method: "session/prompt",
+      params: { prompt: [{ type: "text", text }], _meta: { automatedCheck } },
+    },
+  };
+}
+
 function promptResponseMsg(ts: number, id: number): AcpMessage {
   return {
     type: "acp_message",
@@ -716,3 +734,41 @@ function findProgressGroups(items: ConversationItem[]): ProgressGroupUpdate[] {
   }
   return groups;
 }
+
+describe("automated check tagging", () => {
+  it("renders a backend-tagged prompt as an automated_check item, not a user turn", () => {
+    const result = buildConversationItems(
+      [
+        automatedCheckPromptMsg(1, 1, "Fix the failing CI checks.", {
+          kind: "pr_ci_followup",
+          iteration: 2,
+          maxIterations: 3,
+          prUrl: "https://github.com/org/repo/pull/42",
+        }),
+      ],
+      null,
+    );
+
+    expect(result.items).toEqual([
+      {
+        type: "automated_check",
+        id: "turn-1-1-automated",
+        checkKind: "pr_ci_followup",
+        content: "Fix the failing CI checks.",
+        timestamp: 1,
+        iteration: 2,
+        maxIterations: 3,
+        prUrl: "https://github.com/org/repo/pull/42",
+      },
+    ]);
+  });
+
+  it("falls back to a normal user turn when the tag lacks a kind", () => {
+    const result = buildConversationItems(
+      [automatedCheckPromptMsg(1, 1, "hello", { iteration: 1 })],
+      null,
+    );
+
+    expect(result.items[0].type).toBe("user_message");
+  });
+});

@@ -44,5 +44,9 @@ export function extractSearchableText(item: ConversationItem): string {
     case "skill_button_action":
     case "git_action_result":
       return "";
+    case "automated_check":
+      // Body is collapsed by default; excluding it keeps search-hit counts in
+      // sync with visible DOM (same reason tool calls are excluded above).
+      return "";
   }
 }

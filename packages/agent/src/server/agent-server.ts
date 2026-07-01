@@ -832,7 +832,17 @@ export class AgentServer {
 
         this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
 
+        // Forward any `_meta` the backend attached to the command (e.g. the
+        // automated CI "babysitter" tag) so it rides on the logged prompt and
+        // the client can render the turn distinctly. Local keys win on collision.
+        const commandMeta =
+          params._meta &&
+          typeof params._meta === "object" &&
+          !Array.isArray(params._meta)
+            ? (params._meta as Record<string, unknown>)
+            : {};
         const promptMeta: Record<string, unknown> = {
+          ...commandMeta,
           ...(builtPrompt.meta ?? {}),
           ...(this.detectedPrUrl
             ? {

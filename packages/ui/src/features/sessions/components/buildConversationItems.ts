@@ -63,6 +63,22 @@ export type ConversationItem =
       turnId: string;
     }
   | { type: "turn_cancelled"; id: string; interruptReason?: string }
+  | {
+      // An automated re-entry the backend tagged (e.g. the CI "babysitter"
+      // follow-up), rendered as a compact collapsed row instead of a user turn.
+      type: "automated_check";
+      id: string;
+      /** Discriminates the automated action, e.g. "pr_ci_followup". */
+      checkKind: string;
+      /** The full injected prompt, shown when the row is expanded. */
+      content: string;
+      timestamp: number;
+      /** 1-based repetition index and cap, when the backend supplies them. */
+      iteration?: number;
+      maxIterations?: number;
+      /** PR the check concerns, rendered as a chip. */
+      prUrl?: string;
+    }
   | UserShellExecute;
 
 export interface LastTurnInfo {
@@ -324,6 +340,7 @@ function handlePromptRequest(
   const toolCalls = new Map<string, ToolCall>();
   const gitAction = parseGitActionMessage(userContent);
   const skillButtonId = extractSkillButtonId(userPrompt.blocks);
+  const automatedCheck = extractAutomatedCheck(msg.params);
 
   const childItems = new Map<string, ConversationItem[]>();
   const context: TurnContext = {
@@ -347,7 +364,20 @@ function handlePromptRequest(
 
   b.pendingPrompts.set(msg.id, b.currentTurn);
 
-  if (gitAction.isGitAction && gitAction.actionType) {
+  if (automatedCheck) {
+    // Explicit backend tag wins over content heuristics: an automated re-entry
+    // is never a git action or a skill button, whatever its prompt text looks like.
+    b.items.push({
+      type: "automated_check",
+      id: `${turnId}-automated`,
+      checkKind: automatedCheck.checkKind,
+      content: userContent,
+      timestamp: ts,
+      iteration: automatedCheck.iteration,
+      maxIterations: automatedCheck.maxIterations,
+      prUrl: automatedCheck.prUrl,
+    });
+  } else if (gitAction.isGitAction && gitAction.actionType) {
     b.items.push({
       type: "git_action",
       id: `${turnId}-git-action`,
@@ -697,6 +727,33 @@ function extractUserPrompt(params: unknown): {
     filterHidden: true,
   });
   return { content: text, attachments, blocks: p.prompt };
+}
+
+interface AutomatedCheckInfo {
+  checkKind: string;
+  iteration?: number;
+  maxIterations?: number;
+  prUrl?: string;
+}
+
+/**
+ * The backend tags automated re-entries (e.g. the CI "babysitter" follow-up)
+ * with `_meta.automatedCheck` on the prompt so the client can render them as a
+ * compact, collapsed row instead of a full user turn. Absent for human messages.
+ */
+function extractAutomatedCheck(params: unknown): AutomatedCheckInfo | null {
+  const meta = (params as { _meta?: { automatedCheck?: unknown } } | undefined)
+    ?._meta?.automatedCheck;
+  if (!meta || typeof meta !== "object") return null;
+  const m = meta as Record<string, unknown>;
+  if (typeof m.kind !== "string" || m.kind.length === 0) return null;
+  return {
+    checkKind: m.kind,
+    iteration: typeof m.iteration === "number" ? m.iteration : undefined,
+    maxIterations:
+      typeof m.maxIterations === "number" ? m.maxIterations : undefined,
+    prUrl: typeof m.prUrl === "string" ? m.prUrl : undefined,
+  };
 }
 
 function getParentToolCallId(update: SessionUpdate): string | undefined {

@@ -15,6 +15,7 @@ import type {
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
+import { AutomatedCheckMessage } from "@posthog/ui/features/sessions/components/AutomatedCheckMessage";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
@@ -264,6 +265,16 @@ export function ConversationView({
           return <GitActionMessage actionType={item.actionType} />;
         case "skill_button_action":
           return <SkillButtonActionMessage buttonId={item.buttonId} />;
+        case "automated_check":
+          return (
+            <AutomatedCheckMessage
+              checkKind={item.checkKind}
+              content={item.content}
+              iteration={item.iteration}
+              maxIterations={item.maxIterations}
+              prUrl={item.prUrl}
+            />
+          );
         case "session_update":
           return (
             <SessionUpdateRow

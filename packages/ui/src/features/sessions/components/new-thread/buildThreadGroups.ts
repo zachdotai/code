@@ -313,7 +313,8 @@ export function buildThreadGroups(
     switch (item.type) {
       case "user_message":
       case "git_action":
-      case "skill_button_action": {
+      case "skill_button_action":
+      case "automated_check": {
         flush();
         pushItemRow(item);
         break;
