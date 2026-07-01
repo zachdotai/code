@@ -116,6 +116,13 @@ const SESSION_EVENT_EVICT_GRACE_MS = 20_000;
  * plenty for the initial (scrolled-to-bottom) view.
  */
 const OPEN_TAIL_BYTES = 1_500_000;
+/**
+ * Cap on how far back the fast paint pages while seeking renderable content. A
+ * resumed session appends large config/mode/resume blobs to the log tail, so
+ * the last window can be all non-content noise; keep paging back (up to this
+ * many bytes) until real messages are in view, then paint what we have.
+ */
+const OPEN_TAIL_MAX_BYTES = 8_000_000;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -170,7 +177,7 @@ export interface SessionTrpc {
     readLocalLogs: TrpcQuery;
     /** Optional: only the Electron host exposes the tail read. Core feature-
      * detects and falls back to a full read when it's absent. */
-    readLocalLogsTail?: TrpcQuery;
+    readLocalLogsWindow?: TrpcQuery;
     fetchS3Logs: TrpcQuery;
     writeLocalLogs: TrpcMutation;
   };
@@ -4812,9 +4819,12 @@ export class SessionService {
    * Paint the tail of a task's local log immediately so a big transcript shows
    * its latest turns in tens of ms, instead of blocking on the full-log read +
    * IPC transfer. This is a throwaway fast-paint: the authoritative full read +
-   * connect (`reconnectToLocalSession`) replaces this session shortly after with
-   * correct processed-line tracking. No-op when a session already exists, the
-   * host doesn't expose the tail read, or there's no local log.
+   * connect (`reconnectToLocalSession`) replaces this session shortly after.
+   *
+   * Pages back past the config/mode/resume blobs a resumed session appends to
+   * the log tail, so the paint shows real messages instead of an empty
+   * transcript. No-op when a session already exists, the host doesn't expose
+   * the windowed read, or there's no local log.
    */
   private async paintTailFirst(
     taskRunId: string,
@@ -4822,27 +4832,61 @@ export class SessionService {
     taskTitle: string,
     logUrl: string,
   ): Promise<void> {
-    const tailQuery = this.d.trpc.logs.readLocalLogsTail;
-    if (!tailQuery) return;
+    const windowQuery = this.d.trpc.logs.readLocalLogsWindow;
+    if (!windowQuery) return;
     if (this.d.store.getSessionByTaskId(taskId)) return;
     try {
-      const res = (await tailQuery.query({
-        taskRunId,
-        maxBytes: OPEN_TAIL_BYTES,
-      })) as { content: string; truncated: boolean } | null;
-      if (!res?.content?.trim()) return;
+      let events: AcpMessage[] = [];
+      let endOffset: number | null = null;
+      let headReached = false;
+      let bytesRead = 0;
+      do {
+        const res = (await windowQuery.query({
+          taskRunId,
+          endOffset,
+          maxBytes: OPEN_TAIL_BYTES,
+        })) as {
+          content: string;
+          startOffset: number;
+          endOffset: number;
+          headReached: boolean;
+        } | null;
+        if (!res) break;
+        const { rawEntries } = this.parseLogContent(res.content);
+        events = [...convertStoredEntriesToEvents(rawEntries), ...events];
+        endOffset = res.startOffset;
+        headReached = res.headReached;
+        bytesRead += res.endOffset - res.startOffset;
+      } while (
+        !headReached &&
+        bytesRead < OPEN_TAIL_MAX_BYTES &&
+        !this.tailHasRenderableContent(events)
+      );
+
+      if (events.length === 0) return;
       // The full read may have set the session while we awaited the tail.
       if (this.d.store.getSessionByTaskId(taskId)) return;
-      const { rawEntries } = this.parseLogContent(res.content);
-      if (rawEntries.length === 0) return;
       const session = createBaseSession(taskRunId, taskId, taskTitle);
-      session.events = convertStoredEntriesToEvents(rawEntries);
+      session.events = events;
       session.logUrl = logUrl;
       session.status = "connecting";
       this.d.store.setSession(session);
     } catch (error) {
       this.d.log.debug("Tail-first paint skipped", { taskId, error });
     }
+  }
+
+  /**
+   * Whether the loaded window contains anything the transcript renders — a user
+   * prompt or agent output — as opposed to only config/mode/resume events.
+   */
+  private tailHasRenderableContent(events: AcpMessage[]): boolean {
+    for (const acpMsg of events) {
+      const msg = acpMsg.message;
+      if (isJsonRpcRequest(msg) && msg.method === "session/prompt") return true;
+      if (classifyTurnEventKind(msg) !== "other") return true;
+    }
+    return false;
   }
 
   private async fetchSessionLogs(

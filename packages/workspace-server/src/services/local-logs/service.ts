@@ -52,35 +52,78 @@ export class LocalLogsService implements ILogsService {
     }
   }
 
-  async readLocalLogsTail(
+  /**
+   * Read a window of the log ending at `endOffset` bytes (end of file when
+   * `endOffset` is null), spanning at most `maxBytes`. Returns the whole ndjson
+   * lines in that window plus the byte offset they start at, so a caller can
+   * page backwards by passing the previous `startOffset` as the next
+   * `endOffset`. `headReached` is true once the window reaches byte 0.
+   *
+   * A window that doesn't begin at byte 0 starts mid-line, so its first
+   * (partial, possibly broken multi-byte) line is dropped; that line ends
+   * exactly at the returned `startOffset`, so paging back includes it whole.
+   */
+  async readLocalLogsWindow(
     taskRunId: string,
+    endOffset: number | null,
     maxBytes: number,
-  ): Promise<{ content: string; truncated: boolean } | null> {
+  ): Promise<{
+    content: string;
+    startOffset: number;
+    endOffset: number;
+    headReached: boolean;
+  } | null> {
     const logPath = this.getLocalLogPath(taskRunId);
     try {
       const stat = await fs.promises.stat(logPath);
-      if (stat.size <= maxBytes) {
-        return {
-          content: await fs.promises.readFile(logPath, "utf-8"),
-          truncated: false,
-        };
+      const end = endOffset ?? stat.size;
+      if (end <= 0) {
+        return { content: "", startOffset: 0, endOffset: 0, headReached: true };
       }
+      const rawStart = Math.max(0, end - maxBytes);
       const handle = await fs.promises.open(logPath, "r");
       try {
+        if (rawStart === 0) {
+          const buf = Buffer.alloc(end);
+          const { bytesRead } = await handle.read(buf, 0, end, 0);
+          return {
+            content: buf.toString("utf-8", 0, bytesRead),
+            startOffset: 0,
+            endOffset: end,
+            headReached: true,
+          };
+        }
         // Read one extra byte before the window: a newline there means the
-        // window already starts on a whole line. Otherwise the first line is
-        // a fragment (and may start with a broken multi-byte char) — drop
-        // everything up to the first newline so only whole ndjson lines
-        // remain.
-        const start = stat.size - maxBytes - 1;
-        const buf = Buffer.alloc(maxBytes + 1);
-        const { bytesRead } = await handle.read(buf, 0, maxBytes + 1, start);
+        // window already starts on a whole line, so keep it. Otherwise the
+        // first line is a fragment (and may start with a broken multi-byte
+        // char) — drop everything up to the first newline. Either way the
+        // returned startOffset is the byte the retained content begins at, so
+        // paging back from it includes any dropped line whole.
+        const length = end - rawStart;
+        const buf = Buffer.alloc(length + 1);
+        const { bytesRead } = await handle.read(
+          buf,
+          0,
+          length + 1,
+          rawStart - 1,
+        );
         const raw = buf.toString("utf-8", 1, bytesRead);
         if (buf[0] === 0x0a) {
-          return { content: raw, truncated: true };
+          return {
+            content: raw,
+            startOffset: rawStart,
+            endOffset: end,
+            headReached: false,
+          };
         }
         const nl = raw.indexOf("\n");
-        return { content: nl >= 0 ? raw.slice(nl + 1) : "", truncated: true };
+        const dropped = nl >= 0 ? nl + 1 : raw.length;
+        return {
+          content: raw.slice(dropped),
+          startOffset: rawStart + Buffer.byteLength(raw.slice(0, dropped)),
+          endOffset: end,
+          headReached: false,
+        };
       } finally {
         await handle.close();
       }

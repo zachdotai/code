@@ -711,8 +711,11 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
     },
     readLocalLogs: (taskRunId: string) =>
       ws.localLogs.read.query({ taskRunId }),
-    readLocalLogsTail: (taskRunId: string, maxBytes: number) =>
-      ws.localLogs.readTail.query({ taskRunId, maxBytes }),
+    readLocalLogsWindow: (
+      taskRunId: string,
+      endOffset: number | null,
+      maxBytes: number,
+    ) => ws.localLogs.readWindow.query({ taskRunId, endOffset, maxBytes }),
     writeLocalLogs: (taskRunId: string, content: string) =>
       ws.localLogs.write.mutate({ taskRunId, content }),
   };

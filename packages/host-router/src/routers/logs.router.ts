@@ -6,8 +6,8 @@ import {
   fetchS3LogsOutput,
   readLocalLogsInput,
   readLocalLogsOutput,
-  readLocalLogsTailInput,
-  readLocalLogsTailOutput,
+  readLocalLogsWindowInput,
+  readLocalLogsWindowOutput,
   writeLocalLogsInput,
 } from "@posthog/workspace-server/services/local-logs/schemas";
 
@@ -28,13 +28,13 @@ export const logsRouter = router({
         .readLocalLogs(input.taskRunId),
     ),
 
-  readLocalLogsTail: publicProcedure
-    .input(readLocalLogsTailInput)
-    .output(readLocalLogsTailOutput)
+  readLocalLogsWindow: publicProcedure
+    .input(readLocalLogsWindowInput)
+    .output(readLocalLogsWindowOutput)
     .query(({ ctx, input }) =>
       ctx.container
         .get<ILogsService>(LOGS_SERVICE)
-        .readLocalLogsTail(input.taskRunId, input.maxBytes),
+        .readLocalLogsWindow(input.taskRunId, input.endOffset, input.maxBytes),
     ),
 
   writeLocalLogs: publicProcedure
