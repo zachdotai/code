@@ -10,8 +10,14 @@ import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 function CustomizeNav() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // Explicit prefix checks (rather than `!isMcp`) so a future third sub-route
+  // doesn't light up the Skills item. The bare /website/customize index
+  // redirects to Skills, so it counts as Skills-active.
   const isMcp = pathname.startsWith("/website/customize/mcp-servers");
-  const isSkills = !isMcp;
+  const isSkills =
+    pathname.startsWith("/website/customize/skills") ||
+    pathname === "/website/customize" ||
+    pathname === "/website/customize/";
 
   return (
     <Flex

@@ -218,9 +218,19 @@ export function navigateToWebsiteAgents(): void {
 
 // Customize is a channels-only page: a secondary sidebar hosting Skills and MCP
 // servers. It replaces the old standalone /website/skills + /website/mcp-servers
-// mirrors.
+// mirrors. The bare entry lands on Skills (the index redirect); the two
+// sub-routes are addressable directly so separate nav items don't collapse onto
+// the same destination.
 export function navigateToWebsiteCustomize(): void {
   void getRouterOrNull()?.navigate({ to: "/website/customize" });
+}
+
+export function navigateToWebsiteCustomizeSkills(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/customize/skills" });
+}
+
+export function navigateToWebsiteCustomizeMcpServers(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/customize/mcp-servers" });
 }
 
 export function navigateToWebsiteCommandCenter(): void {

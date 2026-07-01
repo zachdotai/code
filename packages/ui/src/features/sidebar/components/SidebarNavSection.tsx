@@ -13,7 +13,8 @@ import {
   navigateToSkills,
   navigateToWebsiteAgents,
   navigateToWebsiteCommandCenter,
-  navigateToWebsiteCustomize,
+  navigateToWebsiteCustomizeMcpServers,
+  navigateToWebsiteCustomizeSkills,
   navigateToWebsiteHome,
   navigateToWebsiteInbox,
 } from "@posthog/ui/router/navigationBridge";
@@ -64,11 +65,14 @@ export function SidebarNavSection({
   const goHome = inChannels ? navigateToWebsiteHome : navigateToHome;
   const goInbox = inChannels ? navigateToWebsiteInbox : navigateToInbox;
   const goAgents = inChannels ? navigateToWebsiteAgents : navigateToAgents;
-  // Skills + MCP servers live in the channels-space Customize page; in Code they
+  // Skills + MCP servers live in the channels-space Customize page (each its own
+  // sub-route so they don't collapse onto the same destination); in Code they
   // are still their own top-level destinations.
-  const goSkills = inChannels ? navigateToWebsiteCustomize : navigateToSkills;
+  const goSkills = inChannels
+    ? navigateToWebsiteCustomizeSkills
+    : navigateToSkills;
   const goMcpServers = inChannels
-    ? navigateToWebsiteCustomize
+    ? navigateToWebsiteCustomizeMcpServers
     : navigateToMcpServers;
   const goCommandCenter = inChannels
     ? navigateToWebsiteCommandCenter

@@ -168,11 +168,13 @@ export type InboxDetailRoute =
  */
 export const INBOX_TAB_LIST_ROUTE = INBOX_TAB_LIST_ROUTE_BY_SPACE.code;
 
+const INBOX_TAB_FROM_PATH_RE = new RegExp(
+  `^/(?:code|website)/inbox/(${INBOX_TAB_KEYS.join("|")})`,
+);
+
 /** Which inbox tab a pathname is on, in either space. */
 export function inboxTabFromPath(pathname: string): InboxTabKey {
-  const match = pathname.match(
-    new RegExp(`^/(?:code|website)/inbox/(${INBOX_TAB_KEYS.join("|")})`),
-  );
+  const match = pathname.match(INBOX_TAB_FROM_PATH_RE);
   return (match?.[1] as InboxTabKey | undefined) ?? "pulls";
 }
 
