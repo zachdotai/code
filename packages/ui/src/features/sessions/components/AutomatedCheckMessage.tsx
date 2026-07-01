@@ -20,8 +20,21 @@ const LABEL_BY_KIND: Record<string, string> = {
   pr_ci_followup: "Automated CI check",
 };
 
+// Only treat genuine github.com PR URLs as linkable. `prUrl` arrives from the
+// backend `_meta` and the chip opens it via `window.open`, so validate the
+// origin here rather than trusting a bare `/pull/<n>` substring (which a URL
+// like `https://attacker.example.com/pull/42` would otherwise satisfy).
 function prNumberFromUrl(url: string): string | null {
-  const match = url.match(/\/pull\/(\d+)/);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== "github.com") {
+    return null;
+  }
+  const match = parsed.pathname.match(/^\/[^/]+\/[^/]+\/pull\/(\d+)/);
   return match ? `#${match[1]}` : null;
 }
 

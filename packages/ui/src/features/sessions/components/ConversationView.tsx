@@ -10,12 +10,12 @@ import {
 } from "@posthog/quill";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import { AutomatedCheckMessage } from "@posthog/ui/features/sessions/components/AutomatedCheckMessage";
 import type {
   ConversationItem,
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
-import { AutomatedCheckMessage } from "@posthog/ui/features/sessions/components/AutomatedCheckMessage";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";

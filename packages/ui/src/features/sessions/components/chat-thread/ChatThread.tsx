@@ -24,6 +24,7 @@ import {
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
+import { AutomatedCheckMessage } from "@posthog/ui/features/sessions/components/AutomatedCheckMessage";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ChatMarkdown } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
@@ -32,7 +33,6 @@ import {
   ToolGroup,
   type ToolGroupItem,
 } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
-import { AutomatedCheckMessage } from "@posthog/ui/features/sessions/components/AutomatedCheckMessage";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
