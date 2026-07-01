@@ -1,5 +1,6 @@
 import { HostTRPCProvider } from "@posthog/host-router/react";
 import { ThemeWrapper } from "@posthog/ui/primitives/ThemeWrapper";
+import { DiffWorkerPoolProvider } from "@posthog/ui/shell/DiffWorkerPoolProvider";
 import { WorkspaceClientProvider } from "@posthog/workspace-client/provider";
 import {
   hostTrpcClient,
@@ -114,7 +115,9 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({
             queryClient={queryClient}
           >
             <ConnectedWorkspaceProvider>
-              <ThemeWrapper>{children}</ThemeWrapper>
+              <ThemeWrapper>
+                <DiffWorkerPoolProvider>{children}</DiffWorkerPoolProvider>
+              </ThemeWrapper>
             </ConnectedWorkspaceProvider>
           </HostTRPCProvider>
         </TRPCProvider>
