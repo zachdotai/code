@@ -136,6 +136,19 @@
       }
     },
     {
+      // pi-ext is a foreign host (it boots into the pi harness, not PostHog
+      // Code's container). It runs in Node and is a small multi-file app, so it
+      // uses relative imports and node: built-ins like any other host entry.
+      "includes": ["apps/pi-ext/src/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    },
+    {
       // Disallow console.* in Code and agent source code - use logger instead
       "includes": [
         "apps/code/src/**/*.ts",
@@ -230,6 +243,40 @@
                       "!@posthog/shared/*"
                     ],
                     "message": "api-client must run in any JS environment."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      // signals-client is a portable facade over api-client + shared. It must run
+      // in any JS environment (it is bundled into the pi extension), so it may not
+      // reach for host transports or Node built-ins.
+      "includes": [
+        "packages/signals-client/src/**/*.ts",
+        "packages/signals-client/src/**/*.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "electron",
+                      "node:*",
+                      "@posthog/*",
+                      "!@posthog/shared",
+                      "!@posthog/shared/*",
+                      "!@posthog/api-client",
+                      "!@posthog/api-client/*"
+                    ],
+                    "message": "signals-client must run in any JS environment. Allowed @posthog deps: shared, api-client."
                   }
                 ]
               }

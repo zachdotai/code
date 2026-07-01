@@ -1,0 +1,7 @@
+{
+  "extends": "@posthog/tsconfig/node-package.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/**/*", "tsup.config.ts"]
+}
