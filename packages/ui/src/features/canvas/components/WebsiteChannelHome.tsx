@@ -1,10 +1,13 @@
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  CaretRightIcon,
-} from "@phosphor-icons/react";
+import { ArrowRightIcon, CaretRightIcon } from "@phosphor-icons/react";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
-import { cn } from "@posthog/quill";
+import {
+  cn,
+  Menubar,
+  MenubarContent,
+  MenubarItem,
+  MenubarMenu,
+  MenubarTrigger,
+} from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
@@ -36,7 +39,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Flex, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 const RECENT_TASK_LIMIT = 5;
 const PINNED_ARTIFACT_LIMIT = 5;
@@ -64,34 +67,27 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // the prompt box.
   const [composerEmpty, setComposerEmpty] = useState(true);
 
-  // Which category chip is expanded into its action list. `displayedCategoryId`
-  // lags `activeCategoryId` so the detail box keeps its contents through the
-  // fade-out when collapsing back to the chips.
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
-  const [displayedCategoryId, setDisplayedCategoryId] = useState<string | null>(
-    null,
-  );
-  useEffect(() => {
-    if (activeCategoryId) {
-      setDisplayedCategoryId(activeCategoryId);
-      return;
-    }
-    const id = setTimeout(() => setDisplayedCategoryId(null), 200);
-    return () => clearTimeout(id);
-  }, [activeCategoryId]);
-  const displayedCategory = CHANNEL_SUGGESTION_CATEGORIES.find(
-    (c) => c.id === displayedCategoryId,
-  );
+  // Anchor for the category menus: pointing each popup at the whole menu bar
+  // (rather than its own trigger) makes Base UI's --anchor-width the bar width,
+  // so the popup fills the bar.
+  const menuBarRef = useRef<HTMLDivElement>(null);
 
-  const selectCategory = useCallback(
-    (category: SuggestionCategory) => {
-      setActiveCategoryId(category.id);
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "select_suggestion_category",
-        surface: "channel_home",
-        channel_id: channelId,
-        category: category.id,
-      });
+  // Which category menu is open, if any. The menu bar stays put while a menu is
+  // open, but the recents below fade out so the options have the floor.
+  const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
+  const handleCategoryOpenChange = useCallback(
+    (category: SuggestionCategory, open: boolean) => {
+      setOpenCategoryId((prev) =>
+        open ? category.id : prev === category.id ? null : prev,
+      );
+      if (open) {
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: "select_suggestion_category",
+          surface: "channel_home",
+          channel_id: channelId,
+          category: category.id,
+        });
+      }
     },
     [channelId],
   );
@@ -164,8 +160,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           onTaskCreated={onTaskCreated}
         />
 
-        {/* Suggestions + recent/pinned glance. All fade out together while the
-            user is typing so the prompt box has the floor. */}
+        {/* Category menu bar + recent/pinned glance. Everything fades out while
+            the user is typing so the prompt box has the floor. */}
         <div
           className={cn(
             "transition-opacity duration-200",
@@ -174,54 +170,37 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           aria-hidden={!composerEmpty}
           inert={!composerEmpty || undefined}
         >
-          {/* The chips + recents and the expanded category box share this
-              space and crossfade: the chips view stays in flow (holding the
-              height) while the detail box overlays it. */}
-          <div className="relative">
-            <div
-              className={cn(
-                "flex flex-col gap-6 transition-opacity duration-200",
-                activeCategoryId && "pointer-events-none opacity-0",
-              )}
-              aria-hidden={!!activeCategoryId}
-              inert={!!activeCategoryId || undefined}
-            >
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {CHANNEL_SUGGESTION_CATEGORIES.map((category) => (
-                  <CategoryChip
-                    key={category.id}
-                    category={category}
-                    onClick={() => selectCategory(category)}
-                  />
-                ))}
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <RecentTasksColumn channelId={channelId} />
-                <PinnedArtifactsColumn channelId={channelId} />
-              </div>
-            </div>
-
-            <div
-              className={cn(
-                "absolute inset-0 transition-opacity duration-200",
-                activeCategoryId
-                  ? "opacity-100"
-                  : "pointer-events-none opacity-0",
-              )}
-              aria-hidden={!activeCategoryId}
-              inert={!activeCategoryId || undefined}
-            >
-              {displayedCategory ? (
-                <CategorySuggestions
-                  category={displayedCategory}
-                  onBack={() => setActiveCategoryId(null)}
+          {/* The bar is the anchor for every category popup: anchoring to it
+              (not the trigger) makes each popup fill the bar's width. */}
+          <div ref={menuBarRef} className="mx-auto my-4 w-fit">
+            <Menubar className="h-auto flex-wrap justify-center gap-2 border-0 bg-transparent p-0 shadow-none">
+              {CHANNEL_SUGGESTION_CATEGORIES.map((category) => (
+                <CategoryMenu
+                  key={category.id}
+                  category={category}
+                  anchor={menuBarRef}
+                  onOpenChange={(open) =>
+                    handleCategoryOpenChange(category, open)
+                  }
                   onSelect={(suggestion) =>
-                    applySuggestion(suggestion, displayedCategory.id)
+                    applySuggestion(suggestion, category.id)
                   }
                 />
-              ) : null}
-            </div>
+              ))}
+            </Menubar>
+          </div>
+
+          {/* Recents fade out while a category menu is open. */}
+          <div
+            className={cn(
+              "grid grid-cols-2 gap-6 transition-opacity duration-200",
+              openCategoryId && "pointer-events-none opacity-0",
+            )}
+            aria-hidden={!!openCategoryId}
+            inert={!!openCategoryId || undefined}
+          >
+            <RecentTasksColumn channelId={channelId} />
+            <PinnedArtifactsColumn channelId={channelId} />
           </div>
         </div>
       </div>
@@ -229,70 +208,55 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   );
 }
 
-// A category pill below the prompt box. Clicking it expands the category's
-// action list in place of the chips + recents.
-function CategoryChip({
+// One category in the menu bar: a chip-styled trigger, and a popup listing the
+// category's suggested actions. The popup is anchored to the whole bar so it
+// fills the bar's width (via Base UI's --anchor-width).
+function CategoryMenu({
   category,
-  onClick,
-}: {
-  category: SuggestionCategory;
-  onClick: () => void;
-}) {
-  const Icon = category.icon;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group inline-flex items-center gap-1.5 rounded-full border border-(--gray-a4) bg-(--color-panel-solid) px-3 py-1.5 font-medium text-[13px] text-gray-11 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,color] hover:border-(--chip-hover) hover:text-gray-12"
-      style={
-        { "--chip-hover": `var(--${category.color}-7)` } as React.CSSProperties
-      }
-    >
-      <Icon size={14} weight="duotone" color={`var(--${category.color}-9)`} />
-      {category.label}
-    </button>
-  );
-}
-
-// The expanded list for a category: a back button to collapse to the chips,
-// then one row per suggested action.
-function CategorySuggestions({
-  category,
-  onBack,
+  anchor,
+  onOpenChange,
   onSelect,
 }: {
   category: SuggestionCategory;
-  onBack: () => void;
+  anchor: React.RefObject<HTMLElement | null>;
+  onOpenChange: (open: boolean) => void;
   onSelect: (suggestion: SuggestedPrompt) => void;
 }) {
+  const Icon = category.icon;
   return (
-    <div className="flex flex-col gap-0.5 rounded-xl border border-(--gray-a3) bg-(--color-panel-solid) p-2 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)]">
-      <div className="mb-1 flex items-center gap-1.5 px-1">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to categories"
-          className="flex size-6 shrink-0 items-center justify-center rounded-md text-gray-10 transition-colors hover:bg-gray-3 hover:text-gray-12"
-        >
-          <ArrowLeftIcon size={14} />
-        </button>
-        <Text size="1" weight="medium" className="text-(--gray-11)">
-          {category.label}
-        </Text>
-      </div>
-      {category.suggestions.map((suggestion) => (
-        <SuggestionRow
-          key={suggestion.label}
-          suggestion={suggestion}
-          onSelect={() => onSelect(suggestion)}
-        />
-      ))}
-    </div>
+    <MenubarMenu onOpenChange={onOpenChange}>
+      <MenubarTrigger
+        className="inline-flex items-center gap-1.5 rounded-full border border-(--gray-a4) bg-(--color-panel-solid) px-3 py-1.5 font-medium text-[13px] text-gray-11 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,color] hover:border-(--chip-hover) hover:bg-(--color-panel-solid) hover:text-gray-12 aria-expanded:border-(--chip-hover) aria-expanded:bg-(--color-panel-solid) aria-expanded:text-gray-12"
+        style={
+          {
+            "--chip-hover": `var(--${category.color}-7)`,
+          } as React.CSSProperties
+        }
+      >
+        <Icon size={14} weight="duotone" color={`var(--${category.color}-9)`} />
+        {category.label}
+      </MenubarTrigger>
+      <MenubarContent
+        anchor={anchor}
+        align="start"
+        alignOffset={0}
+        sideOffset={8}
+        className="flex flex-col gap-0.5 p-2"
+      >
+        {category.suggestions.map((suggestion) => (
+          <SuggestionRow
+            key={suggestion.label}
+            suggestion={suggestion}
+            onSelect={() => onSelect(suggestion)}
+          />
+        ))}
+      </MenubarContent>
+    </MenubarMenu>
   );
 }
 
-// A single suggested action: icon badge, title, then the description as muted
-// text alongside it.
+// A single suggested action row: icon badge, title, then the description as
+// muted text alongside it. Selecting it drops the prompt into the composer.
 function SuggestionRow({
   suggestion,
   onSelect,
@@ -302,10 +266,9 @@ function SuggestionRow({
 }) {
   const Icon = suggestion.icon;
   return (
-    <button
-      type="button"
+    <MenubarItem
       onClick={onSelect}
-      className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-gray-3"
+      className="min-h-0 items-center gap-2.5 rounded-lg px-2 py-1.5"
     >
       <Flex
         align="center"
@@ -327,7 +290,7 @@ function SuggestionRow({
           {suggestion.description}
         </span>
       </span>
-    </button>
+    </MenubarItem>
   );
 }
 
