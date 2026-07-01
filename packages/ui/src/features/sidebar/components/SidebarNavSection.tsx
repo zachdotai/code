@@ -43,9 +43,9 @@ interface SidebarNavSectionProps {
 // The sidebar navigation section shared by the Code pane (above the task list)
 // and the Channels pane. It is fully self-contained — every item's active
 // state, badge count, and click handler is wired here — so it can be dropped
-// into either layout. In the Channels space, destinations with a /website
-// mirror (Home, Skills, MCP servers, Command Center) stay in that space;
-// Inbox, Agents and New task have no mirror yet and jump back to Code. Search
+// into either layout. In the Channels space every destination resolves to its
+// /website mirror (Skills + MCP servers via the Customize page) so navigating
+// stays in that space; in the Code space they use the canonical routes. Search
 // opens the command menu in place.
 export function SidebarNavSection({
   commandCenterActiveCount: providedActiveCount,
@@ -53,10 +53,9 @@ export function SidebarNavSection({
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
 
-  // When this section renders inside the Channels space, the destinations that
-  // have a /website mirror stay in that space; everything else (and the whole
-  // section in the Code space) uses the canonical routes. Inbox, Agents and New
-  // task have no mirror yet, so they intentionally jump back to Code.
+  // When this section renders inside the Channels space, every destination
+  // resolves to its /website mirror so navigating stays in that space; in the
+  // Code space they use the canonical routes.
   const inChannels = useRouterState({
     select: (s) => s.location.pathname.startsWith("/website"),
   });
