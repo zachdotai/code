@@ -11,10 +11,11 @@ import {
   navigateToInbox,
   navigateToMcpServers,
   navigateToSkills,
+  navigateToWebsiteAgents,
   navigateToWebsiteCommandCenter,
+  navigateToWebsiteCustomize,
   navigateToWebsiteHome,
-  navigateToWebsiteMcpServers,
-  navigateToWebsiteSkills,
+  navigateToWebsiteInbox,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -62,9 +63,13 @@ export function SidebarNavSection({
   const goNewTask = () =>
     openTaskInput(inChannels ? { space: "website" } : undefined);
   const goHome = inChannels ? navigateToWebsiteHome : navigateToHome;
-  const goSkills = inChannels ? navigateToWebsiteSkills : navigateToSkills;
+  const goInbox = inChannels ? navigateToWebsiteInbox : navigateToInbox;
+  const goAgents = inChannels ? navigateToWebsiteAgents : navigateToAgents;
+  // Skills + MCP servers live in the channels-space Customize page; in Code they
+  // are still their own top-level destinations.
+  const goSkills = inChannels ? navigateToWebsiteCustomize : navigateToSkills;
   const goMcpServers = inChannels
-    ? navigateToWebsiteMcpServers
+    ? navigateToWebsiteCustomize
     : navigateToMcpServers;
   const goCommandCenter = inChannels
     ? navigateToWebsiteCommandCenter
@@ -128,13 +133,13 @@ export function SidebarNavSection({
       <Box>
         <InboxItem
           isActive={isInboxActive}
-          onClick={navigateToInbox}
+          onClick={goInbox}
           pullRequestCount={inboxPullRequestCount}
         />
       </Box>
 
       <Box>
-        <AgentsItem isActive={isAgentsActive} onClick={navigateToAgents} />
+        <AgentsItem isActive={isAgentsActive} onClick={goAgents} />
       </Box>
 
       <Box>

@@ -11,6 +11,7 @@ import { AlertDialog, Flex, Popover, Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useAgentRevisionLifecycle } from "../hooks/useAgentRevisionLifecycle";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 import { useCreateAgentDraftFromRevision } from "../hooks/useCreateAgentDraftFromRevision";
 import { revisionStateColor } from "../utils/format";
 
@@ -108,6 +109,7 @@ export function AgentRevisionBar({
   const lifecycle = useAgentRevisionLifecycle(idOrSlug);
   const cloneToDraft = useCreateAgentDraftFromRevision(idOrSlug, agent.id);
   const navigate = useNavigate();
+  const routes = useAgentsRoutes();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [filters, setFilters] = useState<Set<AgentRevisionState>>(
     () => new Set<AgentRevisionState>(["live", "ready", "draft"]),
@@ -262,7 +264,7 @@ export function AgentRevisionBar({
             color="gray"
             onClick={() =>
               navigate({
-                to: "/code/agents/applications/$idOrSlug/chat",
+                to: routes.chat,
                 params: { idOrSlug },
                 search: { revision: selected.id },
               })

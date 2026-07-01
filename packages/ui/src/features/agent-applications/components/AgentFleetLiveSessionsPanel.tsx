@@ -11,6 +11,7 @@ import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useAgentApplications } from "../hooks/useAgentApplications";
 import { useAgentFleetLiveSessions } from "../hooks/useAgentFleetLiveSessions";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 import { sessionStateColor } from "../utils/format";
 import { RefreshIndicator } from "./RefreshIndicator";
 
@@ -101,9 +102,10 @@ function LiveSessionRow({
   const idOrSlug =
     application?.slug ?? application?.id ?? session.application_id;
   const trigger = triggerLabel(session.trigger_metadata);
+  const routes = useAgentsRoutes();
   return (
     <Link
-      to="/code/agents/applications/$idOrSlug/sessions/$sessionId"
+      to={routes.sessionDetail}
       params={{ idOrSlug, sessionId: session.id }}
       className="flex items-center justify-between gap-3 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3 no-underline transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
     >

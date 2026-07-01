@@ -12,6 +12,7 @@ import { useMemo } from "react";
 import { useSetAgentBuilderPage } from "../agent-builder/useSetAgentBuilderPage";
 import { useAgentApplications } from "../hooks/useAgentApplications";
 import { useAgentFleetApprovals } from "../hooks/useAgentFleetApprovals";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 import { approvalStateColor, approvalStateLabel } from "../utils/format";
 import { AgentApprovalDetail } from "./AgentApprovalDetail";
 import { AgentDetailEmptyState } from "./AgentDetailLayout";
@@ -40,6 +41,7 @@ export function AgentFleetApprovalsPane({
   const { data, isLoading, isError, isFetching, dataUpdatedAt, refetch } =
     useAgentFleetApprovals(filter === "all" ? undefined : { state: filter });
   const { data: applications } = useAgentApplications();
+  const routes = useAgentsRoutes();
 
   const approvals = useMemo(() => data ?? [], [data]);
   const appsById = useMemo(() => {
@@ -145,7 +147,7 @@ export function AgentFleetApprovalsPane({
         className="shrink-0 cursor-default select-none border-(--gray-5) border-b px-6 pt-5"
       >
         <Link
-          to="/code/agents/applications"
+          to={routes.applications}
           className="flex w-fit items-center gap-1.5 text-[12px] text-gray-11 no-underline hover:text-gray-12"
         >
           <ArrowLeftIcon size={13} />

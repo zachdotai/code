@@ -21,7 +21,7 @@ import {
   goBackInHistory,
   goForwardInHistory,
   navigateToFolderSettings,
-  navigateToInbox,
+  navigateToInboxInCurrentSpace,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -170,7 +170,7 @@ export function GlobalEventHandlers({
   useHotkeys(SHORTCUTS.TOGGLE_LEFT_SIDEBAR, toggleLeftSidebar, globalOptions);
   useHotkeys(SHORTCUTS.TOGGLE_REVIEW_PANEL, handleToggleReview, globalOptions);
   useHotkeys(SHORTCUTS.SHORTCUTS_SHEET, onToggleShortcutsSheet, globalOptions);
-  useHotkeys(SHORTCUTS.INBOX, navigateToInbox, globalOptions);
+  useHotkeys(SHORTCUTS.INBOX, navigateToInboxInCurrentSpace, globalOptions);
   useHotkeys(SHORTCUTS.PREV_TASK, handlePrevTask, globalOptions, [
     handlePrevTask,
   ]);

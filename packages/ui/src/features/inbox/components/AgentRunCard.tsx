@@ -14,6 +14,7 @@ import {
 import { InboxMetaSourceStack } from "@posthog/ui/features/inbox/components/InboxMetaSourceStack";
 import { InboxBadge } from "@posthog/ui/features/inbox/components/utils/InboxBadge";
 import { hasKnownSourceProduct } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
+import { useInboxRoutes } from "@posthog/ui/features/inbox/hooks/useInboxSpace";
 import { Flex, Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -102,6 +103,7 @@ interface AgentRunCardProps {
 
 export function AgentRunCard({ report }: AgentRunCardProps) {
   const navigate = useNavigate();
+  const { detail } = useInboxRoutes();
   const hasSource = hasKnownSourceProduct(report.source_products);
   const runId = `…-${report.id.split("-").pop() ?? report.id}`;
   const variant = resolveRunVariant(report);
@@ -114,7 +116,7 @@ export function AgentRunCard({ report }: AgentRunCardProps) {
       type="button"
       onClick={() =>
         navigate({
-          to: "/code/inbox/runs/$reportId",
+          to: detail.runs,
           params: { reportId: report.id },
         })
       }

@@ -66,8 +66,12 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/website/home":
       return { type: "home" };
     case "/code/inbox":
+    // Channels-space inbox mirror — same view type so the sidebar highlights
+    // the Inbox item identically in either space.
+    case "/website/inbox":
       return { type: "inbox" };
     case "/code/agents":
+    case "/website/agents":
       return { type: "agents" };
     case "/code/archived":
       return { type: "archived" };
@@ -75,22 +79,30 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/website/command-center":
       return { type: "command-center" };
     case "/skills":
-    case "/website/skills":
+    // Channels-space Skills now lives inside the Customize page's secondary nav.
+    case "/website/customize/skills":
       return { type: "skills" };
     case "/mcp-servers":
-    case "/website/mcp-servers":
+    case "/website/customize/mcp-servers":
       return { type: "mcp-servers" };
     case "/settings/$category":
     case "/settings/":
       return { type: "settings" };
     default:
-      if (last.routeId.startsWith("/code/inbox")) {
+      if (
+        last.routeId.startsWith("/code/inbox") ||
+        last.routeId.startsWith("/website/inbox")
+      ) {
         return { type: "inbox" };
       }
       // /code/agents is now an Outlet layout; the view lives at the index
       // child (/code/agents/) and scout detail routes nest deeper, so match
-      // the whole subtree rather than only the bare layout route.
-      if (last.routeId.startsWith("/code/agents")) {
+      // the whole subtree rather than only the bare layout route. Same for the
+      // /website/agents channels-space mirror.
+      if (
+        last.routeId.startsWith("/code/agents") ||
+        last.routeId.startsWith("/website/agents")
+      ) {
         return { type: "agents" };
       }
       return { type: "task-input" };

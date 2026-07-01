@@ -1,30 +1,33 @@
 import {
-  BrainIcon,
   GearSixIcon,
   HouseIcon,
-  RobotIcon,
+  SlidersHorizontalIcon,
   SquaresFourIcon,
-  TrayIcon,
 } from "@phosphor-icons/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { AgentsItem } from "@posthog/ui/features/sidebar/components/items/AgentsItem";
+import { InboxItem } from "@posthog/ui/features/sidebar/components/items/InboxItem";
+import { SearchItem } from "@posthog/ui/features/sidebar/components/items/SearchItem";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import {
-  navigateToAgents,
   navigateToCanvas,
-  navigateToInbox,
-  navigateToSkills,
+  navigateToWebsiteAgents,
+  navigateToWebsiteCustomize,
   navigateToWebsiteHome,
+  navigateToWebsiteInbox,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
+import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
 
@@ -38,35 +41,37 @@ function trackNav(navTarget: string, navigate: () => void) {
   navigate();
 }
 
-// Non-canvas /website mirrors (Home, Files, etc.) — used to tell whether the
-// current /website route is a canvas surface (channels index / a channel / a
-// dashboard) so the Canvas nav item highlights only there.
+// Non-canvas /website surfaces — used to tell whether the current /website route
+// is a canvas surface (channels index / a channel / a dashboard) so the Canvas
+// nav item highlights only there.
 const NON_CANVAS_WEBSITE_PREFIXES = [
   "/website/home",
-  "/website/skills",
-  "/website/mcp-servers",
+  "/website/inbox",
+  "/website/agents",
+  "/website/customize",
   "/website/command-center",
 ];
 
-// The global nav brought over from the Code app — a single icon+label row each,
-// no rail. Home points at the /website/home mirror so it stays in the Channels
-// space (same shared HomeView, channels chrome kept); the other rows are
-// app-wide destinations that leave the Channels space for the Code view. The
-// channel tree below is channel browsing.
+// The channels-space global nav. It mirrors the Code view's top items —
+// Search, Inbox, Agents — but every destination stays inside the Channels
+// space (the /website mirrors) so navigating never bounces back to /code. Order:
+// Home · Search · Inbox · Canvas · Agents · Customize. The channel tree below is
+// channel browsing.
 function ChannelsNav() {
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
+  const openCommandMenu = useCommandMenuStore((s) => s.open);
+  // Same PR-review count the Code view's Inbox item shows; `ignoreFilters` keeps
+  // the badge stable against the inbox's filter chrome.
+  const { counts: inboxCounts } = useInboxAllReports({ ignoreFilters: true });
   // Active on the canvas surfaces: the channels index, a channel, or a canvas —
-  // any /website route that isn't one of the cross-app mirrors above.
-  const isCanvasActive = useRouterState({
-    select: (s) => {
-      const path = s.location.pathname;
-      return (
-        path.startsWith("/website") &&
-        !NON_CANVAS_WEBSITE_PREFIXES.some((p) => path.startsWith(p))
-      );
-    },
-  });
+  // any /website route that isn't one of the non-canvas surfaces above.
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const isCanvasActive =
+    path.startsWith("/website") &&
+    !NON_CANVAS_WEBSITE_PREFIXES.some((p) => path.startsWith(p));
+  const isCustomizeActive = path.startsWith("/website/customize");
+
   return (
     <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
       {homeTabEnabled && (
@@ -83,17 +88,11 @@ function ChannelsNav() {
           onClick={() => trackNav("home", navigateToWebsiteHome)}
         />
       )}
-      <SidebarItem
-        depth={0}
-        icon={
-          <TrayIcon
-            size={16}
-            weight={view.type === "inbox" ? "fill" : "regular"}
-          />
-        }
-        label="Global Inbox"
+      <SearchItem onClick={() => trackNav("search", openCommandMenu)} />
+      <InboxItem
         isActive={view.type === "inbox"}
-        onClick={() => trackNav("inbox", navigateToInbox)}
+        onClick={() => trackNav("inbox", navigateToWebsiteInbox)}
+        pullRequestCount={inboxCounts.pulls}
       />
       <SidebarItem
         depth={0}
@@ -107,29 +106,21 @@ function ChannelsNav() {
         isActive={isCanvasActive}
         onClick={() => trackNav("canvas", navigateToCanvas)}
       />
-      <SidebarItem
-        depth={0}
-        icon={
-          <RobotIcon
-            size={16}
-            weight={view.type === "agents" ? "fill" : "regular"}
-          />
-        }
-        label="Agents"
+      <AgentsItem
         isActive={view.type === "agents"}
-        onClick={() => trackNav("agents", navigateToAgents)}
+        onClick={() => trackNav("agents", navigateToWebsiteAgents)}
       />
       <SidebarItem
         depth={0}
         icon={
-          <BrainIcon
+          <SlidersHorizontalIcon
             size={16}
-            weight={view.type === "skills" ? "fill" : "regular"}
+            weight={isCustomizeActive ? "fill" : "regular"}
           />
         }
-        label="Files"
-        isActive={view.type === "skills"}
-        onClick={() => trackNav("files", navigateToSkills)}
+        label="Customize"
+        isActive={isCustomizeActive}
+        onClick={() => trackNav("customize", navigateToWebsiteCustomize)}
       />
     </Flex>
   );

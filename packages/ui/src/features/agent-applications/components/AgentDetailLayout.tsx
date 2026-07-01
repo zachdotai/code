@@ -1,4 +1,5 @@
 import { ArrowLeftIcon, RobotIcon } from "@phosphor-icons/react";
+import type { AgentsRouteKey } from "@posthog/core/agents/agentsRoutes";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Flex, Text } from "@radix-ui/themes";
@@ -8,6 +9,7 @@ import { AgentBuilderHeaderControls } from "../agent-builder/AgentBuilderHeaderC
 import type { AgentBuilderPageContext } from "../agent-builder/agentBuilderStore";
 import { useSetAgentBuilderPage } from "../agent-builder/useSetAgentBuilderPage";
 import { useAgentApplication } from "../hooks/useAgentApplication";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 
 /** Map a detail sub-tab to the agent builder page context for this agent. */
 function tabToAgentBuilderPage(
@@ -42,48 +44,19 @@ export type AgentDetailTab =
   | "approvals"
   | "observability";
 
-const TABS: { id: AgentDetailTab; label: string; to: string }[] = [
-  {
-    id: "overview",
-    label: "Overview",
-    to: "/code/agents/applications/$idOrSlug",
-  },
-  {
-    id: "configuration",
-    label: "Configuration",
-    to: "/code/agents/applications/$idOrSlug/configuration",
-  },
-  {
-    id: "sessions",
-    label: "Sessions",
-    to: "/code/agents/applications/$idOrSlug/sessions",
-  },
-  {
-    id: "users",
-    label: "Users",
-    to: "/code/agents/applications/$idOrSlug/users",
-  },
-  {
-    id: "memory",
-    label: "Memory",
-    to: "/code/agents/applications/$idOrSlug/memory",
-  },
-  {
-    id: "approvals",
-    label: "Approvals",
-    to: "/code/agents/applications/$idOrSlug/approvals",
-  },
-  {
-    id: "observability",
-    label: "Observability",
-    to: "/code/agents/applications/$idOrSlug/observability",
-  },
-  {
-    id: "chat",
-    label: "Chat",
-    to: "/code/agents/applications/$idOrSlug/chat",
-  },
-];
+// `routeKey` indexes the space-aware route map (see useAgentsRoutes), so the
+// sub-tab bar stays in whichever space (/code or /website) the agent opened in.
+const TABS: { id: AgentDetailTab; label: string; routeKey: AgentsRouteKey }[] =
+  [
+    { id: "overview", label: "Overview", routeKey: "application" },
+    { id: "configuration", label: "Configuration", routeKey: "configuration" },
+    { id: "sessions", label: "Sessions", routeKey: "sessions" },
+    { id: "users", label: "Users", routeKey: "users" },
+    { id: "memory", label: "Memory", routeKey: "memory" },
+    { id: "approvals", label: "Approvals", routeKey: "approvals" },
+    { id: "observability", label: "Observability", routeKey: "observability" },
+    { id: "chat", label: "Chat", routeKey: "chat" },
+  ];
 
 /**
  * Shared chrome for a single agent's detail panes: back link, title + state
@@ -134,6 +107,7 @@ export function AgentDetailLayout({
   useSetHeaderContent(headerContent);
   const pageContext = tabToAgentBuilderPage(activeTab, idOrSlug);
   useSetAgentBuilderPage(pageContext);
+  const routes = useAgentsRoutes();
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -144,7 +118,7 @@ export function AgentDetailLayout({
       >
         <AgentBuilderHeaderControls />
         <Link
-          to="/code/agents/applications"
+          to={routes.applications}
           className="flex w-fit items-center gap-1.5 text-[12px] text-gray-11 no-underline hover:text-gray-12"
         >
           <ArrowLeftIcon size={13} />
@@ -178,7 +152,7 @@ export function AgentDetailLayout({
             {TABS.map((tab) => (
               <Link
                 key={tab.id}
-                to={tab.to}
+                to={routes[tab.routeKey]}
                 params={{ idOrSlug }}
                 className={`shrink-0 whitespace-nowrap border-b-2 px-3 pb-2.5 text-[12.5px] no-underline ${
                   tab.id === activeTab

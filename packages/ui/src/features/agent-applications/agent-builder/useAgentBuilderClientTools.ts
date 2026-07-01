@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useRef } from "react";
 import type { ClientToolHandler } from "../hooks/useAgentChat";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 import { useAgentBuilderStore } from "./agentBuilderStore";
 
 /**
@@ -33,6 +34,7 @@ export const AGENT_BUILDER_CLIENT_TOOLS = [
  */
 export function useAgentBuilderClientTools(): ClientToolHandler {
   const navigate = useNavigate();
+  const routes = useAgentsRoutes();
   const followMode = useAgentBuilderStore((s) => s.followMode);
   const setPendingSecret = useAgentBuilderStore((s) => s.setPendingSecret);
   const setPendingMcpConnect = useAgentBuilderStore(
@@ -115,66 +117,45 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
           const tab = str(args.tab) ?? "overview";
           switch (tab) {
             case "configuration":
-              navigate({
-                to: "/code/agents/applications/$idOrSlug/configuration",
-                params,
-              });
+              navigate({ to: routes.configuration, params });
               break;
             case "sessions":
-              navigate({
-                to: "/code/agents/applications/$idOrSlug/sessions",
-                params,
-              });
+              navigate({ to: routes.sessions, params });
               break;
             case "memory":
-              navigate({
-                to: "/code/agents/applications/$idOrSlug/memory",
-                params,
-              });
+              navigate({ to: routes.memory, params });
               break;
             case "approvals":
-              navigate({
-                to: "/code/agents/applications/$idOrSlug/approvals",
-                params,
-              });
+              navigate({ to: routes.approvals, params });
               break;
             case "observability":
-              navigate({
-                to: "/code/agents/applications/$idOrSlug/observability",
-                params,
-              });
+              navigate({ to: routes.observability, params });
               break;
             case "chat":
-              navigate({
-                to: "/code/agents/applications/$idOrSlug/chat",
-                params,
-              });
+              navigate({ to: routes.chat, params });
               break;
             default:
-              navigate({
-                to: "/code/agents/applications/$idOrSlug",
-                params,
-              });
+              navigate({ to: routes.application, params });
           }
           return { result: { focused: true } };
         }
         case "focus_file":
           navigate({
-            to: "/code/agents/applications/$idOrSlug/configuration",
+            to: routes.configuration,
             params,
             search: { node: str(args.path) },
           });
           return { result: { focused: true } };
         case "focus_spec_section":
           navigate({
-            to: "/code/agents/applications/$idOrSlug/configuration",
+            to: routes.configuration,
             params,
             search: { node: str(args.section) },
           });
           return { result: { focused: true } };
         case "focus_revision":
           navigate({
-            to: "/code/agents/applications/$idOrSlug/configuration",
+            to: routes.configuration,
             params,
             search: { revision: str(args.revisionId) },
           });
@@ -185,7 +166,7 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
             return { result: { focused: false, reason: "missing_session_id" } };
           }
           navigate({
-            to: "/code/agents/applications/$idOrSlug/sessions/$sessionId",
+            to: routes.sessionDetail,
             params: { idOrSlug: slug, sessionId },
           });
           return { result: { focused: true } };
@@ -194,6 +175,6 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
           return { result: { focused: false, reason: "unknown_focus_target" } };
       }
     },
-    [navigate, setPendingSecret, setPendingMcpConnect],
+    [navigate, setPendingSecret, setPendingMcpConnect, routes],
   );
 }

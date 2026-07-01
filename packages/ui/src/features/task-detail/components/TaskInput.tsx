@@ -6,7 +6,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
-import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
+import { navigateToInboxInCurrentSpace } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
@@ -246,7 +246,7 @@ export function TaskInput({
 
   const handleOpenAssociatedReport = useCallback(() => {
     if (!activeReportAssociation) return;
-    navigateToInbox();
+    navigateToInboxInCurrentSpace();
     setSelectedReportIds([activeReportAssociation.reportId]);
   }, [activeReportAssociation, setSelectedReportIds]);
 

@@ -9,6 +9,7 @@ import type {
   AgentAnalyticsAgentRow,
   AgentApplication,
 } from "@posthog/shared/agent-platform-types";
+import { useAgentsRoutes } from "@posthog/ui/features/agent-applications/hooks/useAgentsRoutes";
 import { AgentsTabLayout } from "@posthog/ui/features/agents/components/AgentsTabLayout";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
@@ -277,9 +278,10 @@ function ApplicationRow({
   stats?: AgentAnalyticsAgentRow;
 }) {
   const isLive = application.live_revision != null;
+  const routes = useAgentsRoutes();
   return (
     <Link
-      to="/code/agents/applications/$idOrSlug"
+      to={routes.application}
       params={{ idOrSlug: application.slug ?? application.id }}
       className="flex items-center justify-between gap-3 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5 no-underline transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
     >
@@ -356,10 +358,11 @@ function RowStat({
  */
 function OperationalStrip({ pendingCount }: { pendingCount: number }) {
   const pendingAttention = pendingCount > 0;
+  const routes = useAgentsRoutes();
   return (
     <Flex align="center" gap="5" className="text-[12.5px]">
       <Link
-        to="/code/agents/applications/approvals"
+        to={routes.fleetApprovals}
         className="inline-flex items-center gap-1 text-gray-11 no-underline hover:text-gray-12"
       >
         <LockKeyIcon

@@ -13,6 +13,7 @@ import {
 import { buildScoutCheckinPrompt } from "@posthog/core/scouts/scoutPrompts";
 import type { ScoutSurface } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { useAgentsRoutes } from "@posthog/ui/features/agent-applications/hooks/useAgentsRoutes";
 import { track } from "@posthog/ui/shell/analytics";
 import { skillUrl } from "@posthog/ui/utils/posthogLinks";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
@@ -41,6 +42,7 @@ export function ScoutRowCard({
   linkToDetail?: boolean;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const routes = useAgentsRoutes();
   const cloudSkillUrl = skillUrl(config.skill_name);
   const surface: ScoutSurface = linkToDetail ? "fleet_list" : "scout_detail";
 
@@ -69,7 +71,7 @@ export function ScoutRowCard({
         <Flex align="center" gap="2" className="min-w-0 flex-1">
           {linkToDetail ? (
             <Link
-              to="/code/agents/scouts/$skillName"
+              to={routes.scoutDetail}
               params={{ skillName: scoutSkillSlug(config.skill_name) }}
               className={`flex min-w-0 items-center gap-2 no-underline ${
                 settingsOpen ? "" : "after:absolute after:inset-0"

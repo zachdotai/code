@@ -1,4 +1,5 @@
 import type { IconProps } from "@phosphor-icons/react";
+import type { InboxTabKey } from "@posthog/core/inbox/reportMembership";
 import type { SignalReport } from "@posthog/shared/types";
 import { DetailSection } from "@posthog/ui/features/inbox/components/DetailSection";
 import { InboxDetailPageHeader } from "@posthog/ui/features/inbox/components/InboxDetailPageHeader";
@@ -20,14 +21,15 @@ import { SignalReportSummaryMarkdown } from "@posthog/ui/features/inbox/componen
 import { hasKnownSourceProduct } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { useInboxReportDismissAction } from "@posthog/ui/features/inbox/hooks/useInboxReportDismissAction";
 import { useInboxReportSignals } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useInboxRoutes } from "@posthog/ui/features/inbox/hooks/useInboxSpace";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { Flex, Text } from "@radix-ui/themes";
 import type { ComponentType, ReactNode } from "react";
 
 interface InboxDetailFrameProps {
   report: SignalReport;
-  /** List route for the back-link (e.g. "/code/inbox/pulls"). */
-  backTo: "/code/inbox/pulls" | "/code/inbox/reports" | "/code/inbox/dismissed";
+  /** The list tab to return to; resolved to the active space's route. */
+  backTab: Extract<InboxTabKey, "pulls" | "reports" | "dismissed">;
   backLabel: string;
   /**
    * Whether to render the Dismiss button + dialog. Off for already-dismissed
@@ -68,7 +70,7 @@ interface InboxDetailFrameProps {
  */
 export function InboxDetailFrame({
   report,
-  backTo,
+  backTab,
   backLabel,
   fallbackTitle,
   breadcrumb,
@@ -80,6 +82,8 @@ export function InboxDetailFrame({
   showDismiss = true,
   children,
 }: InboxDetailFrameProps) {
+  const { list } = useInboxRoutes();
+  const backTo = list[backTab];
   const { data: signalsResp } = useInboxReportSignals(report.id);
   const signals = signalsResp?.signals ?? [];
   const signalsLoaded = signalsResp !== undefined;

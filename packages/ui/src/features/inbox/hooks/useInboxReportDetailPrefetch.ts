@@ -1,26 +1,15 @@
 import { seedInboxReportDetailCache } from "@posthog/core/inbox/inboxQuery";
+import type { InboxDetailRoute as InboxDetailRoutePath } from "@posthog/core/inbox/reportMembership";
 import type { SignalReport } from "@posthog/shared/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 
-export type InboxDetailRoute =
-  | {
-      to: "/code/inbox/pulls/$reportId";
-      params: { reportId: string };
-    }
-  | {
-      to: "/code/inbox/reports/$reportId";
-      params: { reportId: string };
-    }
-  | {
-      to: "/code/inbox/runs/$reportId";
-      params: { reportId: string };
-    }
-  | {
-      to: "/code/inbox/dismissed/$reportId";
-      params: { reportId: string };
-    };
+/** A detail-route target (`<root>/<tab>/$reportId`, either space) + its params. */
+export interface InboxDetailRoute {
+  to: InboxDetailRoutePath;
+  params: { reportId: string };
+}
 
 /**
  * `<Link preload="intent">` already triggers route preload on hover/focus, so we

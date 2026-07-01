@@ -1,12 +1,13 @@
 import {
   INBOX_TAB_KEYS,
   INBOX_TAB_LABEL,
-  INBOX_TAB_LIST_ROUTE,
   type InboxTabCounts,
   type InboxTabKey,
+  inboxTabFromPath,
 } from "@posthog/core/inbox/reportMembership";
 import { Tabs, TabsList, TabsTrigger } from "@posthog/quill";
 import { InboxScopeSelect } from "@posthog/ui/features/inbox/components/InboxScopeSelect";
+import { useInboxRoutes } from "@posthog/ui/features/inbox/hooks/useInboxSpace";
 import { Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
@@ -14,17 +15,11 @@ interface InboxTabBarProps {
   counts: InboxTabCounts;
 }
 
-function activeTabFromPath(pathname: string): InboxTabKey {
-  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.reports)) return "reports";
-  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.runs)) return "runs";
-  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.dismissed)) return "dismissed";
-  return "pulls";
-}
-
 export function InboxTabBar({ counts }: InboxTabBarProps) {
   const navigate = useNavigate();
+  const { list } = useInboxRoutes();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const activeKey = activeTabFromPath(pathname);
+  const activeKey = inboxTabFromPath(pathname);
 
   return (
     <Flex align="center" justify="between" className="min-w-0">
@@ -32,7 +27,7 @@ export function InboxTabBar({ counts }: InboxTabBarProps) {
         value={activeKey}
         onValueChange={(value: string) => {
           const key = value as InboxTabKey;
-          navigate({ to: INBOX_TAB_LIST_ROUTE[key] });
+          navigate({ to: list[key] });
         }}
       >
         <TabsList

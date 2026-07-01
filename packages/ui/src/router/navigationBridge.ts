@@ -1,3 +1,4 @@
+import { inboxSpaceFromPath } from "@posthog/core/inbox/reportMembership";
 import type { NotificationTarget } from "@posthog/platform/notifications";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
@@ -108,6 +109,18 @@ export function navigateToInbox(): void {
   void getRouterOrNull()?.navigate({ to: "/code/inbox" });
 }
 
+// Space-aware inbox open: from a /website route this opens the channels-space
+// inbox so the user stays in their space; everywhere else it opens /code/inbox.
+// Used by the Cmd+I shortcut and the "open associated report" action.
+export function navigateToInboxInCurrentSpace(): void {
+  const pathname = getCurrentLocation()?.pathname ?? "";
+  if (inboxSpaceFromPath(pathname) === "website") {
+    navigateToWebsiteInbox();
+  } else {
+    navigateToInbox();
+  }
+}
+
 export function navigateToInboxPullRequestDetail(reportId: string): void {
   void getRouterOrNull()?.navigate({
     to: "/code/inbox/pulls/$reportId",
@@ -192,12 +205,22 @@ export function navigateToCanvas(): void {
   void getRouterOrNull()?.navigate({ to: "/website" });
 }
 
-export function navigateToWebsiteSkills(): void {
-  void getRouterOrNull()?.navigate({ to: "/website/skills" });
+// The Channels-space inbox + agents mirrors. Same shared views as /code/inbox
+// and /code/agents, but their internal navigation is space-aware so staying
+// under /website keeps the channels chrome.
+export function navigateToWebsiteInbox(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/inbox" });
 }
 
-export function navigateToWebsiteMcpServers(): void {
-  void getRouterOrNull()?.navigate({ to: "/website/mcp-servers" });
+export function navigateToWebsiteAgents(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/agents" });
+}
+
+// Customize is a channels-only page: a secondary sidebar hosting Skills and MCP
+// servers. It replaces the old standalone /website/skills + /website/mcp-servers
+// mirrors.
+export function navigateToWebsiteCustomize(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/customize" });
 }
 
 export function navigateToWebsiteCommandCenter(): void {

@@ -9,6 +9,7 @@ import type { SignalReport } from "@posthog/shared/types";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
 import { useInboxRestoreReport } from "@posthog/ui/features/inbox/hooks/useInboxRestoreReport";
+import { useInboxRoutes } from "@posthog/ui/features/inbox/hooks/useInboxSpace";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { Spinner } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
@@ -39,7 +40,7 @@ export function DismissedReportDetail({
     <InboxReportDetailGate
       reportId={reportId}
       cachedReport={cachedReport}
-      backTo="/code/inbox/dismissed"
+      backTab="dismissed"
       backLabel="Back to archive"
       missingCopy="This report couldn't be found. It may have been deleted."
     >
@@ -55,7 +56,7 @@ function DismissedReportDetailContent({ report }: { report: SignalReport }) {
   return (
     <InboxDetailFrame
       report={report}
-      backTo="/code/inbox/dismissed"
+      backTab="dismissed"
       backLabel="Back to archive"
       fallbackTitle="Untitled report"
       showDismiss={false}
@@ -82,6 +83,7 @@ function DismissedReportDetailContent({ report }: { report: SignalReport }) {
 function RestoreReportButton({ report }: { report: SignalReport }) {
   const restore = useInboxRestoreReport();
   const navigate = useNavigate();
+  const { list } = useInboxRoutes();
 
   return (
     <Button
@@ -93,7 +95,7 @@ function RestoreReportButton({ report }: { report: SignalReport }) {
       title="Restore this report to the inbox"
       onClick={() =>
         restore.mutate(report.id, {
-          onSuccess: () => navigate({ to: "/code/inbox/dismissed" }),
+          onSuccess: () => navigate({ to: list.dismissed }),
         })
       }
     >

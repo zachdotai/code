@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentApplicationSessions } from "../hooks/useAgentApplicationSessions";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 import { AgentAnalyticsKpiStrip } from "./AgentAnalyticsView";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { AgentSessionRow } from "./AgentSessionRow";
@@ -24,6 +25,7 @@ export function AgentApplicationDetailView({ idOrSlug }: { idOrSlug: string }) {
     isLoading: sessionsLoading,
     isError: sessionsError,
   } = useAgentApplicationSessions(idOrSlug, { limit: 25 });
+  const routes = useAgentsRoutes();
 
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="overview">
@@ -34,7 +36,7 @@ export function AgentApplicationDetailView({ idOrSlug }: { idOrSlug: string }) {
               Activity · last 7 days
             </Text>
             <Link
-              to="/code/agents/applications/$idOrSlug/observability"
+              to={routes.observability}
               params={{ idOrSlug }}
               className="text-[12px] text-gray-11 no-underline hover:text-gray-12"
             >

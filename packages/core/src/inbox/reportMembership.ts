@@ -99,25 +99,85 @@ export const INBOX_TAB_LABEL: Record<InboxTabKey, string> = {
 };
 
 /**
- * Canonical inbox tab list routes. Use these constants instead of hard-coding
- * `/code/inbox/pulls` etc., so renames stay in one place.
- *
- * Detail routes (`/code/inbox/<tab>/$reportId`) stay as TanStack Router
- * literals at call sites – TanStack's typed-link API needs them as literal
- * strings to infer params.
+ * The two navigation spaces that host the inbox. The inbox subtree is mounted
+ * under both `/code/inbox/*` (the Code view) and `/website/inbox/*` (the
+ * Channels / Bluebird view) — sharing the same view components. Internal
+ * navigation (tabs, cards, back-links, redirects) resolves routes through the
+ * per-space maps below so it never jumps the user out of the space they're in.
  */
-export const INBOX_TAB_LIST_ROUTE: Record<
-  InboxTabKey,
-  `/code/inbox/${InboxTabKey}`
-> = {
-  pulls: "/code/inbox/pulls",
-  reports: "/code/inbox/reports",
-  runs: "/code/inbox/runs",
-  dismissed: "/code/inbox/dismissed",
-};
+export type InboxSpace = "code" | "website";
+
+/** Which space a pathname belongs to. Defaults to `code` off the website tree. */
+export function inboxSpaceFromPath(pathname: string): InboxSpace {
+  return pathname.startsWith("/website") ? "website" : "code";
+}
+
+/** Inbox root route per space (the index, which redirects to the pulls tab). */
+export const INBOX_ROOT_ROUTE = {
+  code: "/code/inbox",
+  website: "/website/inbox",
+} as const satisfies Record<InboxSpace, string>;
+
+/**
+ * Canonical inbox tab list routes, keyed by space. Use these constants instead
+ * of hard-coding `/code/inbox/pulls` etc., so renames stay in one place and a
+ * call site stays in whichever space it's navigating within.
+ */
+export const INBOX_TAB_LIST_ROUTE_BY_SPACE = {
+  code: {
+    pulls: "/code/inbox/pulls",
+    reports: "/code/inbox/reports",
+    runs: "/code/inbox/runs",
+    dismissed: "/code/inbox/dismissed",
+  },
+  website: {
+    pulls: "/website/inbox/pulls",
+    reports: "/website/inbox/reports",
+    runs: "/website/inbox/runs",
+    dismissed: "/website/inbox/dismissed",
+  },
+} as const satisfies Record<InboxSpace, Record<InboxTabKey, string>>;
+
+/** Detail routes (`<root>/<tab>/$reportId`), keyed by space. */
+export const INBOX_TAB_DETAIL_ROUTE_BY_SPACE = {
+  code: {
+    pulls: "/code/inbox/pulls/$reportId",
+    reports: "/code/inbox/reports/$reportId",
+    runs: "/code/inbox/runs/$reportId",
+    dismissed: "/code/inbox/dismissed/$reportId",
+  },
+  website: {
+    pulls: "/website/inbox/pulls/$reportId",
+    reports: "/website/inbox/reports/$reportId",
+    runs: "/website/inbox/runs/$reportId",
+    dismissed: "/website/inbox/dismissed/$reportId",
+  },
+} as const satisfies Record<InboxSpace, Record<InboxTabKey, string>>;
+
+/** Union of every list route across both spaces (a valid TanStack `to`). */
+export type InboxListRoute =
+  (typeof INBOX_TAB_LIST_ROUTE_BY_SPACE)[InboxSpace][InboxTabKey];
+
+/** Union of every detail route across both spaces (a valid TanStack `to`). */
+export type InboxDetailRoute =
+  (typeof INBOX_TAB_DETAIL_ROUTE_BY_SPACE)[InboxSpace][InboxTabKey];
+
+/**
+ * Back-compat alias for the Code-space list routes. Prefer
+ * `INBOX_TAB_LIST_ROUTE_BY_SPACE[space]` in space-aware call sites.
+ */
+export const INBOX_TAB_LIST_ROUTE = INBOX_TAB_LIST_ROUTE_BY_SPACE.code;
+
+/** Which inbox tab a pathname is on, in either space. */
+export function inboxTabFromPath(pathname: string): InboxTabKey {
+  const match = pathname.match(
+    new RegExp(`^/(?:code|website)/inbox/(${INBOX_TAB_KEYS.join("|")})`),
+  );
+  return (match?.[1] as InboxTabKey | undefined) ?? "pulls";
+}
 
 const INBOX_DETAIL_PATH_RE = new RegExp(
-  `^/code/inbox/(${INBOX_TAB_KEYS.join("|")})/[^/]+$`,
+  `^/(?:code|website)/inbox/(${INBOX_TAB_KEYS.join("|")})/[^/]+$`,
 );
 
 export function isInboxDetailPath(pathname: string): boolean {

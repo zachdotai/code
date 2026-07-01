@@ -11,6 +11,7 @@ import {
   groupScratchpadEntries,
   type ScratchpadGrouping,
 } from "@posthog/core/scouts/scoutScratchpad";
+import { useAgentsRoutes } from "@posthog/ui/features/agent-applications/hooks/useAgentsRoutes";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { Box, Flex, SegmentedControl, Text, TextField } from "@radix-ui/themes";
@@ -30,6 +31,7 @@ import { ScratchpadEntryCard } from "./ScratchpadEntryCard";
  */
 export function ScratchpadView() {
   const { data: entries, isLoading, isError, refetch } = useScoutScratchpad();
+  const routes = useAgentsRoutes();
   const [searchText, setSearchText] = useState("");
   const [grouping, setGrouping] = useState<ScratchpadGrouping>("recent");
 
@@ -71,7 +73,7 @@ export function ScratchpadView() {
         className="border-(--gray-5) border-b px-6 pt-5 pb-5"
       >
         <Link
-          to="/code/agents/scouts"
+          to={routes.scouts}
           className="flex w-fit items-center gap-1 text-[12px] text-gray-10 no-underline hover:text-gray-12"
         >
           <ArrowLeftIcon size={12} />

@@ -17,6 +17,7 @@ import { SuggestedReviewerAvatarStack } from "@posthog/ui/features/inbox/compone
 import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
 import { useInboxReportDetailPrefetch } from "@posthog/ui/features/inbox/hooks/useInboxReportDetailPrefetch";
 import { useInboxReportArtefacts } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useInboxRoutes } from "@posthog/ui/features/inbox/hooks/useInboxSpace";
 import { Button as UiButton } from "@posthog/ui/primitives/Button";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -40,7 +41,7 @@ export function PullRequestCard({
   isDismissPending = false,
 }: PullRequestCardProps) {
   const detailRoute = {
-    to: "/code/inbox/pulls/$reportId" as const,
+    to: useInboxRoutes().detail.pulls,
     params: { reportId: report.id },
   };
   const { prefetch, pointerHandlers } = useInboxReportDetailPrefetch(

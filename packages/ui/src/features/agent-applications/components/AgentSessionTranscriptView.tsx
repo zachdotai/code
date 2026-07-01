@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { AgentBuilderHeaderControls } from "../agent-builder/AgentBuilderHeaderControls";
 import { useSetAgentBuilderPage } from "../agent-builder/useSetAgentBuilderPage";
 import { useAgentApplicationSession } from "../hooks/useAgentApplicationSession";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 import { sessionStateColor } from "../utils/format";
 import { AgentSessionDetailBody } from "./AgentSessionDetailBody";
 import { CopyButton } from "./CopyButton";
@@ -24,6 +25,7 @@ export function AgentSessionTranscriptView({
   sessionId: string;
 }) {
   const { data: session } = useAgentApplicationSession(idOrSlug, sessionId);
+  const routes = useAgentsRoutes();
   const headerContent = useMemo(
     () => (
       <Text className="truncate whitespace-nowrap font-medium text-[13px]">
@@ -49,7 +51,7 @@ export function AgentSessionTranscriptView({
       >
         <AgentBuilderHeaderControls />
         <Link
-          to="/code/agents/applications/$idOrSlug/sessions"
+          to={routes.sessions}
           params={{ idOrSlug }}
           className="flex w-fit items-center gap-1.5 text-[12px] text-gray-11 no-underline hover:text-gray-12"
         >

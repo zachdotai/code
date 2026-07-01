@@ -46,6 +46,7 @@ import {
   hasKnownSourceProduct,
 } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { useInboxReportSignals } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useInboxRoutes } from "@posthog/ui/features/inbox/hooks/useInboxSpace";
 import {
   type ReportTaskData,
   useReportTasks,
@@ -139,12 +140,11 @@ function RunOutputReadyCard({ report }: { report: SignalReport }) {
   const prRef = prUrl ? parsePrUrl(prUrl) : null;
   const sourceMeta = getSourceProductMeta(report.source_products?.[0]);
   const headline = deriveHeadline(report.summary);
+  const { detail } = useInboxRoutes();
 
   return (
     <Link
-      to={
-        isPr ? "/code/inbox/pulls/$reportId" : "/code/inbox/reports/$reportId"
-      }
+      to={isPr ? detail.pulls : detail.reports}
       params={{ reportId: report.id }}
       className="group block rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5 no-underline transition duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) hover:shadow-sm focus-visible:outline-none"
     >
@@ -209,7 +209,7 @@ export function AgentRunDetail({ reportId }: AgentRunDetailProps) {
   return (
     <InboxReportDetailGate
       reportId={reportId}
-      backTo="/code/inbox/runs"
+      backTab="runs"
       backLabel="Back to runs"
       missingCopy="This run couldn't be found. It may have completed or been removed."
     >
@@ -219,6 +219,7 @@ export function AgentRunDetail({ reportId }: AgentRunDetailProps) {
 }
 
 function AgentRunDetailContent({ report }: { report: SignalReport }) {
+  const { list } = useInboxRoutes();
   const { data: signalsResp } = useInboxReportSignals(report.id);
   const { data: reportTasks, isLoading: isLoadingReportTasks } = useReportTasks(
     report.id,
@@ -266,7 +267,7 @@ function AgentRunDetailContent({ report }: { report: SignalReport }) {
   return (
     <Flex direction="column" className="min-h-full">
       <InboxDetailPageHeader
-        backTo="/code/inbox/runs"
+        backTo={list.runs}
         backLabel="Back to runs"
         breadcrumb={
           <>

@@ -1,4 +1,5 @@
 import { ArrowRightIcon, NotebookIcon } from "@phosphor-icons/react";
+import { useAgentsRoutes } from "@posthog/ui/features/agent-applications/hooks/useAgentsRoutes";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
@@ -13,6 +14,7 @@ import { useScoutScratchpad } from "../hooks/useScoutScratchpad";
  */
 export function FleetMemoryCallout() {
   const { data: entries } = useScoutScratchpad();
+  const routes = useAgentsRoutes();
 
   // Hold until the first load settles, then only show when there's something to
   // read. Entries arrive newest-first, so the head drives the "updated" hint.
@@ -25,7 +27,7 @@ export function FleetMemoryCallout() {
 
   return (
     <Link
-      to="/code/agents/scouts/scratchpad"
+      to={routes.scratchpad}
       className="flex w-full items-center gap-3 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5 text-left no-underline transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
     >
       <NotebookIcon size={20} className="shrink-0 text-(--iris-9)" />

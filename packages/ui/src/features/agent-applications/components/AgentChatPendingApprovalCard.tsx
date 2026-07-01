@@ -11,6 +11,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useAuthStateValue } from "../../auth/store";
 import { agentApplicationsKeys } from "../hooks/agentApplicationsKeys";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 import { approvalStateColor, approvalStateLabel } from "../utils/format";
 import { AgentApprovalDecisionForm } from "./AgentApprovalDecisionForm";
 import { ArgsSection } from "./AgentApprovalDetail";
@@ -40,6 +41,7 @@ export function AgentChatPendingApprovalCard({
 }) {
   const queryClient = useQueryClient();
   const projectId = useAuthStateValue((state) => state.currentProjectId);
+  const routes = useAgentsRoutes();
   const isOwnerGate = approval.approver_scope?.type === "agent";
 
   const mutation = useMutation<void, Error, DecideApprovalRequest>({
@@ -85,7 +87,7 @@ export function AgentChatPendingApprovalCard({
           </Text>
         </Flex>
         <Link
-          to="/code/agents/applications/$idOrSlug/approvals"
+          to={routes.approvals}
           params={{ idOrSlug }}
           search={{ request: approval.id }}
           className="inline-flex shrink-0 items-center gap-1 text-[11.5px] text-gray-11 no-underline hover:text-gray-12"

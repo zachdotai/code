@@ -18,6 +18,7 @@ import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApproval";
 import { useAgentRevision } from "../hooks/useAgentRevision";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 import { resolveIngressBaseUrl } from "../utils/ingress";
 import { AgentChatPendingApprovalCard } from "./AgentChatPendingApprovalCard";
 import { AgentChatSurface } from "./AgentChatSurface";
@@ -72,6 +73,7 @@ export function AgentChatPane({
   resumeSessionId?: string | null;
 }) {
   const navigate = useNavigate();
+  const routes = useAgentsRoutes();
   const { data: application } = useAgentApplication(idOrSlug);
   // null/equal-to-live → fall back to the live revision; explicit non-live
   // revision id → route this chat to the draft.
@@ -140,11 +142,11 @@ export function AgentChatPane({
     // Anchored to this route so TanStack can resolve the search-fn against the
     // chat route's typed shape (the no-`to` form widens to `never`).
     navigate({
-      to: "/code/agents/applications/$idOrSlug/chat",
+      to: routes.chat,
       params: { idOrSlug },
       search: (prev) => ({ ...prev, session: undefined }),
     });
-  }, [resumeSessionId, chat.resume, navigate, idOrSlug]);
+  }, [resumeSessionId, chat.resume, navigate, idOrSlug, routes.chat]);
 
   // The rail mixes chats from every revision; decide per click whether to
   // resume inline (same target) or navigate to a different revision's surface.
@@ -154,7 +156,7 @@ export function AgentChatPane({
       return;
     }
     navigate({
-      to: "/code/agents/applications/$idOrSlug/chat",
+      to: routes.chat,
       params: { idOrSlug },
       search: entry.revisionId
         ? { revision: entry.revisionId, session: entry.sessionId }

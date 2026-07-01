@@ -24,6 +24,7 @@ import { SignalReportSummaryMarkdown } from "@posthog/ui/features/inbox/componen
 import { hasKnownSourceProduct } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { useInboxReportDetailPrefetch } from "@posthog/ui/features/inbox/hooks/useInboxReportDetailPrefetch";
 import { useInboxReportArtefacts } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useInboxRoutes } from "@posthog/ui/features/inbox/hooks/useInboxSpace";
 import { Button as UiButton } from "@posthog/ui/primitives/Button";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -63,15 +64,11 @@ export function ReportCard(props: ReportCardProps) {
   // Archive tab for reference, badged as resolved, with no restore action.
   const isResolved = report.status === "resolved";
 
-  const detailRoute = isArchived
-    ? {
-        to: "/code/inbox/dismissed/$reportId" as const,
-        params: { reportId: report.id },
-      }
-    : {
-        to: "/code/inbox/reports/$reportId" as const,
-        params: { reportId: report.id },
-      };
+  const { detail } = useInboxRoutes();
+  const detailRoute = {
+    to: isArchived ? detail.dismissed : detail.reports,
+    params: { reportId: report.id },
+  };
   const { prefetch, pointerHandlers } = useInboxReportDetailPrefetch(
     report,
     detailRoute,

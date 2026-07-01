@@ -1,4 +1,6 @@
 import {
+  type InboxDetailRoute,
+  type InboxTabKey,
   isDismissedReport,
   isPullRequestReport,
   isReportTabReport,
@@ -7,6 +9,7 @@ import { Spinner } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
 import { DetailBackLink } from "@posthog/ui/features/inbox/components/DetailBackLink";
 import { useInboxReportById } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useInboxRoutes } from "@posthog/ui/features/inbox/hooks/useInboxSpace";
 import {
   type InboxDetailTab,
   useReportOpenTracker,
@@ -18,33 +21,24 @@ import { type ReactNode, useEffect } from "react";
 interface InboxReportDetailGateProps {
   reportId: string;
   cachedReport?: SignalReport | null;
-  backTo:
-    | "/code/inbox/pulls"
-    | "/code/inbox/reports"
-    | "/code/inbox/runs"
-    | "/code/inbox/dismissed";
+  /** The list tab this detail belongs to; back-link + redirects resolve to the active space. */
+  backTab: InboxTabKey;
   backLabel: string;
   missingCopy: string;
   children: (report: SignalReport) => ReactNode;
 }
 
-type InboxDetailRoute =
-  | "/code/inbox/pulls/$reportId"
-  | "/code/inbox/reports/$reportId"
-  | "/code/inbox/runs/$reportId"
-  | "/code/inbox/dismissed/$reportId";
-
 /**
- * Detail route a non-suppressed report belongs on, by the same tab-membership
- * predicates the inbox tabs use: Pulls when a PR exists, Reports when it belongs
- * to the Reports tab, otherwise Runs. `isReportTabReport` already excludes
- * `failed` and in-flight runs, so failed/finished and live runs both fall
- * through to Runs — the only tab that actually lists them.
+ * Tab a non-suppressed report belongs on, by the same tab-membership predicates
+ * the inbox tabs use: Pulls when a PR exists, Reports when it belongs to the
+ * Reports tab, otherwise Runs. `isReportTabReport` already excludes `failed` and
+ * in-flight runs, so failed/finished and live runs both fall through to Runs —
+ * the only tab that actually lists them.
  */
-function nonSuppressedDetailRoute(report: SignalReport): InboxDetailRoute {
-  if (isPullRequestReport(report)) return "/code/inbox/pulls/$reportId";
-  if (isReportTabReport(report)) return "/code/inbox/reports/$reportId";
-  return "/code/inbox/runs/$reportId";
+function nonSuppressedTab(report: SignalReport): InboxTabKey {
+  if (isPullRequestReport(report)) return "pulls";
+  if (isReportTabReport(report)) return "reports";
+  return "runs";
 }
 
 /**
@@ -55,12 +49,14 @@ function nonSuppressedDetailRoute(report: SignalReport): InboxDetailRoute {
 export function InboxReportDetailGate({
   reportId,
   cachedReport = null,
-  backTo,
+  backTab,
   backLabel,
   missingCopy,
   children,
 }: InboxReportDetailGateProps) {
   const navigate = useNavigate();
+  const { list, detail } = useInboxRoutes();
+  const backTo = list[backTab];
   const {
     data: report,
     isLoading,
@@ -82,15 +78,15 @@ export function InboxReportDetailGate({
   // `initialDataUpdatedAt: 0`). Both terminal states belong on the Archive route,
   // so resolved cards keep their reference-only detail view instead of being
   // bounced to Runs.
-  const onDismissedRoute = backTo === "/code/inbox/dismissed";
+  const onDismissedRoute = backTab === "dismissed";
   const isArchived =
     resolvedReport != null && isDismissedReport(resolvedReport);
   let redirectTo: InboxDetailRoute | null = null;
   if (resolvedReport && !isFetching) {
     if (isArchived && !onDismissedRoute) {
-      redirectTo = "/code/inbox/dismissed/$reportId";
+      redirectTo = detail.dismissed;
     } else if (!isArchived && onDismissedRoute) {
-      redirectTo = nonSuppressedDetailRoute(resolvedReport);
+      redirectTo = detail[nonSuppressedTab(resolvedReport)];
     }
   }
 
@@ -146,7 +142,7 @@ export function InboxReportDetailGate({
     );
   }
 
-  const trackTab = tabFromBackTo(backTo);
+  const trackTab = trackedTabFor(backTab);
   return (
     <>
       {trackTab && <ReportOpenTracker report={resolvedReport} tab={trackTab} />}
@@ -160,12 +156,10 @@ export function InboxReportDetailGate({
  * `InboxDetailTab` (its rank would be measured against the wrong list), so it
  * returns `null` and the open/close engagement events are skipped for it.
  */
-function tabFromBackTo(
-  backTo: InboxReportDetailGateProps["backTo"],
-): InboxDetailTab | null {
-  if (backTo === "/code/inbox/pulls") return "pulls";
-  if (backTo === "/code/inbox/runs") return "runs";
-  if (backTo === "/code/inbox/dismissed") return null;
+function trackedTabFor(backTab: InboxTabKey): InboxDetailTab | null {
+  if (backTab === "pulls") return "pulls";
+  if (backTab === "runs") return "runs";
+  if (backTab === "dismissed") return null;
   return "reports";
 }
 

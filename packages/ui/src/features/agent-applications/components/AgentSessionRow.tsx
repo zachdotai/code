@@ -6,6 +6,7 @@ import type {
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
+import { useAgentsRoutes } from "../hooks/useAgentsRoutes";
 import { formatSpendUsd, sessionStateColor } from "../utils/format";
 
 function principalLabel(principal: AgentSessionPrincipal | null): string {
@@ -21,9 +22,10 @@ export function AgentSessionRow({
   session: AgentSessionSummary;
   idOrSlug: string;
 }) {
+  const routes = useAgentsRoutes();
   return (
     <Link
-      to="/code/agents/applications/$idOrSlug/sessions/$sessionId"
+      to={routes.sessionDetail}
       params={{ idOrSlug, sessionId: session.id }}
       className="no-underline"
     >

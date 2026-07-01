@@ -3,6 +3,7 @@ import { AgentBuilderHeaderControls } from "@posthog/ui/features/agent-applicati
 import type { AgentBuilderPageContext } from "@posthog/ui/features/agent-applications/agent-builder/agentBuilderStore";
 import { useSetAgentBuilderPage } from "@posthog/ui/features/agent-applications/agent-builder/useSetAgentBuilderPage";
 import { AGENT_PLATFORM_FLAG } from "@posthog/ui/features/agent-applications/featureFlag";
+import { useAgentsRoutes } from "@posthog/ui/features/agent-applications/hooks/useAgentsRoutes";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
@@ -50,6 +51,7 @@ export function AgentsTabLayout({
   const pageContext: AgentBuilderPageContext =
     activeTab === "applications" ? { kind: "agent-list" } : { kind: "scouts" };
   useSetAgentBuilderPage(pageContext);
+  const routes = useAgentsRoutes();
   // The Applications tab is gated behind the agent-platform flag.
   const applicationsEnabled = useFeatureFlag(AGENT_PLATFORM_FLAG);
 
@@ -69,13 +71,13 @@ export function AgentsTabLayout({
         </Flex>
         <Flex gap="5" align="center">
           <TabLink
-            to="/code/agents/scouts"
+            to={routes.scouts}
             label="Scouts"
             active={activeTab === "scouts"}
           />
           {applicationsEnabled ? (
             <TabLink
-              to="/code/agents/applications"
+              to={routes.applications}
               label="Applications"
               active={activeTab === "applications"}
             />

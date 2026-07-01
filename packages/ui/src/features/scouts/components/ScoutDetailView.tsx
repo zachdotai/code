@@ -21,6 +21,7 @@ import {
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { useAgentsRoutes } from "@posthog/ui/features/agent-applications/hooks/useAgentsRoutes";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
@@ -53,6 +54,7 @@ export function ScoutDetailView({
 }) {
   const skillName = scoutSkillNameFromSlug(skillSlug);
   const displayName = prettifyScoutSkillName(skillName);
+  const routes = useAgentsRoutes();
 
   const headerContent = useMemo(
     () => (
@@ -138,7 +140,7 @@ export function ScoutDetailView({
         className="border-(--gray-5) border-b px-6 pt-5 pb-5"
       >
         <Link
-          to="/code/agents"
+          to={routes.root}
           className="flex w-fit items-center gap-1 text-[12px] text-gray-10 no-underline hover:text-gray-12"
         >
           <ArrowLeftIcon size={12} />
