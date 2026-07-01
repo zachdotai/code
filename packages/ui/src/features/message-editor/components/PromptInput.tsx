@@ -1,6 +1,6 @@
 import "./message-editor.css";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { ArrowUp, Microphone, Stop } from "@phosphor-icons/react";
+import { ArrowUp, CircleNotch, Microphone, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { cycleModeOption } from "@posthog/ui/features/sessions/sessionStore";
@@ -25,7 +25,7 @@ import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
 import type { EditorHandle } from "../types";
 import { useEditorDictation } from "../voice/useEditorDictation";
-import { useVoiceDictation } from "../voice/useVoiceDictation";
+import { useWhisperDictation } from "../voice/useWhisperDictation";
 import { AttachmentMenu } from "./AttachmentMenu";
 import { AttachmentsBar } from "./AttachmentsBar";
 import { SlotMachineSubmit } from "./SlotMachineSubmit";
@@ -201,15 +201,14 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       ],
     );
 
-    // Voice dictation: stream spoken words into the editor. Available whenever
-    // the toolbar is shown (canvas-style bare composers opt out via
-    // hideDefaultToolbar) and the composer is editable.
+    // Voice dictation: transcribe spoken words into the editor with an offline
+    // whisper.cpp model. Batch, not streaming — text lands once, on stop.
+    // Available whenever the toolbar is shown (canvas-style bare composers opt
+    // out via hideDefaultToolbar) and the composer is editable.
     const voiceEnabled = !hideDefaultToolbar && !disabled;
     const dictation = useEditorDictation(editor);
-    const voice = useVoiceDictation({
-      onStart: dictation.begin,
-      onTranscript: dictation.update,
-      onStop: dictation.end,
+    const voice = useWhisperDictation({
+      onTranscript: (text) => dictation.insertFinal(text),
       onError: (message) => toast.error(message),
     });
 
@@ -224,7 +223,8 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       supported: voice.isSupported,
       active: isActiveSession,
       isEmpty,
-      isListening: voice.isListening,
+      isRecording: voice.isRecording,
+      isTranscribing: voice.isTranscribing,
       start: voice.start,
       stop: voice.stop,
     });
@@ -233,7 +233,8 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       supported: voice.isSupported,
       active: isActiveSession,
       isEmpty,
-      isListening: voice.isListening,
+      isRecording: voice.isRecording,
+      isTranscribing: voice.isTranscribing,
       start: voice.start,
       stop: voice.stop,
     };
@@ -253,7 +254,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         if (e.repeat) return;
         const rt = voiceRuntimeRef.current;
         if (!rt.enabled || !rt.supported || rt.active === false) return;
-        if (rt.isListening || !rt.isEmpty) return;
+        if (rt.isRecording || rt.isTranscribing || !rt.isEmpty) return;
         if (hasOpenOverlay()) return;
         const active = document.activeElement as HTMLElement | null;
         const onEditor = !!active?.closest?.(".ProseMirror");
@@ -423,6 +424,44 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       </Tooltip>
     );
 
+    // Three states: idle (click/hold to dictate), recording (click to stop), and
+    // transcribing (disabled, spinning while whisper runs offline).
+    const voiceButton = voice.isSupported ? (
+      <Tooltip
+        content={
+          voice.isTranscribing
+            ? "Transcribing…"
+            : voice.isRecording
+              ? "Stop dictation"
+              : "Dictate — click, or hold Space while empty"
+        }
+      >
+        <InputGroupButton
+          variant={voice.isRecording ? "destructive" : "default"}
+          size="icon-sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            voice.toggle();
+          }}
+          disabled={disabled || voice.isTranscribing}
+          aria-label={
+            voice.isRecording ? "Stop voice dictation" : "Start voice dictation"
+          }
+          aria-pressed={voice.isRecording}
+          className={voice.isRecording ? "animate-pulse" : undefined}
+        >
+          {voice.isTranscribing ? (
+            <CircleNotch size={14} weight="bold" className="animate-spin" />
+          ) : (
+            <Microphone
+              size={14}
+              weight={voice.isRecording ? "fill" : "bold"}
+            />
+          )}
+        </InputGroupButton>
+      </Tooltip>
+    ) : null;
+
     return (
       <Flex direction="column" gap="1">
         <Flex gap="2" align="stretch">
@@ -463,39 +502,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                     onInsertChip={insertChip}
                     onRemoveChip={removeChipById}
                   />
-                  {voice.isSupported && (
-                    <Tooltip
-                      content={
-                        voice.isListening
-                          ? "Stop dictation"
-                          : "Dictate — click, or hold Space while empty"
-                      }
-                    >
-                      <InputGroupButton
-                        variant={voice.isListening ? "destructive" : "default"}
-                        size="icon-sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          voice.toggle();
-                        }}
-                        disabled={disabled}
-                        aria-label={
-                          voice.isListening
-                            ? "Stop voice dictation"
-                            : "Start voice dictation"
-                        }
-                        aria-pressed={voice.isListening}
-                        className={
-                          voice.isListening ? "animate-pulse" : undefined
-                        }
-                      >
-                        <Microphone
-                          size={14}
-                          weight={voice.isListening ? "fill" : "bold"}
-                        />
-                      </InputGroupButton>
-                    </Tooltip>
-                  )}
+                  {voiceButton}
                   {onModeChange && (
                     <ModeSelector
                       modeOption={modeOption}

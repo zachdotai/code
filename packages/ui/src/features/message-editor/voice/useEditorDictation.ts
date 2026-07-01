@@ -9,6 +9,9 @@ export interface EditorDictation {
   update: (delta: TranscriptDelta) => void;
   // Finalize: keep what was transcribed, stop tracking, and place the caret.
   end: () => void;
+  // Insert a complete transcript in one shot (batch engines like whisper). It
+  // anchors, writes the text with the right leading space, and places the caret.
+  insertFinal: (text: string) => void;
 }
 
 // Streams a dictation transcript into a Tiptap editor. Finalized words become
@@ -80,5 +83,18 @@ export function useEditorDictation(editor: Editor | null): EditorDictation {
     editor.commands.focus(caret, { scrollIntoView: true });
   }, [editor]);
 
-  return useMemo(() => ({ begin, update, end }), [begin, update, end]);
+  const insertFinal = useCallback(
+    (text: string) => {
+      if (!editor || !text) return;
+      begin();
+      update({ final: text, interim: "" });
+      end();
+    },
+    [editor, begin, update, end],
+  );
+
+  return useMemo(
+    () => ({ begin, update, end, insertFinal }),
+    [begin, update, end, insertFinal],
+  );
 }
