@@ -56,7 +56,6 @@ const DEFAULT_RETRY_DELAY_MS = 1_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_STOP_TIMEOUT_MS = 30_000;
 const DEFAULT_STREAM_WINDOW_MS = 5 * 60 * 1_000;
-const DEFAULT_PROXY_STREAM_WINDOW_MS = 1_000;
 const STREAM_COMPLETE_CONTROL_TYPE = "_posthog/stream_complete";
 
 export class TaskRunEventStreamSender {
@@ -112,9 +111,7 @@ export class TaskRunEventStreamSender {
     this.requestTimeoutMs =
       config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.stopTimeoutMs = config.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
-    this.streamWindowMs =
-      config.streamWindowMs ??
-      (usingProxy ? DEFAULT_PROXY_STREAM_WINDOW_MS : DEFAULT_STREAM_WINDOW_MS);
+    this.streamWindowMs = config.streamWindowMs ?? DEFAULT_STREAM_WINDOW_MS;
     this.createStreamingUpload =
       config.createStreamingUpload ?? createNodeStreamingUpload;
   }
