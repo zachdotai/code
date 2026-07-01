@@ -1,15 +1,22 @@
 import "./message-editor.css";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { ArrowUp, Stop } from "@phosphor-icons/react";
+import { ArrowUp, Microphone, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { cycleModeOption } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { toast } from "@posthog/ui/primitives/toast";
 import { hasOpenOverlay } from "@posthog/ui/utils/overlay";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { EditorContent } from "@tiptap/react";
 import clsx from "clsx";
-import { forwardRef, useCallback, useEffect, useImperativeHandle } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useSkills } from "../../skills/useSkills";
 import { skillToEditorCommand } from "../commands";
@@ -17,6 +24,8 @@ import { ModeSelector } from "../components/ModeSelector";
 import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
 import type { EditorHandle } from "../types";
+import { useEditorDictation } from "../voice/useEditorDictation";
+import { useVoiceDictation } from "../voice/useVoiceDictation";
 import { AttachmentMenu } from "./AttachmentMenu";
 import { AttachmentsBar } from "./AttachmentsBar";
 import { SlotMachineSubmit } from "./SlotMachineSubmit";
@@ -191,6 +200,86 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         removeAttachment,
       ],
     );
+
+    // Voice dictation: stream spoken words into the editor. Available whenever
+    // the toolbar is shown (canvas-style bare composers opt out via
+    // hideDefaultToolbar) and the composer is editable.
+    const voiceEnabled = !hideDefaultToolbar && !disabled;
+    const dictation = useEditorDictation(editor);
+    const voice = useVoiceDictation({
+      onStart: dictation.begin,
+      onTranscript: dictation.update,
+      onStop: dictation.end,
+      onError: (message) => toast.error(message),
+    });
+
+    // Push-to-talk: hold Space to dictate while the composer is empty. Once
+    // there's text, Space types normally so it never fights word breaks. The
+    // listener runs in the capture phase so it can suppress the space before
+    // ProseMirror (or the page) sees it, and only engages when focus is on the
+    // empty editor or nothing at all — never on another control or input.
+    const pushToTalkRef = useRef(false);
+    const voiceRuntimeRef = useRef({
+      enabled: voiceEnabled,
+      supported: voice.isSupported,
+      active: isActiveSession,
+      isEmpty,
+      isListening: voice.isListening,
+      start: voice.start,
+      stop: voice.stop,
+    });
+    voiceRuntimeRef.current = {
+      enabled: voiceEnabled,
+      supported: voice.isSupported,
+      active: isActiveSession,
+      isEmpty,
+      isListening: voice.isListening,
+      start: voice.start,
+      stop: voice.stop,
+    };
+
+    useEffect(() => {
+      const isSpaceKey = (e: KeyboardEvent) =>
+        e.code === "Space" || e.key === " ";
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (!isSpaceKey(e)) return;
+        // Already engaged: swallow held-key repeats so nothing types or scrolls.
+        if (pushToTalkRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        if (e.repeat) return;
+        const rt = voiceRuntimeRef.current;
+        if (!rt.enabled || !rt.supported || rt.active === false) return;
+        if (rt.isListening || !rt.isEmpty) return;
+        if (hasOpenOverlay()) return;
+        const active = document.activeElement as HTMLElement | null;
+        const onEditor = !!active?.closest?.(".ProseMirror");
+        const onBody = !active || active === document.body;
+        if (!onEditor && !onBody) return;
+        e.preventDefault();
+        e.stopPropagation();
+        pushToTalkRef.current = true;
+        rt.start();
+      };
+
+      const handleKeyUp = (e: KeyboardEvent) => {
+        if (!isSpaceKey(e) || !pushToTalkRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        pushToTalkRef.current = false;
+        voiceRuntimeRef.current.stop();
+      };
+
+      window.addEventListener("keydown", handleKeyDown, { capture: true });
+      window.addEventListener("keyup", handleKeyUp, { capture: true });
+      return () => {
+        window.removeEventListener("keydown", handleKeyDown, { capture: true });
+        window.removeEventListener("keyup", handleKeyUp, { capture: true });
+      };
+    }, []);
 
     useEffect(() => {
       if (!focusRequested || !isReady) return;
@@ -374,6 +463,39 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                     onInsertChip={insertChip}
                     onRemoveChip={removeChipById}
                   />
+                  {voice.isSupported && (
+                    <Tooltip
+                      content={
+                        voice.isListening
+                          ? "Stop dictation"
+                          : "Dictate — click, or hold Space while empty"
+                      }
+                    >
+                      <InputGroupButton
+                        variant={voice.isListening ? "destructive" : "default"}
+                        size="icon-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          voice.toggle();
+                        }}
+                        disabled={disabled}
+                        aria-label={
+                          voice.isListening
+                            ? "Stop voice dictation"
+                            : "Start voice dictation"
+                        }
+                        aria-pressed={voice.isListening}
+                        className={
+                          voice.isListening ? "animate-pulse" : undefined
+                        }
+                      >
+                        <Microphone
+                          size={14}
+                          weight={voice.isListening ? "fill" : "bold"}
+                        />
+                      </InputGroupButton>
+                    </Tooltip>
+                  )}
                   {onModeChange && (
                     <ModeSelector
                       modeOption={modeOption}
