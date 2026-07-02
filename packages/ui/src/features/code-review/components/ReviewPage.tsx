@@ -32,6 +32,8 @@ import {
   buildPatchReviewItems,
   buildRemoteReviewItems,
   buildUntrackedReviewItems,
+  changedFileSignature,
+  patchFileSignature,
 } from "./reviewItemBuilders";
 
 const EMPTY_CHANGED_FILES: ChangedFile[] = [];
@@ -305,6 +307,28 @@ function LocalReviewContent({
     [filesByKey, stageToggle],
   );
 
+  // Diff signatures back the viewed state. Computed once per file load/refetch
+  // (the parsed-file arrays only change identity then), not per item rebuild.
+  const currentSignatures = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of stagedParsedFiles) {
+      map.set(
+        makeFileKey(true, f.name ?? f.prevName ?? ""),
+        patchFileSignature(f),
+      );
+    }
+    for (const f of unstagedParsedFiles) {
+      map.set(
+        makeFileKey(false, f.name ?? f.prevName ?? ""),
+        patchFileSignature(f),
+      );
+    }
+    for (const f of untrackedFiles) {
+      map.set(makeFileKey(f.staged, f.path), changedFileSignature(f));
+    }
+    return map;
+  }, [stagedParsedFiles, unstagedParsedFiles, untrackedFiles]);
+
   const items = useMemo<ReviewListItem[]>(() => {
     const reviewItems: ReviewListItem[] = [];
 
@@ -411,6 +435,7 @@ function LocalReviewContent({
       defaultBranch={defaultBranch}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
+      currentSignatures={currentSignatures}
       viewedRecord={viewedRecord}
       onToggleViewed={toggleViewed}
     />
@@ -459,6 +484,12 @@ function RemoteReviewPage({
   const allPaths = useMemo(() => files.map((f) => f.path), [files]);
   const reviewState = useReviewState(files, allPaths, taskId);
 
+  const currentSignatures = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of files) map.set(f.path, changedFileSignature(f));
+    return map;
+  }, [files]);
+
   const items = useMemo(
     () =>
       buildRemoteReviewItems({
@@ -501,6 +532,7 @@ function RemoteReviewPage({
       defaultBranch={defaultBranch}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
+      currentSignatures={currentSignatures}
       viewedRecord={reviewState.viewedRecord}
       onToggleViewed={reviewState.toggleViewed}
     />

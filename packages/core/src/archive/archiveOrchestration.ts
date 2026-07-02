@@ -38,7 +38,7 @@ export interface ArchiveOrchestrationDeps {
   disableFocus(): Promise<void>;
   disconnectFromTask(taskId: string): Promise<void>;
   archive(taskId: string): Promise<void>;
-  clearReadState(taskId: string): void;
+  clearViewedState(taskId: string): void;
   logError(message: string, error: unknown): void;
   cache: ArchiveCacheWriter;
 }
@@ -99,7 +99,7 @@ export async function archiveTask(
     await deps.disconnectFromTask(taskId);
     await deps.archive(taskId);
     deps.clearTerminalStates(taskId);
-    deps.clearReadState(taskId);
+    deps.clearViewedState(taskId);
     // Non-optimistic flows keep the row visible during the request, then remove
     // it the moment the archive succeeds.
     if (!optimistic) {

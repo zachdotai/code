@@ -56,6 +56,12 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     toggleViewed,
   } = useReviewState(reviewFiles, allPaths, taskId);
 
+  const currentSignatures = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of reviewFiles) map.set(f.path, changedFileSignature(f));
+    return map;
+  }, [reviewFiles]);
+
   const toolCallFallbacks = useMemo(
     () =>
       buildToolCallFallbacks(
@@ -74,7 +80,6 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       return {
         key: file.path,
         scrollKey: file.path,
-        sig: changedFileSignature(file),
         node: (
           <PatchedFileDiff
             file={file}
@@ -139,6 +144,7 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       onCollapseFiles={collapseFiles}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
+      currentSignatures={currentSignatures}
       viewedRecord={viewedRecord}
       onToggleViewed={toggleViewed}
     />

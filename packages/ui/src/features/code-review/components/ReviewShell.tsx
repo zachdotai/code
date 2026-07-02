@@ -15,7 +15,7 @@ import { useReviewDraftsStore } from "../reviewDraftsStore";
 import { REVIEW_HOST, type ReviewHost } from "../reviewHost";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { ReviewListItem, ReviewShellProps } from "../reviewShellParts";
-import { isFileRead } from "../reviewShellParts";
+import { isFileViewed } from "../reviewShellParts";
 import { ReviewViewedContext } from "../reviewViewedContext";
 import { useReviewViewedStore } from "../reviewViewedStore";
 import { PendingReviewBar } from "./PendingReviewBar";
@@ -109,6 +109,7 @@ export function ReviewShell({
   isEmpty,
   items,
   itemIndexByFilePath,
+  currentSignatures,
   viewedRecord,
   onToggleViewed,
   onUncollapseFile,
@@ -136,69 +137,45 @@ export function ReviewShell({
   );
   const isExpanded = reviewMode === "expanded";
 
-  // Rebuild the key->signature map from items, but keep the previous reference
-  // when its contents are unchanged. items get a new identity on every collapse
-  // toggle; returning a stable map keeps the review context value stable so
-  // toggling one file doesn't re-render every ViewedCheckbox via context.
-  const prevSignaturesRef = useRef<Map<string, string>>(new Map());
-  const currentSignatures = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const item of items) {
-      if (item.sig !== undefined) map.set(item.key, item.sig);
-    }
-    const prev = prevSignaturesRef.current;
-    let unchanged = prev.size === map.size;
-    if (unchanged) {
-      for (const [key, sig] of map) {
-        if (prev.get(key) !== sig) {
-          unchanged = false;
-          break;
-        }
-      }
-    }
-    if (unchanged) return prev;
-    prevSignaturesRef.current = map;
-    return map;
-  }, [items]);
-
-  // Count files marked read at their current signature (changed files don't
-  // count as read).
-  const readCount = useMemo(() => {
+  // Count files marked viewed at their current signature (changed files don't
+  // count as viewed).
+  const viewedCount = useMemo(() => {
     let count = 0;
     for (const [key, sig] of currentSignatures) {
-      if (isFileRead(viewedRecord[key], sig)) count++;
+      if (isFileViewed(viewedRecord[key], sig)) count++;
     }
     return count;
   }, [currentSignatures, viewedRecord]);
 
-  // When the panel first opens for a task, collapse files that are already read
-  // (mirrors GitHub). Runs once per task, once signatures have loaded, so it
-  // doesn't fight the user manually re-expanding a read file afterwards. Files
-  // that changed since being read stay expanded so the new diff is visible.
+  // When the panel first opens for a task, collapse files that are already
+  // viewed (mirrors GitHub). Runs once per task, once signatures have loaded,
+  // so it doesn't fight the user manually re-expanding a viewed file
+  // afterwards. Files that changed since being viewed stay expanded so the new
+  // diff is visible.
   const seededTaskRef = useRef<string | null>(null);
   useEffect(() => {
     if (seededTaskRef.current === taskId) return;
     if (currentSignatures.size === 0) return;
     seededTaskRef.current = taskId;
-    const readKeys: string[] = [];
+    const viewedKeys: string[] = [];
     for (const [key, sig] of currentSignatures) {
-      if (isFileRead(viewedRecord[key], sig)) readKeys.push(key);
+      if (isFileViewed(viewedRecord[key], sig)) viewedKeys.push(key);
     }
-    if (readKeys.length > 0) onCollapseFiles(readKeys);
+    if (viewedKeys.length > 0) onCollapseFiles(viewedKeys);
   }, [taskId, currentSignatures, viewedRecord, onCollapseFiles]);
 
   const clearTasks = useReviewViewedStore((s) => s.clearTasks);
 
-  // Drop persisted read state for archived tasks so it does not accumulate.
+  // Drop persisted viewed state for archived tasks so it does not accumulate.
   // Skip the task being reviewed: archiving it while its review is open must
-  // not wipe the read marks the user is actively working against.
+  // not wipe the viewed marks the user is actively working against.
   const archivedTaskIds = useArchivedTaskIds();
   useEffect(() => {
     const prunable = [...archivedTaskIds].filter((id) => id !== taskId);
     if (prunable.length > 0) clearTasks(prunable);
   }, [archivedTaskIds, clearTasks, taskId]);
 
-  // Once the PR is merged the diff is settled, so read state is moot — drop it.
+  // Once the PR is merged the diff is settled, so viewed state is moot — drop it.
   // Cloud tasks resolve their PR via cloudPrUrl, so pass it (and the run
   // environment) through or merge detection never fires for them.
   const cloudPrUrl = useCloudPrUrl(taskId);
@@ -315,7 +292,7 @@ export function ReviewShell({
           <ReviewToolbar
             taskId={taskId}
             fileCount={fileCount}
-            readCount={readCount}
+            viewedCount={viewedCount}
             linesAdded={linesAdded}
             linesRemoved={linesRemoved}
             allExpanded={allExpanded}

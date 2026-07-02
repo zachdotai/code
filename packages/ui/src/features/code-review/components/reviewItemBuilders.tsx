@@ -11,40 +11,29 @@ import type { ReviewListItem } from "../reviewShellParts";
 import type { DiffOptions } from "../types";
 import { PatchRow, RemoteRow, UntrackedRow } from "./ReviewRows";
 
-// Signatures are cached by file-object identity. The file objects are stable
-// across re-renders (only replaced when the underlying diff is refetched), so
-// collapse toggles and other item rebuilds reuse the cached hash instead of
-// re-hashing every file.
-const signatureCache = new WeakMap<object, string>();
+// Signatures fingerprint a file's diff so viewed state can detect when the
+// diff changed after the user marked it viewed. Callers compute them once per
+// file load/refetch (memoized on the files array), not per render.
 
 // Prefer the unified patch (changes whenever upstream content does); fall back
 // to status + line counts when no patch is available.
 export function changedFileSignature(file: ChangedFile): string {
-  const cached = signatureCache.get(file);
-  if (cached !== undefined) return cached;
-  const sig = contentHash(
+  return contentHash(
     file.patch ??
       `${file.status}:${file.linesAdded ?? 0}:${file.linesRemoved ?? 0}`,
   );
-  signatureCache.set(file, sig);
-  return sig;
 }
 
 export function patchFileSignature(
   fileDiff: ReturnType<typeof parsePatchFiles>[number]["files"][number],
 ): string {
-  const cached = signatureCache.get(fileDiff);
-  if (cached !== undefined) return cached;
   // Prefer the git blob object ids from the patch `index` line: they identify
   // file content directly and are unaffected by the hide-whitespace toggle
   // (which re-fetches a different diff that would otherwise change a
   // hunk-derived signature). Fall back to hunk geometry when absent.
-  const sig =
-    fileDiff.newObjectId || fileDiff.prevObjectId
-      ? `${fileDiff.prevObjectId ?? ""}:${fileDiff.newObjectId ?? ""}`
-      : contentHash(JSON.stringify(fileDiff.hunks ?? []));
-  signatureCache.set(fileDiff, sig);
-  return sig;
+  return fileDiff.newObjectId || fileDiff.prevObjectId
+    ? `${fileDiff.prevObjectId ?? ""}:${fileDiff.newObjectId ?? ""}`
+    : contentHash(JSON.stringify(fileDiff.hunks ?? []));
 }
 
 interface BuildPatchReviewItemsArgs {
@@ -91,7 +80,6 @@ export function buildPatchReviewItems({
     return {
       key,
       scrollKey: key,
-      sig: patchFileSignature(fileDiff),
       node: (
         <PatchRow
           itemKey={key}
@@ -143,7 +131,6 @@ export function buildUntrackedReviewItems({
     return {
       key,
       scrollKey: key,
-      sig: changedFileSignature(file),
       node: (
         <UntrackedRow
           itemKey={key}
@@ -187,7 +174,6 @@ export function buildRemoteReviewItems({
     return {
       key: file.path,
       scrollKey: file.path,
-      sig: changedFileSignature(file),
       node: (
         <RemoteRow
           file={file}

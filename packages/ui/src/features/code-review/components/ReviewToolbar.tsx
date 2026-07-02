@@ -16,7 +16,7 @@ import { DiffSourceSelector } from "./DiffSourceSelector";
 interface ReviewToolbarProps {
   taskId: string;
   fileCount: number;
-  readCount: number;
+  viewedCount: number;
   linesAdded: number;
   linesRemoved: number;
   allExpanded: boolean;
@@ -32,7 +32,7 @@ interface ReviewToolbarProps {
 export const ReviewToolbar = memo(function ReviewToolbar({
   taskId,
   fileCount,
-  readCount,
+  viewedCount,
   allExpanded,
   onExpandAll,
   onCollapseAll,
@@ -75,7 +75,7 @@ export const ReviewToolbar = memo(function ReviewToolbar({
         </Text>
         {fileCount > 0 && (
           <Text className="text-(--gray-10) text-[13px]">
-            {readCount}/{fileCount} read
+            {viewedCount}/{fileCount} viewed
           </Text>
         )}
         {effectiveSource && (

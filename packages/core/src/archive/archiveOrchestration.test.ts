@@ -28,7 +28,7 @@ class Harness {
     disableFocus: vi.fn().mockResolvedValue(undefined),
     disconnectFromTask: vi.fn().mockResolvedValue(undefined),
     archive: vi.fn().mockResolvedValue(undefined),
-    clearReadState: vi.fn(),
+    clearViewedState: vi.fn(),
     logError: vi.fn(),
     cache: {
       cancelPathFilter: vi.fn().mockResolvedValue(undefined),
@@ -59,7 +59,7 @@ describe("archiveTask", () => {
 
     expect(harness.deps.archive).toHaveBeenCalledWith(TASK_ID);
     expect(harness.deps.disconnectFromTask).toHaveBeenCalledWith(TASK_ID);
-    expect(harness.deps.clearReadState).toHaveBeenCalledWith(TASK_ID);
+    expect(harness.deps.clearViewedState).toHaveBeenCalledWith(TASK_ID);
     expect(harness.ids).toContain(TASK_ID);
     expect(harness.list.some((a) => a.taskId === TASK_ID)).toBe(true);
   });
@@ -69,7 +69,7 @@ describe("archiveTask", () => {
 
     await expect(archiveTask(TASK_ID, harness.deps)).rejects.toThrow("boom");
 
-    expect(harness.deps.clearReadState).not.toHaveBeenCalled();
+    expect(harness.deps.clearViewedState).not.toHaveBeenCalled();
   });
 
   it("with optimistic:false, defers cache writes until archive resolves", async () => {

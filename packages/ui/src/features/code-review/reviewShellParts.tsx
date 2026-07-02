@@ -88,8 +88,8 @@ function useViewedState(
     useReviewViewedStore((s) => s.viewed[taskId]) ?? EMPTY_VIEWED_RECORD;
   const setViewed = useReviewViewedStore((s) => s.setViewed);
 
-  // `nextSig` is the signature to store, or null to clear the read mark.
-  // Marking a file read collapses it; un-marking expands it (mirrors GitHub).
+  // `nextSig` is the signature to store, or null to clear the viewed mark.
+  // Marking a file viewed collapses it; un-marking expands it (mirrors GitHub).
   const toggleViewed = useCallback(
     (key: string, nextSig: string | null) => {
       setViewed(taskId, key, nextSig);
@@ -178,6 +178,9 @@ export interface ReviewShellProps {
   isEmpty: boolean;
   items: ReviewListItem[];
   itemIndexByFilePath: Map<string, number>;
+  // key -> current diff signature, memoized by the page on its files data so
+  // it only changes when the underlying diff actually changes.
+  currentSignatures: Map<string, string>;
   viewedRecord: Record<string, string>;
   onToggleViewed: (key: string, sig: string | null) => void;
   onUncollapseFile?: (filePath: string) => void;
@@ -195,8 +198,6 @@ export interface ReviewShellProps {
 export interface ReviewListItem {
   key: string;
   scrollKey?: string;
-  // Signature of the file's current diff; absent for non-file rows.
-  sig?: string;
   node: ReactNode;
 }
 
@@ -264,9 +265,10 @@ export function FileHeaderRow({
   );
 }
 
-// A file is read when its stored signature matches the current diff signature;
-// a stored signature that no longer matches means the diff changed since.
-export function isFileRead(
+// A file is viewed when its stored signature matches the current diff
+// signature; a stored signature that no longer matches means the diff changed
+// since the user viewed it.
+export function isFileViewed(
   storedSig: string | undefined,
   currentSig: string,
 ): boolean {
@@ -281,36 +283,34 @@ function ViewedCheckbox({ viewedKey }: { viewedKey: string }) {
   if (current === undefined) return null;
 
   const stored = ctx.viewedRecord[viewedKey];
-  const read = isFileRead(stored, current);
-  const changed = stored !== undefined && !read;
+  const viewed = isFileViewed(stored, current);
+  const changed = stored !== undefined && !viewed;
 
   return (
     <button
       type="button"
-      aria-pressed={read}
-      aria-label="Read"
+      aria-pressed={viewed}
+      aria-label="Viewed"
       title={
         changed
-          ? "Changed since you marked it read — click to mark read again"
-          : read
-            ? "Mark as unread"
-            : "Mark as read"
+          ? "Changed since you viewed it — click to mark as viewed again"
+          : viewed
+            ? "Mark as not viewed"
+            : "Mark as viewed"
       }
       onClick={(e) => {
         e.stopPropagation();
-        ctx.toggleViewed(viewedKey, read ? null : current);
+        ctx.toggleViewed(viewedKey, viewed ? null : current);
       }}
-      className="ml-[6px] flex shrink-0 cursor-pointer items-center gap-[3px] border-0 bg-transparent p-0 text-(--gray-9) hover:text-(--gray-11)"
+      className="ml-[6px] flex shrink-0 cursor-pointer items-center gap-[4px] rounded-[4px] border border-(--gray-6) bg-(--gray-3) px-[8px] py-[2px] text-(--gray-11) text-xs hover:bg-(--gray-4)"
     >
-      {read ? (
+      {viewed ? (
         <CheckSquare size={14} weight="fill" color="var(--accent-9)" />
       ) : (
         <Square size={14} color={changed ? "var(--amber-9)" : undefined} />
       )}
-      <span
-        className={changed ? "text-(--amber-11) text-[10px]" : "text-[10px]"}
-      >
-        {changed ? "Changed" : "Read"}
+      <span className={changed ? "text-(--amber-11)" : undefined}>
+        {changed ? "Changed" : "Viewed"}
       </span>
     </button>
   );

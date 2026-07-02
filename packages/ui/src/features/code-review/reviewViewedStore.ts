@@ -9,15 +9,15 @@ import { persist } from "zustand/middleware";
 const MAX_FILES = 250;
 
 interface ReviewViewedStoreState {
-  // taskId -> file key -> signature of the diff when the file was marked read.
+  // taskId -> file key -> signature of the diff when the file was marked viewed.
   // Insertion order is treated as recency (touched tasks re-inserted last).
   viewed: Record<string, Record<string, string>>;
 }
 
 interface ReviewViewedStoreActions {
-  // Pass a signature to mark read (at that signature), or null to un-mark.
+  // Pass a signature to mark viewed (at that signature), or null to un-mark.
   setViewed: (taskId: string, key: string, sig: string | null) => void;
-  // Drop read state for the given tasks (archived, merged, or otherwise done).
+  // Drop viewed state for the given tasks (archived, merged, or otherwise done).
   clearTasks: (taskIds: Iterable<string>) => void;
 }
 
@@ -69,7 +69,7 @@ export const useReviewViewedStore = create<ReviewViewedStore>()(
       name: "review-viewed-storage",
       version: 1,
       // v0 stored booleans without a signature; drop them so files re-resolve
-      // their read state under the signature-aware model.
+      // their viewed state under the signature-aware model.
       migrate: (persisted, version) => {
         if (version < 1) return { viewed: {} };
         return persisted as ReviewViewedStoreState;
