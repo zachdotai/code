@@ -88,8 +88,6 @@ function useViewedState(
     useReviewViewedStore((s) => s.viewed[taskId]) ?? EMPTY_VIEWED_RECORD;
   const setViewed = useReviewViewedStore((s) => s.setViewed);
 
-  // `nextSig` is the signature to store, or null to clear the viewed mark.
-  // Marking a file viewed collapses it; un-marking expands it (mirrors GitHub).
   const toggleViewed = useCallback(
     (key: string, nextSig: string | null) => {
       setViewed(taskId, key, nextSig);
@@ -178,8 +176,6 @@ export interface ReviewShellProps {
   isEmpty: boolean;
   items: ReviewListItem[];
   itemIndexByFilePath: Map<string, number>;
-  // key -> current diff signature, memoized by the page on its files data so
-  // it only changes when the underlying diff actually changes.
   currentSignatures: Map<string, string>;
   viewedRecord: Record<string, string>;
   onToggleViewed: (key: string, sig: string | null) => void;
@@ -265,9 +261,6 @@ export function FileHeaderRow({
   );
 }
 
-// A file is viewed when its stored signature matches the current diff
-// signature; a stored signature that no longer matches means the diff changed
-// since the user viewed it.
 export function isFileViewed(
   storedSig: string | undefined,
   currentSig: string,

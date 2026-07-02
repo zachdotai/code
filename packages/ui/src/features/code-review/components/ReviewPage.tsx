@@ -307,8 +307,6 @@ function LocalReviewContent({
     [filesByKey, stageToggle],
   );
 
-  // Diff signatures back the viewed state. Computed once per file load/refetch
-  // (the parsed-file arrays only change identity then), not per item rebuild.
   const currentSignatures = useMemo(() => {
     const map = new Map<string, string>();
     for (const f of stagedParsedFiles) {

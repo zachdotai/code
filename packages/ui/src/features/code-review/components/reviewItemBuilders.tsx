@@ -11,10 +11,6 @@ import type { ReviewListItem } from "../reviewShellParts";
 import type { DiffOptions } from "../types";
 import { PatchRow, RemoteRow, UntrackedRow } from "./ReviewRows";
 
-// Signatures fingerprint a file's diff so viewed state can detect when the
-// diff changed after the user marked it viewed. Callers compute them once per
-// file load/refetch (memoized on the files array), not per render.
-
 // Prefer the unified patch (changes whenever upstream content does); fall back
 // to status + line counts when no patch is available.
 export function changedFileSignature(file: ChangedFile): string {

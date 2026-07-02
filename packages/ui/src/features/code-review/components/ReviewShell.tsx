@@ -137,8 +137,6 @@ export function ReviewShell({
   );
   const isExpanded = reviewMode === "expanded";
 
-  // Count files marked viewed at their current signature (changed files don't
-  // count as viewed).
   const viewedCount = useMemo(() => {
     let count = 0;
     for (const [key, sig] of currentSignatures) {
@@ -147,11 +145,9 @@ export function ReviewShell({
     return count;
   }, [currentSignatures, viewedRecord]);
 
-  // When the panel first opens for a task, collapse files that are already
-  // viewed (mirrors GitHub). Runs once per task, once signatures have loaded,
-  // so it doesn't fight the user manually re-expanding a viewed file
-  // afterwards. Files that changed since being viewed stay expanded so the new
-  // diff is visible.
+  // Collapse already-viewed files on first open per task (mirrors GitHub).
+  // Skips on re-opens: seededTaskRef prevents re-collapsing files the user
+  // has manually expanded. Files changed since viewed stay expanded.
   const seededTaskRef = useRef<string | null>(null);
   useEffect(() => {
     if (seededTaskRef.current === taskId) return;
@@ -166,18 +162,12 @@ export function ReviewShell({
 
   const clearTasks = useReviewViewedStore((s) => s.clearTasks);
 
-  // Drop persisted viewed state for archived tasks so it does not accumulate.
-  // Skip the task being reviewed: archiving it while its review is open must
-  // not wipe the viewed marks the user is actively working against.
   const archivedTaskIds = useArchivedTaskIds();
   useEffect(() => {
     const prunable = [...archivedTaskIds].filter((id) => id !== taskId);
     if (prunable.length > 0) clearTasks(prunable);
   }, [archivedTaskIds, clearTasks, taskId]);
 
-  // Once the PR is merged the diff is settled, so viewed state is moot — drop it.
-  // Cloud tasks resolve their PR via cloudPrUrl, so pass it (and the run
-  // environment) through or merge detection never fires for them.
   const cloudPrUrl = useCloudPrUrl(taskId);
   const { prState } = useTaskPrStatus({
     id: taskId,
