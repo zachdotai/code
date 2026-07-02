@@ -62,6 +62,7 @@ junit.xml
 
 # Downloaded binaries
 apps/code/resources/codex-acp/
+apps/code/resources/node-runtime/
 
 # Licensed fonts (downloaded from S3 during CI)
 apps/code/assets/fonts/BerkeleyMono/

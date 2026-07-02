@@ -549,6 +549,58 @@ export function copyEnricherGrammars(): Plugin {
   };
 }
 
+let nodeRuntimeCopied = false;
+
+export function copyNodeRuntime(): Plugin {
+  return {
+    name: "copy-node-runtime",
+    writeBundle() {
+      const binaryName = process.platform === "win32" ? "node.exe" : "node";
+      const destDir = join(__dirname, ".vite/build/node-runtime");
+      const destPath = join(destDir, binaryName);
+
+      if (nodeRuntimeCopied && existsSync(destPath)) {
+        return;
+      }
+
+      const sourcePath = join(__dirname, "resources/node-runtime", binaryName);
+      if (!existsSync(sourcePath)) {
+        console.warn(
+          `[copy-node-runtime] node not found at ${sourcePath}. Run 'node scripts/download-binaries.mjs' first.`,
+        );
+        return;
+      }
+
+      if (!existsSync(destDir)) {
+        mkdirSync(destDir, { recursive: true });
+      }
+
+      if (isStagedCopyCurrent(sourcePath, destPath)) {
+        nodeRuntimeCopied = true;
+        return;
+      }
+
+      copyFileSync(sourcePath, destPath);
+      console.log(`Copied node runtime to ${destDir}`);
+      if (process.platform !== "win32") {
+        execSync(`chmod +x "${destPath}"`);
+      }
+      if (process.platform === "darwin") {
+        try {
+          execSync(`xattr -cr "${destPath}"`, { stdio: "inherit" });
+          execSync(`codesign --force --sign - "${destPath}"`, {
+            stdio: "inherit",
+          });
+          console.log("Ad-hoc signed node runtime");
+        } catch (err) {
+          console.warn("Failed to sign node runtime:", err);
+        }
+      }
+      nodeRuntimeCopied = true;
+    },
+  };
+}
+
 let codexAcpCopied = false;
 
 export function copyCodexAcpBinaries(): Plugin {

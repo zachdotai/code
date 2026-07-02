@@ -48,6 +48,7 @@ const config: Configuration = {
     ".vite/build/claude-cli/**",
     ".vite/build/plugins/posthog/**",
     ".vite/build/codex-acp/**",
+    ".vite/build/node-runtime/**",
     ".vite/build/grammars/**",
     ...asarUnpackGlobs,
   ],

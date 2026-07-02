@@ -7,6 +7,7 @@ import {
   existsSync,
   mkdirSync,
   realpathSync,
+  renameSync,
   rmSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -17,8 +18,42 @@ import { extract } from "tar";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEST_DIR = join(__dirname, "..", "resources", "codex-acp");
+const NODE_RUNTIME_DIR = join(__dirname, "..", "resources", "node-runtime");
+
+// Keep in sync with the Node version embedded in the pinned Electron release;
+// the agent-facing `node` shim points at this runtime.
+const NODE_VERSION = "24.16.0";
 
 const BINARIES = [
+  {
+    name: "node",
+    version: NODE_VERSION,
+    destDir: NODE_RUNTIME_DIR,
+    getUrl: (version, target) => {
+      const ext = target.startsWith("win") ? "zip" : "tar.gz";
+      return `https://nodejs.org/dist/v${version}/node-v${version}-${target}.${ext}`;
+    },
+    getArchiveBinaryPath: (version, target) => {
+      const binary = target.startsWith("win")
+        ? "node.exe"
+        : join("bin", "node");
+      return join(`node-v${version}-${target}`, binary);
+    },
+    getTarget: () => {
+      const { platform, arch } = process;
+      const targets = {
+        darwin: { arm64: "darwin-arm64", x64: "darwin-x64" },
+        linux: { arm64: "linux-arm64", x64: "linux-x64" },
+        win32: { arm64: "win-arm64", x64: "win-x64" },
+      };
+      const platformTargets = targets[platform];
+      if (!platformTargets)
+        throw new Error(`Unsupported platform: ${platform}`);
+      const target = platformTargets[arch];
+      if (!target) throw new Error(`Unsupported arch: ${arch}`);
+      return target;
+    },
+  },
   {
     name: "codex-acp",
     version: "0.14.0",
@@ -137,11 +172,16 @@ function signForMacOS(binaryPath) {
 }
 
 async function downloadBinary(binary) {
+  const destDir = binary.destDir ?? DEST_DIR;
   const binaryName =
     process.platform === "win32" ? `${binary.name}.exe` : binary.name;
-  const binaryPath = join(DEST_DIR, binaryName);
+  const binaryPath = join(destDir, binaryName);
 
   console.log(`\n[${binary.name}] v${binary.version}`);
+
+  if (!existsSync(destDir)) {
+    mkdirSync(destDir, { recursive: true });
+  }
 
   if (existsSync(binaryPath)) {
     console.log(`  Already exists: ${binaryPath}`);
@@ -151,13 +191,28 @@ async function downloadBinary(binary) {
   const target = binary.getTarget();
   const url = binary.getUrl(binary.version, target);
   const archiveName = `${binary.name}-archive${url.endsWith(".zip") ? ".zip" : ".tar.gz"}`;
-  const archivePath = join(DEST_DIR, archiveName);
+  const archivePath = join(destDir, archiveName);
 
   console.log(`  Platform: ${process.platform}/${process.arch} -> ${target}`);
 
   await downloadFile(url, archivePath);
-  await extractArchive(archivePath, DEST_DIR);
+  await extractArchive(archivePath, destDir);
   rmSync(archivePath);
+
+  if (binary.getArchiveBinaryPath) {
+    const extractedBinary = join(
+      destDir,
+      binary.getArchiveBinaryPath(binary.version, target),
+    );
+    if (!existsSync(extractedBinary)) {
+      throw new Error(`Binary not found in archive: ${extractedBinary}`);
+    }
+    renameSync(extractedBinary, binaryPath);
+    const extractionRoot = binary
+      .getArchiveBinaryPath(binary.version, target)
+      .split(/[/\\]/)[0];
+    rmSync(join(destDir, extractionRoot), { recursive: true, force: true });
+  }
 
   if (!existsSync(binaryPath)) {
     throw new Error(`Binary not found after extraction: ${binaryPath}`);
