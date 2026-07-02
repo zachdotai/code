@@ -167,6 +167,8 @@ export type NewSessionMeta = {
   allowedDomains?: string[];
   /** Model ID to use for this session (e.g. "claude-sonnet-4-6") */
   model?: string;
+  /** Model for spawned subagents (Task tool, workflow fan-outs); gateway id or CLI alias. */
+  subagentModel?: string;
   /** Base branch of the task's repo (e.g. "master"), for the signed-git tools. */
   baseBranch?: string;
   /**

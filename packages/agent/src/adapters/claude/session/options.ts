@@ -77,6 +77,8 @@ export interface BuildOptionsParams {
   onProcessSpawned?: (info: ProcessSpawnedInfo) => void;
   onProcessExited?: (pid: number) => void;
   effort?: EffortLevel;
+  /** Host-provided model for spawned subagents; gateway id or CLI alias. */
+  subagentModel?: string;
   enrichmentDeps?: FileEnrichmentDeps;
   enrichedReadCache?: EnrichedReadCache;
   /** Records PostHog product usage from MCP exec calls (deduped, session-wide). */
@@ -141,7 +143,7 @@ function buildMcpServers(
 
 function buildEnvironment(
   gateway?: GatewayEnv,
-  settingsSubagentModel?: string,
+  subagentModel?: string,
 ): Record<string, string> {
   // Custom HTTP headers reach the model only through the Claude CLI subprocess,
   // which reads them from this env var (newline-delimited `name: value` lines)
@@ -202,11 +204,12 @@ function buildEnvironment(
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
     // Subagents (Task tool, workflow fan-outs) run on a cheaper model than the
     // main loop by default. The CLI treats this as a hard override for every
-    // subagent; the merged .claude/settings.json env block (user layer written
-    // by the Settings UI, stored as a gateway model id) or a pre-set process
-    // env var wins over the default.
+    // subagent. A hand-written env entry in the merged .claude/settings.json
+    // layers wins over the host-provided app setting, mirroring how the
+    // settings `model` beats the session meta model; a pre-set process env
+    // var (cloud orchestrator, dev shell) is next, then the default.
     CLAUDE_CODE_SUBAGENT_MODEL: toSdkModelId(
-      settingsSubagentModel ??
+      subagentModel ??
         process.env.CLAUDE_CODE_SUBAGENT_MODEL ??
         DEFAULT_SUBAGENT_MODEL,
     ),
@@ -463,7 +466,8 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     ),
     env: buildEnvironment(
       params.gatewayEnv,
-      params.settingsManager.getSettings().env?.CLAUDE_CODE_SUBAGENT_MODEL,
+      params.settingsManager.getSettings().env?.CLAUDE_CODE_SUBAGENT_MODEL ??
+        params.subagentModel,
     ),
     hooks: buildHooks(
       params.userProvidedOptions?.hooks,

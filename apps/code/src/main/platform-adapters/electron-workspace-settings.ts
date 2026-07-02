@@ -6,11 +6,13 @@ import {
   getAutoSuspendEnabled,
   getMaxActiveWorktrees,
   getPreventSleepWhileRunning,
+  getSubagentModel,
   getWorktreeLocation,
   setAutoSuspendAfterDays,
   setAutoSuspendEnabled,
   setMaxActiveWorktrees,
   setPreventSleepWhileRunning,
+  setSubagentModel,
   setWorktreeLocation,
 } from "../services/settingsStore";
 
@@ -58,5 +60,13 @@ export class ElectronWorkspaceSettings implements IWorkspaceSettings {
 
   setPreventSleepWhileRunning(value: boolean): void {
     setPreventSleepWhileRunning(value);
+  }
+
+  getSubagentModel(): string | null {
+    return getSubagentModel();
+  }
+
+  setSubagentModel(model: string | null): void {
+    setSubagentModel(model);
   }
 }

@@ -4,12 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveMainRepoPath } from "./repo-path";
-import {
-  getUserSettingsEnvVar,
-  mergeAvailableModels,
-  SettingsManager,
-  setUserSettingsEnvVar,
-} from "./settings";
+import { mergeAvailableModels, SettingsManager } from "./settings";
 
 function runGit(cwd: string, args: string[]): void {
   execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
@@ -314,14 +309,9 @@ describe("mergeAvailableModels", () => {
   });
 });
 
-describe("user settings env vars", () => {
+describe("user settings env merge", () => {
   let configDir: string;
   let originalConfigDir: string | undefined;
-
-  const settingsPath = () => path.join(configDir, "settings.json");
-
-  const readSettings = async () =>
-    JSON.parse(await fs.promises.readFile(settingsPath(), "utf-8"));
 
   beforeEach(async () => {
     configDir = await fs.promises.mkdtemp(
@@ -340,92 +330,11 @@ describe("user settings env vars", () => {
     await fs.promises.rm(configDir, { recursive: true, force: true });
   });
 
-  it("creates the settings file when absent", async () => {
-    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "sonnet");
-
-    expect(await readSettings()).toEqual({
-      env: { CLAUDE_CODE_SUBAGENT_MODEL: "sonnet" },
-    });
-  });
-
-  it("preserves sibling settings and other env keys", async () => {
+  it("merges a user-layer env block into settings", async () => {
     await fs.promises.writeFile(
-      settingsPath(),
-      JSON.stringify({
-        model: "opus",
-        permissions: { allow: ["Bash(ls:*)"] },
-        env: { FOO: "bar" },
-      }),
+      path.join(configDir, "settings.json"),
+      JSON.stringify({ env: { CLAUDE_CODE_SUBAGENT_MODEL: "sonnet" } }),
     );
-
-    await setUserSettingsEnvVar(
-      "CLAUDE_CODE_SUBAGENT_MODEL",
-      "claude-haiku-4-5",
-    );
-
-    expect(await readSettings()).toEqual({
-      model: "opus",
-      permissions: { allow: ["Bash(ls:*)"] },
-      env: { FOO: "bar", CLAUDE_CODE_SUBAGENT_MODEL: "claude-haiku-4-5" },
-    });
-  });
-
-  it("deletes the key on undefined and prunes an empty env block", async () => {
-    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "sonnet");
-    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", undefined);
-
-    expect(await readSettings()).toEqual({});
-  });
-
-  it("keeps other env keys when deleting one", async () => {
-    await fs.promises.writeFile(
-      settingsPath(),
-      JSON.stringify({ env: { FOO: "bar", CLAUDE_CODE_SUBAGENT_MODEL: "x" } }),
-    );
-
-    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", undefined);
-
-    expect(await readSettings()).toEqual({ env: { FOO: "bar" } });
-  });
-
-  it("round-trips through getUserSettingsEnvVar", async () => {
-    expect(await getUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL")).toBe(
-      null,
-    );
-
-    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "inherit");
-
-    expect(await getUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL")).toBe(
-      "inherit",
-    );
-  });
-
-  it("refuses to overwrite an unparseable settings file", async () => {
-    await fs.promises.writeFile(settingsPath(), "{not json");
-
-    await expect(
-      setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "sonnet"),
-    ).rejects.toThrow();
-
-    expect(await fs.promises.readFile(settingsPath(), "utf-8")).toBe(
-      "{not json",
-    );
-  });
-
-  it("serialises concurrent writes without clobbering", async () => {
-    await Promise.all([
-      setUserSettingsEnvVar("A", "1"),
-      setUserSettingsEnvVar("B", "2"),
-      setUserSettingsEnvVar("C", "3"),
-    ]);
-
-    expect(await readSettings()).toEqual({
-      env: { A: "1", B: "2", C: "3" },
-    });
-  });
-
-  it("merges the written env into SettingsManager settings", async () => {
-    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "sonnet");
 
     const manager = new SettingsManager(configDir);
     await manager.initialize();

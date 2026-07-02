@@ -222,16 +222,29 @@ describe("buildSessionOptions", () => {
       expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe("inherit");
     });
 
-    it("prefers the merged settings env value over process env", () => {
+    it("prefers the host-provided subagent model over process env", () => {
       process.env.CLAUDE_CODE_SUBAGENT_MODEL = "inherit";
-      const params = makeParams();
-      vi.spyOn(params.settingsManager, "getSettings").mockReturnValue({
-        env: { CLAUDE_CODE_SUBAGENT_MODEL: "claude-haiku-4-5" },
+
+      const options = buildSessionOptions({
+        ...makeParams(),
+        subagentModel: "claude-haiku-4-5",
       });
 
-      const options = buildSessionOptions(params);
-
       expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe("claude-haiku-4-5");
+    });
+
+    it("prefers the merged settings env value over the host-provided model", () => {
+      const params = makeParams();
+      vi.spyOn(params.settingsManager, "getSettings").mockReturnValue({
+        env: { CLAUDE_CODE_SUBAGENT_MODEL: "inherit" },
+      });
+
+      const options = buildSessionOptions({
+        ...params,
+        subagentModel: "claude-haiku-4-5",
+      });
+
+      expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe("inherit");
     });
 
     it.each([
@@ -240,16 +253,17 @@ describe("buildSessionOptions", () => {
       ["claude-sonnet-4-6", "sonnet"],
       ["claude-haiku-4-5", "claude-haiku-4-5"],
       ["inherit", "inherit"],
-    ])("maps settings value %s to env value %s", (settingsValue, expected) => {
-      const params = makeParams();
-      vi.spyOn(params.settingsManager, "getSettings").mockReturnValue({
-        env: { CLAUDE_CODE_SUBAGENT_MODEL: settingsValue },
-      });
+    ])(
+      "maps host-provided value %s to env value %s",
+      (subagentModel, expected) => {
+        const options = buildSessionOptions({
+          ...makeParams(),
+          subagentModel,
+        });
 
-      const options = buildSessionOptions(params);
-
-      expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(expected);
-    });
+        expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(expected);
+      },
+    );
   });
 
   describe("ANTHROPIC_CUSTOM_HEADERS", () => {

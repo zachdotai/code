@@ -14,6 +14,7 @@ interface SettingsSchema {
   discordPresenceEnabled: boolean;
   discordPresenceShowTaskTitle: boolean;
   discordPresenceShowRepoName: boolean;
+  subagentModel: string | null;
 }
 
 function getDefaultWorktreeLocation(): string {
@@ -99,6 +100,10 @@ const schema = {
     type: "boolean" as const,
     default: false,
   },
+  subagentModel: {
+    type: ["string", "null"] as const,
+    default: null,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -114,6 +119,7 @@ export const settingsStore = new Store<SettingsSchema>({
     discordPresenceEnabled: false,
     discordPresenceShowTaskTitle: false,
     discordPresenceShowRepoName: false,
+    subagentModel: null,
   },
 });
 
@@ -191,4 +197,12 @@ export function getPreventSleepWhileRunning(): boolean {
 
 export function setPreventSleepWhileRunning(value: boolean): void {
   settingsStore.set("preventSleepWhileRunning", value);
+}
+
+export function getSubagentModel(): string | null {
+  return settingsStore.get("subagentModel", null);
+}
+
+export function setSubagentModel(model: string | null): void {
+  settingsStore.set("subagentModel", model);
 }

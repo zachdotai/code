@@ -19,10 +19,6 @@ import {
 } from "@posthog/agent";
 import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
 import { hydrateSessionJsonl } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
-import {
-  getUserSettingsEnvVar,
-  setUserSettingsEnvVar,
-} from "@posthog/agent/adapters/claude/session/settings";
 import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
 import { Agent } from "@posthog/agent/agent";
 import {
@@ -909,6 +905,7 @@ If a repository IS genuinely required, attach one in this priority order:
         plugins,
         disallowedTools,
       });
+      const subagentModel = this.workspaceSettings.getSubagentModel();
 
       let configOptions: SessionConfigOption[] | undefined;
       let agentSessionId: string | undefined;
@@ -936,6 +933,7 @@ If a repository IS genuinely required, attach one in this priority order:
               mcpToolApprovals: toolApprovals,
               ...(permissionMode && { permissionMode }),
               ...(model != null && { model }),
+              ...(subagentModel != null && { subagentModel }),
               ...(jsonSchema && { jsonSchema }),
               claudeCode: {
                 options: claudeCodeOptions,
@@ -1008,6 +1006,7 @@ If a repository IS genuinely required, attach one in this priority order:
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
+            ...(subagentModel != null && { subagentModel }),
             ...(jsonSchema && { jsonSchema }),
             claudeCode: {
               options: claudeCodeOptions,
@@ -1034,6 +1033,7 @@ If a repository IS genuinely required, attach one in this priority order:
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
+            ...(subagentModel != null && { subagentModel }),
             ...(jsonSchema && { jsonSchema }),
             claudeCode: {
               options: claudeCodeOptions,
@@ -2131,15 +2131,12 @@ For git operations while detached:
     });
   }
 
-  async getSubagentModel(): Promise<string | null> {
-    return getUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL");
+  getSubagentModel(): string | null {
+    return this.workspaceSettings.getSubagentModel();
   }
 
-  async setSubagentModel(model: string | null): Promise<void> {
-    await setUserSettingsEnvVar(
-      "CLAUDE_CODE_SUBAGENT_MODEL",
-      model ?? undefined,
-    );
+  setSubagentModel(model: string | null): void {
+    this.workspaceSettings.setSubagentModel(model);
   }
 
   async getPreviewConfigOptions(

@@ -2,9 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- Hoisted mocks ---
 
-const mockGetUserSettingsEnvVar = vi.hoisted(() => vi.fn());
-const mockSetUserSettingsEnvVar = vi.hoisted(() => vi.fn());
-
 const mockApp = vi.hoisted(() => ({
   getAppPath: vi.fn(() => "/mock/appPath"),
   isPackaged: false,
@@ -83,11 +80,6 @@ vi.mock("@posthog/agent/gateway-models", () => ({
 
 vi.mock("@posthog/agent/adapters/claude/session/jsonl-hydration", () => ({
   hydrateSessionJsonl: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock("@posthog/agent/adapters/claude/session/settings", () => ({
-  getUserSettingsEnvVar: mockGetUserSettingsEnvVar,
-  setUserSettingsEnvVar: mockSetUserSettingsEnvVar,
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -184,6 +176,8 @@ function createMockDependencies() {
     },
     workspaceSettings: {
       getWorktreeLocation: () => "/mock/worktrees",
+      getSubagentModel: vi.fn(() => null as string | null),
+      setSubagentModel: vi.fn(),
     },
     foldersService: {
       getFolders: vi.fn().mockResolvedValue([]),
@@ -244,33 +238,48 @@ describe("AgentService", () => {
   });
 
   describe("subagent model", () => {
-    it("reads the persisted value from user settings", async () => {
-      mockGetUserSettingsEnvVar.mockResolvedValue("claude-haiku-4-5");
-
-      await expect(service.getSubagentModel()).resolves.toBe(
+    it("reads the value from workspace settings", () => {
+      deps.workspaceSettings.getSubagentModel.mockReturnValue(
         "claude-haiku-4-5",
       );
-      expect(mockGetUserSettingsEnvVar).toHaveBeenCalledWith(
-        "CLAUDE_CODE_SUBAGENT_MODEL",
-      );
+
+      expect(service.getSubagentModel()).toBe("claude-haiku-4-5");
     });
 
-    it("persists the chosen model", async () => {
-      await service.setSubagentModel("claude-sonnet-5");
+    it("persists the chosen model to workspace settings", () => {
+      service.setSubagentModel("claude-sonnet-5");
 
-      expect(mockSetUserSettingsEnvVar).toHaveBeenCalledWith(
-        "CLAUDE_CODE_SUBAGENT_MODEL",
+      expect(deps.workspaceSettings.setSubagentModel).toHaveBeenCalledWith(
         "claude-sonnet-5",
       );
     });
 
-    it("clears the key when set to null", async () => {
-      await service.setSubagentModel(null);
+    it("clears the setting on null", () => {
+      service.setSubagentModel(null);
 
-      expect(mockSetUserSettingsEnvVar).toHaveBeenCalledWith(
-        "CLAUDE_CODE_SUBAGENT_MODEL",
-        undefined,
+      expect(deps.workspaceSettings.setSubagentModel).toHaveBeenCalledWith(
+        null,
       );
+    });
+
+    it("threads the stored model into session _meta", async () => {
+      deps.workspaceSettings.getSubagentModel.mockReturnValue(
+        "claude-haiku-4-5",
+      );
+
+      await service.startSession({ ...baseSessionParams, adapter: "codex" });
+
+      expect(mockNewSession.mock.calls[0][0]._meta).toMatchObject({
+        subagentModel: "claude-haiku-4-5",
+      });
+    });
+
+    it("omits subagentModel from _meta when unset", async () => {
+      await service.startSession({ ...baseSessionParams, adapter: "codex" });
+
+      expect(
+        mockNewSession.mock.calls[0][0]._meta.subagentModel,
+      ).toBeUndefined();
     });
   });
 
