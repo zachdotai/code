@@ -216,11 +216,6 @@ function getUserSettingsFilePath(): string {
   return path.join(configDir, "settings.json");
 }
 
-/**
- * Mutex-serialised read-modify-write of a settings file with an atomic
- * temp-file + rename, refusing to overwrite unparseable content. Returning
- * `existing` unchanged from `mutate` skips the write.
- */
 async function updateSettingsFile(
   mutex: AsyncMutex,
   filePath: string,

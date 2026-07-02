@@ -6,8 +6,6 @@ export const DEFAULT_MODEL = "opus";
 // at spawn, so this must stay distinct from the alias form used for DEFAULT_MODEL.
 export const FALLBACK_MODEL = "claude-opus-4-8";
 
-// Task-tool subagents and workflow fan-out agents default to a cheaper tier
-// than the main loop, injected as CLAUDE_CODE_SUBAGENT_MODEL at CLI spawn.
 export const DEFAULT_SUBAGENT_MODEL = "sonnet";
 
 // Default thinking level when the user hasn't picked one. Adaptive-only models

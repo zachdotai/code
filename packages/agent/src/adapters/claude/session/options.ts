@@ -202,12 +202,6 @@ function buildEnvironment(
       MCP_CONNECTION_NONBLOCKING: mcpNonblocking,
     }),
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
-    // Subagents (Task tool, workflow fan-outs) run on a cheaper model than the
-    // main loop by default. The CLI treats this as a hard override for every
-    // subagent. A hand-written env entry in the merged .claude/settings.json
-    // layers wins over the host-provided app setting, mirroring how the
-    // settings `model` beats the session meta model; a pre-set process env
-    // var (cloud orchestrator, dev shell) is next, then the default.
     CLAUDE_CODE_SUBAGENT_MODEL: toSdkModelId(
       subagentModel ??
         process.env.CLAUDE_CODE_SUBAGENT_MODEL ??
