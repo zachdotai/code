@@ -40,6 +40,7 @@ const sessionService = {
   connectToTask: vi.fn(),
   disconnectFromTask: vi.fn(),
   rememberInitialCloudPrompt: vi.fn(),
+  markTaskCreationInFlight: vi.fn(),
 } as unknown as SessionService;
 
 const createTask = (overrides: Partial<Task> = {}): Task => ({

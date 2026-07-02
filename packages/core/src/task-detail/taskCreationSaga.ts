@@ -62,6 +62,10 @@ export class TaskCreationSaga extends Saga<
         )
       : await this.createTask(input);
 
+    // Session reconcile auto-recovers run-less local tasks; mark this one as
+    // mid-creation so the recovery doesn't race the agent_session step below.
+    this.deps.sessionService.markTaskCreationInFlight(task.id);
+
     if (importedClaude && input.repoPath) {
       await this.recordClaudeImport(input, importedClaude, task.id);
     }
