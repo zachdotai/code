@@ -19,6 +19,12 @@ export interface CodexProcessOptions {
    */
   developerInstructions?: string;
   binaryPath?: string;
+  /**
+   * Absolute path to a real Node runtime for the stdio MCP helper scripts.
+   * Falls back to process.execPath, which is only a node runtime outside the
+   * packaged desktop app (there it is the app binary in run-as-node mode).
+   */
+  nodeRuntimePath?: string;
   codexHome?: string;
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;

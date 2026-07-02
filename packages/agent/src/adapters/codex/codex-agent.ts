@@ -320,13 +320,14 @@ function resolveBundledMcpScript(rel: string): string {
   );
 }
 
-// These MCP servers run `process.execPath`, which inside the desktop app's
-// workspace-server is the Electron app binary; without this var codex would
-// boot a whole new app instance instead of a node script. Inert under real node.
+// Belt and braces for the process.execPath fallback: inside the desktop app
+// that binary is Electron and needs this var to run a script as node instead
+// of booting a whole new app instance. Inert under a real node runtime.
 const RUN_AS_NODE_ENV = { name: "ELECTRON_RUN_AS_NODE", value: "1" };
 
 function buildStructuredOutputMcpServer(
   jsonSchema: Record<string, unknown>,
+  nodeRuntime: string,
 ): McpServerStdio {
   const scriptPath = resolveBundledMcpScript(
     "adapters/codex/structured-output-mcp-server.js",
@@ -336,7 +337,7 @@ function buildStructuredOutputMcpServer(
   );
   return {
     name: STRUCTURED_OUTPUT_MCP_NAME,
-    command: process.execPath,
+    command: nodeRuntime,
     args: [scriptPath],
     env: [
       { name: "POSTHOG_OUTPUT_SCHEMA", value: schemaBase64 },
@@ -353,6 +354,7 @@ function buildStructuredOutputMcpServer(
 function buildLocalToolsMcpServer(
   ctx: LocalToolCtx,
   enabledNames: string[],
+  nodeRuntime: string,
 ): McpServerStdio {
   const scriptPath = resolveBundledMcpScript(
     "adapters/codex/local-tools-mcp-server.js",
@@ -375,7 +377,7 @@ function buildLocalToolsMcpServer(
   }
   return {
     name: LOCAL_TOOLS_MCP_NAME,
-    command: process.execPath,
+    command: nodeRuntime,
     args: [scriptPath],
     env,
   };
@@ -701,7 +703,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
       return request;
     }
 
-    const mcpServer = buildStructuredOutputMcpServer(meta.jsonSchema);
+    const mcpServer = buildStructuredOutputMcpServer(
+      meta.jsonSchema,
+      this.mcpNodeRuntime(),
+    );
     const existingMeta = (request._meta ?? {}) as Record<string, unknown>;
     const existingSystemPrompt =
       typeof existingMeta.systemPrompt === "string"
@@ -751,11 +756,16 @@ export class CodexAcpAgent extends BaseAcpAgent {
     const mcpServer = buildLocalToolsMcpServer(
       ctx,
       tools.map((t) => t.name),
+      this.mcpNodeRuntime(),
     );
     return {
       ...request,
       mcpServers: [...(request.mcpServers ?? []), mcpServer],
     };
+  }
+
+  private mcpNodeRuntime(): string {
+    return this.codexProcessOptions.nodeRuntimePath ?? process.execPath;
   }
 
   private async applyInitialPermissionMode(

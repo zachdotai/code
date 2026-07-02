@@ -791,6 +791,10 @@ If a repository IS genuinely required, attach one in this priority order:
         gatewayUrl: proxyUrl,
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
+        nodeRuntimePath:
+          adapter === "codex"
+            ? (this.getVendoredNodePath() ?? undefined)
+            : undefined,
         codexHome,
         model,
         reasoningEffort: adapter === "codex" ? effort : undefined,

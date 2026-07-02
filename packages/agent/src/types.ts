@@ -53,6 +53,8 @@ export interface TaskExecutionOptions {
   model?: string;
   gatewayUrl?: string;
   codexBinaryPath?: string;
+  /** Absolute path to a real Node runtime for codex's stdio MCP helper scripts. */
+  nodeRuntimePath?: string;
   codexHome?: string;
   reasoningEffort?: EffortLevel;
   /**

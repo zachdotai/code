@@ -140,6 +140,7 @@ export class Agent {
               apiBaseUrl: `${gatewayConfig.gatewayUrl}/v1`,
               apiKey: gatewayConfig.apiKey,
               binaryPath: options.codexBinaryPath,
+              nodeRuntimePath: options.nodeRuntimePath,
               codexHome: options.codexHome,
               model: sanitizedModel,
               reasoningEffort: options.reasoningEffort,

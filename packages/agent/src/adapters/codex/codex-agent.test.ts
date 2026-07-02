@@ -82,6 +82,7 @@ describe("CodexAcpAgent", () => {
     overrides: Partial<AgentSideConnection> = {},
     agentOptions?: {
       onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
+      nodeRuntimePath?: string;
     },
   ): {
     agent: CodexAcpAgent;
@@ -102,6 +103,9 @@ describe("CodexAcpAgent", () => {
     const agent = new CodexAcpAgent(client, {
       codexProcessOptions: {
         cwd: process.cwd(),
+        ...(agentOptions?.nodeRuntimePath && {
+          nodeRuntimePath: agentOptions.nodeRuntimePath,
+        }),
       },
       onStructuredOutput: agentOptions?.onStructuredOutput,
     });
@@ -627,6 +631,34 @@ describe("CodexAcpAgent", () => {
       // instruction appended (not overwritten).
       expect(forwarded._meta.systemPrompt.startsWith("be terse.")).toBe(true);
       expect(forwarded._meta.systemPrompt).toContain("create_output");
+    });
+
+    it("runs MCP helper servers on the provided node runtime", async () => {
+      const { agent } = createAgent(
+        {},
+        {
+          onStructuredOutput: vi.fn(),
+          nodeRuntimePath: "/vendored/node-runtime/node",
+        },
+      );
+      mockCodexConnection.newSession.mockResolvedValue({
+        sessionId: "session-1",
+        modes: { currentModeId: "auto", availableModes: [] },
+        configOptions: [],
+      } satisfies Partial<NewSessionResponse>);
+
+      await agent.newSession({
+        cwd: process.cwd(),
+        mcpServers: [],
+        _meta: { jsonSchema: schema },
+      } as never);
+
+      const forwarded = mockCodexConnection.newSession.mock.calls[0][0] as {
+        mcpServers: Array<{ command: string }>;
+      };
+      expect(forwarded.mcpServers[0].command).toBe(
+        "/vendored/node-runtime/node",
+      );
     });
 
     it("injects ELECTRON_RUN_AS_NODE on the local-tools MCP server env", async () => {
