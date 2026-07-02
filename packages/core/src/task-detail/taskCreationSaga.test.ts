@@ -776,6 +776,29 @@ describe("TaskCreationSaga", () => {
     );
   });
 
+  it("does not mark creation in flight for a cloud create", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi
+      .fn()
+      .mockResolvedValue(createTask({ latest_run: createRun() }));
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+    });
+
+    expect(result.success).toBe(true);
+    expect(sessionService.markTaskCreationInFlight).not.toHaveBeenCalled();
+  });
+
   it("rolls back the import snapshot and tracking row when a later step fails", async () => {
     const createdTask = createTask();
     const createTaskMock = vi.fn().mockResolvedValue(createdTask);

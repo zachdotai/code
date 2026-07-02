@@ -62,9 +62,16 @@ export class TaskCreationSaga extends Saga<
         )
       : await this.createTask(input);
 
+    const workspaceMode =
+      input.workspaceMode ??
+      (task.latest_run?.environment === "cloud" ? "cloud" : "local");
+
     // Session reconcile auto-recovers run-less local tasks; mark this one as
     // mid-creation so the recovery doesn't race the agent_session step below.
-    this.deps.sessionService.markTaskCreationInFlight(task.id);
+    // Cloud creates never connect locally, so nothing would clear their mark.
+    if (workspaceMode !== "cloud") {
+      this.deps.sessionService.markTaskCreationInFlight(task.id);
+    }
 
     if (importedClaude && input.repoPath) {
       await this.recordClaudeImport(input, importedClaude, task.id);
@@ -76,10 +83,6 @@ export class TaskCreationSaga extends Saga<
       (await this.readOnlyStep("resolve_repo_path", () =>
         this.deps.host.getTaskDirectory(task.id, repoKey ?? undefined),
       ));
-
-    const workspaceMode =
-      input.workspaceMode ??
-      (task.latest_run?.environment === "cloud" ? "cloud" : "local");
 
     let workspace: Workspace | null = null;
     const branch = input.branch ?? task.latest_run?.branch ?? null;
