@@ -568,9 +568,13 @@ export function SessionView({
                   </Flex>
                 ) : hideInput ? null : firstPendingPermission ? (
                   // This box replaces the composer while a permission is pending, so it's an input
-                  // region: `shrink-0` keeps it from being compressed by the scroller above, and
-                  // `min-h-0 overflow-y-auto` lets a tall permission prompt scroll inside itself.
-                  <Box className="min-h-0 shrink-0 overflow-y-auto">
+                  // region: `min-h-0` + `overflow-y-auto` let a tall permission prompt scroll inside
+                  // itself so the approve/deny controls stay reachable. It must stay shrinkable (not
+                  // `shrink-0`): a non-shrinking flex item keeps its full content height, `overflow-y-auto`
+                  // never engages, and a long command pushes the controls below the viewport with no
+                  // way to scroll to them. The scroller above (`flex-1`, basis 0) yields space first, so
+                  // this only shrinks once the prompt would otherwise overflow the pane.
+                  <Box className="min-h-0 shrink overflow-y-auto">
                     <Box
                       className={compact ? "p-1" : "mx-auto px-2 pb-3"}
                       style={
