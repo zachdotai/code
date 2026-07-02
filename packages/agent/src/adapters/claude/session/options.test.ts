@@ -193,6 +193,59 @@ describe("buildSessionOptions", () => {
     });
   });
 
+  describe("CLAUDE_CODE_SUBAGENT_MODEL", () => {
+    const originalSubagentModel = process.env.CLAUDE_CODE_SUBAGENT_MODEL;
+
+    beforeEach(() => {
+      delete process.env.CLAUDE_CODE_SUBAGENT_MODEL;
+    });
+
+    afterEach(() => {
+      if (originalSubagentModel === undefined) {
+        delete process.env.CLAUDE_CODE_SUBAGENT_MODEL;
+      } else {
+        process.env.CLAUDE_CODE_SUBAGENT_MODEL = originalSubagentModel;
+      }
+    });
+
+    it("defaults subagents to sonnet when nothing overrides", () => {
+      const options = buildSessionOptions(makeParams());
+
+      expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe("sonnet");
+    });
+
+    it("prefers a pre-set process env value over the default", () => {
+      process.env.CLAUDE_CODE_SUBAGENT_MODEL = "inherit";
+
+      const options = buildSessionOptions(makeParams());
+
+      expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe("inherit");
+    });
+
+    it("prefers the merged settings env value over process env", () => {
+      process.env.CLAUDE_CODE_SUBAGENT_MODEL = "inherit";
+      const params = makeParams();
+      vi.spyOn(params.settingsManager, "getSettings").mockReturnValue({
+        env: { CLAUDE_CODE_SUBAGENT_MODEL: "claude-haiku-4-5" },
+      });
+
+      const options = buildSessionOptions(params);
+
+      expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe("claude-haiku-4-5");
+    });
+
+    it("converts gateway model ids from settings to CLI aliases", () => {
+      const params = makeParams();
+      vi.spyOn(params.settingsManager, "getSettings").mockReturnValue({
+        env: { CLAUDE_CODE_SUBAGENT_MODEL: "claude-opus-4-8" },
+      });
+
+      const options = buildSessionOptions(params);
+
+      expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe("opus");
+    });
+  });
+
   describe("ANTHROPIC_CUSTOM_HEADERS", () => {
     const originalProjectId = process.env.POSTHOG_PROJECT_ID;
     const originalCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;

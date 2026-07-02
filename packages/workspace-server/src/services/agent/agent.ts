@@ -19,6 +19,10 @@ import {
 } from "@posthog/agent";
 import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
 import { hydrateSessionJsonl } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
+import {
+  getUserSettingsEnvVar,
+  setUserSettingsEnvVar,
+} from "@posthog/agent/adapters/claude/session/settings";
 import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
 import { Agent } from "@posthog/agent/agent";
 import {
@@ -2125,6 +2129,17 @@ For git operations while detached:
         getClaudeModelRecency(a.modelId) - getClaudeModelRecency(b.modelId)
       );
     });
+  }
+
+  async getSubagentModel(): Promise<string | null> {
+    return getUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL");
+  }
+
+  async setSubagentModel(model: string | null): Promise<void> {
+    await setUserSettingsEnvVar(
+      "CLAUDE_CODE_SUBAGENT_MODEL",
+      model ?? undefined,
+    );
   }
 
   async getPreviewConfigOptions(

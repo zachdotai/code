@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- Hoisted mocks ---
 
+const mockGetUserSettingsEnvVar = vi.hoisted(() => vi.fn());
+const mockSetUserSettingsEnvVar = vi.hoisted(() => vi.fn());
+
 const mockApp = vi.hoisted(() => ({
   getAppPath: vi.fn(() => "/mock/appPath"),
   isPackaged: false,
@@ -80,6 +83,11 @@ vi.mock("@posthog/agent/gateway-models", () => ({
 
 vi.mock("@posthog/agent/adapters/claude/session/jsonl-hydration", () => ({
   hydrateSessionJsonl: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@posthog/agent/adapters/claude/session/settings", () => ({
+  getUserSettingsEnvVar: mockGetUserSettingsEnvVar,
+  setUserSettingsEnvVar: mockSetUserSettingsEnvVar,
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -233,6 +241,37 @@ describe("AgentService", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  describe("subagent model", () => {
+    it("reads the persisted value from user settings", async () => {
+      mockGetUserSettingsEnvVar.mockResolvedValue("claude-haiku-4-5");
+
+      await expect(service.getSubagentModel()).resolves.toBe(
+        "claude-haiku-4-5",
+      );
+      expect(mockGetUserSettingsEnvVar).toHaveBeenCalledWith(
+        "CLAUDE_CODE_SUBAGENT_MODEL",
+      );
+    });
+
+    it("persists the chosen model", async () => {
+      await service.setSubagentModel("claude-sonnet-5");
+
+      expect(mockSetUserSettingsEnvVar).toHaveBeenCalledWith(
+        "CLAUDE_CODE_SUBAGENT_MODEL",
+        "claude-sonnet-5",
+      );
+    });
+
+    it("clears the key when set to null", async () => {
+      await service.setSubagentModel(null);
+
+      expect(mockSetUserSettingsEnvVar).toHaveBeenCalledWith(
+        "CLAUDE_CODE_SUBAGENT_MODEL",
+        undefined,
+      );
+    });
   });
 
   describe("MCP servers", () => {

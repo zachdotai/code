@@ -4,7 +4,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveMainRepoPath } from "./repo-path";
-import { mergeAvailableModels, SettingsManager } from "./settings";
+import {
+  getUserSettingsEnvVar,
+  mergeAvailableModels,
+  SettingsManager,
+  setUserSettingsEnvVar,
+} from "./settings";
 
 function runGit(cwd: string, args: string[]): void {
   execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
@@ -306,5 +311,104 @@ describe("mergeAvailableModels", () => {
         "enterprise",
       ),
     ).toEqual(["managed-a"]);
+  });
+});
+
+describe("user settings env vars", () => {
+  let configDir: string;
+  let originalConfigDir: string | undefined;
+
+  const settingsPath = () => path.join(configDir, "settings.json");
+
+  const readSettings = async () =>
+    JSON.parse(await fs.promises.readFile(settingsPath(), "utf-8"));
+
+  beforeEach(async () => {
+    configDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "user-settings-env-"),
+    );
+    originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+  });
+
+  afterEach(async () => {
+    if (originalConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+    }
+    await fs.promises.rm(configDir, { recursive: true, force: true });
+  });
+
+  it("creates the settings file when absent", async () => {
+    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "sonnet");
+
+    expect(await readSettings()).toEqual({
+      env: { CLAUDE_CODE_SUBAGENT_MODEL: "sonnet" },
+    });
+  });
+
+  it("preserves sibling settings and other env keys", async () => {
+    await fs.promises.writeFile(
+      settingsPath(),
+      JSON.stringify({
+        model: "opus",
+        permissions: { allow: ["Bash(ls:*)"] },
+        env: { FOO: "bar" },
+      }),
+    );
+
+    await setUserSettingsEnvVar(
+      "CLAUDE_CODE_SUBAGENT_MODEL",
+      "claude-haiku-4-5",
+    );
+
+    expect(await readSettings()).toEqual({
+      model: "opus",
+      permissions: { allow: ["Bash(ls:*)"] },
+      env: { FOO: "bar", CLAUDE_CODE_SUBAGENT_MODEL: "claude-haiku-4-5" },
+    });
+  });
+
+  it("deletes the key on undefined and prunes an empty env block", async () => {
+    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "sonnet");
+    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", undefined);
+
+    expect(await readSettings()).toEqual({});
+  });
+
+  it("keeps other env keys when deleting one", async () => {
+    await fs.promises.writeFile(
+      settingsPath(),
+      JSON.stringify({ env: { FOO: "bar", CLAUDE_CODE_SUBAGENT_MODEL: "x" } }),
+    );
+
+    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", undefined);
+
+    expect(await readSettings()).toEqual({ env: { FOO: "bar" } });
+  });
+
+  it("round-trips through getUserSettingsEnvVar", async () => {
+    expect(await getUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL")).toBe(
+      null,
+    );
+
+    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "inherit");
+
+    expect(await getUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL")).toBe(
+      "inherit",
+    );
+  });
+
+  it("refuses to overwrite an unparseable settings file", async () => {
+    await fs.promises.writeFile(settingsPath(), "{not json");
+
+    await expect(
+      setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "sonnet"),
+    ).rejects.toThrow();
+
+    expect(await fs.promises.readFile(settingsPath(), "utf-8")).toBe(
+      "{not json",
+    );
   });
 });

@@ -13,6 +13,7 @@ import {
   getGatewayModelsOutput,
   getPreviewConfigOptionsInput,
   getPreviewConfigOptionsOutput,
+  getSubagentModelOutput,
   listSessionsInput,
   listSessionsOutput,
   notifySessionContextInput,
@@ -23,6 +24,7 @@ import {
   respondToPermissionInput,
   sessionResponseSchema,
   setConfigOptionInput,
+  setSubagentModelInput,
   startSessionInput,
   subscribeSessionInput,
 } from "@posthog/workspace-server/services/agent/schemas";
@@ -226,5 +228,19 @@ export const agentRouter = router({
       ctx.container
         .get<AgentService>(AGENT_SERVICE)
         .getPreviewConfigOptions(input.apiHost, input.adapter),
+    ),
+
+  getSubagentModel: publicProcedure
+    .output(getSubagentModelOutput)
+    .query(({ ctx }) =>
+      ctx.container.get<AgentService>(AGENT_SERVICE).getSubagentModel(),
+    ),
+
+  setSubagentModel: publicProcedure
+    .input(setSubagentModelInput)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<AgentService>(AGENT_SERVICE)
+        .setSubagentModel(input.model),
     ),
 });

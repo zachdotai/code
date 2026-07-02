@@ -1,5 +1,14 @@
 import { ArrowSquareOut, Check, Copy, Warning } from "@phosphor-icons/react";
-import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { useHostTRPC } from "@posthog/host-router/react";
+import {
+  ANALYTICS_EVENTS,
+  flattenSelectOptions,
+  GLM_MODEL_FLAG,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import { PermissionsSettings } from "@posthog/ui/features/settings/sections/PermissionsSettings";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
@@ -12,9 +21,11 @@ import {
   Flex,
   IconButton,
   Link,
+  Select,
   Switch,
   Text,
 } from "@radix-ui/themes";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
 function CopyableCommand({ command }: { command: string }) {
@@ -69,6 +80,107 @@ function SettingDescription({
   );
 }
 
+const SUBAGENT_MODEL_DEFAULT_VALUE = "__default__";
+const SUBAGENT_MODEL_INHERIT_VALUE = "inherit";
+
+function SubagentModelSetting() {
+  const hostTRPC = useHostTRPC();
+  const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
+  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
+  const apiHost = cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null;
+
+  const subagentModel = useQuery(
+    hostTRPC.agent.getSubagentModel.queryOptions(),
+  );
+  const previewConfig = useQuery({
+    ...hostTRPC.agent.getPreviewConfigOptions.queryOptions({
+      apiHost: apiHost ?? "",
+      adapter: "claude",
+    }),
+    enabled: apiHost !== null,
+  });
+  const setSubagentModel = useMutation(
+    hostTRPC.agent.setSubagentModel.mutationOptions(),
+  );
+
+  const rawModelOption = previewConfig.data?.find(
+    (option) => option.category === "model" && option.type === "select",
+  );
+  const modelOption =
+    rawModelOption?.type === "select"
+      ? glmEnabled
+        ? rawModelOption
+        : stripGlmModelOption(rawModelOption)
+      : undefined;
+  const modelItems =
+    modelOption?.type === "select"
+      ? flattenSelectOptions(modelOption.options)
+      : [];
+
+  const storedModel = subagentModel.data ?? null;
+  const selectValue = storedModel ?? SUBAGENT_MODEL_DEFAULT_VALUE;
+  const storedModelHasItem =
+    !storedModel ||
+    storedModel === SUBAGENT_MODEL_INHERIT_VALUE ||
+    modelItems.some((item) => item.value === storedModel);
+
+  const handleChange = useCallback(
+    (value: string) => {
+      const next = value === SUBAGENT_MODEL_DEFAULT_VALUE ? null : value;
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "subagent_model",
+        new_value: next ?? "default",
+        old_value: storedModel ?? "default",
+      });
+      setSubagentModel.mutate(
+        { model: next },
+        { onSettled: () => subagentModel.refetch() },
+      );
+    },
+    [storedModel, setSubagentModel, subagentModel],
+  );
+
+  return (
+    <SettingRow
+      label="Subagent model"
+      description="Model used for Task-tool subagents and workflow fan-out agents (research, exploration, review). Applies to new and reconnected sessions"
+      noBorder
+    >
+      <Flex direction="column" align="end" gap="1">
+        <Select.Root
+          value={selectValue}
+          onValueChange={handleChange}
+          size="1"
+          disabled={subagentModel.isLoading}
+        >
+          <Select.Trigger className="min-w-[160px]" />
+          <Select.Content>
+            <Select.Item value={SUBAGENT_MODEL_DEFAULT_VALUE}>
+              Sonnet (default)
+            </Select.Item>
+            <Select.Item value={SUBAGENT_MODEL_INHERIT_VALUE}>
+              Inherit main model
+            </Select.Item>
+            {!storedModelHasItem && storedModel && (
+              <Select.Item value={storedModel}>{storedModel}</Select.Item>
+            )}
+            {modelItems.map((item) => (
+              <Select.Item key={item.value} value={item.value}>
+                {item.name}
+              </Select.Item>
+            ))}
+          </Select.Content>
+        </Select.Root>
+        {setSubagentModel.isError && (
+          <Text color="red" className="text-[12px]">
+            Failed to save subagent model
+          </Text>
+        )}
+      </Flex>
+    </SettingRow>
+  );
+}
+
 export function ClaudeCodeSettings() {
   const { allowBypassPermissions, setAllowBypassPermissions } =
     useSettingsStore();
@@ -104,8 +216,15 @@ export function ClaudeCodeSettings() {
 
   return (
     <Flex direction="column">
+      {/* Models */}
+      <Text className="mt-1 mb-2 font-medium text-sm">Models</Text>
+
+      <SubagentModelSetting />
+
       {/* Extensions */}
-      <Text className="mt-1 mb-2 font-medium text-sm">Extensions</Text>
+      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Extensions
+      </Text>
 
       <SettingRow
         label="MCP servers"

@@ -210,6 +210,56 @@ export interface PermissionCheckResult {
   source?: "allow" | "deny" | "ask";
 }
 
+function getUserSettingsFilePath(): string {
+  const configDir =
+    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  return path.join(configDir, "settings.json");
+}
+
+const userSettingsWriteMutex = new AsyncMutex();
+
+export async function getUserSettingsEnvVar(
+  key: string,
+): Promise<string | null> {
+  const settings = await loadSettingsFile(getUserSettingsFilePath());
+  return settings.env?.[key] ?? null;
+}
+
+/**
+ * Sets or clears one key in the `env` block of the user-layer settings.json
+ * (`<CLAUDE_CONFIG_DIR>/settings.json`, app-scoped since the host sets
+ * CLAUDE_CONFIG_DIR). `buildSessionOptions` reads the merged env at every
+ * session spawn, so changes apply to new and resumed sessions without any
+ * per-session threading. `value === undefined` deletes the key. Mirrors
+ * `addAllowRules`: mutex-serialised, atomic temp-file + rename.
+ */
+export async function setUserSettingsEnvVar(
+  key: string,
+  value: string | undefined,
+): Promise<void> {
+  await userSettingsWriteMutex.acquire();
+  try {
+    const filePath = getUserSettingsFilePath();
+    const existing = await readSettingsFileForUpdate(filePath);
+    const env = { ...existing.env };
+    if (value === undefined) {
+      delete env[key];
+    } else {
+      env[key] = value;
+    }
+    const next: ClaudeCodeSettings = { ...existing };
+    if (Object.keys(env).length > 0) {
+      next.env = env;
+    } else {
+      delete next.env;
+    }
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    await writeFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+  } finally {
+    userSettingsWriteMutex.release();
+  }
+}
+
 export function getManagedSettingsPath(): string {
   switch (process.platform) {
     case "darwin":
@@ -267,9 +317,7 @@ export class SettingsManager {
   }
 
   private getUserSettingsPath(): string {
-    const configDir =
-      process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
-    return path.join(configDir, "settings.json");
+    return getUserSettingsFilePath();
   }
 
   private getProjectSettingsPath(): string {

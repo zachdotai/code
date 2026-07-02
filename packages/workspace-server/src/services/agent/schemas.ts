@@ -79,6 +79,15 @@ export const startSessionInput = z.object({
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
 
+export const setSubagentModelInput = z.object({
+  /** Gateway model id or "inherit"; null clears back to the built-in default. */
+  model: z.string().min(1).nullable(),
+});
+
+export type SetSubagentModelInput = z.infer<typeof setSubagentModelInput>;
+
+export const getSubagentModelOutput = z.string().nullable();
+
 export const modelOptionSchema = z.object({
   modelId: z.string(),
   name: z.string(),

@@ -28,7 +28,12 @@ import type { CodeExecutionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
-import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
+import {
+  DEFAULT_MODEL,
+  DEFAULT_SUBAGENT_MODEL,
+  FALLBACK_MODEL,
+  toSdkModelId,
+} from "./models";
 import type { SettingsManager } from "./settings";
 
 export interface ProcessSpawnedInfo {
@@ -134,7 +139,10 @@ function buildMcpServers(
   };
 }
 
-function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
+function buildEnvironment(
+  gateway?: GatewayEnv,
+  settingsSubagentModel?: string,
+): Record<string, string> {
   // Custom HTTP headers reach the model only through the Claude CLI subprocess,
   // which reads them from this env var (newline-delimited `name: value` lines)
   // — the SDK has no direct header option. We finalize them here, the single
@@ -192,6 +200,14 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
       MCP_CONNECTION_NONBLOCKING: mcpNonblocking,
     }),
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
+    // Subagents (Task tool, workflow fan-outs) run on a cheaper model than the
+    // main loop by default. The CLI treats this as a hard override for every
+    // subagent; the merged .claude/settings.json env block (user layer written
+    // by the Settings UI, stored as a gateway model id) or a pre-set process
+    // env var wins over the default.
+    CLAUDE_CODE_SUBAGENT_MODEL: settingsSubagentModel
+      ? toSdkModelId(settingsSubagentModel)
+      : (process.env.CLAUDE_CODE_SUBAGENT_MODEL ?? DEFAULT_SUBAGENT_MODEL),
   };
 }
 
@@ -443,7 +459,10 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.mcpServers,
       loadUserClaudeJsonMcpServers(params.cwd, params.logger),
     ),
-    env: buildEnvironment(params.gatewayEnv),
+    env: buildEnvironment(
+      params.gatewayEnv,
+      params.settingsManager.getSettings().env?.CLAUDE_CODE_SUBAGENT_MODEL,
+    ),
     hooks: buildHooks(
       params.userProvidedOptions?.hooks,
       params.onModeChange,
