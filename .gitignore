@@ -78,3 +78,5 @@ CLAUDE.local.md
 apps/mobile/ROADMAP.md
 # Local quill tarball for ChatX thread testing (not committed)
 .local-quill/
+
+!paul-onboarding-logs/*
