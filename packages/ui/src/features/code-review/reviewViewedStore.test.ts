@@ -39,5 +39,4 @@ describe("reviewViewedStore", () => {
     clearTasks(["unknown"]);
     expect(viewed()).toBe(before);
   });
-
 });
