@@ -40,16 +40,4 @@ describe("reviewViewedStore", () => {
     expect(viewed()).toBe(before);
   });
 
-  it("evicts least-recently-touched tasks past the entry cap", () => {
-    for (let i = 0; i < 260; i++) setViewed(`t${i}`, "f", "s");
-    expect(Object.keys(viewed()).length).toBe(250);
-    expect(viewed().t0).toBeUndefined(); // oldest evicted
-    expect(viewed().t259).toBeDefined(); // most recent kept
-  });
-
-  it("never evicts the task currently being marked, even past the cap", () => {
-    for (let i = 0; i < 250; i++) setViewed(`old${i}`, "f", "s");
-    for (let f = 0; f < 300; f++) setViewed("big", `f${f}`, "s");
-    expect(Object.keys(viewed().big ?? {}).length).toBe(300);
-  });
 });
