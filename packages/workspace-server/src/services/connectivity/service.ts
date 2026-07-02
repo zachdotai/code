@@ -19,7 +19,7 @@ const CHECK_TIMEOUT_MS = 5_000;
 const OFFLINE_CONFIRM_THRESHOLD = 2;
 const MIN_POLL_INTERVAL_MS = 3_000;
 const MAX_POLL_INTERVAL_MS = 10_000;
-const ONLINE_POLL_INTERVAL_MS = 3_000;
+const ONLINE_POLL_INTERVAL_MS = 30_000;
 const OFFLINE_BACKOFF_MULTIPLIER = 1.5;
 
 class Unreachable extends Data.TaggedError("Unreachable")<
