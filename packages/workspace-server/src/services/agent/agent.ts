@@ -1561,13 +1561,23 @@ For git operations while detached:
     const mockNodeDir = getMockNodeDir();
     if (!this.mockNodeReady) {
       try {
-        ensureNodeShim(mockNodeDir, process.execPath);
+        ensureNodeShim(mockNodeDir, process.execPath, {
+          vendoredNodePath: this.getVendoredNodePath(),
+        });
         this.mockNodeReady = true;
       } catch (err) {
         this.log.warn("Failed to setup mock node environment", err);
       }
     }
     return mockNodeDir;
+  }
+
+  private getVendoredNodePath(): string | null {
+    const binary = process.platform === "win32" ? "node.exe" : "node";
+    const vendored = this.bundledResources.resolve(
+      `.vite/build/node-runtime/${binary}`,
+    );
+    return fs.existsSync(vendored) ? vendored : null;
   }
 
   private cancelInFlightMcpToolCalls(session: ManagedSession): void {
