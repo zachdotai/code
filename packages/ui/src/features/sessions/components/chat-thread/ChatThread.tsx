@@ -29,6 +29,7 @@ import { ChatMarkdown } from "@posthog/ui/features/sessions/components/chat-thre
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
 import {
+  isToolActive,
   ToolGroup,
   type ToolGroupItem,
 } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
@@ -166,6 +167,19 @@ function formatTimestamp(ts: number): string {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+/**
+ * Send-time footer revealed on hover. Sits inside a `group` container (a `ChatMessage` for prose, a
+ * wrapper div for tool rows) so it fades in only while that row is hovered.
+ */
+function RowTimestamp({ timestamp }: { timestamp?: number }) {
+  if (timestamp == null) return null;
+  return (
+    <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
+      {formatTimestamp(timestamp)}
+    </ChatMessageFooter>
+  );
 }
 
 /**
@@ -475,7 +489,16 @@ const ThreadRow = memo(function ThreadRow({
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
       {item.type === "tool_group" ? (
-        <ToolGroup tools={item.tools} />
+        <div className="group flex flex-col gap-2">
+          <ToolGroup tools={item.tools} />
+          <RowTimestamp
+            timestamp={
+              item.tools.some(isToolActive)
+                ? undefined
+                : item.tools[0]?.timestamp
+            }
+          />
+        </div>
       ) : item.type === "user_message" ? (
         <UserBubble
           content={item.content}
@@ -596,18 +619,23 @@ export function ChatThread({
             update.content.type === "text"
           ) {
             return (
-              <ChatMessage align="start">
+              <ChatMessage align="start" className="group">
                 <ChatMessageContent>
                   <ChatBubble variant="ghost">
                     <ChatBubbleContent>
                       <ChatMarkdown content={update.content.text} />
                     </ChatBubbleContent>
                   </ChatBubble>
+                  <RowTimestamp
+                    timestamp={
+                      item.turnContext.turnComplete ? item.timestamp : undefined
+                    }
+                  />
                 </ChatMessageContent>
               </ChatMessage>
             );
           }
-          return (
+          const rendered = (
             <SessionUpdateView
               item={item.update}
               toolCalls={item.turnContext.toolCalls}
@@ -617,6 +645,17 @@ export function ChatThread({
               thoughtComplete={item.thoughtComplete}
             />
           );
+          if (update.sessionUpdate === "tool_call") {
+            return (
+              <div className="group flex flex-col gap-2">
+                {rendered}
+                <RowTimestamp
+                  timestamp={isToolActive(item) ? undefined : item.timestamp}
+                />
+              </div>
+            );
+          }
+          return rendered;
         }
         case "git_action_result":
           return repoPath ? (
