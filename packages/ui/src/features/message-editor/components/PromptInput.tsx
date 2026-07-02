@@ -25,7 +25,7 @@ import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
 import type { EditorHandle } from "../types";
 import { useEditorDictation } from "../voice/useEditorDictation";
-import { useWhisperDictation } from "../voice/useWhisperDictation";
+import { useVoskDictation } from "../voice/useVoskDictation";
 import { AttachmentMenu } from "./AttachmentMenu";
 import { AttachmentsBar } from "./AttachmentsBar";
 import { SlotMachineSubmit } from "./SlotMachineSubmit";
@@ -201,14 +201,16 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       ],
     );
 
-    // Voice dictation: transcribe spoken words into the editor with an offline
-    // whisper.cpp model. Batch, not streaming — text lands once, on stop.
-    // Available whenever the toolbar is shown (canvas-style bare composers opt
-    // out via hideDefaultToolbar) and the composer is editable.
+    // Voice dictation: stream spoken words into the editor with an offline Vosk
+    // recognizer (word-by-word, no cloud). Available whenever the toolbar is
+    // shown (canvas-style bare composers opt out via hideDefaultToolbar) and the
+    // composer is editable.
     const voiceEnabled = !hideDefaultToolbar && !disabled;
     const dictation = useEditorDictation(editor);
-    const voice = useWhisperDictation({
-      onTranscript: (text) => dictation.insertFinal(text),
+    const voice = useVoskDictation({
+      onRecordingStart: () => dictation.begin(),
+      onPartialTranscript: (text) => dictation.updateInterim(text),
+      onTranscript: (text) => dictation.finalize(text),
       onError: (message) => toast.error(message),
     });
 

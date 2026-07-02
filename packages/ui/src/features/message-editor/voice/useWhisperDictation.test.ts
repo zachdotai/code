@@ -8,6 +8,9 @@ vi.mock("./pcm", () => ({
 vi.mock("./whisperClient", () => ({
   getWhisperClient: vi.fn(),
 }));
+vi.mock("./whisperModule", () => ({
+  isWhisperEngineAvailable: vi.fn().mockResolvedValue(true),
+}));
 
 import { decodeToPcm16k } from "./pcm";
 import { useWhisperDictation } from "./useWhisperDictation";
@@ -68,7 +71,7 @@ describe("useWhisperDictation", () => {
     const onTranscript = vi.fn();
     const { result } = renderHook(() => useWhisperDictation({ onTranscript }));
 
-    expect(result.current.isSupported).toBe(true);
+    await waitFor(() => expect(result.current.isSupported).toBe(true));
     expect(result.current.status).toBe("idle");
 
     await act(async () => {

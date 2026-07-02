@@ -20,11 +20,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..", "..");
 
 const MODEL = {
-  file: "ggml-base.en-q5_1.bin",
-  url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q5_1.bin",
+  // tiny.en is ~5x faster than base.en in single-threaded WASM, which is what
+  // makes the live streaming partials keep up. Accuracy is lower; swap to
+  // ggml-base.en-q5_1.bin (and bump minBytes to ~50MB) if accuracy matters more.
+  file: "ggml-tiny.en-q5_1.bin",
+  url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin",
   // Approximate size (bytes) for a sanity check; a truncated download is the
   // common failure and this catches it without a brittle exact-hash pin.
-  minBytes: 50_000_000,
+  minBytes: 25_000_000,
 };
 
 const DEST_DIRS = [

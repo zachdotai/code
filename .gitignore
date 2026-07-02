@@ -66,6 +66,12 @@ apps/code/resources/codex-acp/
 scripts/whisper-wasm/.build/
 apps/code/public/whisper/
 apps/web/public/whisper/
+# Offline Vosk (streaming) model archive, downloaded on demand.
+apps/code/public/vosk/
+apps/web/public/vosk/
+# Stray Emscripten compiler-probe output (safety net; build.sh keeps these in .build).
+a.out.js
+a.out.wasm
 
 # Licensed fonts (downloaded from S3 during CI)
 apps/code/assets/fonts/BerkeleyMono/

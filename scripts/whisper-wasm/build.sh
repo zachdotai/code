@@ -39,6 +39,10 @@ cp "$SCRIPT_DIR/binding.cpp" "$SRC_DIR/examples/whisper.wasm/emscripten.cpp"
 cp "$SCRIPT_DIR/CMakeLists.txt" "$SRC_DIR/examples/whisper.wasm/CMakeLists.txt"
 
 echo "Configuring (emcmake) ..."
+# Run from the work dir: CMake's compiler-detection probes emit stray a.out.js /
+# a.out.wasm into the CWD, and pnpm invokes this script from the repo root — keep
+# that junk inside .build (which is git-ignored) instead.
+cd "$WORK_DIR"
 emcmake cmake -S "$SRC_DIR" -B "$WORK_DIR/build-em" \
   -DWHISPER_WASM_SINGLE_FILE=ON \
   -DCMAKE_BUILD_TYPE=Release

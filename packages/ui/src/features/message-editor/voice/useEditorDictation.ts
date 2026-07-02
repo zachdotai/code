@@ -9,9 +9,13 @@ export interface EditorDictation {
   update: (delta: TranscriptDelta) => void;
   // Finalize: keep what was transcribed, stop tracking, and place the caret.
   end: () => void;
-  // Insert a complete transcript in one shot (batch engines like whisper). It
-  // anchors, writes the text with the right leading space, and places the caret.
-  insertFinal: (text: string) => void;
+  // Streaming: replace the provisional (interim) region with the latest partial
+  // transcript. Rewritten in place on each call as the guess is refined.
+  updateInterim: (text: string) => void;
+  // Streaming: commit the final transcript over the provisional region and stop
+  // tracking (an empty string just clears any leftover interim), then place the
+  // caret. Also works as a one-shot insert when no interim was streamed.
+  finalize: (text: string) => void;
 }
 
 // Streams a dictation transcript into a Tiptap editor. Finalized words become
@@ -83,18 +87,23 @@ export function useEditorDictation(editor: Editor | null): EditorDictation {
     editor.commands.focus(caret, { scrollIntoView: true });
   }, [editor]);
 
-  const insertFinal = useCallback(
+  const updateInterim = useCallback(
     (text: string) => {
-      if (!editor || !text) return;
-      begin();
+      update({ final: "", interim: text });
+    },
+    [update],
+  );
+
+  const finalize = useCallback(
+    (text: string) => {
       update({ final: text, interim: "" });
       end();
     },
-    [editor, begin, update, end],
+    [update, end],
   );
 
   return useMemo(
-    () => ({ begin, update, end, insertFinal }),
-    [begin, update, end, insertFinal],
+    () => ({ begin, update, end, updateInterim, finalize }),
+    [begin, update, end, updateInterim, finalize],
   );
 }

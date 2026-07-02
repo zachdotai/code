@@ -14,6 +14,10 @@ set(TARGET libwhisper)
 
 add_executable(${TARGET} emscripten.cpp)
 
+# embind (emscripten/bind.h) requires C++17 or newer; without this the target
+# compiles at the toolchain default and fails with "embind requires -std=c++17".
+target_compile_features(${TARGET} PRIVATE cxx_std_17)
+
 include(DefaultTargetOptions)
 
 target_link_libraries(${TARGET} PRIVATE whisper)
