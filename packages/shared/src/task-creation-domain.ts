@@ -18,6 +18,7 @@ export interface TaskCreationInput {
   filePaths?: string[];
   repoPath?: string;
   repository?: string | null;
+  additionalRepositories?: string[];
   workspaceMode?: WorkspaceMode;
   branch?: string | null;
   // When the branch exists only on the remote, opt in to fetching and checking

@@ -1,3 +1,4 @@
+export { buildAdditionalDirectoriesPrompt } from "./agent-prompts";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";

@@ -22,6 +22,7 @@ import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
 import { SidebarTrigger } from "@posthog/ui/features/sidebar/components/SidebarTrigger";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { SkillButtonsMenu } from "@posthog/ui/features/skill-buttons/components/SkillButtonsMenu";
+import { AdditionalReposBadge } from "@posthog/ui/features/task-detail/components/AdditionalReposBadge";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
@@ -283,6 +284,7 @@ export function HeaderRow() {
                 />
               </div>
             )}
+          {isCloudTask && <AdditionalReposBadge task={activeTask} />}
           <TaskDiffStatsBadge task={activeTask} />
 
           {isCloudTask ? (

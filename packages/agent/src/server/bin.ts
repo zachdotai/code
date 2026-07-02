@@ -115,6 +115,10 @@ program
     "--allowedDomains <domains>",
     "Comma-separated list of domains allowed for web tools (WebFetch, WebSearch)",
   )
+  .option(
+    "--additionalDirectories <paths>",
+    "Comma-separated extra repo checkout paths the agent may read/edit beyond --repositoryPath",
+  )
   .action(async (options) => {
     const envResult = envSchema.safeParse(process.env);
 
@@ -144,6 +148,13 @@ program
 
     const allowedDomains = options.allowedDomains
       ? options.allowedDomains
+          .split(",")
+          .map((d: string) => d.trim())
+          .filter(Boolean)
+      : undefined;
+
+    const additionalDirectories = options.additionalDirectories
+      ? options.additionalDirectories
           .split(",")
           .map((d: string) => d.trim())
           .filter(Boolean)
@@ -186,6 +197,7 @@ program
       baseBranch: options.baseBranch,
       claudeCode,
       allowedDomains,
+      additionalDirectories,
       runtimeAdapter: env.POSTHOG_CODE_RUNTIME_ADAPTER,
       model: env.POSTHOG_CODE_MODEL,
       reasoningEffort: env.POSTHOG_CODE_REASONING_EFFORT,

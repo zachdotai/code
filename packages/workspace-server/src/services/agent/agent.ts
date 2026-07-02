@@ -61,6 +61,7 @@ import {
 } from "@posthog/platform/workspace-settings";
 import {
   type AcpMessage,
+  buildAdditionalDirectoriesPrompt,
   isAuthError,
   serializeError,
   TypedEventEmitter,
@@ -643,12 +644,7 @@ If a repository IS genuinely required, attach one in this priority order:
     }
 
     if (additionalDirectories?.length) {
-      const escapeXml = (s: string) =>
-        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const dirs = additionalDirectories
-        .map((d) => `  <directory>${escapeXml(d)}</directory>`)
-        .join("\n");
-      prompt += `\n\nThe user has granted you access to additional directories outside the working directory. You may read and edit files in these paths just like the working directory:\n<additional_directories>\n${dirs}\n</additional_directories>`;
+      prompt += `\n\n${buildAdditionalDirectoriesPrompt(additionalDirectories)}`;
     }
 
     return { append: prompt };

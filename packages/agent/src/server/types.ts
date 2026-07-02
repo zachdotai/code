@@ -29,6 +29,7 @@ export interface AgentServerConfig {
   mcpServers?: RemoteMcpServer[];
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
+  additionalDirectories?: string[];
   allowedDomains?: string[];
   runtimeAdapter?: "claude" | "codex";
   model?: string;

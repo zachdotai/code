@@ -19,6 +19,7 @@ export interface PrepareTaskInputOptions {
   sandboxEnvironmentId?: string;
   signalReportId?: string;
   additionalDirectories?: string[];
+  additionalRepositories?: string[];
   channelContext?: string;
   channelName?: string;
   channelId?: string;
@@ -58,6 +59,9 @@ export function prepareTaskInput(
       options.signalReportId && isCloud ? "signal_report" : undefined,
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
+    additionalRepositories: isCloud
+      ? options.additionalRepositories
+      : undefined,
     channelContext: options.channelContext,
     channelName: options.channelName,
     channelId: options.channelId,

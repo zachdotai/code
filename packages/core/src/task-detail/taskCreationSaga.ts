@@ -762,6 +762,11 @@ export class TaskCreationSaga extends Saga<
             input.workspaceMode === "cloud"
               ? (input.reasoningLevel ?? null)
               : undefined,
+          additional_repositories:
+            input.workspaceMode === "cloud" &&
+            input.additionalRepositories?.length
+              ? input.additionalRepositories
+              : undefined,
           signal_report: input.signalReportId ?? undefined,
           channel: input.channelId ?? undefined,
           pending_user_message: warmPayload?.pendingUserMessage,

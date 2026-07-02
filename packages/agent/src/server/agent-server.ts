@@ -16,6 +16,7 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
+import { buildAdditionalDirectoriesPrompt } from "@posthog/shared";
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -2481,11 +2482,12 @@ export class AgentServer {
     slackThreadUrl?: string | null,
     inboxReportUrl?: string | null,
   ): string | { append: string } {
-    const cloudAppend = this.buildCloudSystemPrompt(
-      prUrl,
-      slackThreadUrl,
-      inboxReportUrl,
-    );
+    const cloudAppend = [
+      this.buildCloudSystemPrompt(prUrl, slackThreadUrl, inboxReportUrl),
+      buildAdditionalDirectoriesPrompt(this.config.additionalDirectories),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     const userPrompt = this.config.claudeCode?.systemPrompt;
 
     // String override: combine user prompt with cloud instructions
@@ -2523,8 +2525,12 @@ export class AgentServer {
     const plugins = this.config.claudeCode?.plugins;
     const effort =
       runtimeAdapter === "claude" ? this.config.reasoningEffort : undefined;
+    const additionalDirectories =
+      runtimeAdapter === "claude"
+        ? this.config.additionalDirectories
+        : undefined;
 
-    if (!plugins?.length && !effort) {
+    if (!plugins?.length && !effort && !additionalDirectories?.length) {
       return undefined;
     }
 
@@ -2534,6 +2540,9 @@ export class AgentServer {
     }
     if (effort) {
       options.effort = effort;
+    }
+    if (additionalDirectories?.length) {
+      options.additionalDirectories = additionalDirectories;
     }
     return { claudeCode: { options } };
   }

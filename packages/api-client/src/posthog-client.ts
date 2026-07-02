@@ -2220,6 +2220,7 @@ export class PostHogAPIClient {
         channel?: string | null;
         pending_user_message?: string;
         pending_user_artifact_ids?: string[];
+        additional_repositories?: string[];
       },
   ) {
     const teamId = await this.getTeamId();

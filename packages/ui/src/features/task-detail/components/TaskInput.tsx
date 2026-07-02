@@ -11,6 +11,7 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
@@ -38,6 +39,7 @@ import { useFileSearchStore } from "../../command/fileSearchStore";
 import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
+import { AdditionalRepositoriesButton } from "../../folder-picker/AdditionalRepositoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
 import { GitHubRepoPicker } from "../../folder-picker/GitHubRepoPicker";
 import { useFolders } from "../../folders/useFolders";
@@ -147,6 +149,9 @@ export function TaskInput({
   onContextChipClick,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  // Dark-launch gate for the cloud multi-repo picker. Always on in dev.
+  const cloudMultiRepoEnabled =
+    useFeatureFlag("posthog-code-cloud-multi-repo") || import.meta.env.DEV;
   const trpc = useHostTRPC();
   const hostClient = useHostTRPCClient();
   const gitWriteClient = useMemo(
@@ -349,6 +354,9 @@ export function TaskInput({
     const lower = selectedRepository.toLowerCase();
     return repositories.includes(lower) ? lower : null;
   }, [selectedRepository, repositories]);
+  const [additionalRepositories, setAdditionalRepositories] = useState<
+    string[]
+  >([]);
   const { currentBranch, branchLoading, defaultBranch, busyState } =
     useGitQueries(selectedDirectory);
 
@@ -785,6 +793,9 @@ export function TaskInput({
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
+    additionalRepositories: additionalRepositories.filter(
+      (repo) => repo !== selectedCloudRepository,
+    ),
     allowNoRepo,
   });
 
@@ -1129,6 +1140,18 @@ export function TaskInput({
                     disabled={isCreatingTask}
                   />
                 )}
+                {!allowNoRepo &&
+                  workspaceMode === "cloud" &&
+                  cloudMultiRepoEnabled &&
+                  selectedCloudRepository !== null && (
+                    <AdditionalRepositoriesButton
+                      values={additionalRepositories}
+                      onChange={setAdditionalRepositories}
+                      repositories={repositories}
+                      primaryRepository={selectedCloudRepository}
+                      disabled={isCreatingTask}
+                    />
+                  )}
                 {cloudRegion === "dev" && (
                   <Flex align="center" gap="1" className="shrink-0">
                     <span
