@@ -234,15 +234,21 @@ describe("buildSessionOptions", () => {
       expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe("claude-haiku-4-5");
     });
 
-    it("converts gateway model ids from settings to CLI aliases", () => {
+    it.each([
+      ["claude-opus-4-7", "opus"],
+      ["claude-opus-4-8", "opus"],
+      ["claude-sonnet-4-6", "sonnet"],
+      ["claude-haiku-4-5", "claude-haiku-4-5"],
+      ["inherit", "inherit"],
+    ])("maps settings value %s to env value %s", (settingsValue, expected) => {
       const params = makeParams();
       vi.spyOn(params.settingsManager, "getSettings").mockReturnValue({
-        env: { CLAUDE_CODE_SUBAGENT_MODEL: "claude-opus-4-8" },
+        env: { CLAUDE_CODE_SUBAGENT_MODEL: settingsValue },
       });
 
       const options = buildSessionOptions(params);
 
-      expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe("opus");
+      expect(options.env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(expected);
     });
   });
 

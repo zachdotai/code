@@ -411,4 +411,27 @@ describe("user settings env vars", () => {
       "{not json",
     );
   });
+
+  it("serialises concurrent writes without clobbering", async () => {
+    await Promise.all([
+      setUserSettingsEnvVar("A", "1"),
+      setUserSettingsEnvVar("B", "2"),
+      setUserSettingsEnvVar("C", "3"),
+    ]);
+
+    expect(await readSettings()).toEqual({
+      env: { A: "1", B: "2", C: "3" },
+    });
+  });
+
+  it("merges the written env into SettingsManager settings", async () => {
+    await setUserSettingsEnvVar("CLAUDE_CODE_SUBAGENT_MODEL", "sonnet");
+
+    const manager = new SettingsManager(configDir);
+    await manager.initialize();
+
+    expect(manager.getSettings().env?.CLAUDE_CODE_SUBAGENT_MODEL).toBe(
+      "sonnet",
+    );
+  });
 });

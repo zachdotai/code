@@ -205,9 +205,11 @@ function buildEnvironment(
     // subagent; the merged .claude/settings.json env block (user layer written
     // by the Settings UI, stored as a gateway model id) or a pre-set process
     // env var wins over the default.
-    CLAUDE_CODE_SUBAGENT_MODEL: settingsSubagentModel
-      ? toSdkModelId(settingsSubagentModel)
-      : (process.env.CLAUDE_CODE_SUBAGENT_MODEL ?? DEFAULT_SUBAGENT_MODEL),
+    CLAUDE_CODE_SUBAGENT_MODEL: toSdkModelId(
+      settingsSubagentModel ??
+        process.env.CLAUDE_CODE_SUBAGENT_MODEL ??
+        DEFAULT_SUBAGENT_MODEL,
+    ),
   };
 }
 

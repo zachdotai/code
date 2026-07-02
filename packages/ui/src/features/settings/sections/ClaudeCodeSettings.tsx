@@ -25,7 +25,7 @@ import {
   Switch,
   Text,
 } from "@radix-ui/themes";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
 function CopyableCommand({ command }: { command: string }) {
@@ -83,16 +83,19 @@ function SettingDescription({
 const SUBAGENT_MODEL_DEFAULT_VALUE = "__default__";
 const SUBAGENT_MODEL_INHERIT_VALUE = "inherit";
 
-function SubagentModelSetting() {
+export function SubagentModelSetting() {
   const hostTRPC = useHostTRPC();
   const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const apiHost = cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null;
 
-  const subagentModel = useQuery(
-    hostTRPC.agent.getSubagentModel.queryOptions(),
+  const queryClient = useQueryClient();
+  const subagentModelQueryOptions =
+    hostTRPC.agent.getSubagentModel.queryOptions();
+  const { data: storedModelData, isLoading: isStoredModelLoading } = useQuery(
+    subagentModelQueryOptions,
   );
-  const previewConfig = useQuery({
+  const { data: previewConfigOptions } = useQuery({
     ...hostTRPC.agent.getPreviewConfigOptions.queryOptions({
       apiHost: apiHost ?? "",
       adapter: "claude",
@@ -100,10 +103,34 @@ function SubagentModelSetting() {
     enabled: apiHost !== null,
   });
   const setSubagentModel = useMutation(
-    hostTRPC.agent.setSubagentModel.mutationOptions(),
+    hostTRPC.agent.setSubagentModel.mutationOptions({
+      onMutate: async (input) => {
+        await queryClient.cancelQueries({
+          queryKey: subagentModelQueryOptions.queryKey,
+        });
+        const previous = queryClient.getQueryData(
+          subagentModelQueryOptions.queryKey,
+        );
+        queryClient.setQueryData(
+          subagentModelQueryOptions.queryKey,
+          input.model,
+        );
+        return { previous };
+      },
+      onError: (_error, _input, context) => {
+        queryClient.setQueryData(
+          subagentModelQueryOptions.queryKey,
+          context?.previous ?? null,
+        );
+      },
+      onSettled: () =>
+        queryClient.invalidateQueries({
+          queryKey: subagentModelQueryOptions.queryKey,
+        }),
+    }),
   );
 
-  const rawModelOption = previewConfig.data?.find(
+  const rawModelOption = previewConfigOptions?.find(
     (option) => option.category === "model" && option.type === "select",
   );
   const modelOption =
@@ -117,13 +144,14 @@ function SubagentModelSetting() {
       ? flattenSelectOptions(modelOption.options)
       : [];
 
-  const storedModel = subagentModel.data ?? null;
+  const storedModel = storedModelData ?? null;
   const selectValue = storedModel ?? SUBAGENT_MODEL_DEFAULT_VALUE;
   const storedModelHasItem =
     !storedModel ||
     storedModel === SUBAGENT_MODEL_INHERIT_VALUE ||
     modelItems.some((item) => item.value === storedModel);
 
+  const { mutate: mutateSubagentModel } = setSubagentModel;
   const handleChange = useCallback(
     (value: string) => {
       const next = value === SUBAGENT_MODEL_DEFAULT_VALUE ? null : value;
@@ -132,12 +160,9 @@ function SubagentModelSetting() {
         new_value: next ?? "default",
         old_value: storedModel ?? "default",
       });
-      setSubagentModel.mutate(
-        { model: next },
-        { onSettled: () => subagentModel.refetch() },
-      );
+      mutateSubagentModel({ model: next });
     },
-    [storedModel, setSubagentModel, subagentModel],
+    [storedModel, mutateSubagentModel],
   );
 
   return (
@@ -151,7 +176,7 @@ function SubagentModelSetting() {
           value={selectValue}
           onValueChange={handleChange}
           size="1"
-          disabled={subagentModel.isLoading}
+          disabled={isStoredModelLoading || setSubagentModel.isPending}
         >
           <Select.Trigger className="min-w-[160px]" />
           <Select.Content>

@@ -216,6 +216,31 @@ function getUserSettingsFilePath(): string {
   return path.join(configDir, "settings.json");
 }
 
+/**
+ * Mutex-serialised read-modify-write of a settings file with an atomic
+ * temp-file + rename, refusing to overwrite unparseable content. Returning
+ * `existing` unchanged from `mutate` skips the write.
+ */
+async function updateSettingsFile(
+  mutex: AsyncMutex,
+  filePath: string,
+  mutate: (existing: ClaudeCodeSettings) => ClaudeCodeSettings,
+): Promise<ClaudeCodeSettings> {
+  await mutex.acquire();
+  try {
+    const existing = await readSettingsFileForUpdate(filePath);
+    const next = mutate(existing);
+    if (next === existing) {
+      return existing;
+    }
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    await writeFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+    return next;
+  } finally {
+    mutex.release();
+  }
+}
+
 const userSettingsWriteMutex = new AsyncMutex();
 
 export async function getUserSettingsEnvVar(
@@ -230,34 +255,31 @@ export async function getUserSettingsEnvVar(
  * (`<CLAUDE_CONFIG_DIR>/settings.json`, app-scoped since the host sets
  * CLAUDE_CONFIG_DIR). `buildSessionOptions` reads the merged env at every
  * session spawn, so changes apply to new and resumed sessions without any
- * per-session threading. `value === undefined` deletes the key. Mirrors
- * `addAllowRules`: mutex-serialised, atomic temp-file + rename.
+ * per-session threading. `value === undefined` deletes the key.
  */
 export async function setUserSettingsEnvVar(
   key: string,
   value: string | undefined,
 ): Promise<void> {
-  await userSettingsWriteMutex.acquire();
-  try {
-    const filePath = getUserSettingsFilePath();
-    const existing = await readSettingsFileForUpdate(filePath);
-    const env = { ...existing.env };
-    if (value === undefined) {
-      delete env[key];
-    } else {
-      env[key] = value;
-    }
-    const next: ClaudeCodeSettings = { ...existing };
-    if (Object.keys(env).length > 0) {
-      next.env = env;
-    } else {
-      delete next.env;
-    }
-    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-    await writeFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
-  } finally {
-    userSettingsWriteMutex.release();
-  }
+  await updateSettingsFile(
+    userSettingsWriteMutex,
+    getUserSettingsFilePath(),
+    (existing) => {
+      const env = { ...existing.env };
+      if (value === undefined) {
+        delete env[key];
+      } else {
+        env[key] = value;
+      }
+      const next: ClaudeCodeSettings = { ...existing };
+      if (Object.keys(env).length > 0) {
+        next.env = env;
+      } else {
+        delete next.env;
+      }
+      return next;
+    },
+  );
 }
 
 export function getManagedSettingsPath(): string {
@@ -468,27 +490,22 @@ export class SettingsManager {
   async addAllowRules(rules: PermissionRuleValue[]): Promise<void> {
     if (rules.length === 0) return;
     if (!this.initialized) await this.initialize();
-    await this.writeMutex.acquire();
-    try {
-      const filePath = this.getLocalSettingsPath();
-      const existing = await readSettingsFileForUpdate(filePath);
-      const permissions: PermissionSettings = {
-        ...(existing.permissions ?? {}),
-      };
-      const current = new Set(permissions.allow ?? []);
-      for (const rule of rules) {
-        current.add(formatRule(rule));
-      }
-      permissions.allow = Array.from(current);
-      const next: ClaudeCodeSettings = { ...existing, permissions };
-      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-      await writeFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
-
-      this.localSettings = next;
-      this.mergeAllSettings();
-    } finally {
-      this.writeMutex.release();
-    }
+    this.localSettings = await updateSettingsFile(
+      this.writeMutex,
+      this.getLocalSettingsPath(),
+      (existing) => {
+        const permissions: PermissionSettings = {
+          ...(existing.permissions ?? {}),
+        };
+        const current = new Set(permissions.allow ?? []);
+        for (const rule of rules) {
+          current.add(formatRule(rule));
+        }
+        permissions.allow = Array.from(current);
+        return { ...existing, permissions };
+      },
+    );
+    this.mergeAllSettings();
   }
 
   hasPostHogExecApproval(subTool: string): boolean {
@@ -505,27 +522,22 @@ export class SettingsManager {
   async addPostHogExecApproval(subTool: string): Promise<void> {
     if (!subTool) return;
     if (!this.initialized) await this.initialize();
-    await this.writeMutex.acquire();
-    try {
-      const filePath = this.getLocalSettingsPath();
-      const existing = await readSettingsFileForUpdate(filePath);
-      const current = new Set(existing.posthogApprovedExecTools ?? []);
-      if (current.has(subTool)) {
-        return;
-      }
-      current.add(subTool);
-      const next: ClaudeCodeSettings = {
-        ...existing,
-        posthogApprovedExecTools: Array.from(current),
-      };
-      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-      await writeFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
-
-      this.localSettings = next;
-      this.mergeAllSettings();
-    } finally {
-      this.writeMutex.release();
-    }
+    this.localSettings = await updateSettingsFile(
+      this.writeMutex,
+      this.getLocalSettingsPath(),
+      (existing) => {
+        const current = new Set(existing.posthogApprovedExecTools ?? []);
+        if (current.has(subTool)) {
+          return existing;
+        }
+        current.add(subTool);
+        return {
+          ...existing,
+          posthogApprovedExecTools: Array.from(current),
+        };
+      },
+    );
+    this.mergeAllSettings();
   }
 
   async setCwd(cwd: string): Promise<void> {
