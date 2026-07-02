@@ -47,8 +47,12 @@ export type CommandMenuAction =
   | "toggle-theme"
   | "toggle-left-sidebar"
   | "open-review-panel"
+  | "go-back"
+  | "go-forward"
   | "open-task"
-  | "open-channel";
+  | "open-channel"
+  | "reload-window"
+  | "show-log-folder";
 
 // Event property interfaces
 export interface TaskListViewProperties {
