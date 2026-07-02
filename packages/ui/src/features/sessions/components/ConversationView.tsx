@@ -302,9 +302,60 @@ export function ConversationView({
 
   const getRowKey = useCallback((row: ThreadRow) => row.id, []);
 
+  const renderGroupChildren = useCallback(
+    (groupItems: ConversationItem[]) =>
+      groupItems.map((it) => {
+        // Plain assistant text inside the group has no leading icon, so pad it
+        // to line up with the tool titles (the text-next-to-icon column =
+        // ToolCallBlock's pl-3 + the icon/gap width). Tool and thought rows
+        // already carry their own icon indent.
+        const isPlainMessage =
+          it.type === "session_update" &&
+          it.update.sessionUpdate === "agent_message_chunk";
+        return (
+          <div
+            key={it.id}
+            className={cn(isPlainMessage ? "pl-5" : undefined, "empty:hidden")}
+          >
+            {renderItem(it)}
+          </div>
+        );
+      }),
+    [renderItem],
+  );
+
   const renderRow = useCallback(
     (row: ThreadRow) => {
       if (row.kind === "item") return renderItem(row.item);
+      if (row.kind === "automated_turn") {
+        const running = !row.turnComplete;
+        const s = row.summary;
+        // What happened / what's happening: the verb-led tally once done, the
+        // live tool while running, "no changes" for a no-op check.
+        const summaryText = running
+          ? s.hasCountableWork
+            ? `${s.doneLabel} · ${s.liveLabel ?? "working…"}`
+            : (s.liveLabel ?? "working…")
+          : s.hasCountableWork
+            ? s.doneLabel
+            : "no changes";
+        return (
+          <AutomatedCheckMessage
+            checkKind={row.opener.checkKind}
+            content={row.opener.content}
+            iteration={row.opener.iteration}
+            maxIterations={row.opener.maxIterations}
+            prUrl={row.opener.prUrl}
+            isActive={running}
+            summary={summaryText}
+            expanded={row.expanded}
+            onToggle={() =>
+              sessionViewActions.setGroupOverride(row.id, !row.expanded)
+            }
+            body={row.expanded ? renderGroupChildren(row.bodyItems) : null}
+          />
+        );
+      }
       return (
         <ToolCallGroupChip
           summary={row.summary}
@@ -314,32 +365,11 @@ export function ConversationView({
             sessionViewActions.setGroupOverride(row.id, !row.expanded)
           }
         >
-          {row.expanded
-            ? row.items.map((it) => {
-                // Plain assistant text inside the group has no leading icon, so
-                // pad it to line up with the tool titles (the text-next-to-icon
-                // column = ToolCallBlock's pl-3 + the icon/gap width). Tool and
-                // thought rows already carry their own icon indent.
-                const isPlainMessage =
-                  it.type === "session_update" &&
-                  it.update.sessionUpdate === "agent_message_chunk";
-                return (
-                  <div
-                    key={it.id}
-                    className={cn(
-                      isPlainMessage ? "pl-5" : undefined,
-                      "empty:hidden",
-                    )}
-                  >
-                    {renderItem(it)}
-                  </div>
-                );
-              })
-            : null}
+          {row.expanded ? renderGroupChildren(row.items) : null}
         </ToolCallGroupChip>
       );
     },
-    [renderItem, sessionViewActions],
+    [renderItem, renderGroupChildren, sessionViewActions],
   );
 
   const footer = (

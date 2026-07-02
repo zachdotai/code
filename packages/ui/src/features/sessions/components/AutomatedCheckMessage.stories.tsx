@@ -1,6 +1,7 @@
 import { AutomatedCheckMessage } from "@posthog/ui/features/sessions/components/AutomatedCheckMessage";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 
 // The real "babysitter" prompt the backend injects verbatim as a user turn.
 // Tucked behind the collapsed row so it no longer floods the thread.
@@ -23,6 +24,23 @@ Hard limits (refuse regardless of who asked):
 After fixing, commit and push so CI can re-run.`;
 
 const PR_URL = "https://github.com/PostHog/code/pull/3068";
+
+// Stand-in for the folded turn's body (its tool calls + prose), shown under the
+// prompt when the row is expanded.
+const sampleTurnBody = (
+  <div className="flex flex-col gap-1.5 pt-1 text-[13px] text-gray-11">
+    <div>
+      Ran <code className="text-gray-12">pnpm typecheck</code> — 0 errors.
+    </div>
+    <div>
+      Edited <code className="text-gray-12">ConversationView.tsx</code>.
+    </div>
+    <div>
+      CI was red on the <code className="text-gray-12">quality</code> check;
+      pushed a fix and it's green now.
+    </div>
+  </div>
+);
 
 const meta: Meta<typeof AutomatedCheckMessage> = {
   title: "Features/Sessions/AutomatedCheckMessage",
@@ -112,6 +130,85 @@ export const LongPrompt: Story = {
       (_, i) =>
         `- Additional required check #${i + 1} failed; inspect its logs and address the root cause before re-running.`,
     ).join("\n")}`,
+  },
+};
+
+/** Standalone row while its turn is still running — the icon becomes a spinner. */
+export const ActiveSpinner: Story = {
+  args: {
+    iteration: 2,
+    maxIterations: 3,
+    prUrl: PR_URL,
+    isActive: true,
+  },
+};
+
+/**
+ * The whole turn folded into one row, as the production thread renders it:
+ * collapsed by default with a verb-led work summary after the header. This is
+ * the decluttered default — the babysitter turn is a single line.
+ */
+export const FoldedTurnCollapsed: Story = {
+  args: {
+    iteration: 2,
+    maxIterations: 3,
+    prUrl: PR_URL,
+    expanded: false,
+    summary: "Ran 3 commands, edited a file",
+    body: sampleTurnBody,
+  },
+};
+
+/** The folded turn expanded — the injected prompt, then the turn's work. */
+export const FoldedTurnExpanded: Story = {
+  args: {
+    iteration: 2,
+    maxIterations: 3,
+    prUrl: PR_URL,
+    expanded: true,
+    summary: "Ran 3 commands, edited a file",
+    body: sampleTurnBody,
+  },
+};
+
+/** A folded turn still running — spinner plus the live action in the summary. */
+export const FoldedTurnRunning: Story = {
+  args: {
+    iteration: 2,
+    maxIterations: 3,
+    prUrl: PR_URL,
+    expanded: false,
+    isActive: true,
+    summary: "Edited a file · Editing ConversationView.tsx",
+    body: sampleTurnBody,
+  },
+};
+
+/** A no-op check — CI was already green, so the turn did nothing. */
+export const FoldedTurnNoChanges: Story = {
+  args: {
+    iteration: 3,
+    maxIterations: 3,
+    prUrl: PR_URL,
+    expanded: false,
+    summary: "no changes",
+  },
+};
+
+/** Interactive: click the row to expand/collapse the folded turn. */
+export const FoldedTurnInteractive: Story = {
+  args: {
+    iteration: 2,
+    maxIterations: 3,
+    prUrl: PR_URL,
+    summary: "Ran 3 commands, edited a file",
+    body: sampleTurnBody,
+  },
+  render: (args) => {
+    const [open, setOpen] = useState(false);
+    return (
+      <AutomatedCheckMessage {...args} expanded={open} onToggle={setOpen} />
+    );
   },
 };
 

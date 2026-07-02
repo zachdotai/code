@@ -62,6 +62,16 @@ function agentMessage(id: string): ConversationItem {
   };
 }
 
+function automatedCheck(id: string): ConversationItem {
+  return {
+    type: "automated_check",
+    id,
+    checkKind: "pr_ci_followup",
+    content: "CI feedback",
+    timestamp: 1,
+  };
+}
+
 function expectGroupingEquivalent(
   actual: ThreadGrouping,
   expected: ThreadGrouping,
@@ -144,6 +154,58 @@ describe("createIncrementalThreadGrouper", () => {
     expectGroupingEquivalent(
       grouper.update(replaced, "partial", overrides),
       buildThreadGroups(replaced, "partial", overrides),
+    );
+  });
+
+  it("matches a full regroup when a tool streams into an active automated turn", () => {
+    // The automated_check opener is not groupable, so the stable-prefix cut
+    // lands just after it; the grouper must back up to the opener or the folded
+    // turn splits into a stale row + an orphaned tool group.
+    const grouper = createIncrementalThreadGrouper();
+    const overrides = {};
+    const items = [automatedCheck("a1"), toolItem("t1", activeContext)];
+    grouper.update(items, "partial", overrides);
+
+    const next = [...items, toolItem("t2", activeContext)];
+    expectGroupingEquivalent(
+      grouper.update(next, "partial", overrides),
+      buildThreadGroups(next, "partial", overrides),
+    );
+  });
+
+  it("reuses the completed prefix while an automated turn streams", () => {
+    const grouper = createIncrementalThreadGrouper();
+    const overrides = {};
+    const items = [
+      userMessage("u1"),
+      toolItem("c1", completeContext),
+      automatedCheck("a1"),
+      toolItem("t1", activeContext),
+    ];
+    const first = grouper.update(items, "partial", overrides);
+
+    const next = [...items, toolItem("t2", activeContext)];
+    const second = grouper.update(next, "partial", overrides);
+
+    expectGroupingEquivalent(
+      second,
+      buildThreadGroups(next, "partial", overrides),
+    );
+    // The completed prefix rows (u1, c1) are reused by reference.
+    expect(second.rows[0]).toBe(first.rows[0]);
+    expect(second.rows[1]).toBe(first.rows[1]);
+  });
+
+  it("matches a full regroup when an automated turn completes into a new turn", () => {
+    const grouper = createIncrementalThreadGrouper();
+    const overrides = {};
+    const items = [automatedCheck("a1"), toolItem("t1", completeContext)];
+    grouper.update(items, "partial", overrides);
+
+    const next = [...items, userMessage("u2"), toolItem("t2", activeContext)];
+    expectGroupingEquivalent(
+      grouper.update(next, "partial", overrides),
+      buildThreadGroups(next, "partial", overrides),
     );
   });
 

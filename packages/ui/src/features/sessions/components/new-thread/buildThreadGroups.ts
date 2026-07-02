@@ -1,5 +1,8 @@
 import type { Icon } from "@phosphor-icons/react";
-import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import type {
+  ConversationItem,
+  TurnContext,
+} from "@posthog/ui/features/sessions/components/buildConversationItems";
 import {
   buildDoneLabel,
   type CollapseMode,
@@ -52,6 +55,22 @@ export type ThreadRow =
       kind: "tool_group";
       id: string;
       items: ConversationItem[];
+      summary: GroupSummary;
+      turnComplete: boolean;
+      expanded: boolean;
+    }
+  | {
+      /**
+       * A whole automated re-entry turn (the CI "babysitter" follow-up) folded
+       * into one collapsible row: the tagged opener plus its tool calls and
+       * prose. Collapsed by default so an automated turn no longer floods the
+       * thread; expand to read the full turn.
+       */
+      kind: "automated_turn";
+      id: string;
+      opener: Extract<ConversationItem, { type: "automated_check" }>;
+      /** The turn's work — tool calls, prose, results — shown when expanded. */
+      bodyItems: ConversationItem[];
       summary: GroupSummary;
       turnComplete: boolean;
       expanded: boolean;
@@ -124,6 +143,66 @@ export function isGroupableItem(item: ConversationItem): boolean {
   )
     return false;
   return true;
+}
+
+/** Items that begin a turn. A run of turn body items ends at the next one. */
+export function isTurnOpener(item: ConversationItem): boolean {
+  return (
+    item.type === "user_message" ||
+    item.type === "git_action" ||
+    item.type === "skill_button_action" ||
+    item.type === "automated_check"
+  );
+}
+
+interface FoldedAutomatedTurn {
+  bodyItems: ConversationItem[];
+  turnComplete: boolean;
+  /** Index of the first item past this turn. */
+  nextIndex: number;
+}
+
+/**
+ * Consume a whole automated re-entry turn starting at its `automated_check`
+ * opener (`start`): every following session update, plus git-result / cancelled
+ * epilogue items, up to the next turn opener. Turn membership is keyed on the
+ * shared `turnContext` reference, so a following implicit turn (its updates
+ * carry a different context) is never swallowed.
+ *
+ * This is the only turn-scoped fold — normal tool groups break on item type,
+ * never turn boundaries. It is safe alongside the incremental grouper because a
+ * turn opener is non-groupable, so the stable-prefix cut never lands inside a
+ * turn body.
+ */
+function foldAutomatedTurn(
+  items: ConversationItem[],
+  start: number,
+): FoldedAutomatedTurn {
+  const bodyItems: ConversationItem[] = [];
+  let turnCtx: TurnContext | null = null;
+  let i = start + 1;
+  for (; i < items.length; i++) {
+    const next = items[i];
+    if (isTurnOpener(next)) break;
+    if (next.type === "session_update") {
+      if (turnCtx === null) turnCtx = next.turnContext;
+      else if (next.turnContext !== turnCtx) break;
+      bodyItems.push(next);
+    } else if (
+      next.type === "git_action_result" ||
+      next.type === "turn_cancelled"
+    ) {
+      bodyItems.push(next);
+    } else {
+      // A user shell execute (or any other interjection) ends the turn.
+      break;
+    }
+  }
+  // A later item means a new turn began, so this one is complete. At the tail,
+  // fall back to the shared context's flag (false while the turn still streams).
+  const turnComplete =
+    i < items.length ? true : (turnCtx?.turnComplete ?? false);
+  return { bodyItems, turnComplete, nextIndex: i };
 }
 
 function summarize(items: ConversationItem[]): GroupSummary {
@@ -309,12 +388,38 @@ export function buildThreadGroups(
     buffer = [];
   };
 
-  for (const item of items) {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     switch (item.type) {
+      case "automated_check": {
+        // Fold the whole automated turn (opener + tools + prose) into one
+        // collapsible row so a babysitter re-entry no longer floods the thread.
+        flush();
+        const folded = foldAutomatedTurn(items, i);
+        const groupId = `auto:${item.id}`;
+        // Automated turns collapse in every mode but "none" — including while
+        // active, so a running check stays a single spinning row. Override wins.
+        const baseCollapse = mode !== "none";
+        const override = overrides[groupId];
+        const expanded = override ?? !baseCollapse;
+        const idx = rows.length;
+        rows.push({
+          kind: "automated_turn",
+          id: groupId,
+          opener: item,
+          bodyItems: folded.bodyItems,
+          summary: summarize(folded.bodyItems),
+          turnComplete: folded.turnComplete,
+          expanded,
+        });
+        idToRowIndex.set(item.id, idx);
+        for (const it of folded.bodyItems) idToRowIndex.set(it.id, idx);
+        i = folded.nextIndex - 1; // resume after the consumed turn (loop ++)
+        break;
+      }
       case "user_message":
       case "git_action":
-      case "skill_button_action":
-      case "automated_check": {
+      case "skill_button_action": {
         flush();
         pushItemRow(item);
         break;

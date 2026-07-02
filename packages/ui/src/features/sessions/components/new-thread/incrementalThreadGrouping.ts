@@ -1,7 +1,11 @@
-import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import type {
+  ConversationItem,
+  TurnContext,
+} from "@posthog/ui/features/sessions/components/buildConversationItems";
 import {
   buildThreadGroups,
   isGroupableItem,
+  isTurnOpener,
   type ThreadGrouping,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
@@ -53,9 +57,12 @@ export function createIncrementalThreadGrouper() {
     }
 
     const stablePrefixItemCount = findStablePrefixItemCount(items);
-    const rebuildStart = groupBoundaryAtOrBefore(
+    const rebuildStart = automatedTurnStartAtOrBefore(
       items,
-      Math.min(cache.stablePrefixItemCount, stablePrefixItemCount),
+      groupBoundaryAtOrBefore(
+        items,
+        Math.min(cache.stablePrefixItemCount, stablePrefixItemCount),
+      ),
     );
 
     // The cut is only safe if the prefix [0, rebuildStart) is unchanged. The
@@ -145,6 +152,39 @@ function groupBoundaryAtOrBefore(
   let start = index;
   while (start > 0 && isGroupableItem(items[start - 1])) start--;
   return start;
+}
+
+/**
+ * Back a cut up to an automated re-entry's opener when it would otherwise land
+ * inside that turn. `buildThreadGroups` folds a whole automated turn (opener +
+ * body) into one row; unlike a tool group, the opener is *not* a groupable item,
+ * so the stable-prefix cut lands just after it — orphaning the body. Regrouping
+ * that orphan would drop the automated framing and split the row. Scanning back
+ * over the turn's body (stopping if the shared context changes, i.e. an earlier
+ * turn) to the `automated_check` keeps the whole turn in the rebuilt suffix.
+ */
+function automatedTurnStartAtOrBefore(
+  items: ConversationItem[],
+  index: number,
+): number {
+  let ctx: TurnContext | null = null;
+  for (let k = index - 1; k >= 0; k--) {
+    const it = items[k];
+    if (it.type === "automated_check") return k;
+    if (isTurnOpener(it)) return index;
+    if (it.type === "session_update") {
+      if (ctx === null) ctx = it.turnContext;
+      else if (it.turnContext !== ctx) return index;
+      continue;
+    }
+    // git result / cancelled epilogue belong to the turn; anything else isn't
+    // an automated-turn body, so the cut isn't inside one.
+    if (it.type === "git_action_result" || it.type === "turn_cancelled") {
+      continue;
+    }
+    return index;
+  }
+  return index;
 }
 
 function getPrefixRowCount(

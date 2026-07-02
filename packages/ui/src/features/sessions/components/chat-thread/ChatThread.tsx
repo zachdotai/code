@@ -581,6 +581,36 @@ export function ChatThread({
 
   const rows = useMemo<ThreadItem[]>(() => groupToolRuns(items), [items]);
 
+  // Ids of automated-check openers whose turn is still running, so the row can
+  // show a spinner. A turn is done once a later turn opener appears or its first
+  // session update reports turnComplete; at the tail with no output yet, fall
+  // back to the prompt-pending flag.
+  const activeAutomatedCheckIds = useMemo(() => {
+    const active = new Set<string>();
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.type !== "automated_check") continue;
+      let complete: boolean | null = null;
+      for (let j = i + 1; j < items.length && complete === null; j++) {
+        const next = items[j];
+        if (
+          next.type === "user_message" ||
+          next.type === "git_action" ||
+          next.type === "skill_button_action" ||
+          next.type === "automated_check"
+        ) {
+          complete = true;
+        } else if (next.type === "session_update") {
+          complete = next.turnContext.turnComplete;
+        }
+      }
+      const isActive =
+        complete === null ? (isPromptPending ?? false) : !complete;
+      if (isActive) active.add(it.id);
+    }
+    return active;
+  }, [items, isPromptPending]);
+
   const renderItem = useCallback(
     (item: ConversationItem) => {
       switch (item.type) {
@@ -600,6 +630,7 @@ export function ChatThread({
               iteration={item.iteration}
               maxIterations={item.maxIterations}
               prUrl={item.prUrl}
+              isActive={activeAutomatedCheckIds.has(item.id)}
             />
           );
         case "session_update": {
@@ -655,7 +686,7 @@ export function ChatThread({
           return <UserShellExecuteView item={item} />;
       }
     },
-    [repoPath],
+    [repoPath, activeAutomatedCheckIds],
   );
 
   return (
