@@ -76,10 +76,14 @@ function createHarness({ spyConnect = true } = {}) {
   return { service, sessions, connectToTask, log };
 }
 
-function reconcile(service: SessionService, task: Task): () => void {
+function reconcile(
+  service: SessionService,
+  task: Task,
+  session?: AgentSession,
+): () => void {
   return service.reconcileTaskConnection({
     task,
-    session: undefined,
+    session,
     repoPath: "/repo",
     isCloud: false,
     isOnline: true,
@@ -114,6 +118,33 @@ describe("SessionService run-less local task recovery", () => {
       expected.initialPrompt = initialPrompt;
     }
     expect(connectToTask).toHaveBeenCalledWith(expected);
+  });
+
+  it("recovers a run-less task whose session is disconnected", () => {
+    const { service, connectToTask } = createHarness();
+    const task = makeTask();
+    const session = {
+      ...makeSession(task.id),
+      status: "disconnected" as const,
+    };
+
+    reconcile(service, task, session);
+
+    expect(connectToTask).toHaveBeenCalledWith({
+      task,
+      repoPath: "/repo",
+      initialPrompt: [{ type: "text", text: "Ship the fix" }],
+    });
+  });
+
+  it("does not recover while a session is connecting", () => {
+    const { service, connectToTask } = createHarness();
+    const task = makeTask();
+    const session = { ...makeSession(task.id), status: "connecting" as const };
+
+    reconcile(service, task, session);
+
+    expect(connectToTask).not.toHaveBeenCalled();
   });
 
   it("defers to an in-flight creation and recovers once the mark expires", () => {

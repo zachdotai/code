@@ -161,6 +161,8 @@ export class TaskCreationSaga extends Saga<
           error,
         });
         this.deps.host.clearProvisioning(task.id);
+        // The in-flight mark is left to TTL-expire on purpose: this state has
+        // its own retry-prompt UX, and auto-recovery would race the retry.
         return { task, workspace: null, provisioningError };
       }
     } else if (workspaceMode === "cloud") {

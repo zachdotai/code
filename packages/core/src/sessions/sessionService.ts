@@ -1660,6 +1660,8 @@ export class SessionService {
     this.connectingTasks.clear();
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
+    this.reconcileSkipLogged.clear();
+    this.taskCreationMarks.clear();
     this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
@@ -4494,10 +4496,13 @@ export class SessionService {
       return () => {};
     }
 
+    const connectParams: ConnectParams = { task, repoPath };
+
     // A local task with no run means creation was interrupted before its
     // first run started (e.g. the app quit for an update mid-setup). Connect
     // fresh and deliver the prompt persisted as the task description, unless
-    // a creation saga is actively working on this task right now.
+    // a creation saga is actively working on this task right now. Recovery
+    // replays the description as literal text; original attachments are gone.
     if (!task.latest_run?.id) {
       if (this.isTaskCreationInFlight(taskId)) {
         this.logReconcileSkipOnce(taskId, "creation-in-flight");
@@ -4507,23 +4512,15 @@ export class SessionService {
         taskId,
         hasDescription: !!task.description,
       });
-      const connectParams: ConnectParams = { task, repoPath };
       if (task.description) {
         connectParams.initialPrompt = [
           { type: "text", text: task.description },
         ];
       }
-      this.reconcilingTasks.add(taskId);
-      this.connectToTask(connectParams).finally(() => {
-        this.reconcilingTasks.delete(taskId);
-      });
-      return () => {
-        this.reconcilingTasks.delete(taskId);
-      };
     }
 
     this.reconcilingTasks.add(taskId);
-    this.connectToTask({ task, repoPath }).finally(() => {
+    this.connectToTask(connectParams).finally(() => {
       this.reconcilingTasks.delete(taskId);
     });
 
