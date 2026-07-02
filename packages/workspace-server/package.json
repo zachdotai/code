@@ -33,6 +33,7 @@
     "@trpc/server": "catalog:",
     "better-sqlite3": "^12.8.0",
     "drizzle-orm": "^0.45.1",
+    "effect": "catalog:",
     "fflate": "^0.8.2",
     "hono": "catalog:",
     "ignore": "^7.0.5",
@@ -44,6 +45,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@inversifyjs/strongly-typed": "2.2.0",
     "@posthog/tsconfig": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",

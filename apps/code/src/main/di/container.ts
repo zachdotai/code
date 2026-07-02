@@ -167,7 +167,6 @@ import type { ExternalAppsPreferences } from "@posthog/workspace-server/services
 import { foldersModule } from "@posthog/workspace-server/services/folders/folders.module";
 import { GitService } from "@posthog/workspace-server/services/git/service";
 import { TaskPrStatusService } from "@posthog/workspace-server/services/git/task-pr-status";
-import { githubReleasesModule } from "@posthog/workspace-server/services/github-releases/github-releases.module";
 import {
   HANDOFF_GIT_GATEWAY,
   HANDOFF_LOG_GATEWAY,
@@ -607,7 +606,6 @@ container.load(posthogPluginModule);
 container.bind(MAIN_POSTHOG_PLUGIN_SERVICE).toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
 container.load(skillsMarketplaceModule);
-container.load(githubReleasesModule);
 container.load(onboardingImportModule);
 container.load(claudeCliSessionsModule);
 container.load(additionalDirectoriesModule);

@@ -1,5 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GitHubReleasesService } from "./github-releases";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "@effect/vitest";
+import { Duration, Effect } from "effect";
+import { TestClock } from "effect/testing";
+import { GitHubReleases } from "./github-releases";
 
 const sampleReleases = [
   {
@@ -31,68 +40,74 @@ const sampleReleases = [
   },
 ];
 
-describe("GitHubReleasesService", () => {
-  let fetchMock: ReturnType<typeof vi.fn>;
+const okResponse = (body: unknown) =>
+  ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
 
-  beforeEach(() => {
-    fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => sampleReleases,
-    }));
-    vi.stubGlobal("fetch", fetchMock);
-  });
+let fetchMock: ReturnType<typeof vi.fn>;
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+beforeEach(() => {
+  fetchMock = vi.fn(async () => okResponse(sampleReleases));
+  vi.stubGlobal("fetch", fetchMock);
+});
 
-  it("maps releases, strips the v prefix and drops drafts", async () => {
-    const service = new GitHubReleasesService();
-    const { releases } = await service.listReleases();
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-    expect(releases).toHaveLength(2);
-    expect(releases[0]).toEqual({
-      version: "1.2.0",
-      name: "v1.2.0",
-      notes: "## Notes\n- thing",
-      date: "2026-06-20T00:00:00Z",
-      isPrerelease: false,
-      htmlUrl: "https://github.com/PostHog/code/releases/tag/v1.2.0",
-    });
-    // empty name falls back to the tag; null body becomes an empty string
-    expect(releases[1]).toMatchObject({
-      version: "1.1.0",
-      name: "v1.1.0",
-      notes: "",
-      isPrerelease: true,
-    });
-  });
+describe("GitHubReleases", () => {
+  it.effect("maps releases, strips the v prefix and drops drafts", () =>
+    Effect.gen(function* () {
+      const { list } = yield* GitHubReleases;
+      const { releases } = yield* list();
 
-  it("caches results within the TTL", async () => {
-    const service = new GitHubReleasesService();
-    await service.listReleases();
-    await service.listReleases();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
+      expect(releases).toHaveLength(2);
+      expect(releases[0]).toEqual({
+        version: "1.2.0",
+        name: "v1.2.0",
+        notes: "## Notes\n- thing",
+        date: "2026-06-20T00:00:00Z",
+        isPrerelease: false,
+        htmlUrl: "https://github.com/PostHog/code/releases/tag/v1.2.0",
+      });
+      // empty name falls back to the tag; null body becomes an empty string
+      expect(releases[1]).toMatchObject({
+        version: "1.1.0",
+        name: "v1.1.0",
+        notes: "",
+        isPrerelease: true,
+      });
+    }).pipe(Effect.provide(GitHubReleases.Live)),
+  );
 
-  it("throws on non-ok responses", async () => {
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 503 });
-    const service = new GitHubReleasesService();
-    await expect(service.listReleases()).rejects.toThrow();
-  });
+  it.effect("caches results within the TTL", () =>
+    Effect.gen(function* () {
+      const { list } = yield* GitHubReleases;
+      yield* list();
+      yield* list();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }).pipe(Effect.provide(GitHubReleases.Live)),
+  );
 
-  it("serves stale cache when a later refetch fails", async () => {
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(0);
-    const service = new GitHubReleasesService();
-    const first = await service.listReleases();
+  it.effect("fails on a non-ok response when there is no cache", () =>
+    Effect.gen(function* () {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 503 });
+      const { list } = yield* GitHubReleases;
+      const error = yield* Effect.flip(list());
+      expect(error._tag).toBe("GitHubReleasesError");
+    }).pipe(Effect.provide(GitHubReleases.Live)),
+  );
 
-    nowSpy.mockReturnValue(11 * 60_000);
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
-    const second = await service.listReleases();
+  it.effect("serves stale cache when a later refetch fails", () =>
+    Effect.gen(function* () {
+      const { list } = yield* GitHubReleases;
+      const first = yield* list();
 
-    expect(second).toEqual(first);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    nowSpy.mockRestore();
-  });
+      yield* TestClock.adjust(Duration.millis(11 * 60_000));
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
+      const second = yield* list();
+
+      expect(second).toEqual(first);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(GitHubReleases.Live)),
+  );
 });
