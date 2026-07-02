@@ -46,3 +46,36 @@ export function htmlToMarkdown(
 
   return markdown;
 }
+
+const NON_CONTENT_TAGS = new Set(["META", "STYLE", "SCRIPT", "TITLE", "LINK"]);
+const CODE_STRUCTURE_TAGS = new Set(["DIV", "SPAN", "BR"]);
+
+/**
+ * True for the clipboard HTML shape code editors produce (VS Code/Monaco,
+ * JetBrains): a single `white-space: pre` block — or a bare `<pre>` — whose
+ * only structure is per-line <div>s of colored <span>s. That shape carries no
+ * formatting the composer keeps, and neither conversion handles it faithfully:
+ * Turndown emits a paragraph per line <div> (a blank line between every code
+ * line), and ProseMirror's native HTML paste splits the lines into separate
+ * paragraphs, which serialize back with blank lines too. Callers should paste
+ * the clipboard's plain text verbatim instead. Web code blocks (<pre><code>)
+ * are excluded; Turndown converts those to fenced Markdown correctly.
+ */
+export function isCodeEditorHtml(html: string): boolean {
+  const body = new DOMParser().parseFromString(html, "text/html").body;
+  const roots = Array.from(body.children).filter(
+    (el) => !NON_CONTENT_TAGS.has(el.tagName),
+  );
+  if (roots.length !== 1) return false;
+
+  const root = roots[0];
+  const isPre = root.tagName === "PRE";
+  const whiteSpace = root instanceof HTMLElement ? root.style.whiteSpace : "";
+  if (!isPre && !whiteSpace.startsWith("pre")) return false;
+  if (isPre && root.firstElementChild?.tagName === "CODE") return false;
+
+  for (const el of root.querySelectorAll("*")) {
+    if (!CODE_STRUCTURE_TAGS.has(el.tagName)) return false;
+  }
+  return true;
+}

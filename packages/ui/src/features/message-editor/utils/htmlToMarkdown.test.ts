@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { htmlToMarkdown } from "./htmlToMarkdown";
+import { htmlToMarkdown, isCodeEditorHtml } from "./htmlToMarkdown";
 
 describe("htmlToMarkdown", () => {
   it.each([
@@ -73,5 +73,65 @@ describe("htmlToMarkdown", () => {
     expect(htmlToMarkdown(html, "See item_1. in arr[0]")).toBe(
       "See **item_1.** in arr[0]",
     );
+  });
+});
+
+describe("isCodeEditorHtml", () => {
+  // Shape of the text/html VS Code puts on the clipboard
+  // (editor.copyWithSyntaxHighlighting): a white-space:pre wrapper with one
+  // <div> per line of colored <span>s, <div><br/></div> for empty lines.
+  const vsCode = (lines: string) =>
+    `<meta charset='utf-8'><div style="color: #cccccc;background-color: #1f1f1f;font-family: Menlo, Monaco, 'Courier New', monospace;font-weight: normal;font-size: 12px;line-height: 18px;white-space: pre;">${lines}</div>`;
+
+  it.each([
+    [
+      "a single-token VS Code copy",
+      vsCode(
+        '<div><span style="color: #4fc1ff;">SKILL_BUNDLE_MAX_FILES</span></div>',
+      ),
+    ],
+    [
+      "a multi-line VS Code copy with an empty line",
+      vsCode(
+        '<div><span style="color: #c586c0;">const</span><span style="color: #4fc1ff;"> A</span><span> = </span><span style="color: #b5cea8;">1</span></div><div><br/></div><div><span style="color: #c586c0;">const</span><span style="color: #4fc1ff;"> B</span><span> = </span><span style="color: #b5cea8;">2</span></div>',
+      ),
+    ],
+    [
+      "a bare <pre> copy (JetBrains-style)",
+      '<pre style="background-color:#2b2b2b;color:#a9b7c6;"><span style="color:#cc7832;">const </span>SKILL_BUNDLE_MAX_FILES = <span style="color:#6897bb;">64</span></pre>',
+    ],
+  ])("matches %s", (_, html) => {
+    expect(isCodeEditorHtml(html)).toBe(true);
+  });
+
+  it.each([
+    [
+      "a web code block, which converts to fenced Markdown",
+      "<pre><code>const x = 1;</code></pre>",
+    ],
+    ["rich text", "<p>hello <strong>world</strong></p>"],
+    [
+      "preformatted text that still carries real formatting",
+      '<div style="white-space: pre-wrap;">see <a href="https://posthog.com">docs</a></div>',
+    ],
+    [
+      "multiple top-level blocks",
+      '<div style="white-space: pre;">a</div><p>b</p>',
+    ],
+  ])("rejects %s", (_, html) => {
+    expect(isCodeEditorHtml(html)).toBe(false);
+  });
+
+  it("exists because both paste conversions mangle the VS Code shape", () => {
+    // Turndown turns the per-line <div>s into paragraphs, so the Markdown
+    // gains a blank line between every code line and no longer matches the
+    // clipboard's plain text ("const A = 1\nconst B = 2").
+    const html = vsCode(
+      "<div><span>const A = 1</span></div><div><span>const B = 2</span></div>",
+    );
+    expect(htmlToMarkdown(html, "const A = 1\nconst B = 2")).toBe(
+      "const A = 1\n\nconst B = 2",
+    );
+    expect(isCodeEditorHtml(html)).toBe(true);
   });
 });

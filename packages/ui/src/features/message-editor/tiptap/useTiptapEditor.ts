@@ -29,7 +29,7 @@ import { getGithubIssue, getGithubPullRequest } from "../hostApi";
 import { usePromptHistoryStore } from "../promptHistoryStore";
 import { getEditorExtensions } from "../tiptap/extensions";
 import { type DraftContext, useDraftSync } from "../tiptap/useDraftSync";
-import { htmlToMarkdown } from "../utils/htmlToMarkdown";
+import { htmlToMarkdown, isCodeEditorHtml } from "../utils/htmlToMarkdown";
 import {
   persistImageFile,
   persistTextContent,
@@ -440,8 +440,14 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           }
 
           // Editor is plain-text, so preserve pasted formatting as Markdown.
+          // Code copied from editors (VS Code & co) is the exception: its
+          // highlighting HTML has no formatting worth keeping, so it pastes
+          // as the plain text verbatim below.
           const html = event.clipboardData?.getData("text/html");
-          const markdown = html ? htmlToMarkdown(html, clipboardText) : null;
+          const isCodePaste =
+            !!html && !!trimmedClipboardText && isCodeEditorHtml(html);
+          const markdown =
+            html && !isCodePaste ? htmlToMarkdown(html, clipboardText) : null;
           const effectiveText = markdown ?? clipboardText;
 
           // Auto-convert long pasted text into a file attachment
@@ -465,6 +471,21 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               }
             })();
 
+            return true;
+          }
+
+          // Bypass the native paste for code: ProseMirror would parse the
+          // highlighting HTML into one paragraph per line, which the composer
+          // serializes back with a blank line between every code line.
+          if (isCodePaste && clipboardText) {
+            event.preventDefault();
+            view.dispatch(
+              view.state.tr.insertText(
+                clipboardText.replace(/\r\n?/g, "\n"),
+                from,
+                to,
+              ),
+            );
             return true;
           }
 
