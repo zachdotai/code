@@ -63,6 +63,14 @@ vi.mock("node:fs", async (importActual) => {
   return { ...actual, existsSync: vi.fn(actual.existsSync) };
 });
 
+// Default to no enabled tools, which matches how these tests run for real
+// (no cloud-run meta, no GH token gates passing). Individual tests opt in.
+vi.mock("../local-tools", async (importActual) => {
+  const actual = await importActual<typeof import("../local-tools")>();
+  return { ...actual, enabledLocalTools: vi.fn(() => []) };
+});
+
+import { enabledLocalTools, LOCAL_TOOLS_MCP_NAME } from "../local-tools";
 import { CodexAcpAgent } from "./codex-agent";
 
 describe("CodexAcpAgent", () => {
@@ -619,6 +627,44 @@ describe("CodexAcpAgent", () => {
       // instruction appended (not overwritten).
       expect(forwarded._meta.systemPrompt.startsWith("be terse.")).toBe(true);
       expect(forwarded._meta.systemPrompt).toContain("create_output");
+    });
+
+    it("injects ELECTRON_RUN_AS_NODE on the local-tools MCP server env", async () => {
+      vi.mocked(enabledLocalTools).mockReturnValueOnce([
+        { name: "create_pull_request" },
+      ] as never);
+      const { agent } = createAgent();
+      mockCodexConnection.newSession.mockResolvedValue({
+        sessionId: "session-1",
+        modes: { currentModeId: "auto", availableModes: [] },
+        configOptions: [],
+      } satisfies Partial<NewSessionResponse>);
+
+      await agent.newSession({
+        cwd: process.cwd(),
+        mcpServers: [],
+      } as never);
+
+      const forwarded = mockCodexConnection.newSession.mock.calls[0][0] as {
+        mcpServers: Array<{
+          name: string;
+          command: string;
+          env: Array<{ name: string; value: string }>;
+        }>;
+      };
+
+      const localToolsServer = forwarded.mcpServers.find(
+        (s) => s.name === LOCAL_TOOLS_MCP_NAME,
+      );
+      expect(localToolsServer).toBeDefined();
+      expect(localToolsServer?.command).toBe(process.execPath);
+
+      // Same invariant as the structured-output server: the script must run
+      // as node even when process.execPath is the Electron app binary.
+      const runAsNode = localToolsServer?.env.find(
+        (e) => e.name === "ELECTRON_RUN_AS_NODE",
+      );
+      expect(runAsNode?.value).toBe("1");
     });
 
     it("is a no-op when jsonSchema is absent", async () => {
