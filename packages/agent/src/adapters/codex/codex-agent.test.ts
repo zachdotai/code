@@ -607,6 +607,14 @@ describe("CodexAcpAgent", () => {
       );
       expect(decoded).toEqual(schema);
 
+      // process.execPath is the Electron app binary when running inside the
+      // desktop app; this var keeps the spawned script in node mode instead
+      // of booting another app instance.
+      const runAsNode = (
+        forwarded.mcpServers[1].env as Array<{ name: string; value: string }>
+      ).find((e) => e.name === "ELECTRON_RUN_AS_NODE");
+      expect(runAsNode?.value).toBe("1");
+
       // Existing systemPrompt is preserved with the structured-output
       // instruction appended (not overwritten).
       expect(forwarded._meta.systemPrompt.startsWith("be terse.")).toBe(true);

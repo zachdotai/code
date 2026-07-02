@@ -320,6 +320,11 @@ function resolveBundledMcpScript(rel: string): string {
   );
 }
 
+// These MCP servers run `process.execPath`, which inside the desktop app's
+// workspace-server is the Electron app binary; without this var codex would
+// boot a whole new app instance instead of a node script. Inert under real node.
+const RUN_AS_NODE_ENV = { name: "ELECTRON_RUN_AS_NODE", value: "1" };
+
 function buildStructuredOutputMcpServer(
   jsonSchema: Record<string, unknown>,
 ): McpServerStdio {
@@ -333,7 +338,10 @@ function buildStructuredOutputMcpServer(
     name: STRUCTURED_OUTPUT_MCP_NAME,
     command: process.execPath,
     args: [scriptPath],
-    env: [{ name: "POSTHOG_OUTPUT_SCHEMA", value: schemaBase64 }],
+    env: [
+      { name: "POSTHOG_OUTPUT_SCHEMA", value: schemaBase64 },
+      RUN_AS_NODE_ENV,
+    ],
   };
 }
 
@@ -353,6 +361,7 @@ function buildLocalToolsMcpServer(
   const env = [
     { name: "POSTHOG_LOCAL_TOOLS_CTX", value: ctxBase64 },
     { name: "POSTHOG_LOCAL_TOOLS_ENABLED", value: enabledNames.join(",") },
+    RUN_AS_NODE_ENV,
   ];
   if (ctx.token) {
     // Token also on the child env so its own git remote ops (fetch/ls-remote)

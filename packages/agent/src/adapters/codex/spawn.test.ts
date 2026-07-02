@@ -100,3 +100,18 @@ describe("spawnCodexProcess codex home", () => {
     expect(env.CODEX_HOME).toBe(process.env.CODEX_HOME);
   });
 });
+
+describe("spawnCodexProcess electron env", () => {
+  it("keeps ELECTRON_RUN_AS_NODE=1 so PATH node shims stay in node mode", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({ logger: new Logger({ debug: false }) });
+
+    // The desktop app's workspace-server puts a `node -> app binary` symlink
+    // on PATH. Dropping this var would make every `node` spawned under codex
+    // boot a full desktop app instance instead of running as node.
+    const env = spawnMock.mock.calls[0][2].env;
+    expect(env.ELECTRON_RUN_AS_NODE).toBe("1");
+  });
+});

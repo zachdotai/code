@@ -116,7 +116,9 @@ export function spawnCodexProcess(options: CodexProcessOptions): CodexProcess {
 
   const env: NodeJS.ProcessEnv = { ...process.env };
 
-  delete env.ELECTRON_RUN_AS_NODE;
+  // The agent host puts a `node -> Electron app binary` shim on PATH; without
+  // this flag, every `node` this process tree spawns boots the full desktop app.
+  env.ELECTRON_RUN_AS_NODE = "1";
   delete env.ELECTRON_NO_ASAR;
 
   if (options.apiKey) {
