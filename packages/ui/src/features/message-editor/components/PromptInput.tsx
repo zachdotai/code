@@ -214,12 +214,18 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onError: (message) => toast.error(message),
     });
 
-    // Push-to-talk: hold Space to dictate while the composer is empty. Once
-    // there's text, Space types normally so it never fights word breaks. The
-    // listener runs in the capture phase so it can suppress the space before
-    // ProseMirror (or the page) sees it, and only engages when focus is on the
-    // empty editor or nothing at all — never on another control or input.
-    const pushToTalkRef = useRef(false);
+    // Push-to-talk: hold Space to dictate. On an empty composer it starts
+    // immediately and swallows the space. With existing text we can't tell a
+    // deliberate hold from normal typing up front, so we let the OS type spaces
+    // naturally and — once Space is held past a short timeout — delete those
+    // just-typed spaces and switch to dictation (a quick tap stays a normal
+    // space). The listener runs in the capture phase so it can suppress/observe
+    // the space before ProseMirror or the page sees it.
+    const editorRef = useRef(editor);
+    editorRef.current = editor;
+    const pttStateRef = useRef<"idle" | "pending" | "engaged">("idle");
+    const pttStartPosRef = useRef(0);
+    const pttTimerRef = useRef<number | null>(null);
     const voiceRuntimeRef = useRef({
       enabled: voiceEnabled,
       supported: voice.isSupported,
@@ -242,43 +248,96 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
     };
 
     useEffect(() => {
+      // How long Space must be held (while there's text) before it flips from
+      // typed spaces to dictation.
+      const HOLD_TO_TALK_MS = 800;
       const isSpaceKey = (e: KeyboardEvent) =>
         e.code === "Space" || e.key === " ";
 
+      const clearHoldTimer = () => {
+        if (pttTimerRef.current !== null) {
+          window.clearTimeout(pttTimerRef.current);
+          pttTimerRef.current = null;
+        }
+      };
+
+      // Space held long enough over existing text: remove the spaces the OS typed
+      // during the hold, then start dictation.
+      const engageAfterHold = () => {
+        pttTimerRef.current = null;
+        const ed = editorRef.current;
+        if (ed) {
+          const from = pttStartPosRef.current;
+          const to = ed.state.selection.from;
+          if (to > from) ed.chain().focus().deleteRange({ from, to }).run();
+        }
+        pttStateRef.current = "engaged";
+        voiceRuntimeRef.current.start();
+      };
+
       const handleKeyDown = (e: KeyboardEvent) => {
         if (!isSpaceKey(e)) return;
-        // Already engaged: swallow held-key repeats so nothing types or scrolls.
-        if (pushToTalkRef.current) {
+        // Already dictating: swallow held-key repeats so nothing types or scrolls.
+        if (pttStateRef.current === "engaged") {
           e.preventDefault();
           e.stopPropagation();
           return;
         }
+        // Waiting out the hold over existing text: let the OS keep typing spaces.
+        if (pttStateRef.current === "pending") return;
         if (e.repeat) return;
+
         const rt = voiceRuntimeRef.current;
         if (!rt.enabled || !rt.supported || rt.active === false) return;
-        if (rt.isRecording || rt.isTranscribing || !rt.isEmpty) return;
+        if (rt.isRecording || rt.isTranscribing) return;
         if (hasOpenOverlay()) return;
         const active = document.activeElement as HTMLElement | null;
         const onEditor = !!active?.closest?.(".ProseMirror");
         const onBody = !active || active === document.body;
         if (!onEditor && !onBody) return;
+
+        if (onEditor && !rt.isEmpty) {
+          // Text present: don't fight the space — let it type and arm the hold
+          // timer. A quick tap releases before it fires and stays a normal space.
+          pttStateRef.current = "pending";
+          pttStartPosRef.current = editorRef.current?.state.selection.from ?? 0;
+          clearHoldTimer();
+          pttTimerRef.current = window.setTimeout(
+            engageAfterHold,
+            HOLD_TO_TALK_MS,
+          );
+          return;
+        }
+
+        // Empty composer (or nothing focused): start immediately and swallow the
+        // space so it neither types nor scrolls the page.
         e.preventDefault();
         e.stopPropagation();
-        pushToTalkRef.current = true;
+        pttStateRef.current = "engaged";
         rt.start();
       };
 
       const handleKeyUp = (e: KeyboardEvent) => {
-        if (!isSpaceKey(e) || !pushToTalkRef.current) return;
+        if (!isSpaceKey(e)) return;
+        const state = pttStateRef.current;
+        if (state === "idle") return;
+        if (state === "pending") {
+          // Released before the hold fired — it was a normal space; leave it be.
+          clearHoldTimer();
+          pttStateRef.current = "idle";
+          return;
+        }
+        // Engaged: stop dictation.
         e.preventDefault();
         e.stopPropagation();
-        pushToTalkRef.current = false;
+        pttStateRef.current = "idle";
         voiceRuntimeRef.current.stop();
       };
 
       window.addEventListener("keydown", handleKeyDown, { capture: true });
       window.addEventListener("keyup", handleKeyUp, { capture: true });
       return () => {
+        clearHoldTimer();
         window.removeEventListener("keydown", handleKeyDown, { capture: true });
         window.removeEventListener("keyup", handleKeyUp, { capture: true });
       };

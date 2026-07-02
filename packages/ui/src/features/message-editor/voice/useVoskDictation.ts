@@ -5,11 +5,13 @@ import { getVoskModel, isVoskEngineAvailable } from "./voskEngine";
 
 // Recording is capped so a forgotten open mic doesn't run forever.
 const MAX_DICTATION_MS = 120_000;
-// After stop we flush the recognizer; give its final `result` event a moment to
-// land before finalizing the text.
-const FINALIZE_DELAY_MS = 350;
+// On stop we keep the recognizer alive to drain any backlogged audio (the model
+// can lag several seconds behind real time), finalizing once it goes quiet for
+// DRAIN_IDLE_MS — with DRAIN_MAX_MS as a hard ceiling so we never hang.
+const DRAIN_IDLE_MS = 1_200;
+const DRAIN_MAX_MS = 30_000;
 
-export type VoskStatus = "idle" | "recording";
+export type VoskStatus = "idle" | "recording" | "finishing";
 
 export interface UseVoskDictationOptions {
   onRecordingStart?: () => void;
@@ -26,7 +28,7 @@ export interface UseVoskDictation {
   status: VoskStatus;
   isSupported: boolean;
   isRecording: boolean;
-  // Always false — Vosk streams in realtime, so there's no separate final pass.
+  // True while draining the backlog after stop (i.e. finishing up).
   isTranscribing: boolean;
   start: () => void;
   stop: () => void;
@@ -67,6 +69,12 @@ export function useVoskDictation(
   // Accumulated finalized phrases, and the current in-progress partial.
   const committedRef = useRef("");
   const partialRef = useRef("");
+  // Set while draining the backlog after stop; each recognizer event pushes out
+  // the idle timer (via drainBumpRef) until the worker finally goes quiet.
+  const finishingRef = useRef(false);
+  const drainBumpRef = useRef<(() => void) | null>(null);
+  const drainIdleTimerRef = useRef<number | null>(null);
+  const drainMaxTimerRef = useRef<number | null>(null);
 
   const recordingSupported = useMemo(() => isRecordingSupported(), []);
   // Only offer dictation once the model archive is confirmed present (it's
@@ -112,33 +120,78 @@ export function useVoskDictation(
     streamRef.current = null;
   }, []);
 
-  const stop = useCallback(() => {
-    const session = sessionRef.current;
-    const recognizer = recognizerRef.current;
-    const ctx = audioCtxRef.current;
-    if (!recognizer) return;
-    recognizerRef.current = null;
-    audioCtxRef.current = null;
-    stopAudio();
-    optionsRef.current.onRecordingStop?.();
-    setStatus("idle");
-    // Flush the last partial into a final result, wait briefly for it to land,
-    // then finalize and tear the recognizer down.
-    try {
-      recognizer.retrieveFinalResult();
-    } catch {}
-    window.setTimeout(() => {
+  const clearDrainTimers = useCallback(() => {
+    if (drainIdleTimerRef.current !== null) {
+      window.clearTimeout(drainIdleTimerRef.current);
+      drainIdleTimerRef.current = null;
+    }
+    if (drainMaxTimerRef.current !== null) {
+      window.clearTimeout(drainMaxTimerRef.current);
+      drainMaxTimerRef.current = null;
+    }
+  }, []);
+
+  // The backlog has drained (worker went quiet, or the hard cap hit): emit the
+  // final transcript and tear the recognizer down.
+  const finalizeDrain = useCallback(
+    (
+      session: number,
+      recognizer: KaldiRecognizer,
+      ctx: AudioContext | null,
+    ) => {
+      if (!finishingRef.current) return;
+      finishingRef.current = false;
+      drainBumpRef.current = null;
+      clearDrainTimers();
+      recognizerRef.current = null;
+      audioCtxRef.current = null;
       if (mountedRef.current && sessionRef.current === session) {
         optionsRef.current.onTranscript?.(
           joinText(committedRef.current, partialRef.current),
         );
+        setStatus("idle");
       }
       try {
         recognizer.remove();
       } catch {}
       ctx?.close().catch(() => {});
-    }, FINALIZE_DELAY_MS);
-  }, [stopAudio]);
+    },
+    [clearDrainTimers],
+  );
+
+  const stop = useCallback(() => {
+    const recognizer = recognizerRef.current;
+    if (!recognizer || finishingRef.current) return;
+    const session = sessionRef.current;
+    const ctx = audioCtxRef.current;
+    // Stop capturing new audio, but keep the recognizer alive so it can finish
+    // whatever it's still processing (it can lag several seconds behind).
+    stopAudio();
+    finishingRef.current = true;
+    optionsRef.current.onRecordingStop?.();
+    setStatus("finishing");
+    // Flush the buffered audio into a final result.
+    try {
+      recognizer.retrieveFinalResult();
+    } catch {}
+    // Finalize once the worker goes quiet: each drain event (below) pushes the
+    // idle timer out, and the max timer is an absolute ceiling.
+    const bump = () => {
+      if (drainIdleTimerRef.current !== null) {
+        window.clearTimeout(drainIdleTimerRef.current);
+      }
+      drainIdleTimerRef.current = window.setTimeout(
+        () => finalizeDrain(session, recognizer, ctx),
+        DRAIN_IDLE_MS,
+      );
+    };
+    drainBumpRef.current = bump;
+    drainMaxTimerRef.current = window.setTimeout(
+      () => finalizeDrain(session, recognizer, ctx),
+      DRAIN_MAX_MS,
+    );
+    bump();
+  }, [stopAudio, finalizeDrain]);
 
   const start = useCallback(async () => {
     if (recognizerRef.current) return;
@@ -180,12 +233,15 @@ export function useVoskDictation(
           partialRef.current = "";
           emitPartial();
         }
+        // Keep the post-stop drain alive while the worker is still emitting.
+        drainBumpRef.current?.();
       });
       recognizer.on("partialresult", (message) => {
         if (sessionRef.current !== session) return;
         partialRef.current =
           (message as VoskMessage).result?.partial?.trim() ?? "";
         emitPartial();
+        drainBumpRef.current?.();
       });
       recognizer.on("error", (message) => {
         if (sessionRef.current !== session) return;
@@ -237,6 +293,9 @@ export function useVoskDictation(
     return () => {
       mountedRef.current = false;
       sessionRef.current++;
+      finishingRef.current = false;
+      drainBumpRef.current = null;
+      clearDrainTimers();
       stopAudio();
       try {
         recognizerRef.current?.remove();
@@ -245,13 +304,13 @@ export function useVoskDictation(
       audioCtxRef.current?.close().catch(() => {});
       audioCtxRef.current = null;
     };
-  }, [stopAudio]);
+  }, [stopAudio, clearDrainTimers]);
 
   return {
     status,
     isSupported,
     isRecording: status === "recording",
-    isTranscribing: false,
+    isTranscribing: status === "finishing",
     start: () => void start(),
     stop,
     toggle,

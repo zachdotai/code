@@ -37,7 +37,8 @@
     "skills:pull": "node scripts/pull-skills.mjs",
     "update:phrocs": "rm -f bin/phrocs && bash scripts/ensure-phrocs.sh",
     "whisper:build": "bash scripts/whisper-wasm/build.sh",
-    "whisper:model": "node scripts/whisper-wasm/download-model.mjs"
+    "whisper:model": "node scripts/whisper-wasm/download-model.mjs",
+    "vosk:model": "bash scripts/vosk/setup-model.sh"
   },
   "keywords": [
     "posthog",
