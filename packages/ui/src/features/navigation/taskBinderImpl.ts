@@ -92,17 +92,30 @@ export const navigationTaskBinder: NavigationTaskBinder = {
       }
     }
 
-    const directory = await getTaskDirectory(task.id, repoKey ?? undefined);
+    const hasRun = !!task.latest_run?.id;
+    const isCloudRun = task.latest_run?.environment === "cloud";
+
+    // A run-less task is mid-creation or had its creation interrupted; its
+    // intended mode isn't knowable from here, and defaulting to "local" would
+    // hand a cloud-intended task's recovery a local checkout. Leave the
+    // workspace row to the creation saga (or its retry) instead.
+    if (!hasRun) {
+      log.info("Task has no run yet, deferring workspace creation", {
+        taskId: task.id,
+        repoKey: repoKey ?? null,
+      });
+      return undefined;
+    }
+
+    const directory = await getTaskDirectory(task.id, repoKey);
 
     if (directory) {
-      const workspaceMode =
-        task.latest_run?.environment === "cloud" ? "cloud" : "local";
+      const workspaceMode = isCloudRun ? "cloud" : "local";
       log.info("Ensuring workspace binding on task open", {
         taskId: task.id,
         directory,
         mode: workspaceMode,
         hadWorkspaceRecord: !!existingWorkspace,
-        hasRun: !!task.latest_run?.id,
       });
       try {
         await hostClient().folders.addFolder.mutate({ folderPath: directory });
@@ -118,7 +131,7 @@ export const navigationTaskBinder: NavigationTaskBinder = {
       } catch (error) {
         log.error("Failed to auto-register folder on task open:", error);
       }
-    } else if (task.latest_run?.environment === "cloud") {
+    } else if (isCloudRun) {
       await hostClient().workspace.create.mutate({
         taskId: task.id,
         mainRepoPath: "",
@@ -131,7 +144,6 @@ export const navigationTaskBinder: NavigationTaskBinder = {
       log.warn("No directory resolved on task open, workspace not created", {
         taskId: task.id,
         repoKey: repoKey ?? null,
-        hasRun: !!task.latest_run?.id,
       });
     }
 
