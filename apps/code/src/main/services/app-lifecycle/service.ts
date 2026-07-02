@@ -20,10 +20,11 @@ import { shutdownOtelTransport } from "../../utils/otel-log-transport";
 
 const log = logger.scope("app-lifecycle");
 
+export const PENDING_CREATION_WAIT_MS = 10_000;
+
 @injectable()
 export class AppLifecycleService {
   private static readonly SHUTDOWN_TIMEOUT_MS = 3000;
-  private static readonly PENDING_CREATION_WAIT_MS = 10_000;
 
   private _isQuittingForUpdate = false;
   private _isShuttingDown = false;
@@ -167,11 +168,11 @@ export class AppLifecycleService {
 
     log.warn(
       `Waiting for ${pending} in-flight workspace creations before teardown`,
-      { timeoutMs: AppLifecycleService.PENDING_CREATION_WAIT_MS },
+      { timeoutMs: PENDING_CREATION_WAIT_MS },
     );
     const result = await withTimeout(
       this.workspaceService.waitForPendingCreations(),
-      AppLifecycleService.PENDING_CREATION_WAIT_MS,
+      PENDING_CREATION_WAIT_MS,
     );
     if (result.result === "timeout") {
       log.warn(

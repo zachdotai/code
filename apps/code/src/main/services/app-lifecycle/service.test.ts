@@ -1,6 +1,7 @@
+import { INSTALL_SHUTDOWN_TIMEOUT_MS } from "@posthog/core/updates/updates";
 import type { IAppLifecycle } from "@posthog/platform/app-lifecycle";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AppLifecycleService } from "./service";
+import { AppLifecycleService, PENDING_CREATION_WAIT_MS } from "./service";
 
 const {
   mockAppLifecycle,
@@ -301,6 +302,14 @@ describe("AppLifecycleService", () => {
 
       expect(beforeExit).toHaveBeenCalledTimes(1);
       expect(callOrder).toEqual(["dbClose", "beforeExit", "exit"]);
+    });
+  });
+
+  describe("shutdown budgets", () => {
+    it("gives the install timeout headroom over the pending-creation wait", () => {
+      expect(INSTALL_SHUTDOWN_TIMEOUT_MS).toBeGreaterThanOrEqual(
+        PENDING_CREATION_WAIT_MS + 3000,
+      );
     });
   });
 });
