@@ -5,31 +5,18 @@ import { MAX_CONNECTED_SESSIONS } from "./sessionEviction";
 import {
   type ReconcileTaskConnectionParams,
   SessionService,
-  type SessionServiceDeps,
 } from "./sessionService";
+import {
+  makeAgentSession,
+  makeSessionServiceDeps,
+} from "./sessionServiceTestKit";
 
 function makeSession(
   taskId: string,
   startedAt: number,
   overrides: Partial<AgentSession> = {},
 ): AgentSession {
-  return {
-    taskRunId: `run-${taskId}`,
-    taskId,
-    taskTitle: taskId,
-    channel: "",
-    events: [],
-    startedAt,
-    status: "connected",
-    isPromptPending: false,
-    isCompacting: false,
-    promptStartedAt: null,
-    pendingPermissions: new Map(),
-    pausedDurationMs: 0,
-    messageQueue: [],
-    optimisticItems: [],
-    ...overrides,
-  } as AgentSession;
+  return makeAgentSession(taskId, { startedAt, ...overrides });
 }
 
 function createHarness(seedSessions: AgentSession[]) {
@@ -37,48 +24,14 @@ function createHarness(seedSessions: AgentSession[]) {
   for (const session of seedSessions) {
     sessions[session.taskRunId] = session;
   }
-  const removeSession = vi.fn((taskRunId: string) => {
-    delete sessions[taskRunId];
-  });
-  const cancelMutate = vi.fn().mockResolvedValue(undefined);
-  const removePersistedConfigOptions = vi.fn();
-  const removeAdapter = vi.fn();
-
-  const store = {
-    getSessions: () => sessions,
-    getSessionByTaskId: (taskId: string) =>
-      Object.values(sessions).find((s) => s.taskId === taskId),
-    removeSession,
-    updateSession: vi.fn(),
-  };
-
-  const log = {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  };
-
-  const deps = {
-    store,
+  const {
+    deps,
     log,
-    getPersistedConfigOptions: () => undefined,
-    setPersistedConfigOptions: vi.fn(),
+    removeSession,
+    cancelMutate,
     removePersistedConfigOptions,
-    adapterStore: {
-      getAdapter: () => undefined,
-      setAdapter: vi.fn(),
-      removeAdapter,
-    },
-    trpc: {
-      agent: {
-        cancel: { mutate: cancelMutate },
-        onSessionIdleKilled: {
-          subscribe: () => ({ unsubscribe: vi.fn() }),
-        },
-      },
-    },
-  } as unknown as SessionServiceDeps;
+    removeAdapter,
+  } = makeSessionServiceDeps(sessions);
 
   const service = new SessionService(deps);
   return {

@@ -4,28 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type ReconcileTaskConnectionParams,
   SessionService,
-  type SessionServiceDeps,
   TASK_CREATION_IN_FLIGHT_TTL_MS,
 } from "./sessionService";
+import {
+  makeAgentSession,
+  makeSessionServiceDeps,
+} from "./sessionServiceTestKit";
 
-function makeSession(taskId: string): AgentSession {
-  return {
-    taskRunId: `run-${taskId}`,
-    taskId,
-    taskTitle: taskId,
-    channel: "",
-    events: [],
-    startedAt: 1,
-    status: "connected",
-    isPromptPending: false,
-    isCompacting: false,
-    promptStartedAt: null,
-    pendingPermissions: new Map(),
-    pausedDurationMs: 0,
-    messageQueue: [],
-    optimisticItems: [],
-  } as AgentSession;
-}
+const makeSession = makeAgentSession;
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -38,35 +24,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 function createHarness({ spyConnect = true } = {}) {
-  const sessions: Record<string, AgentSession> = {};
-  const store = {
-    getSessions: () => sessions,
-    getSessionByTaskId: (taskId: string) =>
-      Object.values(sessions).find((s) => s.taskId === taskId),
-    removeSession: vi.fn(),
-    updateSession: vi.fn(),
-  };
-  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-  const deps = {
-    store,
-    log,
-    getPersistedConfigOptions: () => undefined,
-    setPersistedConfigOptions: vi.fn(),
-    removePersistedConfigOptions: vi.fn(),
-    adapterStore: {
-      getAdapter: () => undefined,
-      setAdapter: vi.fn(),
-      removeAdapter: vi.fn(),
-    },
-    trpc: {
-      agent: {
-        cancel: { mutate: vi.fn().mockResolvedValue(undefined) },
-        onSessionIdleKilled: {
-          subscribe: () => ({ unsubscribe: vi.fn() }),
-        },
-      },
-    },
-  } as unknown as SessionServiceDeps;
+  const { deps, sessions, log } = makeSessionServiceDeps();
 
   const service = new SessionService(deps);
   const connectToTask = spyConnect
