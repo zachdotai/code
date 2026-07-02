@@ -92,26 +92,28 @@ describe("SessionService run-less local task recovery", () => {
     vi.useRealTimers();
   });
 
-  it("starts a first run and sends the description as the prompt", () => {
-    const { service, connectToTask } = createHarness();
-    const task = makeTask();
-
-    reconcile(service, task);
-
-    expect(connectToTask).toHaveBeenCalledWith({
-      task,
-      repoPath: "/repo",
+  it.each([
+    {
+      case: "sends the description as the initial prompt",
+      description: "Ship the fix",
       initialPrompt: [{ type: "text", text: "Ship the fix" }],
-    });
-  });
-
-  it("connects without a prompt when the task has no description", () => {
+    },
+    {
+      case: "connects without a prompt when the description is empty",
+      description: "",
+      initialPrompt: undefined,
+    },
+  ])("starts a first run and $case", ({ description, initialPrompt }) => {
     const { service, connectToTask } = createHarness();
-    const task = makeTask({ description: "" });
+    const task = makeTask({ description });
 
     reconcile(service, task);
 
-    expect(connectToTask).toHaveBeenCalledWith({ task, repoPath: "/repo" });
+    const expected: Record<string, unknown> = { task, repoPath: "/repo" };
+    if (initialPrompt) {
+      expected.initialPrompt = initialPrompt;
+    }
+    expect(connectToTask).toHaveBeenCalledWith(expected);
   });
 
   it("defers to an in-flight creation and recovers once the mark expires", () => {
