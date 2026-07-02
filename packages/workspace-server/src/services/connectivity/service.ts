@@ -1,10 +1,15 @@
-import { TypedEventEmitter } from "@posthog/shared";
-import { injectable } from "inversify";
+import { getBackoffDelay } from "@posthog/shared";
 import {
-  ConnectivityEvent,
-  type ConnectivityEvents,
-  type ConnectivityStatusOutput,
-} from "./schemas";
+  Context,
+  Data,
+  Duration,
+  Effect,
+  Layer,
+  Ref,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import type { ConnectivityStatusOutput } from "./schemas";
 
 const CHECK_URLS = [
   "https://www.google.com/generate_204",
@@ -14,115 +19,109 @@ const CHECK_TIMEOUT_MS = 5_000;
 const OFFLINE_CONFIRM_THRESHOLD = 2;
 const MIN_POLL_INTERVAL_MS = 3_000;
 const MAX_POLL_INTERVAL_MS = 10_000;
-const ONLINE_POLL_INTERVAL_MS = 30_000;
+const ONLINE_POLL_INTERVAL_MS = 3_000;
 const OFFLINE_BACKOFF_MULTIPLIER = 1.5;
 
-@injectable()
-export class ConnectivityService extends TypedEventEmitter<ConnectivityEvents> {
-  private isOnline = true;
-  private pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  private offlinePollAttempt = 0;
-  private consecutiveFailures = 0;
+class Unreachable extends Data.TaggedError("Unreachable")<
+  Record<string, never>
+> {}
 
-  constructor() {
-    super();
-    this.setMaxListeners(0);
-    void this.checkConnectivity().finally(() => this.startPolling());
-  }
-
-  getStatus(): ConnectivityStatusOutput {
-    return { isOnline: this.isOnline };
-  }
-
-  async checkNow(): Promise<ConnectivityStatusOutput> {
-    await this.checkConnectivity();
-    return { isOnline: this.isOnline };
-  }
-
-  stop(): void {
-    if (this.pollTimeoutId) {
-      clearTimeout(this.pollTimeoutId);
-      this.pollTimeoutId = null;
-    }
-  }
-
-  statusChangeEvents(
-    signal: AbortSignal | undefined,
-  ): AsyncIterable<ConnectivityStatusOutput> {
-    return this.toIterable(ConnectivityEvent.StatusChange, { signal });
-  }
-
-  private setOnline(online: boolean): void {
-    if (this.isOnline === online) return;
-    this.isOnline = online;
-    this.emit(ConnectivityEvent.StatusChange, { isOnline: online });
-    this.offlinePollAttempt = 0;
-  }
-
-  private async checkConnectivity(): Promise<void> {
-    const verified = await this.verifyWithHttp();
-
-    if (verified) {
-      this.consecutiveFailures = 0;
-      this.setOnline(true);
-      return;
-    }
-
-    this.consecutiveFailures++;
-    if (this.consecutiveFailures >= OFFLINE_CONFIRM_THRESHOLD) {
-      this.setOnline(false);
-    }
-  }
-
-  private async verifyWithHttp(): Promise<boolean> {
-    // Sequential on purpose: one request per check in the common case, at the
-    // cost of up to CHECK_TIMEOUT_MS extra latency when the first host is blocked.
-    for (const url of CHECK_URLS) {
-      try {
-        await this.probe(url);
-        return true;
-      } catch {}
-    }
-    return false;
-  }
-
-  private async probe(url: string): Promise<void> {
-    const response = await fetch(url, {
-      method: "HEAD",
-      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+const probe = (url: string) =>
+  Effect.gen(function* () {
+    // The Effect signal aborts the request on interruption (raced-loser or
+    // timeout), so a losing probe doesn't linger.
+    const response = yield* Effect.tryPromise({
+      try: (signal) => fetch(url, { method: "HEAD", signal }),
+      catch: () => new Unreachable({}),
     });
     if (!(response.ok || response.status === 204)) {
-      throw new Error(`Unexpected status ${response.status} from ${url}`);
+      return yield* Effect.fail(new Unreachable({}));
     }
-  }
+  }).pipe(Effect.timeout(Duration.millis(CHECK_TIMEOUT_MS)));
 
-  private startPolling(): void {
-    if (this.pollTimeoutId) return;
-    this.offlinePollAttempt = 0;
-    this.schedulePoll();
-  }
+// Reachable as soon as the first host responds; unreachable only when all fail.
+const verifyOnline = Effect.raceAll(CHECK_URLS.map(probe)).pipe(
+  Effect.as(true),
+  Effect.orElseSucceed(() => false),
+);
 
-  private schedulePoll(): void {
-    // Poll rarely while healthy, quickly while confirming a suspected outage.
-    const interval = this.isOnline
-      ? this.consecutiveFailures > 0
-        ? MIN_POLL_INTERVAL_MS
-        : ONLINE_POLL_INTERVAL_MS
-      : Math.min(
-          MIN_POLL_INTERVAL_MS *
-            OFFLINE_BACKOFF_MULTIPLIER ** this.offlinePollAttempt,
-          MAX_POLL_INTERVAL_MS,
-        );
+export interface ConnectivityState {
+  readonly online: SubscriptionRef.SubscriptionRef<boolean>;
+  readonly failures: Ref.Ref<number>;
+}
 
-    this.pollTimeoutId = setTimeout(async () => {
-      this.pollTimeoutId = null;
-      const wasOffline = !this.isOnline;
-      await this.checkConnectivity();
-      if (!this.isOnline && wasOffline) {
-        this.offlinePollAttempt++;
-      }
-      this.schedulePoll();
-    }, interval);
-    this.pollTimeoutId.unref?.();
-  }
+const toStatus = (isOnline: boolean): ConnectivityStatusOutput => ({
+  isOnline,
+});
+
+const setOnline = (state: ConnectivityState, next: boolean) =>
+  Effect.gen(function* () {
+    const current = yield* SubscriptionRef.get(state.online);
+    if (current === next) return; // avoid duplicate emissions to `.changes`
+    yield* SubscriptionRef.set(state.online, next);
+  });
+
+/** One reachability check; flips state per the confirm-twice threshold. */
+export const runCheck = (state: ConnectivityState) =>
+  Effect.gen(function* () {
+    const reachable = yield* verifyOnline;
+    if (reachable) {
+      yield* Ref.set(state.failures, 0);
+      yield* setOnline(state, true);
+      return;
+    }
+    const failures = yield* Ref.updateAndGet(state.failures, (n) => n + 1);
+    if (failures >= OFFLINE_CONFIRM_THRESHOLD) {
+      yield* setOnline(state, false);
+    }
+  });
+
+// Online: steady cadence. Offline: back off, keyed on failures past the
+// threshold (which is exactly the old "offline attempt" counter).
+const pollInterval = (isOnline: boolean, failures: number): number =>
+  isOnline
+    ? ONLINE_POLL_INTERVAL_MS
+    : getBackoffDelay(Math.max(0, failures - OFFLINE_CONFIRM_THRESHOLD), {
+        initialDelayMs: MIN_POLL_INTERVAL_MS,
+        maxDelayMs: MAX_POLL_INTERVAL_MS,
+        multiplier: OFFLINE_BACKOFF_MULTIPLIER,
+      });
+
+const pollLoop = (state: ConnectivityState) =>
+  Effect.forever(
+    Effect.gen(function* () {
+      yield* runCheck(state);
+      const isOnline = yield* SubscriptionRef.get(state.online);
+      const failures = yield* Ref.get(state.failures);
+      yield* Effect.sleep(Duration.millis(pollInterval(isOnline, failures)));
+    }),
+  );
+
+export class Connectivity extends Context.Service<Connectivity>()(
+  "Connectivity",
+  {
+    make: Effect.gen(function* () {
+      const state: ConnectivityState = {
+        online: yield* SubscriptionRef.make(true),
+        failures: yield* Ref.make(0),
+      };
+
+      // Poller is owned by the layer scope: starts on build, interrupted on
+      // runtime dispose.
+      yield* Effect.forkScoped(pollLoop(state));
+
+      const getStatus = SubscriptionRef.get(state.online).pipe(
+        Effect.map(toStatus),
+      );
+      return {
+        getStatus,
+        checkNow: runCheck(state).pipe(Effect.andThen(getStatus)),
+        changes: SubscriptionRef.changes(state.online).pipe(
+          Stream.map(toStatus),
+        ),
+      };
+    }),
+  },
+) {
+  static Live = Layer.effect(this, this.make);
 }

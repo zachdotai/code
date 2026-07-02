@@ -8,9 +8,6 @@ export const WATCHER_SERVICE = Symbol.for("posthog.workspace.watcher-service");
 export const LOCAL_LOGS_SERVICE = Symbol.for(
   "posthog.workspace.local-logs-service",
 );
-export const CONNECTIVITY_SERVICE = Symbol.for(
-  "posthog.workspace.connectivity-service",
-);
 export const ENVIRONMENT_SERVICE = Symbol.for(
   "posthog.workspace.environment-service",
 );
