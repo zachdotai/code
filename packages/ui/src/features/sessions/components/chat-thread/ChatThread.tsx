@@ -19,6 +19,7 @@ import {
   ChatMessageScrollerViewport,
   cn,
   useChatMessageScroller,
+  useChatMessageScrollerScrollable,
   useChatMessageScrollerVisibility,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
@@ -134,7 +135,7 @@ function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
   const flush = () => {
     if (toolCount >= 2) {
       const tools = buffer.filter(isToolCallItem);
-      out.push({ type: "tool_group", id: `tool-group-${tools[0].id}`, tools });
+      out.push({ type: "tool_group", id: tools[0].id, tools });
     } else {
       out.push(...buffer);
     }
@@ -512,6 +513,72 @@ const ThreadRow = memo(function ThreadRow({
   );
 });
 
+/**
+ * Keeps the view pinned to the bottom from prompt submit until the user scrolls away.
+ *
+ * The engine's own follow mode isn't enough on its own:
+ * - It only re-engages within `scrollEdgeThreshold` of the exact bottom, so a submit from anywhere
+ *   higher would leave the new prompt (and the reply) below the fold. Scrolling to the end on
+ *   submit also flips the engine back into `following-bottom`.
+ * - Each engine autoscroll is guarded by a 180ms grace window; a large streamed block (heavy
+ *   markdown render) can jank past it, making the engine observe "content below the fold while not
+ *   autoscrolling" and silently demote itself to `free-scrolling` mid-reply. While armed, any
+ *   commit that leaves content below the fold re-issues `scrollToEnd` to recapture follow.
+ *
+ * User scroll intent (wheel, touch, pointer, keys — same signals the engine listens to) disarms
+ * the pin; the next submit or the scroll-to-bottom button re-engages following.
+ */
+function ThreadAutoFollow({ items }: { items: ConversationItem[] }) {
+  const { scrollToEnd } = useChatMessageScroller();
+  const { end } = useChatMessageScrollerScrollable();
+  const lastItem = items.at(-1);
+  const userMessageCount = useMemo(
+    () =>
+      items.reduce((n, item) => (item.type === "user_message" ? n + 1 : n), 0),
+    [items],
+  );
+  const prevCountRef = useRef(userMessageCount);
+  const armedRef = useRef(false);
+  const probeRef = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    const previous = prevCountRef.current;
+    prevCountRef.current = userMessageCount;
+    if (previous === 0 || userMessageCount <= previous) return;
+    if (lastItem?.type !== "user_message") return;
+    armedRef.current = true;
+    scrollToEnd({ behavior: "auto" });
+  }, [userMessageCount, lastItem, scrollToEnd]);
+
+  useEffect(() => {
+    const viewport = probeRef.current
+      ?.closest('[data-slot="chat-message-scroller"]')
+      ?.querySelector('[data-slot="chat-message-scroller-viewport"]');
+    if (!viewport) return;
+    const disarm = () => {
+      armedRef.current = false;
+    };
+    const events = ["wheel", "touchmove", "pointerdown", "keydown"] as const;
+    for (const event of events) {
+      viewport.addEventListener(event, disarm, { passive: true });
+    }
+    return () => {
+      for (const event of events) {
+        viewport.removeEventListener(event, disarm);
+      }
+    };
+  }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check on every streamed change — `end` alone doesn't re-notify while it stays true across commits.
+  useEffect(() => {
+    if (armedRef.current && end) {
+      scrollToEnd({ behavior: "auto" });
+    }
+  }, [items, end, scrollToEnd]);
+
+  return <span ref={probeRef} className="hidden" aria-hidden="true" />;
+}
+
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
 function ThreadScrollBody({
   items,
@@ -525,15 +592,24 @@ function ThreadScrollBody({
   /** Status row (duration / context usage) pinned as the last item in the thread. */
   footer?: ReactNode;
 }) {
+  const keyedRows = useMemo(() => {
+    let userTurn = 0;
+    return rows.map((item) => ({
+      item,
+      key: item.type === "user_message" ? `user-turn-${userTurn++}` : item.id,
+    }));
+  }, [rows]);
+
   // `group/thread` so the footer's hover-reveal (opacity-50 → 100 on group-hover) tracks the thread,
   // mirroring the legacy ConversationView container.
   return (
     <ChatMessageScroller className="group/thread">
       <StickyHeaderOverlay items={items} />
+      <ThreadAutoFollow items={items} />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent className="py-4 pb-8" density="default">
-          {rows.map((item) => (
-            <ThreadRow key={item.id} item={item} renderItem={renderItem} />
+          {keyedRows.map(({ item, key }) => (
+            <ThreadRow key={key} item={item} renderItem={renderItem} />
           ))}
           {footer && (
             <div
@@ -692,6 +768,11 @@ export function ChatThread({
           <ChatMessageScrollerProvider
             autoScroll
             defaultScrollPosition="end"
+            // Default is 8px: with the thread's bottom padding you're rarely that close, so
+            // auto-follow ("following-bottom") would disengage on any stray trackpad wheel and
+            // never re-engage. Within this band the engine recaptures follow on the next content
+            // change; deliberate upward flicks travel past it and stay free-scrolling.
+            scrollEdgeThreshold={100}
             scrollPreviousItemPeek={64}
           >
             <ThreadScrollBody
