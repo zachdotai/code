@@ -3,6 +3,7 @@ import {
   REPORT_MODEL_RESOLVER,
   type ReportModelResolver,
 } from "@posthog/core/inbox/identifiers";
+import { classifyIntegrations } from "@posthog/core/integrations/selectors";
 import {
   TASK_SERVICE,
   type TaskCreationInput,
@@ -12,7 +13,7 @@ import { useService } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
 import { SELF_DRIVING_SETUP_TASK_FLAG } from "@posthog/shared/constants";
-import type { SignalReportPriority } from "@posthog/shared/types";
+import { useTrackAgentsViewed } from "@posthog/ui/features/agents/hooks/useTrackAgentsViewed";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { DataSourceSetup } from "@posthog/ui/features/inbox/components/DataSourceSetup";
@@ -20,6 +21,10 @@ import {
   ResponderAgentRoster,
   ResponderAgentRosterSkeleton,
 } from "@posthog/ui/features/inbox/components/ResponderAgentRoster";
+import {
+  RESPONDER_AGENT_GROUPS,
+  type ResponderAgentSource,
+} from "@posthog/ui/features/inbox/components/responderAgentMeta";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
 import { useSignalSourceManager } from "@posthog/ui/features/inbox/hooks/useSignalSourceManager";
 import {
@@ -28,7 +33,6 @@ import {
   useUserRepositoryIntegration,
 } from "@posthog/ui/features/integrations/useIntegrations";
 import { ScoutsFleetSection } from "@posthog/ui/features/scouts/components/ScoutsFleetSection";
-import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@posthog/ui/features/settings/sections/SlackInboxNotificationsSettings";
 import {
@@ -45,31 +49,23 @@ import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { toast as sonnerToast } from "sonner";
-
-const AUTOSTART_PRIORITY_OPTIONS: {
-  value: SignalReportPriority;
-  label: string;
-}[] = [
-  { value: "P0", label: "P0 – Critical only" },
-  { value: "P1", label: "P1 – High and above" },
-  { value: "P2", label: "P2 – Medium and above" },
-  { value: "P3", label: "P3 – Low and above" },
-  { value: "P4", label: "P4 – All priorities" },
-];
-
-const NEVER_AUTOSTART_VALUE = "__never__";
-
-const USER_AUTOSTART_OPTIONS: { value: string; label: string }[] = [
-  { value: NEVER_AUTOSTART_VALUE, label: "Never – review everything first" },
-  ...AUTOSTART_PRIORITY_OPTIONS,
-];
 
 const AUTONOMY_SETUP_PROMPT = `Set up PostHog Self-driving for this product.
 
 Inspect the connected PostHog project and repository, figure out which Self-driving inputs would be useful first, connect the minimum useful context, and leave a concise report of what is configured and what still needs user input. Do not invent integrations that are not available.`;
 
 const log = logger.scope("agents-setup-task");
+
+/**
+ * Source products that count as Responders on this page. Filtering
+ * `displayValues` through this set keeps non-responder sources out of the
+ * responder counts in `AGENTS_VIEWED`.
+ */
+const RESPONDER_SOURCE_PRODUCTS = new Set<ResponderAgentSource>(
+  RESPONDER_AGENT_GROUPS.flatMap((group) =>
+    group.agents.map((agent) => agent.source),
+  ),
+);
 
 export function ConfigureAgentsSection() {
   const {
@@ -83,16 +79,40 @@ export function ConfigureAgentsSection() {
     handleSetupCancel,
     userAutonomyConfig,
     userAutonomyConfigLoading,
-    handleUpdateUserAutonomyPriority,
     evaluationsUrl,
   } = useSignalSourceManager();
   const { hasGithubIntegration, isLoadingIntegrations } =
     useRepositoryIntegration();
-  const { isLoading: isLoadingSlackIntegrations } = useIntegrations();
+  const {
+    isLoading: isLoadingSlackIntegrations,
+    isError: isIntegrationsError,
+    data: integrationsData,
+  } = useIntegrations();
   const isLoadingSlack = isLoadingIntegrations || isLoadingSlackIntegrations;
   const showSetupTask = useFeatureFlag(SELF_DRIVING_SETUP_TASK_FLAG);
-  const userAutostartPriority =
-    userAutonomyConfig?.autostart_priority ?? NEVER_AUTOSTART_VALUE;
+
+  // Derive from the query data, not the store-backed `hasGithubIntegration`: the
+  // store is hydrated by a passive effect that lags the query by a render, so the
+  // store value can still read `false` on the render where the query settles —
+  // exactly when the view event fires. Classifying the query data avoids the lag.
+  const trackedHasGithubIntegration = classifyIntegrations(
+    integrationsData ?? [],
+  ).hasGithubIntegration;
+  // Count only Responder sources so non-responder inputs don't inflate counts.
+  const responderEntries = Object.entries(displayValues).filter(([source]) =>
+    RESPONDER_SOURCE_PRODUCTS.has(source as ResponderAgentSource),
+  );
+
+  useTrackAgentsViewed({
+    isLoading: isLoading || isLoadingIntegrations || userAutonomyConfigLoading,
+    isError: isIntegrationsError,
+    hasGithubIntegration: trackedHasGithubIntegration,
+    responderTotalCount: responderEntries.length,
+    responderEnabledCount: responderEntries.filter(([, enabled]) => enabled)
+      .length,
+    autostartPriority: userAutonomyConfig?.autostart_priority ?? null,
+    setupTaskAvailable: showSetupTask,
+  });
 
   return (
     <Flex direction="column" gap="8">
@@ -183,49 +203,16 @@ export function ConfigureAgentsSection() {
       </Subsection>
 
       <Subsection
-        title="Auto-start"
-        description="Self-driving can start coding tasks automatically when a report is immediately actionable and assigned to you."
-      >
-        <Flex
-          align="center"
-          justify="between"
-          gap="4"
-          className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5"
-        >
-          <Flex direction="column" gap="1" className="min-w-0">
-            <Text className="font-medium text-[13px] text-gray-12">
-              Your PR auto-start threshold
-            </Text>
-            <Text className="max-w-xl text-[12px] text-gray-11 leading-snug">
-              Reports at or above this priority can start an implementation task
-              for you. The backend deduplicates per report, and these runs count
-              toward usage.
-            </Text>
-          </Flex>
-          {userAutonomyConfigLoading ? (
-            <Box className="h-8 w-[260px] shrink-0 animate-pulse rounded bg-(--gray-3)" />
-          ) : (
-            <SettingsOptionSelect
-              value={userAutostartPriority}
-              options={USER_AUTOSTART_OPTIONS}
-              ariaLabel="PR auto-start threshold"
-              className="min-w-[260px] max-w-[300px]"
-              onValueChange={(value) =>
-                void handleUpdateUserAutonomyPriority(
-                  value === NEVER_AUTOSTART_VALUE ? null : value,
-                )
-              }
-            />
-          )}
-        </Flex>
-      </Subsection>
-
-      <Subsection
         title="MCP servers"
         description="External tools responders can read from. PostHog data is always available; this is everything else."
       >
         <Link
           to="/mcp-servers"
+          onClick={() =>
+            track(ANALYTICS_EVENTS.AGENTS_ACTION, {
+              action_type: "open_mcp_servers",
+            })
+          }
           className="flex items-center justify-between gap-3 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5 no-underline transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
         >
           <Flex align="center" gap="3" className="min-w-0">
@@ -270,16 +257,28 @@ function SetupTaskSection() {
   );
 
   const handleStartSetup = useCallback(async () => {
+    // A click that fails a precondition is still a failed setup attempt; emit
+    // `run_setup_agent` with success:false so these don't drop out of the funnel
+    // and bias the success rate upward. (The re-entrancy and still-loading guards
+    // below are not attempts, so they don't fire.)
+    const trackSetupFailure = () =>
+      track(ANALYTICS_EVENTS.AGENTS_ACTION, {
+        action_type: "run_setup_agent",
+        success: false,
+      });
+
     if (isStartingSetupTask) return;
     if (isLoadingRepos) {
       toast.error("Still loading GitHub repositories");
       return;
     }
     if (!hasGithubIntegration || !setupRepository) {
+      trackSetupFailure();
       toast.error("Connect GitHub before starting Self-driving setup");
       return;
     }
     if (!cloudRegion) {
+      trackSetupFailure();
       toast.error("Sign in to start Self-driving setup");
       return;
     }
@@ -287,6 +286,7 @@ function SetupTaskSection() {
     const githubUserIntegrationId =
       getUserIntegrationIdForRepo(setupRepository);
     if (!githubUserIntegrationId) {
+      trackSetupFailure();
       toast.error("Connect a GitHub integration with repository access");
       return;
     }
@@ -301,23 +301,36 @@ function SetupTaskSection() {
       const settings = useSettingsStore.getState();
       const adapter = settings.lastUsedAdapter ?? "claude";
       const apiHost = getCloudUrlFromRegion(cloudRegion);
-      const model =
-        settings.lastUsedModel ??
-        (await resolveDefaultModel(
-          queryClient,
-          apiHost,
-          adapter,
-          modelResolver,
-        ));
+      const resolvedModel = await resolveDefaultModel(
+        queryClient,
+        apiHost,
+        adapter,
+        modelResolver,
+        settings.lastUsedModel,
+      );
+      // The resolver returns undefined on a transient failure; fall back to the
+      // persisted id so a gateway outage degrades gracefully rather than blocking
+      // setup for a user whose persisted model was valid.
+      const model = resolvedModel ?? settings.lastUsedModel;
 
       if (!model) {
-        sonnerToast.dismiss(toastId);
+        toast.dismiss(toastId);
+        trackSetupFailure();
         toast.error("Failed to start Self-driving setup", {
           description:
             "Couldn't resolve a default model. Open the task page once and pick a model, then try again.",
         });
         return;
       }
+
+      // The persisted effort belongs to `lastUsedModel`; if the resolver swapped
+      // in a fallback default, that tier may be unsupported for the new model and
+      // the cloud runtime rejects the pair (see agent `bin.ts`). Only carry the
+      // effort when the model is unchanged; otherwise let the runtime default it.
+      const reasoningLevel =
+        model === settings.lastUsedModel
+          ? (settings.lastUsedReasoningEffort ?? undefined)
+          : undefined;
 
       const input: TaskCreationInput = {
         content: AUTONOMY_SETUP_PROMPT,
@@ -328,7 +341,7 @@ function SetupTaskSection() {
         executionMode: "auto",
         adapter,
         model,
-        reasoningLevel: settings.lastUsedReasoningEffort ?? undefined,
+        reasoningLevel,
       };
 
       const result = await taskService.createTask(input, (output) => {
@@ -336,7 +349,11 @@ function SetupTaskSection() {
         void openTask(output.task);
       });
 
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
+      track(ANALYTICS_EVENTS.AGENTS_ACTION, {
+        action_type: "run_setup_agent",
+        success: result.success,
+      });
       if (result.success) {
         track(ANALYTICS_EVENTS.TASK_CREATED, {
           auto_run: true,
@@ -358,7 +375,11 @@ function SetupTaskSection() {
         });
       }
     } catch (error) {
-      sonnerToast.dismiss(toastId);
+      toast.dismiss(toastId);
+      track(ANALYTICS_EVENTS.AGENTS_ACTION, {
+        action_type: "run_setup_agent",
+        success: false,
+      });
       const description =
         error instanceof Error ? error.message : "Unknown error";
       toast.error("Failed to start Self-driving setup", { description });

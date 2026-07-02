@@ -35,7 +35,8 @@ export type CompletionSound =
   | "ring"
   | "shoot"
   | "slide"
-  | "drop";
+  | "drop"
+  | "icq";
 
 export type InitialTaskMode = "plan" | "last_used";
 
@@ -63,6 +64,8 @@ interface PreferencesState {
   setCompletionSound: (sound: CompletionSound) => void;
   completionVolume: number;
   setCompletionVolume: (volume: number) => void;
+  scaleSoundWithTaskLength: boolean;
+  setScaleSoundWithTaskLength: (enabled: boolean) => void;
 
   defaultInitialTaskMode: InitialTaskMode;
   setDefaultInitialTaskMode: (mode: InitialTaskMode) => void;
@@ -101,6 +104,9 @@ export const usePreferencesStore = create<PreferencesState>()(
         set({
           completionVolume: Math.max(0, Math.min(100, Math.round(volume))),
         }),
+      scaleSoundWithTaskLength: false,
+      setScaleSoundWithTaskLength: (enabled) =>
+        set({ scaleSoundWithTaskLength: enabled }),
 
       defaultInitialTaskMode: "plan",
       setDefaultInitialTaskMode: (mode) =>
@@ -125,6 +131,7 @@ export const usePreferencesStore = create<PreferencesState>()(
         fontSize: state.fontSize,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
+        scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastNewTaskMode: state.lastNewTaskMode,
         defaultReasoningEffort: state.defaultReasoningEffort,

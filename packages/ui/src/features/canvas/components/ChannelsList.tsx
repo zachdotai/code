@@ -1,29 +1,27 @@
 import {
-  CaretDownIcon,
-  CaretRightIcon,
-  CaretUpIcon,
-  CodeIcon,
+  ChartBarIcon,
   DotsThreeIcon,
-  FileIcon,
   FileTextIcon,
-  FolderIcon,
   HashIcon,
   PencilSimpleIcon,
   PlusIcon,
   StarIcon,
   TrashIcon,
-  XIcon,
 } from "@phosphor-icons/react";
 import {
-  Badge,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
+  ButtonGroup,
+  AlertDialog as ConfirmDialog,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
   ContextMenuTrigger,
   cn,
   DropdownMenu,
@@ -31,9 +29,16 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  MenuLabel,
+  Separator,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@posthog/quill";
-import type { Task } from "@posthog/shared/domain-types";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
+import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import {
   useChannelStars,
@@ -44,64 +49,51 @@ import {
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
-import {
-  useChannelTaskMutations,
-  useChannelTasks,
-} from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
-import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
-import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
+import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { toast } from "@posthog/ui/primitives/toast";
-import * as Collapsible from "@radix-ui/react-collapsible";
-import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
+import { track } from "@posthog/ui/shell/analytics";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
 
-function NavButton({
-  label,
-  icon,
-  active,
-  count,
-  onClick,
-}: {
+// One actionable entry in a channel's menu, rendered the same whether it
+// surfaces in the hover "..." dropdown or the right-click context menu.
+type ChannelActionItem = {
+  key: string;
   label: string;
-  icon?: ReactNode;
-  active?: boolean;
-  count?: number;
-  onClick?: () => void;
-}) {
-  return (
-    <Button
-      variant="default"
-      size="sm"
-      data-selected={active || undefined}
-      onClick={onClick}
-      className="w-full justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
-    >
-      {icon}
-      {label}
-      {count != null && (
-        <Badge variant="default" className="ml-auto">
-          {count}
-        </Badge>
-      )}
-    </Button>
-  );
-}
+  icon: ReactNode;
+  onSelect: () => void;
+  variant?: "destructive";
+  disabled?: boolean;
+  // Draw a divider above this item to separate it from the previous group.
+  separatorBefore?: boolean;
+};
 
-// Hover-revealed "..." menu on a channel header: rename or delete the channel.
-function ChannelMenu({ channel }: { channel: Channel }) {
-  const [open, setOpen] = useState(false);
+// The channel actions (star, edit context, rename, delete) plus the rename-modal
+// state they drive. Single source of truth so the dropdown and context menus
+// stay in lockstep — add an action here and both surfaces pick it up.
+function useChannelActions(channel: Channel): {
+  actions: ChannelActionItem[];
+  renameOpen: boolean;
+  setRenameOpen: (open: boolean) => void;
+  confirmDeleteOpen: boolean;
+  setConfirmDeleteOpen: (open: boolean) => void;
+  confirmDelete: () => Promise<boolean>;
+  isDeleting: boolean;
+} {
   const [renameOpen, setRenameOpen] = useState(false);
+  // "Delete channel" opens a confirmation dialog rather than deleting inline —
+  // the action is destructive and irreversible.
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { deleteChannel, isDeleting } = useChannelMutations();
   const { isStarred, toggleStar, removeStar } = useChannelStarToggle(channel);
 
-  const onDelete = async () => {
+  // Runs the actual delete once confirmed. Returns whether it succeeded so the
+  // dialog can stay open (and show the toast) on failure.
+  const confirmDelete = async (): Promise<boolean> => {
     try {
       // Unfile the channel's dashboards + filed tasks first. The folder delete
       // would also cascade, but doing it explicitly via the typed endpoints
@@ -122,458 +114,439 @@ function ChannelMenu({ channel }: { channel: Channel }) {
 
       await deleteChannel(channel.id);
       removeStar();
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channel.id,
+        success: true,
+      });
       // If we're inside the channel being deleted, fall back to the index.
       if (pathname.startsWith(`/website/${channel.id}`)) {
         void navigate({ to: "/website" });
       }
+      return true;
     } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "delete",
+        surface: "sidebar",
+        channel_id: channel.id,
+        success: false,
+      });
       toast.error("Couldn't delete channel", {
         description: error instanceof Error ? error.message : String(error),
       });
+      return false;
     }
   };
 
-  return (
-    <Box
-      className={cn(
-        "transition-opacity",
-        open ? "opacity-100" : "opacity-0 group-hover/chan:opacity-100",
-      )}
-    >
-      <DropdownMenu open={open} onOpenChange={setOpen}>
-        <DropdownMenuTrigger
-          render={
-            <IconButton
-              variant="ghost"
-              color="gray"
-              size="1"
-              aria-label={`Options for ${channel.name}`}
+  const actions: ChannelActionItem[] = [
+    {
+      key: "star",
+      label: isStarred ? "Unstar channel" : "Star channel",
+      icon: <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />,
+      onSelect: () => {
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: isStarred ? "unstar" : "star",
+          surface: "sidebar",
+          channel_id: channel.id,
+        });
+        toggleStar();
+      },
+    },
+    {
+      key: "rename",
+      label: "Rename channel…",
+      icon: <PencilSimpleIcon size={14} />,
+      separatorBefore: true,
+      onSelect: () => setRenameOpen(true),
+    },
+    {
+      key: "delete",
+      label: "Delete channel…",
+      icon: <TrashIcon size={14} />,
+      variant: "destructive",
+      onSelect: () => setConfirmDeleteOpen(true),
+    },
+  ];
+
+  return {
+    actions,
+    renameOpen,
+    setRenameOpen,
+    confirmDeleteOpen,
+    setConfirmDeleteOpen,
+    confirmDelete,
+    isDeleting,
+  };
+}
+
+// Renders the shared channel actions into either menu primitive. Branching by
+// `kind` (rather than a union-typed component) keeps the item/separator props
+// type-checked against each primitive.
+function ChannelActionItems({
+  actions,
+  kind,
+}: {
+  actions: ChannelActionItem[];
+  kind: "dropdown" | "context";
+}) {
+  if (kind === "dropdown") {
+    return (
+      <>
+        {actions.map((a) => (
+          <Fragment key={a.key}>
+            {a.separatorBefore && <DropdownMenuSeparator />}
+            <DropdownMenuItem
+              variant={a.variant}
+              disabled={a.disabled}
+              onClick={a.onSelect}
             >
-              <DotsThreeIcon size={14} weight="bold" />
-            </IconButton>
+              {a.icon}
+              {a.label}
+            </DropdownMenuItem>
+          </Fragment>
+        ))}
+      </>
+    );
+  }
+  return (
+    <>
+      {actions.map((a) => (
+        <Fragment key={a.key}>
+          {a.separatorBefore && <ContextMenuSeparator />}
+          <ContextMenuItem
+            variant={a.variant}
+            disabled={a.disabled}
+            onClick={a.onSelect}
+          >
+            {a.icon}
+            {a.label}
+          </ContextMenuItem>
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+// Hover-revealed "..." menu on a channel header. Presentation only — the action
+// list comes from `useChannelActions`, so it matches the right-click menu.
+function ChannelMenu({
+  channelName,
+  actions,
+  open,
+  onOpenChange,
+}: {
+  channelName: string;
+  actions: ChannelActionItem[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="outline"
+            size="icon-xs"
+            aria-label={`Options for ${channelName}`}
+            className={cn(
+              "group-hover:border-border",
+              "transition-opacity",
+              open ? "opacity-100" : "opacity-0 group-hover/chan:opacity-100",
+            )}
+          >
+            <DotsThreeIcon size={14} weight="bold" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent
+        align="end"
+        side="bottom"
+        sideOffset={4}
+        className="w-auto min-w-fit"
+      >
+        <ChannelActionItems actions={actions} kind="dropdown" />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// One channel in the list: a "# name" row that navigates to the channel home.
+// No expansion — the channel's surfaces live in the in-channel top nav.
+function ChannelSection({ channel }: { channel: Channel }) {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const base = `/website/${channel.id}`;
+  // Highlight the row whenever any of the channel's routes is open.
+  const isActive = pathname === base || pathname.startsWith(`${base}/`);
+  // Lifted so the hover button group stays visible while the menu is open.
+  const [menuOpen, setMenuOpen] = useState(false);
+  // The "+" dropdown (New task / New canvas). Keeps the hover actions pinned
+  // while open.
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const createAndOpenCanvas = useCreateAndOpenDashboard(channel.id);
+  // Shared by the "..." dropdown and the right-click context menu so both offer
+  // the same star / edit / rename / delete actions.
+  const {
+    actions,
+    renameOpen,
+    setRenameOpen,
+    confirmDeleteOpen,
+    setConfirmDeleteOpen,
+    confirmDelete,
+    isDeleting,
+  } = useChannelActions(channel);
+
+  return (
+    <Box className="group/chan relative">
+      {/* A single, non-expandable row: the "# name" navigates straight to the
+          channel home. Right-clicking opens the same actions as the "..." menu. */}
+      <ContextMenu>
+        <ContextMenuTrigger
+          render={
+            <Button
+              variant="default"
+              size="default"
+              left
+              data-selected={isActive || undefined}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "nav_click",
+                  surface: "sidebar",
+                  channel_id: channel.id,
+                });
+                void navigate({
+                  to: "/website/$channelId",
+                  params: { channelId: channel.id },
+                });
+              }}
+              className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+            >
+              <HashIcon size={14} className="shrink-0 text-gray-9" />
+              <span
+                className={cn(
+                  "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
+                  menuOpen && "pr-8",
+                )}
+              >
+                {channel.name}
+              </span>
+            </Button>
           }
         />
-        <DropdownMenuContent
-          align="end"
-          side="bottom"
-          sideOffset={4}
-          className="w-auto min-w-fit"
-        >
-          <DropdownMenuItem onClick={() => toggleStar()}>
-            <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
-            {isStarred ? "Unstar channel" : "Star channel"}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() =>
-              navigate({
-                to: "/website/$channelId/context",
-                params: { channelId: channel.id },
-              })
-            }
-          >
-            <FileTextIcon size={14} />
-            Edit CONTEXT.md
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setRenameOpen(true)}>
-            <PencilSimpleIcon size={14} />
-            Rename channel
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            variant="destructive"
-            disabled={isDeleting}
-            onClick={() => void onDelete()}
-          >
-            <TrashIcon size={14} />
-            Delete channel
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
+        <ContextMenuContent>
+          <ChannelActionItems actions={actions} kind="context" />
+        </ContextMenuContent>
+      </ContextMenu>
+      {/* Hover actions: the "+" dropdown (New task / New canvas) and the
+            options menu. Stay visible while either is open. */}
+      <div className="absolute top-1 right-1">
+        <ButtonGroup>
+          <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        size="icon-xs"
+                        aria-label={`New in ${channel.name}`}
+                        className={cn(
+                          "gap-1 transition-opacity group-hover:border-border",
+                          menuOpen || newMenuOpen
+                            ? "opacity-100"
+                            : "opacity-0 group-hover/chan:opacity-100",
+                        )}
+                      >
+                        <PlusIcon size={12} weight="bold" />
+                      </Button>
+                    }
+                  />
+                }
+              />
+              <TooltipContent side="top">New…</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent
+              align="start"
+              side="bottom"
+              sideOffset={4}
+              className="w-auto min-w-fit"
+            >
+              <DropdownMenuItem
+                onClick={() => {
+                  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                    action_type: "new_task_open",
+                    surface: "sidebar",
+                    channel_id: channel.id,
+                  });
+                  navigate({
+                    to: "/website/$channelId/new",
+                    params: { channelId: channel.id },
+                  });
+                }}
+              >
+                <FileTextIcon size={14} />
+                New task
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  // Create + open a canvas with the default template directly;
+                  // the canvas's own composer drives what gets built.
+                  trackAndCreateCanvas(
+                    channel.id,
+                    undefined,
+                    "sidebar",
+                    () => void createAndOpenCanvas(),
+                  );
+                }}
+              >
+                <ChartBarIcon size={14} />
+                New canvas
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <ChannelMenu
+            channelName={channel.name}
+            actions={actions}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+          />
+        </ButtonGroup>
+      </div>
+      {/* One modal for both the dropdown and context-menu "Rename" actions. */}
       <RenameChannelModal
         channel={channel}
         open={renameOpen}
         onOpenChange={setRenameOpen}
       />
-    </Box>
-  );
-}
-
-// Right-click "File to..." submenu on a task row. Files the task to another
-// channel by creating an extra `task` FS row under that folder.
-function TaskNavRow({
-  channelTaskId,
-  channelId,
-  taskId,
-  task,
-  title,
-  active,
-  onClick,
-  channels,
-}: {
-  channelTaskId: string;
-  channelId: string;
-  taskId: string;
-  task: Task | undefined;
-  title: string;
-  active: boolean;
-  onClick: () => void;
-  channels: Channel[];
-}) {
-  const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { fileTask, unfileTask } = useChannelTaskMutations();
-  const taskData = useChannelTaskData(task);
-  const workspace = useWorkspace(taskId);
-  const workspaceMode =
-    workspace?.mode ??
-    (taskData?.taskRunEnvironment === "cloud" ? "cloud" : undefined);
-  const { prState, hasDiff } = useTaskPrStatus({
-    id: taskId,
-    cloudPrUrl: taskData?.cloudPrUrl ?? null,
-    taskRunEnvironment: taskData?.taskRunEnvironment ?? null,
-  });
-  const icon = taskData ? (
-    <TaskIcon
-      workspaceMode={workspaceMode}
-      isGenerating={taskData.isGenerating}
-      isUnread={taskData.isUnread}
-      isPinned={taskData.isPinned}
-      isSuspended={taskData.isSuspended}
-      needsPermission={taskData.needsPermission}
-      taskRunStatus={taskData.taskRunStatus}
-      originProduct={taskData.originProduct}
-      slackThreadUrl={taskData.slackThreadUrl}
-      prState={prState}
-      hasDiff={hasDiff}
-      size={14}
-    />
-  ) : (
-    <CodeIcon size={14} className="text-gray-9" />
-  );
-
-  const onFileTo = async (targetChannelId: string) => {
-    try {
-      await fileTask(targetChannelId, taskId, title);
-    } catch (error) {
-      toast.error("Couldn't file task", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
-  const onRemove = async () => {
-    try {
-      await unfileTask(channelTaskId);
-      if (pathname === `/website/${channelId}/tasks/${taskId}`) {
-        void navigate({
-          to: "/website/$channelId",
-          params: { channelId },
-        });
-      }
-    } catch (error) {
-      toast.error("Couldn't remove task from channel", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger
-        render={
-          <Box>
-            <NavButton
-              label={title}
-              icon={icon}
-              active={active}
-              onClick={onClick}
+      {/* Destructive confirm for "Delete channel" — spells out what's removed. */}
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete #{channel.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the channel and can’t be undone.
+              <ul className="list-disc ps-4">
+                <li>
+                  The channel and its{" "}
+                  <span className="font-medium">CONTEXT.md</span> are deleted.
+                </li>
+                <li>
+                  Every canvas saved in this channel is permanently deleted.
+                </li>
+                <li>
+                  Filed tasks are removed from the channel, but the tasks
+                  themselves are not deleted.
+                </li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose
+              render={<Button variant="outline">Cancel</Button>}
             />
-          </Box>
-        }
-      />
-      <ContextMenuContent>
-        <ContextMenuSub>
-          <ContextMenuSubTrigger>
-            <FolderIcon size={14} />
-            File to…
-          </ContextMenuSubTrigger>
-          <ContextMenuSubContent>
-            {channels.filter((c) => c.id !== channelId).length === 0 ? (
-              <ContextMenuItem disabled>No other channels</ContextMenuItem>
-            ) : (
-              channels
-                .filter((c) => c.id !== channelId)
-                .map((c) => (
-                  <ContextMenuItem
-                    key={c.id}
-                    onClick={() => void onFileTo(c.id)}
-                  >
-                    {c.name}
-                  </ContextMenuItem>
-                ))
-            )}
-          </ContextMenuSubContent>
-        </ContextMenuSub>
-        <ContextMenuSeparator />
-        <ContextMenuItem variant="destructive" onClick={() => void onRemove()}>
-          <XIcon size={14} />
-          Remove from channel
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
-function ChannelSection({
-  channel,
-  channels,
-}: {
-  channel: Channel;
-  channels: Channel[];
-}) {
-  const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { data: tasks } = useTasks();
-  const { tasks: filedTasks } = useChannelTasks(channel.id);
-  const base = `/website/${channel.id}`;
-  // Channels always start collapsed on load; expansion is session-only.
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Box className="group/chan relative">
-      <Collapsible.Root open={open} onOpenChange={setOpen}>
-        <Collapsible.Trigger asChild>
-          <Button
-            variant="default"
-            size="sm"
-            // Collapsible.Trigger sets aria-expanded, which the default Button
-            // styles with a persistent highlight. Suppress it — an expanded
-            // channel should only highlight on hover (or via its active child).
-            className="aria-expanded:!bg-transparent hover:aria-expanded:!bg-fill-hover w-full justify-start gap-2 pr-16"
-          >
-            {/* `#` by default; swaps to the expand/collapse caret on hover. */}
-            <span className="flex size-[18px] shrink-0 items-center justify-center text-gray-10">
-              <HashIcon size={14} className="block group-hover/chan:hidden" />
-              {open ? (
-                <CaretDownIcon
-                  size={12}
-                  className="hidden group-hover/chan:block"
-                />
-              ) : (
-                <CaretRightIcon
-                  size={12}
-                  className="hidden group-hover/chan:block"
-                />
-              )}
-            </span>
-            <span className="truncate font-medium">{channel.name}</span>
-          </Button>
-        </Collapsible.Trigger>
-        <Collapsible.Content>
-          <Flex direction="column" gap="1" pt="1" pl="3">
-            <NavButton
-              label="Canvases"
-              icon={<FileIcon size={14} className="text-gray-9" />}
-              active={
-                pathname === base || pathname.startsWith(`${base}/dashboards`)
-              }
+            <Button
+              variant="primary"
+              loading={isDeleting}
               onClick={() =>
-                navigate({
-                  to: "/website/$channelId",
-                  params: { channelId: channel.id },
-                })
-              }
-            />
-            {filedTasks.map(({ id: channelTaskId, taskId }) => {
-              const task = tasks?.find((t) => t.id === taskId);
-              const title = task?.title || "Untitled task";
-              return (
-                <TaskNavRow
-                  key={channelTaskId}
-                  channelTaskId={channelTaskId}
-                  channelId={channel.id}
-                  taskId={taskId}
-                  task={task}
-                  title={title}
-                  active={pathname === `${base}/tasks/${taskId}`}
-                  onClick={() =>
-                    navigate({
-                      to: "/website/$channelId/tasks/$taskId",
-                      params: { channelId: channel.id, taskId },
-                    })
-                  }
-                  channels={channels}
-                />
-              );
-            })}
-          </Flex>
-        </Collapsible.Content>
-      </Collapsible.Root>
-      <Flex gap="1" align="center" className="absolute top-1 right-1">
-        <Box className="opacity-0 transition-opacity group-hover/chan:opacity-100">
-          <Tooltip content="New task" side="top">
-            <IconButton
-              variant="ghost"
-              color="gray"
-              size="1"
-              aria-label={`New task in ${channel.name}`}
-              onClick={() =>
-                navigate({
-                  to: "/website/$channelId/new",
-                  params: { channelId: channel.id },
+                void confirmDelete().then((ok) => {
+                  if (ok) setConfirmDeleteOpen(false);
                 })
               }
             >
-              <PlusIcon size={14} weight="bold" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-        <ChannelMenu channel={channel} />
-      </Flex>
+              Delete channel
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </ConfirmDialog>
     </Box>
   );
 }
 
-// A collapsible channel group with a leading icon that swaps to a caret on
-// hover (Slack-style). Sections start expanded; collapse state is session-only.
-function ChannelGroup({
-  label,
-  icon,
-  isEmpty = false,
-  emptyHint,
-  className,
-  children,
-}: {
-  label: string;
-  icon: ReactNode;
-  isEmpty?: boolean;
-  emptyHint?: ReactNode;
-  className?: string;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(true);
-
-  return (
-    <Collapsible.Root open={open} onOpenChange={setOpen} className={className}>
-      <Collapsible.Trigger asChild>
-        <button
-          type="button"
-          className="group/grp flex w-full items-center gap-2 px-2 pt-1 text-left"
-        >
-          {/* Leading icon by default; swaps to the expand/collapse caret on hover. */}
-          <span className="flex size-4 shrink-0 items-center justify-center text-gray-9">
-            <span className="block group-hover/grp:hidden">{icon}</span>
-            {open ? (
-              <CaretUpIcon size={12} className="hidden group-hover/grp:block" />
-            ) : (
-              <CaretDownIcon
-                size={12}
-                className="hidden group-hover/grp:block"
-              />
-            )}
-          </span>
-          <Text weight="medium" className="text-gray-9 text-xs tracking-wide">
-            {label}
-          </Text>
-        </button>
-      </Collapsible.Trigger>
-      <Collapsible.Content>
-        <Flex direction="column" gap="1" pt="1" pl="3">
-          {isEmpty ? emptyHint : children}
-        </Flex>
-      </Collapsible.Content>
-    </Collapsible.Root>
-  );
-}
-
-// The channel list — the Channels space sidebar. Channels are server-backed;
-// selecting one opens its dashboards under /website/$channelId. Starred
-// channels are user-specific and surface in their own section at the top.
+// The channel list — the Channels space sidebar body. Starred channels surface
+// in their own section at the top so the ones you use most stay in reach; the
+// rest sit under a "Channels" label with the "New" channel button.
 export function ChannelsList() {
   const { channels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
   const [modalOpen, setModalOpen] = useState(false);
 
-  const starredChannels = channels.filter((c) =>
-    starredRefToShortcutId.has(c.path),
-  );
-  const otherChannels = channels.filter(
-    (c) => !starredRefToShortcutId.has(c.path),
-  );
+  const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
+  const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
+
+  // Fire CHANNELS_SPACE_VIEWED once per space mount, after channels first load
+  // (so the counts are accurate). The sidebar stays mounted while navigating
+  // between channels, so this naturally fires once per entry into the space.
+  const viewedTrackedRef = useRef(false);
+  useEffect(() => {
+    if (isLoading || viewedTrackedRef.current) return;
+    viewedTrackedRef.current = true;
+    track(ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED, {
+      channel_count: channels.length,
+      starred_count: starred.length,
+    });
+  }, [isLoading, channels.length, starred.length]);
 
   return (
-    <Flex direction="column" className="h-full min-h-0">
-      <Flex
-        direction="column"
-        gap="1"
-        className="min-h-0 flex-1 overflow-y-auto px-1 pt-1"
-      >
+    // One shared provider groups every row tooltip so that once one shows,
+    // moving to the next row reveals its tooltip instantly (no re-delay).
+    <TooltipProvider delay={600}>
+      <Flex direction="column" gap="px" className="px-2 pb-2">
+        <Box className="py-1.5">
+          <Separator className="bg-border" />
+        </Box>
+
+        {starred.length > 0 && (
+          <>
+            <Box>
+              <MenuLabel className="flex items-center gap-2 uppercase">
+                <StarIcon size={14} className="text-gray-9" />
+                Starred
+              </MenuLabel>
+            </Box>
+            <div className="pl-2">
+              {starred.map((channel) => (
+                <ChannelSection key={channel.id} channel={channel} />
+              ))}
+            </div>
+          </>
+        )}
+
+        <Box className={cn(starred.length > 0 && "mt-3")}>
+          <MenuLabel className="group flex items-center justify-between uppercase">
+            <span className="flex items-center gap-2">
+              <HashIcon size={14} className="text-gray-9" />
+              Channels
+            </span>
+            <Button
+              variant="outline"
+              size="icon-xs"
+              onClick={() => setModalOpen(true)}
+              className="-mr-1 group-hover:border-border"
+            >
+              <PlusIcon size={14} />
+            </Button>
+          </MenuLabel>
+        </Box>
+
         {!isLoading && channels.length === 0 && (
           <Text size="1" className="px-2 text-gray-9">
             No channels yet. Create one to get started.
           </Text>
         )}
 
-        {channels.length > 0 && (
-          <>
-            <ChannelGroup
-              label="Starred"
-              icon={<StarIcon size={14} className="text-gray-9" />}
-              isEmpty={starredChannels.length === 0}
-              emptyHint={
-                <Text
-                  as="div"
-                  size="1"
-                  className="mx-1 rounded-md border border-gray-6 border-dashed px-2 py-1.5 text-[11px] text-gray-9 leading-snug"
-                >
-                  Star channels you use often to pin them here.
-                </Text>
-              }
-            >
-              {starredChannels.map((channel) => (
-                <ChannelSection
-                  key={channel.id}
-                  channel={channel}
-                  channels={channels}
-                />
-              ))}
-            </ChannelGroup>
-
-            {otherChannels.length > 0 && (
-              <ChannelGroup
-                label="Channels"
-                icon={<HashIcon size={14} className="text-gray-9" />}
-                className="mt-3"
-              >
-                {otherChannels.map((channel) => (
-                  <ChannelSection
-                    key={channel.id}
-                    channel={channel}
-                    channels={channels}
-                  />
-                ))}
-              </ChannelGroup>
-            )}
-          </>
-        )}
+        <div className="pl-2">
+          {others.map((channel) => (
+            <ChannelSection key={channel.id} channel={channel} />
+          ))}
+        </div>
       </Flex>
 
-      {/* Pinned to the bottom of the channels nav. */}
-      <Box className="shrink-0 border-gray-6 border-t p-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full justify-center"
-          onClick={() => setModalOpen(true)}
-        >
-          <PlusIcon size={14} />
-          New channel
-        </Button>
-      </Box>
-
       <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />
-    </Flex>
+    </TooltipProvider>
   );
 }

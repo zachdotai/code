@@ -38,3 +38,65 @@ describe("spawnCodexProcess MCP disable args", () => {
     expect(args.some((arg) => arg.includes("weird name"))).toBe(false);
   });
 });
+
+describe("spawnCodexProcess developer instructions", () => {
+  it("passes guidance via developer_instructions to preserve the base prompt", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({
+      logger: new Logger({ debug: false }),
+      developerInstructions: "Follow PostHog signed-commit rules.",
+    });
+
+    const args: string[] = spawnMock.mock.calls[0][1];
+    expect(args).toContain(
+      'developer_instructions="Follow PostHog signed-commit rules."',
+    );
+    // The bare `instructions` and `model_instructions_file` keys replace Codex's
+    // model-optimized base prompt, so guidance must never go through them.
+    expect(args.some((arg) => arg.startsWith("instructions="))).toBe(false);
+    expect(args.some((arg) => arg.startsWith("model_instructions_file="))).toBe(
+      false,
+    );
+  });
+
+  it("escapes backslashes, newlines and quotes in developer_instructions", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({
+      logger: new Logger({ debug: false }),
+      developerInstructions: 'a\\b\n"c',
+    });
+
+    const args: string[] = spawnMock.mock.calls[0][1];
+    expect(args).toContain('developer_instructions="a\\\\b\\n\\"c"');
+  });
+});
+
+describe("spawnCodexProcess codex home", () => {
+  it("sets CODEX_HOME on the child env when provided", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({
+      logger: new Logger({ debug: false }),
+      codexHome: "/data/codex-home",
+    });
+
+    const env = spawnMock.mock.calls[0][2].env;
+    expect(env.CODEX_HOME).toBe("/data/codex-home");
+  });
+
+  it("does not inject CODEX_HOME when not provided", () => {
+    spawnMock.mockClear();
+    spawnMock.mockReturnValue(makeFakeChild());
+
+    spawnCodexProcess({ logger: new Logger({ debug: false }) });
+
+    // Inherits the ambient value (if any) without the adapter adding its own.
+    const env = spawnMock.mock.calls[0][2].env;
+    expect(env.CODEX_HOME).toBe(process.env.CODEX_HOME);
+  });
+});

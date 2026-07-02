@@ -1,3 +1,4 @@
+import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
 import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
@@ -13,6 +14,7 @@ export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
 export type AgentAdapter = "claude" | "codex";
 export type DefaultInitialTaskMode = "plan" | "last_used";
+export type DefaultMessagingMode = "queue" | "steer";
 export type DefaultReasoningEffort =
   | "low"
   | "medium"
@@ -25,7 +27,7 @@ export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
 
-export type CompletionSound =
+export type BuiltInCompletionSound =
   | "none"
   | "guitar"
   | "danilo"
@@ -39,7 +41,21 @@ export type CompletionSound =
   | "shoot"
   | "slide"
   | "switch"
-  | "wilhelm";
+  | "wilhelm"
+  | "icq";
+
+// A user-installed sound is selected by referencing its id as `custom:<id>`.
+export type CompletionSound = BuiltInCompletionSound | `custom:${string}`;
+
+// A notification sound the user recorded or imported. The clip is stored inline
+// as a base64 data URL so it persists with the rest of the settings (no host
+// filesystem dependency); a length cap on capture keeps that payload small.
+export interface CustomSound {
+  id: string;
+  name: string;
+  dataUrl: string;
+  durationMs: number;
+}
 
 export type TerminalFont =
   | "berkeley-mono"
@@ -64,10 +80,13 @@ interface SettingsStore {
   lastUsedModel: string | null;
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
+  cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
   defaultReasoningEffort: DefaultReasoningEffort;
+  defaultMessagingMode: DefaultMessagingMode;
+  setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
   setLastUsedLocalWorkspaceMode: (mode: LocalWorkspaceMode) => void;
@@ -76,6 +95,9 @@ interface SettingsStore {
   setLastUsedModel: (model: string) => void;
   setLastUsedReasoningEffort: (effort: string) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
+  setCachedCloudRepositoryMap: (
+    map: Record<string, UserRepositoryIntegrationRef>,
+  ) => void;
   setLastUsedEnvironment: (
     repoPath: string,
     environmentId: string | null,
@@ -91,11 +113,17 @@ interface SettingsStore {
   dockBounceNotifications: boolean;
   completionSound: CompletionSound;
   completionVolume: number;
+  scaleSoundWithTaskLength: boolean;
+  customSounds: CustomSound[];
   setDesktopNotifications: (enabled: boolean) => void;
   setDockBadgeNotifications: (enabled: boolean) => void;
   setDockBounceNotifications: (enabled: boolean) => void;
   setCompletionSound: (sound: CompletionSound) => void;
   setCompletionVolume: (volume: number) => void;
+  setScaleSoundWithTaskLength: (enabled: boolean) => void;
+  addCustomSound: (sound: CustomSound) => void;
+  removeCustomSound: (id: string) => void;
+  renameCustomSound: (id: string, name: string) => void;
 
   // Composer / chat
   autoConvertLongText: AutoConvertLongText;
@@ -131,9 +159,21 @@ interface SettingsStore {
 
   // Experimental / misc
   hedgehogMode: boolean;
+  slotMachineMode: boolean;
+  brainrotMode: boolean;
   mcpAppsDisabledServers: string[];
+  downloadUpdatesAutomatically: boolean;
+  lastSeenChangelogVersion: string | null;
+  // Renders the conversation with the new ChatX (quill) primitives instead of
+  // the virtualized ConversationView. Local A/B toggle while the rebuild bakes.
+  useNewChatThread: boolean;
+  setUseNewChatThread: (enabled: boolean) => void;
   setHedgehogMode: (enabled: boolean) => void;
+  setSlotMachineMode: (enabled: boolean) => void;
+  setBrainrotMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
+  setDownloadUpdatesAutomatically: (enabled: boolean) => void;
+  setLastSeenChangelogVersion: (version: string | null) => void;
 
   // Onboarding hints
   hints: Record<string, HintState>;
@@ -147,6 +187,17 @@ interface SettingsStore {
 
 // ---------- Store ----------
 
+// Single source of truth for notification setting defaults — used both as the
+// store's initial values and by the Notifications settings "Reset to defaults".
+export const NOTIFICATION_DEFAULTS = {
+  desktopNotifications: true,
+  dockBadgeNotifications: true,
+  dockBounceNotifications: false,
+  completionSound: "none" as CompletionSound,
+  completionVolume: 80,
+  scaleSoundWithTaskLength: false,
+};
+
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
@@ -159,10 +210,12 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedModel: null,
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
+      cachedCloudRepositoryMap: {},
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
       defaultReasoningEffort: "last_used",
+      defaultMessagingMode: "queue",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
       setLastUsedLocalWorkspaceMode: (mode) =>
@@ -174,6 +227,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedReasoningEffort: effort }),
       setLastUsedCloudRepository: (repo) =>
         set({ lastUsedCloudRepository: repo }),
+      setCachedCloudRepositoryMap: (map) =>
+        set({ cachedCloudRepositoryMap: map }),
       setLastUsedEnvironment: (repoPath, environmentId) =>
         set((state) => {
           const next = { ...state.lastUsedEnvironments };
@@ -192,13 +247,13 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedInitialTaskMode: mode }),
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
+      setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
 
       // Notifications
-      desktopNotifications: true,
-      dockBadgeNotifications: true,
-      dockBounceNotifications: false,
-      completionSound: "none",
-      completionVolume: 80,
+      ...NOTIFICATION_DEFAULTS,
+      // Kept out of NOTIFICATION_DEFAULTS so "Reset to defaults" never discards
+      // sounds the user installed.
+      customSounds: [],
       setDesktopNotifications: (enabled) =>
         set({ desktopNotifications: enabled }),
       setDockBadgeNotifications: (enabled) =>
@@ -207,6 +262,25 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ dockBounceNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
+      setScaleSoundWithTaskLength: (enabled) =>
+        set({ scaleSoundWithTaskLength: enabled }),
+      addCustomSound: (sound) =>
+        set((state) => ({ customSounds: [...state.customSounds, sound] })),
+      removeCustomSound: (id) =>
+        set((state) => ({
+          customSounds: state.customSounds.filter((s) => s.id !== id),
+          // If the deleted sound was the active one, fall back to silence.
+          completionSound:
+            state.completionSound === `custom:${id}`
+              ? "none"
+              : state.completionSound,
+        })),
+      renameCustomSound: (id, name) =>
+        set((state) => ({
+          customSounds: state.customSounds.map((s) =>
+            s.id === id ? { ...s, name } : s,
+          ),
+        })),
 
       // Composer / chat
       autoConvertLongText: "2500",
@@ -248,8 +322,20 @@ export const useSettingsStore = create<SettingsStore>()(
 
       // Experimental / misc
       hedgehogMode: false,
+      slotMachineMode: false,
+      brainrotMode: false,
       mcpAppsDisabledServers: [],
+      downloadUpdatesAutomatically: true,
+      lastSeenChangelogVersion: null,
+      useNewChatThread: false,
+      setUseNewChatThread: (enabled) => set({ useNewChatThread: enabled }),
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
+      setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
+      setBrainrotMode: (enabled) => set({ brainrotMode: enabled }),
+      setDownloadUpdatesAutomatically: (enabled) =>
+        set({ downloadUpdatesAutomatically: enabled }),
+      setLastSeenChangelogVersion: (version) =>
+        set({ lastSeenChangelogVersion: version }),
       setMcpAppsDisabledServers: (servers) =>
         set({ mcpAppsDisabledServers: servers }),
 
@@ -297,10 +383,12 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedModel: state.lastUsedModel,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
+        cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
+        defaultMessagingMode: state.defaultMessagingMode,
 
         // Notifications
         desktopNotifications: state.desktopNotifications,
@@ -308,6 +396,8 @@ export const useSettingsStore = create<SettingsStore>()(
         dockBounceNotifications: state.dockBounceNotifications,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
+        scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
+        customSounds: state.customSounds,
 
         // Composer / chat
         autoConvertLongText: state.autoConvertLongText,
@@ -332,7 +422,12 @@ export const useSettingsStore = create<SettingsStore>()(
 
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,
+        slotMachineMode: state.slotMachineMode,
+        brainrotMode: state.brainrotMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
+        downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
+        lastSeenChangelogVersion: state.lastSeenChangelogVersion,
+        useNewChatThread: state.useNewChatThread,
 
         // Onboarding hints
         hints: state.hints,

@@ -1,5 +1,7 @@
 import { Cloud, Spinner } from "@phosphor-icons/react";
 import { Button as QuillButton } from "@posthog/quill";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useDiffStatsToggle } from "@posthog/ui/features/code-review/hooks/useDiffStatsToggle";
@@ -23,9 +25,12 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useAppView } from "@posthog/ui/router/useAppView";
+import { track } from "@posthog/ui/shell/analytics";
+import { getHeaderSidebarPanelLayout } from "@posthog/ui/shell/headerSidebarPanel";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
-import { isWindows } from "@posthog/ui/utils/platform";
+import { isMac, isWindows } from "@posthog/ui/utils/platform";
 import { Box, Flex } from "@radix-ui/themes";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 const CLOUD_HANDOFF_FLAG = "phc-cloud-handoff";
@@ -129,8 +134,35 @@ function TaskDiffStatsBadge({ task }: { task: Task }) {
   );
 }
 
+// Switches from the Code space to the Channels space (project-bluebird). Sits to
+// the left of the sidebar toggle, replacing the old vertical app rail.
+function BluebirdButton() {
+  const navigate = useNavigate();
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  if (!bluebirdEnabled) return null;
+  return (
+    <div className="no-drag">
+      <QuillButton
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+            action_type: "enter_space",
+            surface: "header_button",
+          });
+          navigate({ to: "/website" });
+        }}
+      >
+        Bluebird
+      </QuillButton>
+    </div>
+  );
+}
+
 export const HEADER_HEIGHT = 36;
-const COLLAPSED_WIDTH = 110;
 const WINDOWS_TITLEBAR_INSET = 140;
 
 export function HeaderRow() {
@@ -141,6 +173,11 @@ export function HeaderRow() {
   const sidebarWidth = useSidebarStore((state) => state.width);
   const isResizing = useSidebarStore((state) => state.isResizing);
   const setIsResizing = useSidebarStore((state) => state.setIsResizing);
+  const panel = getHeaderSidebarPanelLayout({
+    sidebarOpen,
+    sidebarWidth,
+    isMac,
+  });
 
   const activeTaskId = view.type === "task-detail" ? view.taskId : undefined;
   // Read the live task from the list cache instead of a stale snapshot off the
@@ -173,16 +210,22 @@ export function HeaderRow() {
     >
       <Flex
         align="center"
-        justify="end"
+        justify={panel.justify}
         px="2"
         pr="3"
         style={{
-          width: sidebarOpen ? `${sidebarWidth}px` : `${COLLAPSED_WIDTH}px`,
-          minWidth: `${COLLAPSED_WIDTH}px`,
+          width: panel.width,
+          minWidth: panel.minWidth,
+          paddingLeft: panel.paddingLeft,
           transition: isResizing ? "none" : "width 0.2s ease-in-out",
         }}
-        className="relative h-full border-r border-r-(--gray-6)"
+        className={
+          panel.showBorder
+            ? "relative h-full gap-2 border-r border-r-(--gray-6)"
+            : "relative h-full gap-2"
+        }
       >
+        <BluebirdButton />
         <SidebarTrigger />
         {sidebarOpen && (
           <Box

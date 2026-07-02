@@ -1,6 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { describe, expect, it } from "vitest";
 import {
+  buildCommentMergedOptions,
   buildDraftAnnotations,
   buildHunkAnnotations,
   getLastChangeLineNumber,
@@ -79,4 +80,28 @@ describe("buildDraftAnnotations", () => {
       draftId: "d1",
     });
   });
+});
+
+describe("buildCommentMergedOptions", () => {
+  it.each([
+    { hasOpenComment: false, expectedEnabled: true },
+    { hasOpenComment: true, expectedEnabled: false },
+  ])(
+    "with hasOpenComment=$hasOpenComment sets selection/gutter enabled=$expectedEnabled and routes callbacks to the handlers",
+    ({ hasOpenComment, expectedEnabled }) => {
+      const onChange = () => {};
+      const onEnd = () => {};
+      const merged = buildCommentMergedOptions(
+        undefined,
+        hasOpenComment,
+        onChange,
+        onEnd,
+      );
+      expect(merged.enableLineSelection).toBe(expectedEnabled);
+      expect(merged.enableGutterUtility).toBe(expectedEnabled);
+      expect(merged.onLineSelectionChange).toBe(onChange);
+      expect(merged.onLineSelectionEnd).toBe(onEnd);
+      expect(merged.onGutterUtilityClick).toBe(onEnd);
+    },
+  );
 });

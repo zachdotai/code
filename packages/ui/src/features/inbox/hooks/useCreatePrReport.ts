@@ -1,11 +1,13 @@
 import { buildCreatePrReportPrompt } from "@posthog/core/inbox/reportActions";
+import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import type { TaskCreationInput } from "@posthog/core/task-detail/taskService";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
   type InboxCloudTaskInputContext,
   useInboxCloudTaskRunner,
 } from "@posthog/ui/features/inbox/hooks/useInboxCloudTaskRunner";
 import { useSignalTeamConfig } from "@posthog/ui/features/inbox/hooks/useSignalTeamConfig";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 interface UseCreatePrReportOptions {
   reportId: string;
@@ -14,8 +16,16 @@ interface UseCreatePrReportOptions {
 }
 
 interface UseCreatePrReportReturn {
-  /** Create an auto-mode implementation task for the report and navigate to it on success. */
-  createPrReport: () => Promise<void>;
+  /**
+   * Create an auto-mode implementation task for the report. Adds the task to the
+   * sidebar and surfaces a success toast with a "View task" action instead of
+   * navigating away.
+   *
+   * `feedback` is optional free-text steering passed straight into the agent's
+   * prompt, so the user can give direction at Create-PR time instead of waiting
+   * for the run and correcting it after the fact.
+   */
+  createPrReport: (feedback?: string) => Promise<void>;
   /** True while the task is being created. */
   isCreatingPr: boolean;
 }
@@ -23,10 +33,12 @@ interface UseCreatePrReportReturn {
 /**
  * Create an implementation (PR) task directly from the inbox detail pane.
  *
- * Bypasses TaskInput so the user stays on the inbox until the task is ready,
- * then jumps straight to the task detail page. The agent receives a short
- * prompt pointing it at the inbox MCP tools instead of inlining the report
- * summary. The base branch comes from the team-level autostart override map.
+ * Bypasses TaskInput so the user stays on the inbox until the task is ready.
+ * Rather than navigating away, the task is added to the sidebar and a success
+ * toast offers a "View task" action to open the task detail page on demand. The
+ * agent receives a short prompt pointing it at the inbox MCP tools instead of
+ * inlining the report summary. The base branch comes from the team-level
+ * autostart override map.
  */
 export function useCreatePrReport({
   reportId,
@@ -35,14 +47,33 @@ export function useCreatePrReport({
 }: UseCreatePrReportOptions): UseCreatePrReportReturn {
   const { data: teamConfig } = useSignalTeamConfig();
   const baseBranchOverrides = teamConfig?.autostart_base_branches ?? null;
+  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
+
+  // Holds the steering text for the in-flight run. `buildInput` is invoked
+  // synchronously inside `run()`, so the ref is always current when read; a ref
+  // (vs state) keeps `buildInput`/`run` stable and avoids a re-render race.
+  const feedbackRef = useRef<string | undefined>(undefined);
 
   const buildInput = useCallback(
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => {
+      // Web URL rather than a `posthog-code://` deep link: the prompt runs in a
+      // cloud task and may be echoed into the PR, where only an https link works.
+      const reportUrl =
+        projectId != null
+          ? buildPostHogUrl(
+              `/project/${projectId}/inbox/${reportId}`,
+              cloudRegion,
+            )
+          : null;
       const prompt = buildCreatePrReportPrompt({
         reportId,
-        isDevBuild: import.meta.env.DEV,
+        reportUrl,
+        feedback: feedbackRef.current,
       });
-      const targetRepo = ctx.cloudRepository.toLowerCase();
+      // Create-PR never runs repo-less, so the repo is always present here; the
+      // coalesce only satisfies the now-nullable context type.
+      const targetRepo = (ctx.cloudRepository ?? "").toLowerCase();
       const baseBranch = baseBranchOverrides
         ? (Object.entries(baseBranchOverrides).find(
             ([repo]) => repo.toLowerCase() === targetRepo,
@@ -52,7 +83,7 @@ export function useCreatePrReport({
         content: prompt,
         taskDescription: prompt,
         repository: ctx.cloudRepository,
-        githubUserIntegrationId: ctx.githubUserIntegrationId,
+        githubUserIntegrationId: ctx.githubUserIntegrationId ?? undefined,
         workspaceMode: "cloud",
         executionMode: "auto",
         adapter: ctx.adapter,
@@ -64,7 +95,7 @@ export function useCreatePrReport({
         signalReportId: reportId,
       };
     },
-    [baseBranchOverrides, reportId],
+    [baseBranchOverrides, reportId, cloudRegion, projectId],
   );
 
   const analyticsExtras = useMemo(
@@ -86,6 +117,7 @@ export function useCreatePrReport({
     loggerScope: "create-pr-report",
     copy: {
       loadingTitle: "Starting PR task...",
+      successTitle: "PR task started",
       errorTitle: "Failed to start PR task",
       missingRepository: "Pick a cloud repository before creating a PR",
       missingIntegration: "Connect a GitHub integration to create a PR",
@@ -95,7 +127,16 @@ export function useCreatePrReport({
     },
     buildInput,
     analyticsExtras,
+    redirectOnSuccess: false,
   });
 
-  return { createPrReport: run, isCreatingPr: isRunning };
+  const createPrReport = useCallback(
+    async (feedback?: string) => {
+      feedbackRef.current = feedback?.trim() || undefined;
+      await run();
+    },
+    [run],
+  );
+
+  return { createPrReport, isCreatingPr: isRunning };
 }

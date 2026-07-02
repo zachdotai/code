@@ -4,6 +4,7 @@ import type { PromptRequest } from "@agentclientprotocol/sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { isClaudeImageMimeType, isImageFile } from "@posthog/shared";
+import { isLocalSkillCommandChunk } from "../../local-skill";
 
 const PDF_EXTENSIONS = new Set(["pdf"]);
 
@@ -150,26 +151,59 @@ function processPromptChunk(
   }
 }
 
+/** True when an ACP request's `_meta` marks it as a mid-turn steer. */
+export function isSteerMeta(meta: unknown): boolean {
+  return (
+    typeof meta === "object" &&
+    meta !== null &&
+    (meta as Record<string, unknown>).steer === true
+  );
+}
+
 export function promptToClaude(prompt: PromptRequest): SDKUserMessage {
   const content: ContentBlockParam[] = [];
   const context: ContentBlockParam[] = [];
 
-  const prContext = (prompt._meta as Record<string, unknown> | undefined)
-    ?.prContext;
+  const meta = prompt._meta as Record<string, unknown> | undefined;
+  const prContext = meta?.prContext;
   if (typeof prContext === "string") {
     content.push(sdkText(prContext));
   }
+  const localSkillContext = meta?.localSkillContext;
+  if (typeof localSkillContext === "string") {
+    content.push(sdkText(localSkillContext));
+  }
+  const localSkillName =
+    typeof meta?.localSkillName === "string" ? meta.localSkillName : null;
+  let skippedLocalSkillCommand = false;
 
   for (const chunk of prompt.prompt) {
+    if (
+      localSkillContext &&
+      localSkillName &&
+      !skippedLocalSkillCommand &&
+      isLocalSkillCommandChunk(chunk, localSkillName)
+    ) {
+      skippedLocalSkillCommand = true;
+      continue;
+    }
     processPromptChunk(chunk, content, context);
   }
 
   content.push(...context);
 
-  return {
+  const message: SDKUserMessage = {
     type: "user",
     message: { role: "user", content },
     session_id: prompt.sessionId,
     parent_tool_use_id: null,
   };
+
+  // A steer is folded into the turn already running: priority "next" tells the
+  // SDK to deliver it at the next tool-call boundary rather than as a new turn.
+  if (isSteerMeta(meta)) {
+    message.priority = "next";
+  }
+
+  return message;
 }

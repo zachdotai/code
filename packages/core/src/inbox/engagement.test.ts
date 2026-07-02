@@ -1,6 +1,7 @@
 import type { SignalReport } from "@posthog/shared/types";
 import { describe, expect, it } from "vitest";
 import {
+  buildBulkActionEvents,
   buildInboxViewedProperties,
   type InboxDetailTab,
   inboxDetailTabReports,
@@ -33,12 +34,65 @@ const NO_FILTERS = {
   isDefaultScope: true,
 };
 
+describe("buildBulkActionEvents", () => {
+  it("marks single-report actions as non-bulk", () => {
+    const [event, ...rest] = buildBulkActionEvents({
+      reports: [fakeReport({ id: "a", priority: "P1" })],
+      actionType: "snooze",
+      surface: "detail_pane",
+    });
+
+    expect(rest).toHaveLength(0);
+    expect(event).toMatchObject({
+      report_id: "a",
+      action_type: "snooze",
+      surface: "detail_pane",
+      is_bulk: false,
+      bulk_size: 1,
+      priority: "P1",
+    });
+  });
+
+  it("emits one bulk-flagged event per report", () => {
+    const events = buildBulkActionEvents({
+      reports: [fakeReport({ id: "a" }), fakeReport({ id: "b" })],
+      actionType: "delete",
+      surface: "toolbar",
+    });
+
+    expect(events.map((e) => e.report_id)).toEqual(["a", "b"]);
+    expect(events.every((e) => e.is_bulk && e.bulk_size === 2)).toBe(true);
+    expect(events.every((e) => e.action_type === "delete")).toBe(true);
+  });
+
+  it("attaches dismissal reason/note only for dismiss, truncating the note", () => {
+    const longNote = "x".repeat(600);
+    const [dismissed] = buildBulkActionEvents({
+      reports: [fakeReport({ id: "a" })],
+      actionType: "dismiss",
+      surface: "toolbar",
+      dismissal: { reason: "not_relevant", note: longNote },
+    });
+    expect(dismissed.dismissal_reason).toBe("not_relevant");
+    expect(dismissed.dismissal_note).toHaveLength(500);
+
+    const [snoozed] = buildBulkActionEvents({
+      reports: [fakeReport({ id: "a" })],
+      actionType: "snooze",
+      surface: "toolbar",
+      dismissal: { reason: "not_relevant", note: longNote },
+    });
+    expect(snoozed.dismissal_reason).toBeUndefined();
+    expect(snoozed.dismissal_note).toBeUndefined();
+  });
+});
+
 describe("buildInboxViewedProperties", () => {
   it("counts visible reports, tab badges, and total", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [fakeReport({ id: "a" }), fakeReport({ id: "b" })],
       totalCount: 65,
-      tabCounts: { pulls: 38, reports: 62, runs: 4 },
+      tabCounts: { pulls: 38, reports: 62 },
       filters: NO_FILTERS,
     });
 
@@ -47,7 +101,6 @@ describe("buildInboxViewedProperties", () => {
     expect(props.ready_count).toBe(2);
     expect(props.pulls_count).toBe(38);
     expect(props.reports_count).toBe(62);
-    expect(props.runs_count).toBe(4);
     expect(props.is_empty).toBe(false);
     expect(props.status_filter_count).toBe(0);
   });
@@ -61,7 +114,7 @@ describe("buildInboxViewedProperties", () => {
         fakeReport({ priority: null, actionability: null }),
       ],
       totalCount: 4,
-      tabCounts: { pulls: 0, reports: 4, runs: 0 },
+      tabCounts: { pulls: 0, reports: 4 },
       filters: NO_FILTERS,
     });
 
@@ -81,7 +134,7 @@ describe("buildInboxViewedProperties", () => {
         fakeReport({ status: "in_progress" }),
       ],
       totalCount: 2,
-      tabCounts: { pulls: 0, reports: 1, runs: 1 },
+      tabCounts: { pulls: 0, reports: 1 },
       filters: NO_FILTERS,
     });
 
@@ -92,7 +145,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [],
       totalCount: 0,
-      tabCounts: { pulls: 0, reports: 0, runs: 0 },
+      tabCounts: { pulls: 0, reports: 0 },
       filters: NO_FILTERS,
     });
 
@@ -109,7 +162,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [fakeReport()],
       totalCount: 1,
-      tabCounts: { pulls: 0, reports: 1, runs: 0 },
+      tabCounts: { pulls: 0, reports: 1 },
       filters: { ...NO_FILTERS, ...partial },
     });
 
@@ -120,7 +173,7 @@ describe("buildInboxViewedProperties", () => {
     const props = buildInboxViewedProperties({
       visibleReports: [fakeReport()],
       totalCount: 1,
-      tabCounts: { pulls: 0, reports: 1, runs: 0 },
+      tabCounts: { pulls: 0, reports: 1 },
       filters: { ...NO_FILTERS, searchQuery: "   " },
     });
 

@@ -7,9 +7,15 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
+import { useHostTRPCClient } from "@posthog/host-router/react";
 import type { Task } from "@posthog/shared/domain-types";
-import { tryExecuteCodeCommand } from "@posthog/ui/features/message-editor/commands";
+import {
+  resolveLocalSkillPrompt,
+  rewriteLocalSkillCommandPrompt,
+  tryExecuteCodeCommand,
+} from "@posthog/ui/features/message-editor/commands";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
+import { useMessagingMode } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
 import {
   type AgentSession,
   sessionStoreSetters,
@@ -41,11 +47,14 @@ export function useSessionCallbacks({
 }: UseSessionCallbacksOptions) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const shellClient = useService<ShellClient>(SHELL_CLIENT);
+  const hostClient = useHostTRPCClient();
   const { markActivity, markAsViewed } = useTaskViewed();
   const { requestFocus, setPendingContent } = useDraftStore((s) => s.actions);
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
+
+  const messagingMode = useMessagingMode(taskId);
 
   const handleSendPrompt = useCallback(
     async (text: string) => {
@@ -65,10 +74,28 @@ export function useSessionCallbacks({
       });
       if (handled) return;
 
+      let promptText =
+        rewriteLocalSkillCommandPrompt(
+          text,
+          useDraftStore.getState().commands[taskId] ?? [],
+        ) ?? null;
+
+      if (!promptText) {
+        try {
+          promptText = await resolveLocalSkillPrompt(text, () =>
+            hostClient.skills.list.query(),
+          );
+        } catch (error) {
+          log.warn("Failed to resolve local skill command", { error });
+        }
+      }
+
       try {
         markAsViewed(taskId);
         markActivity(taskId);
-        await sessionService.sendPrompt(taskId, text);
+        await sessionService.sendPrompt(taskId, promptText ?? text, {
+          steer: messagingMode === "steer",
+        });
 
         const view = getAppViewSnapshot();
         const isViewingTask =
@@ -90,6 +117,8 @@ export function useSessionCallbacks({
       markAsViewed,
       task.latest_run,
       sessionService,
+      hostClient,
+      messagingMode,
     ],
   );
 

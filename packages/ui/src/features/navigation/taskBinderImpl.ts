@@ -9,6 +9,7 @@ import type {
   EnsureWorkspaceResult,
   NavigationTaskBinder,
 } from "@posthog/ui/features/navigation/taskBinder";
+import { useProvisioningStore } from "@posthog/ui/features/provisioning/store";
 import { logger } from "@posthog/ui/shell/logger";
 
 const log = logger.scope("navigation-store");
@@ -45,8 +46,24 @@ export const navigationTaskBinder: NavigationTaskBinder = {
   ): Promise<EnsureWorkspaceResult | undefined> {
     const repoKey = getTaskRepository(task) ?? undefined;
 
+    // A worktree task whose provisioning failed is kept with no workspace so
+    // the user can retry. Don't auto-create a workspace here — that path only
+    // makes a plain "local" checkout (below), silently downgrading the worktree.
+    // The task view's retry prompt re-runs setup in worktree mode instead.
+    if (useProvisioningStore.getState().errors[task.id]) {
+      return undefined;
+    }
+
     const workspaces = await hostClient().workspace.getAll.query();
     const existingWorkspace = workspaces?.[task.id] ?? null;
+
+    // Repo-less channel task: its workspace is a synthetic scratch dir, not a
+    // registered folder. Never register it (that would pop the "initialize git"
+    // dialog on the empty scratch dir) or write a workspace row for it.
+    if (existingWorkspace?.isScratch) {
+      return undefined;
+    }
+
     if (existingWorkspace?.folderId) {
       const folders = await hostClient().folders.getFolders.query();
       const folder = folders.find((f) => f.id === existingWorkspace.folderId);

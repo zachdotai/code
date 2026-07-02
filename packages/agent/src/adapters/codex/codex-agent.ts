@@ -33,6 +33,7 @@ import {
   RequestError,
   type ResumeSessionRequest,
   type ResumeSessionResponse,
+  type SessionConfigOption,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
   type SetSessionModeRequest,
@@ -72,6 +73,7 @@ import {
   estimateTokens,
 } from "../claude/context-breakdown";
 import { classifyAgentError } from "../error-classification";
+import { isLocalSkillCommandChunk } from "../local-skill";
 import {
   enabledLocalTools,
   LOCAL_TOOLS_MCP_NAME,
@@ -167,6 +169,52 @@ function prependPrContext(params: PromptRequest): PromptRequest {
   };
 }
 
+/**
+ * Apply an installed local-skill invocation for codex. Claude consumes
+ * `_meta.localSkillContext` in `promptToClaude`; codex has no such seam, so
+ * without this the resolved skill instructions are dropped and the bare
+ * `/<skill>` slash command reaches codex-acp, which rejects it as an unknown
+ * command ("Internal error"). Mirror Claude: drop the leading `/<skill>` chunk
+ * (the context already carries the user's args), prepend the skill
+ * instructions as text, and strip the local-skill `_meta` before forwarding.
+ */
+function prependLocalSkillContext(params: PromptRequest): PromptRequest {
+  const meta = params._meta as Record<string, unknown> | undefined;
+  const localSkillContext = meta?.localSkillContext;
+  if (typeof localSkillContext !== "string" || localSkillContext.length === 0) {
+    return params;
+  }
+  const localSkillName =
+    typeof meta?.localSkillName === "string" ? meta.localSkillName : null;
+  // The agent-server always sets `localSkillContext` and `localSkillName`
+  // together. Without the name we can't identify the `/skill` chunk to drop, so
+  // injecting the context while leaving the bare command in place would forward
+  // exactly what codex-acp rejects — bail out rather than emit that broken mix.
+  if (!localSkillName) {
+    return params;
+  }
+
+  let skipped = false;
+  const rest = params.prompt.filter((chunk) => {
+    if (!skipped && isLocalSkillCommandChunk(chunk, localSkillName)) {
+      skipped = true;
+      return false;
+    }
+    return true;
+  });
+
+  const {
+    localSkillContext: _ctx,
+    localSkillName: _name,
+    ...restMeta
+  } = meta ?? {};
+  return {
+    ...params,
+    prompt: [{ type: "text", text: localSkillContext }, ...rest],
+    _meta: restMeta,
+  };
+}
+
 function classifyPromptError(error: unknown): unknown {
   const message = error instanceof Error ? error.message : String(error ?? "");
   const classification = classifyAgentError(message);
@@ -220,6 +268,32 @@ function getCurrentPermissionMode(
   }
 
   return toCodexPermissionMode(fallbackMode);
+}
+
+function withCurrentMode(
+  configOptions: SessionConfigOption[] | null | undefined,
+  mode: CodexNativeMode,
+): SessionConfigOption[] | null | undefined {
+  if (!configOptions) return configOptions;
+  return configOptions.map((option) =>
+    option.category === "mode" && option.type === "select"
+      ? ({ ...option, currentValue: mode } as SessionConfigOption)
+      : option,
+  );
+}
+
+function syncInitialModeResponse(
+  response: NewSessionResponse | ForkSessionResponse,
+  mode: CodexNativeMode | undefined,
+): void {
+  if (!mode) return;
+  if (response.modes) {
+    response.modes = { ...response.modes, currentModeId: mode };
+  }
+  response.configOptions = withCurrentMode(
+    response.configOptions,
+    mode,
+  ) as typeof response.configOptions;
 }
 
 const STRUCTURED_OUTPUT_INSTRUCTIONS = `\n\nWhen you have completed the task, call the \`${STRUCTURED_OUTPUT_TOOL_NAME}\` tool with the final structured result. The tool's input schema matches the required output format for this task. Do not describe the result in a plain message — submitting it via the tool is required for the task to be considered complete.`;
@@ -401,6 +475,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
         _meta: {
           posthog: {
             resumeSession: true,
+            steering: "interrupt-resend",
           },
         },
       },
@@ -439,11 +514,15 @@ export class CodexAcpAgent extends BaseAcpAgent {
     this.sessionState.configOptions = response.configOptions ?? [];
     this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
-    await this.applyInitialPermissionMode(
+    const appliedMode = await this.applyInitialPermissionMode(
       response.sessionId,
       meta?.permissionMode,
       response.modes?.currentModeId,
     );
+    syncInitialModeResponse(response, appliedMode);
+    if (appliedMode) {
+      this.sessionState.configOptions = response.configOptions ?? [];
+    }
 
     // Emit _posthog/sdk_session so the app can track the session
     if (meta?.taskRunId) {
@@ -585,11 +664,15 @@ export class CodexAcpAgent extends BaseAcpAgent {
     this.sessionState.configOptions = newResponse.configOptions ?? [];
     this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
-    await this.applyInitialPermissionMode(
+    const appliedMode = await this.applyInitialPermissionMode(
       newResponse.sessionId,
       meta?.permissionMode,
       newResponse.modes?.currentModeId,
     );
+    syncInitialModeResponse(newResponse, appliedMode);
+    if (appliedMode) {
+      this.sessionState.configOptions = newResponse.configOptions ?? [];
+    }
 
     return newResponse;
   }
@@ -670,16 +753,16 @@ export class CodexAcpAgent extends BaseAcpAgent {
     sessionId: string,
     permissionMode?: string,
     currentModeId?: string,
-  ): Promise<void> {
+  ): Promise<CodexNativeMode | undefined> {
     if (!permissionMode) {
-      return;
+      return undefined;
     }
 
     const nativeMode = toCodexNativeMode(permissionMode);
     if (nativeMode === currentModeId) {
       this.sessionState.modeId = nativeMode;
       this.sessionState.permissionMode = toCodexPermissionMode(permissionMode);
-      return;
+      return nativeMode;
     }
 
     await this.codexConnection.setSessionMode({
@@ -688,6 +771,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     });
     this.sessionState.modeId = nativeMode;
     this.sessionState.permissionMode = toCodexPermissionMode(permissionMode);
+    return nativeMode;
   }
 
   async listSessions(
@@ -725,7 +809,9 @@ export class CodexAcpAgent extends BaseAcpAgent {
     this.session.promptRunning = true;
     let response: PromptResponse;
     try {
-      response = await this.codexConnection.prompt(prependPrContext(params));
+      response = await this.codexConnection.prompt(
+        prependPrContext(prependLocalSkillContext(params)),
+      );
     } catch (error) {
       throw classifyPromptError(error);
     } finally {
@@ -955,6 +1041,8 @@ export class CodexAcpAgent extends BaseAcpAgent {
       this.sessionState.configOptions = response.configOptions;
     }
     if (params.configId === "mode" && typeof params.value === "string") {
+      this.sessionState.modeId = toCodexNativeMode(params.value);
+      this.sessionState.permissionMode = toCodexPermissionMode(params.value);
       // Signal the mode change to agent-server so its session.permissionMode
       // cache (used by shouldRelayPermissionToClient) stays in sync with the
       // real Codex mode. Claude emits the same signal from its equivalent

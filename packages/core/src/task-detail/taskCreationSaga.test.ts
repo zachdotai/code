@@ -9,6 +9,7 @@ import type {
 const mockHost = vi.hoisted(() => ({
   getAuthenticatedClient: vi.fn(),
   getTaskDirectory: vi.fn(),
+  ensureScratchDir: vi.fn(),
   getWorkspace: vi.fn(),
   createWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
@@ -19,10 +20,16 @@ const mockHost = vi.hoisted(() => ({
   getEnvironment: vi.fn(),
   detectRepo: vi.fn(),
   getCloudPromptTransport: vi.fn(),
+  resolveLocalSkillCommandPrompt: vi.fn(async (prompt: string) => prompt),
   uploadRunAttachments: vi.fn(),
   setProvisioningActive: vi.fn(),
   clearProvisioning: vi.fn(),
   dispatchSetupAction: vi.fn(),
+  importClaudeCliSession: vi.fn(),
+  deleteClaudeCliImport: vi.fn(),
+  recordClaudeCliImport: vi.fn(),
+  deleteClaudeCliImportRecord: vi.fn(),
+  linkTaskBranch: vi.fn(),
 }));
 
 import { TaskCreationSaga } from "./taskCreationSaga";
@@ -32,6 +39,7 @@ const host = mockHost as unknown as ITaskCreationHost;
 const sessionService = {
   connectToTask: vi.fn(),
   disconnectFromTask: vi.fn(),
+  rememberInitialCloudPrompt: vi.fn(),
 } as unknown as SessionService;
 
 const createTask = (overrides: Partial<Task> = {}): Task => ({
@@ -64,21 +72,49 @@ const createRun = (overrides: Partial<TaskRun> = {}): TaskRun => ({
   ...overrides,
 });
 
+function makeSaga(
+  posthog: Record<string, unknown> = {},
+  extra: { onTaskReady?: (output: unknown) => void } = {},
+) {
+  return new TaskCreationSaga({
+    posthogClient: {
+      createTask: vi.fn(),
+      deleteTask: vi.fn(),
+      getTask: vi.fn(),
+      createTaskRun: vi.fn(),
+      startTaskRun: vi.fn(),
+      sendRunCommand: vi.fn(),
+      updateTask: vi.fn(),
+      ...posthog,
+    } as never,
+    host,
+    sessionService,
+    track: vi.fn(),
+    ...extra,
+  });
+}
+
 describe("TaskCreationSaga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockHost.createWorkspace.mockResolvedValue({});
     mockHost.deleteWorkspace.mockResolvedValue(undefined);
     mockHost.getTaskDirectory.mockResolvedValue(null);
+    mockHost.ensureScratchDir.mockResolvedValue("/tmp/scratch/task-123");
     mockHost.getWorkspace.mockResolvedValue(null);
     mockHost.getFolders.mockResolvedValue([]);
     mockHost.uploadRunAttachments.mockResolvedValue([]);
+    mockHost.linkTaskBranch.mockResolvedValue(undefined);
+    mockHost.recordClaudeCliImport.mockResolvedValue(undefined);
+    mockHost.deleteClaudeCliImport.mockResolvedValue(undefined);
+    mockHost.deleteClaudeCliImportRecord.mockResolvedValue(undefined);
     mockHost.getCloudPromptTransport.mockImplementation(
       (
         prompt: string | unknown[],
         filePaths: string[] = [],
       ): CloudPromptTransport => ({
         filePaths,
+        skillBundles: [],
         messageText: typeof prompt === "string" ? prompt : undefined,
         promptText: typeof prompt === "string" ? prompt : "",
       }),
@@ -94,21 +130,15 @@ describe("TaskCreationSaga", () => {
     const sendRunCommandMock = vi.fn();
     const onTaskReady = vi.fn();
 
-    const saga = new TaskCreationSaga({
-      posthogClient: {
+    const saga = makeSaga(
+      {
         createTask: createTaskMock,
-        deleteTask: vi.fn(),
-        getTask: vi.fn(),
         createTaskRun: createTaskRunMock,
         startTaskRun: startTaskRunMock,
         sendRunCommand: sendRunCommandMock,
-        updateTask: vi.fn(),
-      } as never,
-      host,
-      sessionService,
-      track: vi.fn(),
-      onTaskReady,
-    });
+      },
+      { onTaskReady },
+    );
 
     const result = await saga.run({
       content: "Ship the fix",
@@ -155,6 +185,151 @@ describe("TaskCreationSaga", () => {
     );
   });
 
+  it("folds channel CONTEXT.md into the cloud prompt and stashes it for the optimistic placeholder", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+    vi.mocked(sessionService.rememberInitialCloudPrompt).mockClear();
+
+    const saga = makeSaga({
+      createTask: vi.fn().mockResolvedValue(createdTask),
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      channelContext: "# project-bluebird\n\nReference material.",
+      channelName: "project-bluebird",
+    });
+
+    expect(result.success).toBe(true);
+    const sentMessage = startTaskRunMock.mock.calls[0][2]
+      .pendingUserMessage as string;
+    // Prompt leads, channel context follows as a tagged block.
+    expect(sentMessage).toContain("Ship the fix");
+    expect(sentMessage).toContain(
+      '<channel_context channel="project-bluebird">',
+    );
+    // The same context-bearing message is stashed so the optimistic placeholder
+    // can show its CONTEXT.md chip immediately, before the sandbox echoes back.
+    expect(sessionService.rememberInitialCloudPrompt).toHaveBeenCalledWith(
+      "task-123",
+      sentMessage,
+    );
+  });
+
+  it("folds custom personalization into the cloud prompt and stashes it for the optimistic placeholder", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+    vi.mocked(sessionService.rememberInitialCloudPrompt).mockClear();
+
+    const saga = new TaskCreationSaga({
+      posthogClient: {
+        createTask: vi.fn().mockResolvedValue(createdTask),
+        deleteTask: vi.fn(),
+        getTask: vi.fn(),
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+        sendRunCommand: vi.fn(),
+        updateTask: vi.fn(),
+      } as never,
+      host,
+      sessionService,
+      track: vi.fn(),
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      customInstructions: "Always respond in British English.",
+    });
+
+    expect(result.success).toBe(true);
+    const sentMessage = startTaskRunMock.mock.calls[0][2]
+      .pendingUserMessage as string;
+    expect(sentMessage).toContain("Ship the fix");
+    expect(sentMessage).toContain("<user_custom_instructions>");
+    expect(sentMessage).toContain("Always respond in British English.");
+    expect(sessionService.rememberInitialCloudPrompt).toHaveBeenCalledWith(
+      "task-123",
+      sentMessage,
+    );
+  });
+
+  it("does not fold personalization into a file-only cloud task with no typed text", async () => {
+    // Personalization alone would strip to an empty bubble in the UI and dedup
+    // against the sandbox echo, leaving a blank placeholder. With no message
+    // text to augment, it must not be folded in or seeded.
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+    vi.mocked(sessionService.rememberInitialCloudPrompt).mockClear();
+    // File-only upload: a transport exists (files attached) but messageText is
+    // absent because the user typed nothing.
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: ["/tmp/test.txt"],
+      messageText: undefined,
+      promptText: "",
+    });
+
+    const saga = new TaskCreationSaga({
+      posthogClient: {
+        createTask: vi.fn().mockResolvedValue(createdTask),
+        deleteTask: vi.fn(),
+        getTask: vi.fn(),
+        createTaskRun: vi.fn().mockResolvedValue(createRun()),
+        startTaskRun: startTaskRunMock,
+        sendRunCommand: vi.fn(),
+        updateTask: vi.fn(),
+      } as never,
+      host,
+      sessionService,
+      track: vi.fn(),
+    });
+
+    const result = await saga.run({
+      filePaths: ["/tmp/test.txt"],
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      customInstructions: "Always respond in British English.",
+    });
+
+    expect(result.success).toBe(true);
+    expect(
+      startTaskRunMock.mock.calls[0][2].pendingUserMessage,
+    ).toBeUndefined();
+    expect(sessionService.rememberInitialCloudPrompt).not.toHaveBeenCalled();
+  });
+
+  it("starts a repo-less channel task in a scratch dir (allowNoRepo)", async () => {
+    const createdTask = createTask({ repository: undefined });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run({
+      content: "Draft a launch email",
+      workspaceMode: "local",
+      allowNoRepo: true,
+    });
+
+    expect(result.success).toBe(true);
+    // No repo selected → no workspace created, but a scratch dir is provisioned
+    // and the agent session connects there.
+    expect(mockHost.createWorkspace).not.toHaveBeenCalled();
+    expect(mockHost.ensureScratchDir).toHaveBeenCalledWith("task-123");
+    expect(sessionService.connectToTask).toHaveBeenCalledWith(
+      expect.objectContaining({ repoPath: "/tmp/scratch/task-123" }),
+    );
+  });
+
   it("uploads initial cloud attachments before starting the run", async () => {
     const createdTask = createTask();
     const startedTask = createTask({ latest_run: createRun() });
@@ -166,26 +341,21 @@ describe("TaskCreationSaga", () => {
 
     mockHost.getCloudPromptTransport.mockReturnValue({
       filePaths: ["/tmp/test.txt"],
+      skillBundles: [],
       messageText: "read this file",
       promptText: "read this file\n\nAttached files: test.txt",
     });
     mockHost.uploadRunAttachments.mockResolvedValue(["artifact-1"]);
 
-    const saga = new TaskCreationSaga({
-      posthogClient: {
+    const saga = makeSaga(
+      {
         createTask: createTaskMock,
-        deleteTask: vi.fn(),
-        getTask: vi.fn(),
         createTaskRun: createTaskRunMock,
         startTaskRun: startTaskRunMock,
         sendRunCommand: sendRunCommandMock,
-        updateTask: vi.fn(),
-      } as never,
-      host,
-      sessionService,
-      track: vi.fn(),
-      onTaskReady,
-    });
+      },
+      { onTaskReady },
+    );
 
     const result = await saga.run({
       content: 'read this file <file path="/tmp/test.txt" />',
@@ -227,6 +397,7 @@ describe("TaskCreationSaga", () => {
       "task-123",
       "run-123",
       ["/tmp/test.txt"],
+      [],
     );
     expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
       pendingUserMessage: "read this file",
@@ -244,6 +415,106 @@ describe("TaskCreationSaga", () => {
     );
   });
 
+  it("resolves a typed local-skill slash command before building the cloud transport", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: [],
+      skillBundles: [
+        { name: "my-skill", source: "user", path: "/skills/my-skill" },
+      ],
+      messageText: "/my-skill do it",
+      promptText: "/my-skill do it",
+    });
+    mockHost.uploadRunAttachments.mockResolvedValue(["skill-artifact-1"]);
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "/my-skill do it",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.resolveLocalSkillCommandPrompt).toHaveBeenCalledWith(
+      "/my-skill do it",
+    );
+    // The resolved tag (not the raw slash command) must reach the transport so
+    // the bundle is collected and uploaded on the first message.
+    expect(mockHost.getCloudPromptTransport).toHaveBeenCalledWith(
+      skillTag,
+      undefined,
+    );
+    expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: "/my-skill do it",
+      pendingUserArtifactIds: ["skill-artifact-1"],
+    });
+  });
+
+  it.each([
+    ["a plain-text prompt that isn't a slash command", "just do the thing"],
+    ["a slash command that isn't a local skill", "/good keep going"],
+  ])(
+    "passes %s through to the transport unchanged",
+    async (_label, content) => {
+      const createdTask = createTask();
+      const startedTask = createTask({ latest_run: createRun() });
+      const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+      const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+      // The host resolver is a no-op for non-local-skill prompts — it returns the
+      // original string unchanged (mirrors `resolveLocalSkillPrompt` yielding null
+      // and the host falling back to the prompt).
+      mockHost.resolveLocalSkillCommandPrompt.mockImplementation(
+        async (prompt: string) => prompt,
+      );
+      mockHost.getCloudPromptTransport.mockReturnValue({
+        filePaths: [],
+        skillBundles: [],
+        messageText: content,
+        promptText: content,
+      });
+      mockHost.uploadRunAttachments.mockResolvedValue([]);
+
+      const saga = makeSaga({
+        createTask: vi.fn().mockResolvedValue(createdTask),
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+      });
+
+      const result = await saga.run({
+        content,
+        repository: "posthog/posthog",
+        workspaceMode: "cloud",
+        branch: "main",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockHost.resolveLocalSkillCommandPrompt).toHaveBeenCalledWith(
+        content,
+      );
+      // Resolution is a no-op, so the original content (not a rewritten skill tag)
+      // reaches the transport and no bundle is collected.
+      expect(mockHost.getCloudPromptTransport).toHaveBeenCalledWith(
+        content,
+        undefined,
+      );
+    },
+  );
+
   it("uses the selected user GitHub integration for cloud task creation", async () => {
     const createdTask = createTask({
       github_user_integration: "user-integration-123",
@@ -253,19 +524,10 @@ describe("TaskCreationSaga", () => {
     const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
     const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
 
-    const saga = new TaskCreationSaga({
-      posthogClient: {
-        createTask: createTaskMock,
-        deleteTask: vi.fn(),
-        getTask: vi.fn(),
-        createTaskRun: createTaskRunMock,
-        startTaskRun: startTaskRunMock,
-        sendRunCommand: vi.fn(),
-        updateTask: vi.fn(),
-      } as never,
-      host,
-      sessionService,
-      track: vi.fn(),
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
     });
 
     const result = await saga.run({
@@ -303,19 +565,10 @@ describe("TaskCreationSaga", () => {
     const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
     const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
 
-    const saga = new TaskCreationSaga({
-      posthogClient: {
-        createTask: createTaskMock,
-        deleteTask: vi.fn(),
-        getTask: vi.fn(),
-        createTaskRun: createTaskRunMock,
-        startTaskRun: startTaskRunMock,
-        sendRunCommand: vi.fn(),
-        updateTask: vi.fn(),
-      } as never,
-      host,
-      sessionService,
-      track: vi.fn(),
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
     });
 
     const result = await saga.run({
@@ -352,19 +605,10 @@ describe("TaskCreationSaga", () => {
     const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
     const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
 
-    const saga = new TaskCreationSaga({
-      posthogClient: {
-        createTask: createTaskMock,
-        deleteTask: vi.fn(),
-        getTask: vi.fn(),
-        createTaskRun: createTaskRunMock,
-        startTaskRun: startTaskRunMock,
-        sendRunCommand: vi.fn(),
-        updateTask: vi.fn(),
-      } as never,
-      host,
-      sessionService,
-      track: vi.fn(),
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
     });
 
     await saga.run({
@@ -389,19 +633,10 @@ describe("TaskCreationSaga", () => {
     const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
     const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
 
-    const saga = new TaskCreationSaga({
-      posthogClient: {
-        createTask: createTaskMock,
-        deleteTask: vi.fn(),
-        getTask: vi.fn(),
-        createTaskRun: createTaskRunMock,
-        startTaskRun: startTaskRunMock,
-        sendRunCommand: vi.fn(),
-        updateTask: vi.fn(),
-      } as never,
-      host,
-      sessionService,
-      track: vi.fn(),
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
     });
 
     await saga.run({
@@ -432,19 +667,10 @@ describe("TaskCreationSaga", () => {
     const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
     const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
 
-    const saga = new TaskCreationSaga({
-      posthogClient: {
-        createTask: createTaskMock,
-        deleteTask: vi.fn(),
-        getTask: vi.fn(),
-        createTaskRun: createTaskRunMock,
-        startTaskRun: startTaskRunMock,
-        sendRunCommand: vi.fn(),
-        updateTask: vi.fn(),
-      } as never,
-      host,
-      sessionService,
-      track: vi.fn(),
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
     });
 
     const result = await saga.run({
@@ -469,5 +695,190 @@ describe("TaskCreationSaga", () => {
         runSource: "manual",
       }),
     );
+  });
+
+  it("imports a Claude CLI session, records it, and connects with the imported id", async () => {
+    const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const fingerprint = {
+      sourceMtimeMs: 1_700_000_000_000,
+      sourceSizeBytes: 2048,
+      sourceLastEntryUuid: "entry-1",
+    };
+    mockHost.importClaudeCliSession.mockResolvedValue({
+      importedSessionId: "imported-session-id",
+      fingerprint,
+    });
+    mockHost.recordClaudeCliImport.mockResolvedValue(undefined);
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run({
+      taskDescription: "Fix the login flow",
+      repoPath: "/repo",
+      workspaceMode: "local",
+      adapter: "codex",
+      importedClaudeSession: {
+        sourceSessionId: "source-session-id",
+        branch: "feature/login",
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.importClaudeCliSession).toHaveBeenCalledWith({
+      repoPath: "/repo",
+      sourceSessionId: "source-session-id",
+    });
+    expect(mockHost.linkTaskBranch).toHaveBeenCalledWith({
+      taskId: "task-123",
+      branchName: "feature/login",
+    });
+    expect(mockHost.recordClaudeCliImport).toHaveBeenCalledWith({
+      sourceSessionId: "source-session-id",
+      importedSessionId: "imported-session-id",
+      repoPath: "/repo",
+      taskId: "task-123",
+      fingerprint,
+    });
+    expect(sessionService.connectToTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        importedSessionId: "imported-session-id",
+        adapter: "claude",
+      }),
+    );
+  });
+
+  it("rolls back the import snapshot and tracking row when a later step fails", async () => {
+    const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const deleteTaskMock = vi.fn().mockResolvedValue(undefined);
+    const fingerprint = {
+      sourceMtimeMs: 1_700_000_000_000,
+      sourceSizeBytes: 2048,
+      sourceLastEntryUuid: "entry-1",
+    };
+    mockHost.importClaudeCliSession.mockResolvedValue({
+      importedSessionId: "imported-session-id",
+      fingerprint,
+    });
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    // Fail the workspace step, which runs after the import and record steps.
+    mockHost.createWorkspace.mockRejectedValue(new Error("workspace boom"));
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      deleteTask: deleteTaskMock,
+    });
+
+    const result = await saga.run({
+      taskDescription: "Fix the login flow",
+      repoPath: "/repo",
+      workspaceMode: "local",
+      importedClaudeSession: { sourceSessionId: "source-session-id" },
+    });
+
+    expect(result.success).toBe(false);
+    // Local (non-worktree) mode is not the kept-on-failure path, so the task
+    // is rolled back as before.
+    expect(deleteTaskMock).toHaveBeenCalledWith("task-123");
+    // Record step rollback drops the tracking row...
+    expect(mockHost.deleteClaudeCliImportRecord).toHaveBeenCalledWith({
+      importedSessionId: "imported-session-id",
+    });
+    // ...and the import step rollback removes the copied snapshot.
+    expect(mockHost.deleteClaudeCliImport).toHaveBeenCalledWith({
+      repoPath: "/repo",
+      importedSessionId: "imported-session-id",
+    });
+  });
+
+  it("keeps the worktree task (and its prompt) when provisioning fails", async () => {
+    const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const deleteTaskMock = vi.fn().mockResolvedValue(undefined);
+    const onTaskReady = vi.fn();
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockRejectedValue(new Error("worktree boom"));
+
+    const saga = makeSaga(
+      { createTask: createTaskMock, deleteTask: deleteTaskMock },
+      { onTaskReady },
+    );
+
+    const result = await saga.run({
+      content: "Fix the login flow",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      throw new Error("Expected worktree provisioning failure to be kept");
+    }
+    expect(result.data.task.id).toBe("task-123");
+    expect(result.data.workspace).toBeNull();
+    expect(result.data.provisioningError).toContain("worktree boom");
+    // The task (and its persisted prompt) survives for retry.
+    expect(deleteTaskMock).not.toHaveBeenCalled();
+    // Spinner is dismissed and no agent session starts without a worktree.
+    expect(mockHost.clearProvisioning).toHaveBeenCalledWith("task-123");
+    expect(sessionService.connectToTask).not.toHaveBeenCalled();
+    // The early onTaskReady already navigated onto the task.
+    expect(onTaskReady).toHaveBeenCalledTimes(1);
+    expect(onTaskReady.mock.calls[0][0].workspace).toBeNull();
+  });
+
+  it("still rolls back a worktree task when a later (non-provisioning) step fails", async () => {
+    const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const deleteTaskMock = vi.fn().mockResolvedValue(undefined);
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockResolvedValue({});
+    vi.mocked(sessionService.connectToTask).mockImplementationOnce(() => {
+      throw new Error("agent boom");
+    });
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      deleteTask: deleteTaskMock,
+    });
+
+    const result = await saga.run({
+      content: "Fix the login flow",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(false);
+    // Only workspace_creation is protected; an agent_session failure rolls back.
+    expect(deleteTaskMock).toHaveBeenCalledWith("task-123");
+    expect(mockHost.deleteWorkspace).toHaveBeenCalled();
+  });
+
+  it("does not import a Claude CLI session for non-local workspace modes", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: vi.fn().mockResolvedValue(createRun()),
+      startTaskRun: vi.fn().mockResolvedValue(startedTask),
+    });
+
+    await saga.run({
+      content: "Ship the fix",
+      workspaceMode: "cloud",
+      branch: "main",
+      importedClaudeSession: { sourceSessionId: "source-session-id" },
+    });
+
+    expect(mockHost.importClaudeCliSession).not.toHaveBeenCalled();
+    expect(mockHost.recordClaudeCliImport).not.toHaveBeenCalled();
   });
 });

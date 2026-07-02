@@ -6,22 +6,29 @@ import { WATCHER_SERVICE } from "../../di/tokens";
 import type { FoldersService } from "../folders/folders";
 import { FOLDERS_SERVICE } from "../folders/identifiers";
 import {
-  addMirroredName,
   getCodexSkillsDir,
   readCodexMirrorState,
 } from "../posthog-plugin/codex-mirror";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import type { WatcherService } from "../watcher/service";
-import { parseSkillFrontmatter } from "./parse-skill-frontmatter";
+import {
+  parseSkillDependencies,
+  parseSkillFrontmatter,
+} from "./parse-skill-frontmatter";
 import type {
+  BundleLocalSkillInput,
+  BundleLocalSkillOutput,
   CreateSkillInput,
   ExportedSkill,
   InstallTeamSkillInput,
+  SkillBundleRef,
   SkillContents,
   SkillInfo,
   SkillSource,
+  UploadableSkillSource,
 } from "./schemas";
+import { bundleLocalSkill } from "./skill-bundler";
 import {
   getMarketplaceInstallPaths,
   getUserSkillsDir,
@@ -61,11 +68,6 @@ export class SkillsService {
     @inject(WATCHER_SERVICE)
     private readonly watcher: WatcherService,
   ) {}
-
-  /** Fire-and-forget Codex mirror after local mutations. */
-  private queueCodexMirror(): void {
-    void this.plugin.mirrorUserSkills().catch(() => {});
-  }
 
   async listSkills(): Promise<SkillInfo[]> {
     const roots = await this.getSkillRoots();
@@ -125,7 +127,6 @@ export class SkillsService {
       serializeSkillMarkdown({ name, description: "" }, SKILL_MD_TEMPLATE_BODY),
       "utf-8",
     );
-    this.queueCodexMirror();
     return { path: skillPath };
   }
 
@@ -147,7 +148,6 @@ export class SkillsService {
       content,
       "utf-8",
     );
-    this.queueCodexMirror();
   }
 
   async saveSkillFile(
@@ -159,7 +159,6 @@ export class SkillsService {
     const target = resolveSkillFilePath(skillDir, filePath);
     await fs.promises.mkdir(path.dirname(target), { recursive: true });
     await fs.promises.writeFile(target, content, "utf-8");
-    this.queueCodexMirror();
   }
 
   async renameSkillFile(
@@ -178,7 +177,6 @@ export class SkillsService {
     }
     await fs.promises.mkdir(path.dirname(to), { recursive: true });
     await fs.promises.rename(from, to);
-    this.queueCodexMirror();
   }
 
   async deleteSkillFile(skillPath: string, filePath: string): Promise<void> {
@@ -188,19 +186,16 @@ export class SkillsService {
       throw new Error("SKILL.md cannot be deleted");
     }
     await fs.promises.rm(target, { force: true });
-    this.queueCodexMirror();
   }
 
   async deleteSkill(skillPath: string): Promise<void> {
     const skillDir = await this.resolveWritableSkillDir(skillPath);
     await fs.promises.rm(skillDir, { recursive: true, force: true });
-    this.queueCodexMirror();
   }
 
   /**
    * Imports a Codex-authored skill into ~/.claude/skills, after which it is
-   * an ordinary editable user skill. The mirror takes ownership of the Codex
-   * copy so future syncs carry edits back without clobbering or duplicating.
+   * an ordinary editable user skill. The original Codex copy is left untouched.
    */
   async importCodexSkill(
     skillPath: string,
@@ -231,8 +226,6 @@ export class SkillsService {
       recursive: true,
       dereference: true,
     });
-    await addMirroredName(codexRoot, name);
-    this.queueCodexMirror();
     return { path: target };
   }
 
@@ -339,7 +332,6 @@ export class SkillsService {
       await fs.promises.rm(staging, { recursive: true, force: true });
       throw error;
     }
-    this.queueCodexMirror();
     return { path: target };
   }
 
@@ -501,6 +493,96 @@ export class SkillsService {
     }
     return resolved;
   }
+
+  async bundleLocalSkill(
+    input: BundleLocalSkillInput,
+  ): Promise<BundleLocalSkillOutput> {
+    const skillDir = await this.resolveKnownSkillDir(input.path);
+    return bundleLocalSkill({
+      name: input.name,
+      source: input.source,
+      skillPath: skillDir,
+    });
+  }
+
+  /**
+   * Expand a set of tagged skill refs to include their transitively-declared
+   * dependency skills (SKILL.md `dependencies:`), so a skill that needs another
+   * (e.g. `/rs-self-review` → `rs-adversarial-review`) pulls its dependency into
+   * the same cloud run instead of the user having to tag every one by hand.
+   * Only uploadable local skills are returned; a dependency that resolves to a
+   * built-in (`bundled`) skill is already present in the sandbox and is skipped.
+   */
+  async resolveSkillBundleDependencies(
+    refs: SkillBundleRef[],
+  ): Promise<SkillBundleRef[]> {
+    if (refs.length === 0) return [];
+
+    const allSkills = await this.listSkills();
+    const findUploadableByName = (name: string): SkillBundleRef | null => {
+      const match = allSkills.find(
+        (skill) => skill.name === name && isUploadableSkillSource(skill.source),
+      );
+      return match && isUploadableSkillSource(match.source)
+        ? { name: match.name, source: match.source, path: match.path }
+        : null;
+    };
+
+    const seen = new Set<string>();
+    const resolved: SkillBundleRef[] = [];
+    const queue: SkillBundleRef[] = [...refs];
+    // Sanity ceiling on the dependency closure. The `seen` set already
+    // guarantees termination, so exceeding this means a pathological graph —
+    // throw loudly rather than silently uploading an arbitrary subset and
+    // leaving the run missing skills it was told to include.
+    const MAX_RESOLVED_SKILLS = 50;
+
+    while (queue.length > 0) {
+      const ref = queue.shift()!;
+      const key = `${ref.source}:${ref.path}`;
+      if (seen.has(key)) continue;
+      if (resolved.length >= MAX_RESOLVED_SKILLS) {
+        throw new Error(
+          `Skill dependency graph exceeds the ${MAX_RESOLVED_SKILLS}-skill limit for a single cloud run ` +
+            `(from: ${refs.map((r) => r.name).join(", ")}). Reduce the tagged skills or their dependencies.`,
+        );
+      }
+      seen.add(key);
+      resolved.push(ref);
+
+      let dependencyNames: string[] = [];
+      try {
+        const skillDir = await this.resolveKnownSkillDir(ref.path);
+        const manifest = await fs.promises.readFile(
+          path.join(skillDir, "SKILL.md"),
+          "utf-8",
+        );
+        dependencyNames = parseSkillDependencies(manifest);
+      } catch {
+        // A ref we can't read (missing/renamed skill) still uploads on its own;
+        // just skip its dependency expansion rather than failing the whole run.
+        continue;
+      }
+
+      for (const dependencyName of dependencyNames) {
+        const dependencyRef = findUploadableByName(dependencyName);
+        if (
+          dependencyRef &&
+          !seen.has(`${dependencyRef.source}:${dependencyRef.path}`)
+        ) {
+          queue.push(dependencyRef);
+        }
+      }
+    }
+
+    return resolved;
+  }
+}
+
+function isUploadableSkillSource(
+  source: SkillSource,
+): source is UploadableSkillSource {
+  return source !== "bundled";
 }
 
 export function validateSkillDirName(name: string): void {
@@ -531,9 +613,10 @@ async function waitForDir(dir: string, signal?: AbortSignal): Promise<boolean> {
 }
 
 /**
- * Hides Codex copies we are responsible for: bundled skills synced by the
- * official pipeline and user skills mirrored out. What remains is genuinely
- * the user's Codex-only skills.
+ * Hides Codex copies already represented elsewhere in the list: a bundled skill
+ * synced there by the old pipeline, a legacy mirror copy, or a skill the user
+ * has imported into their own `~/.claude/skills`. What remains is genuinely the
+ * user's Codex-only skills.
  */
 function dedupeCodexSkills(
   skills: SkillInfo[],
@@ -542,13 +625,18 @@ function dedupeCodexSkills(
   const bundledNames = new Set(
     skills.filter((s) => s.source === "bundled").map((s) => s.name),
   );
+  const userDirNames = new Set(
+    skills.filter((s) => s.source === "user").map((s) => path.basename(s.path)),
+  );
   return skills.filter((skill) => {
     if (skill.source !== "codex") return true;
-    // The mirror state stores directory names; frontmatter names only
-    // matter for the bundled copies, which keep theirs verbatim.
+    const dirName = path.basename(skill.path);
+    // The mirror state and the user's own skills are matched by directory name;
+    // bundled copies keep their frontmatter name verbatim, so match those by it.
     return (
       !bundledNames.has(skill.name) &&
-      !mirroredNames.has(path.basename(skill.path))
+      !mirroredNames.has(dirName) &&
+      !userDirNames.has(dirName)
     );
   });
 }

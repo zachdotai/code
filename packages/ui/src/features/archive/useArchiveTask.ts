@@ -19,10 +19,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFocusStore } from "@posthog/ui/features/focus/focusStore";
 import { pinnedTasksApi } from "@posthog/ui/features/sidebar/taskMetaApi";
-import {
-  type TerminalState,
-  useTerminalStore,
-} from "@posthog/ui/features/terminal/terminalStore";
+import { destroyTaskTerminals } from "@posthog/ui/features/terminal/destroyTaskTerminals";
 import { toast } from "@posthog/ui/primitives/toast";
 import { getAppViewSnapshot } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -74,7 +71,7 @@ function makeCacheWriter(
 function makeOrchestrationDeps(
   queryClient: QueryClient,
   keys: ArchiveCacheKeys,
-  options?: { skipNavigate?: boolean },
+  options?: { skipNavigate?: boolean; navigateSpace?: "code" | "website" },
 ): ArchiveOrchestrationDeps {
   const hostClient = resolveService<HostTrpcClient>(HOST_TRPC_CLIENT);
   return {
@@ -91,25 +88,12 @@ function makeOrchestrationDeps(
       if (options?.skipNavigate) return;
       const view = getAppViewSnapshot();
       if (view.type === "task-detail" && view.taskId === taskId) {
-        openTaskInput();
+        openTaskInput(
+          options?.navigateSpace ? { space: options.navigateSpace } : undefined,
+        );
       }
     },
-    snapshotTerminalStates: (taskId) =>
-      Object.fromEntries(
-        Object.entries(useTerminalStore.getState().terminalStates).filter(
-          ([key]) => key === taskId || key.startsWith(`${taskId}-`),
-        ),
-      ),
-    clearTerminalStates: (taskId) =>
-      useTerminalStore.getState().clearTerminalStatesForTask(taskId),
-    restoreTerminalStates: (states) => {
-      useTerminalStore.setState((s) => ({
-        terminalStates: {
-          ...s.terminalStates,
-          ...(states as Record<string, TerminalState>),
-        },
-      }));
-    },
+    clearTerminalStates: (taskId) => destroyTaskTerminals(taskId),
     snapshotCommandCenter: (taskId) => {
       const state = useCommandCenterStore.getState();
       return {
@@ -147,7 +131,11 @@ export async function archiveTaskImperative(
   taskId: string,
   queryClient: QueryClient,
   keys: ArchiveCacheKeys,
-  options?: { skipNavigate?: boolean; optimistic?: boolean },
+  options?: {
+    skipNavigate?: boolean;
+    optimistic?: boolean;
+    navigateSpace?: "code" | "website";
+  },
 ): Promise<void> {
   await archiveTask(
     taskId,
@@ -173,7 +161,12 @@ export async function archiveTasksImperative(
   );
 }
 
-export function useArchiveTask() {
+export function useArchiveTask(options?: {
+  // Which new-task screen to land on if the archived task is the active view.
+  // Defaults to Code; the bluebird/channels nav passes "website" so archiving
+  // from there returns to the website new-task screen instead.
+  navigateSpace?: "code" | "website";
+}) {
   const queryClient = useQueryClient();
   const keys = useArchiveCacheKeys();
   const { restore } = useUnarchiveTask();
@@ -183,6 +176,7 @@ export function useArchiveTask() {
     // is confirmed, rather than removing it instantly and rolling back on error.
     await archiveTaskImperative(taskId, queryClient, keys, {
       optimistic: false,
+      navigateSpace: options?.navigateSpace,
     });
     const toastId = `archive-undo-${taskId}`;
     toast.success("Task archived", {

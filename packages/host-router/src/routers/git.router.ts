@@ -319,14 +319,14 @@ export const gitRouter = router({
     .input(
       z.object({
         directoryPath: z.string(),
-        forceRefresh: z.boolean().optional(),
+        fetchFromRemote: z.boolean().optional(),
       }),
     )
     .output(getGitSyncStatusOutput)
     .query(({ ctx, input }) =>
       getWorkspaceClient(ctx.container).git.getGitSyncStatus.query({
         directoryPath: input.directoryPath,
-        forceRefresh: input.forceRefresh,
+        fetchFromRemote: input.fetchFromRemote,
       }),
     ),
 
@@ -509,7 +509,14 @@ export const gitRouter = router({
       ).git.getPrDetailsByUrl.query({
         prUrl: input.prUrl,
       });
-      return result ?? { state: "unknown", merged: false, draft: false };
+      return (
+        result ?? {
+          state: "unknown",
+          merged: false,
+          draft: false,
+          headRefName: null,
+        }
+      );
     }),
 
   updatePrByUrl: publicProcedure

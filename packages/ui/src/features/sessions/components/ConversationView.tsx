@@ -3,6 +3,7 @@ import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import {
   Button,
+  cn,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -17,14 +18,14 @@ import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
-import {
-  buildThreadGroups,
-  type ThreadGrouping,
-  type ThreadRow,
+import type {
+  ThreadGrouping,
+  ThreadRow,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
+import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import { createIncrementalThreadGrouper } from "@posthog/ui/features/sessions/components/new-thread/incrementalThreadGrouping";
 import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
-import { QueuedMessageView } from "@posthog/ui/features/sessions/components/session-update/QueuedMessageView";
 import {
   type RenderItem,
   SessionUpdateView,
@@ -36,11 +37,11 @@ import {
   type VirtualizedListHandle,
 } from "@posthog/ui/features/sessions/components/VirtualizedList";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { useContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import { useConversationSearch } from "@posthog/ui/features/sessions/hooks/useConversationSearch";
 import {
-  sessionStoreSetters,
   useOptimisticItemsForTask,
   usePendingPermissionsForTask,
   useQueuedMessagesForTask,
@@ -60,11 +61,7 @@ import {
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const DIFFS_HIGHLIGHTER_OPTIONS = {
-  theme: { dark: "github-dark" as const, light: "github-light" as const },
-};
-
-interface ConversationViewProps {
+export interface ConversationViewProps {
   events: AcpMessage[];
   isPromptPending: boolean | null;
   promptStartedAt?: number | null;
@@ -73,6 +70,18 @@ interface ConversationViewProps {
   task?: Task;
   slackThreadUrl?: string;
   compact?: boolean;
+  /**
+   * Override the global collapse setting for this view. Used by surfaces like
+   * the live-agent chat preview, where folding the agent's prose into a tool
+   * chip hides the response — they pass `"none"` to render everything inline.
+   */
+  collapseMode?: CollapseMode;
+  /**
+   * Allow horizontal scrolling of the transcript viewport. Defaults to true.
+   * Narrow surfaces (the Agent Builder dock) pass false to avoid a horizontal
+   * scrollbar from off-edge content; nested code blocks keep their own scroll.
+   */
+  scrollX?: boolean;
 }
 
 export function ConversationView({
@@ -84,6 +93,8 @@ export function ConversationView({
   task,
   slackThreadUrl,
   compact = false,
+  collapseMode: collapseModeProp,
+  scrollX = true,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -100,7 +111,10 @@ export function ConversationView({
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
 
-  const collapseMode = useSettingsStore((s) => s.conversationCollapseMode);
+  const collapseModeSetting = useSettingsStore(
+    (s) => s.conversationCollapseMode,
+  );
+  const collapseMode = collapseModeProp ?? collapseModeSetting;
   const groupOverrides = useGroupOverrides();
   const sessionViewActions = useSessionViewActions();
 
@@ -115,6 +129,7 @@ export function ConversationView({
     items: conversationItems,
     lastTurnInfo,
     isCompacting,
+    completedToolCallCount,
   } = useConversationItems(events, isPromptPending, {
     showDebugLogs,
   });
@@ -138,20 +153,10 @@ export function ConversationView({
 
   const pendingPermissions = usePendingPermissionsForTask(taskId ?? "");
   const pendingPermissionsCount = pendingPermissions.size;
-  const queuedMessages = useQueuedMessagesForTask(taskId);
+  const queuedCount = useQueuedMessagesForTask(taskId).length;
   const optimisticItems = useOptimisticItemsForTask(taskId);
   const session = useSessionForTask(taskId);
   const pausedDurationMs = session?.pausedDurationMs ?? 0;
-
-  const queuedItems = useMemo<Extract<ConversationItem, { type: "queued" }>[]>(
-    () =>
-      queuedMessages.map((msg) => ({
-        type: "queued" as const,
-        id: msg.id,
-        message: msg,
-      })),
-    [queuedMessages],
-  );
 
   const isCloud = session?.isCloud ?? false;
 
@@ -160,18 +165,22 @@ export function ConversationView({
       mergeConversationItems({
         conversationItems,
         optimisticItems,
-        queuedItems,
         isCloud,
       }),
-    [conversationItems, optimisticItems, queuedItems, isCloud],
+    [conversationItems, optimisticItems, isCloud],
   );
 
   // Fold each completed turn's tool-call work into a collapsible chip, and emit
   // the keepMounted indices (standalone MCP-app rows, whose iframes must survive
   // scrolling) + the item→row map in the same pass.
+  const threadGrouperRef = useRef<ReturnType<
+    typeof createIncrementalThreadGrouper
+  > | null>(null);
+  threadGrouperRef.current ??= createIncrementalThreadGrouper();
+  const threadGrouper = threadGrouperRef.current;
   const grouping = useMemo<ThreadGrouping>(
-    () => buildThreadGroups(items, collapseMode, groupOverrides),
-    [items, collapseMode, groupOverrides],
+    () => threadGrouper.update(items, collapseMode, groupOverrides),
+    [items, collapseMode, groupOverrides, threadGrouper],
   );
   const threadRows = grouping.rows;
   const rowKeepMounted = grouping.keepMounted;
@@ -272,21 +281,6 @@ export function ConversationView({
           return <TurnCancelledView interruptReason={item.interruptReason} />;
         case "user_shell_execute":
           return <UserShellExecuteView item={item} />;
-        case "queued":
-          return (
-            <QueuedMessageView
-              message={item.message}
-              onRemove={
-                taskId
-                  ? () =>
-                      sessionStoreSetters.removeQueuedMessage(
-                        taskId,
-                        item.message.id,
-                      )
-                  : undefined
-              }
-            />
-          );
       }
     },
     [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],
@@ -318,7 +312,10 @@ export function ConversationView({
                 return (
                   <div
                     key={it.id}
-                    className={isPlainMessage ? "pl-5" : undefined}
+                    className={cn(
+                      isPlainMessage ? "pl-5" : undefined,
+                      "empty:hidden",
+                    )}
                   >
                     {renderItem(it)}
                   </div>
@@ -343,11 +340,12 @@ export function ConversationView({
             : null
         }
         lastStopReason={lastTurnInfo?.stopReason}
-        queuedCount={queuedMessages.length}
+        queuedCount={queuedCount}
         hasPendingPermission={pendingPermissionsCount > 0}
         pausedDurationMs={pausedDurationMs}
         isCompacting={isCompacting}
         usage={contextUsage}
+        completedToolCallCount={completedToolCallCount}
       />
     </div>
   );
@@ -387,6 +385,7 @@ export function ConversationView({
             itemClassName="mx-auto px-2 py-1.5"
             itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
             footer={footer}
+            scrollX={scrollX}
           />
         </SessionTaskIdProvider>
         {showScrollButton && (

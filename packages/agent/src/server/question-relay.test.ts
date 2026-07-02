@@ -95,6 +95,8 @@ describe("Question relay", () => {
   it.each([
     ["API Error: terminated", "upstream_stream_terminated"],
     ["API Error: Connection error", "upstream_connection_error"],
+    ["API Error: The operation timed out.", "upstream_timeout"],
+    ["API Error: Request timed out.", "upstream_timeout"],
     ["API Error: 429 rate_limit_error", "upstream_provider_failure"],
     ["API Error: 529 overloaded_error", "upstream_provider_failure"],
     ["API Error: 503 internal_error", "upstream_provider_failure"],
@@ -469,6 +471,9 @@ describe("Question relay", () => {
         logWriter: {
           flush: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue("agent response"),
+          getAgentResponseParts: vi
+            .fn()
+            .mockReturnValue(["first part", "agent response"]),
           isRegistered: vi.fn().mockReturnValue(true),
         },
       };
@@ -480,6 +485,7 @@ describe("Question relay", () => {
         "test-task-id",
         "test-run-id",
         "agent response",
+        ["first part", "agent response"],
       );
     });
 
@@ -529,6 +535,7 @@ describe("Question relay", () => {
           flushAll: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue(null),
           resetTurnMessages: vi.fn(),
+          appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
           isRegistered: vi.fn().mockReturnValue(true),
         },
@@ -573,6 +580,7 @@ describe("Question relay", () => {
           flushAll: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue(null),
           resetTurnMessages: vi.fn(),
+          appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
           isRegistered: vi.fn().mockReturnValue(true),
         },
@@ -607,6 +615,7 @@ describe("Question relay", () => {
           flushAll: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue(null),
           resetTurnMessages: vi.fn(),
+          appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
           isRegistered: vi.fn().mockReturnValue(true),
         },
@@ -646,6 +655,7 @@ describe("Question relay", () => {
           flushAll: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue(null),
           resetTurnMessages: vi.fn(),
+          appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
           isRegistered: vi.fn().mockReturnValue(true),
         },
@@ -690,6 +700,7 @@ describe("Question relay", () => {
           flushAll: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue(null),
           resetTurnMessages: vi.fn(),
+          appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
           isRegistered: vi.fn().mockReturnValue(true),
         },
@@ -734,6 +745,7 @@ describe("Question relay", () => {
           flushAll: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue(null),
           resetTurnMessages: vi.fn(),
+          appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
           isRegistered: vi.fn().mockReturnValue(true),
         },

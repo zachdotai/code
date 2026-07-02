@@ -18,6 +18,7 @@ import {
   type DismissReportDialogResult,
 } from "@posthog/ui/features/inbox/components/DismissReportDialog";
 import { InboxBulkSelectionBar } from "@posthog/ui/features/inbox/components/InboxBulkSelectionBar";
+import { InboxLoadMore } from "@posthog/ui/features/inbox/components/InboxLoadMore";
 import { InboxSearchFilterBar } from "@posthog/ui/features/inbox/components/InboxSearchFilterBar";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import {
@@ -73,6 +74,12 @@ interface InboxReportListTabProps {
     reports: SignalReport[];
     children: ReactNode;
   }>;
+  /**
+   * Fetch a server-filtered PR-only list instead of the broad pipeline list, so
+   * the tab body comes from the same source as the Pull-requests count (a PR
+   * past the broad list's first page would otherwise not render).
+   */
+  pullRequestsOnly?: boolean;
 }
 
 /**
@@ -89,8 +96,18 @@ export function InboxReportListTab({
   searchPlaceholder,
   emptyState,
   CardListWrapper,
+  pullRequestsOnly = false,
 }: InboxReportListTabProps) {
-  const { scopedReports, allReports, isLoading } = useInboxAllReports();
+  const {
+    scopedReports,
+    allReports,
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInboxAllReports({
+    pullRequestsOnly,
+  });
   const scope = useInboxReviewerScopeStore((s) => s.scope);
   const [dismissReport, setDismissReport] = useState<SignalReport | null>(null);
 
@@ -119,7 +136,11 @@ export function InboxReportListTab({
   );
 
   const dismissTargetId = dismissReport?.id ?? null;
-  const dismissBulkActions = useInboxBulkActions(allReports, dismissTargetId);
+  const dismissBulkActions = useInboxBulkActions(
+    allReports,
+    dismissTargetId,
+    "list_row",
+  );
 
   const handleDismissDialogOpenChange = useCallback((open: boolean) => {
     if (!open) setDismissReport(null);
@@ -168,7 +189,7 @@ export function InboxReportListTab({
           />
         ) : null}
 
-        {matchingReports.length === 0 ? (
+        {matchingReports.length === 0 && !hasNextPage ? (
           <Empty className="mx-auto max-w-md py-16">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -179,28 +200,40 @@ export function InboxReportListTab({
             </EmptyHeader>
           </Empty>
         ) : (
-          <CardListContainer
-            reports={matchingReports}
-            Wrapper={CardListWrapper}
-          >
-            <Flex direction="column" gap="3">
-              {matchingReports.map((report) => (
-                <Card
-                  key={report.id}
-                  report={report}
-                  isSelected={isReportSelected(report.id)}
-                  onRowClick={(event) => handleReportClick(report.id, event)}
-                  onDismiss={() => setDismissReport(report)}
-                  dismissDisabledReason={
-                    suppressDisabledByReportId.get(report.id) ?? null
-                  }
-                  isDismissPending={
-                    dismissReport?.id === report.id && dismissMutationPending
-                  }
-                />
-              ))}
-            </Flex>
-          </CardListContainer>
+          <>
+            {matchingReports.length > 0 && (
+              <CardListContainer
+                reports={matchingReports}
+                Wrapper={CardListWrapper}
+              >
+                <Flex direction="column" gap="3">
+                  {matchingReports.map((report) => (
+                    <Card
+                      key={report.id}
+                      report={report}
+                      isSelected={isReportSelected(report.id)}
+                      onRowClick={(event) =>
+                        handleReportClick(report.id, event)
+                      }
+                      onDismiss={() => setDismissReport(report)}
+                      dismissDisabledReason={
+                        suppressDisabledByReportId.get(report.id) ?? null
+                      }
+                      isDismissPending={
+                        dismissReport?.id === report.id &&
+                        dismissMutationPending
+                      }
+                    />
+                  ))}
+                </Flex>
+              </CardListContainer>
+            )}
+            <InboxLoadMore
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              onLoadMore={() => void fetchNextPage({ cancelRefetch: false })}
+            />
+          </>
         )}
       </Flex>
 

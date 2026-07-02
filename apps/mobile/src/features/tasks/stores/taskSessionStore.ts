@@ -28,10 +28,26 @@ import {
   type Task,
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
-import { playMeepSound } from "../utils/sounds";
+import { playbackRateForTaskDuration } from "../utils/playbackRate";
+import { playCompletionSound } from "../utils/sounds";
 import { useAttachmentEchoStore } from "./attachmentEchoStore";
+import {
+  combineQueuedMessages,
+  useMessageQueueStore,
+} from "./messageQueueStore";
+import { useTaskStore } from "./taskStore";
 
 const log = logger.scope("task-session-store");
+
+function completionPlaybackRate(promptStartedAt?: number): number {
+  if (
+    !usePreferencesStore.getState().scaleSoundWithTaskLength ||
+    promptStartedAt == null
+  ) {
+    return 1;
+  }
+  return playbackRateForTaskDuration(Date.now() - promptStartedAt);
+}
 
 // Match historical `user_message_chunk` events (text-only, as the cloud
 // stores them) against locally-cached attachment echoes by position+text.
@@ -156,6 +172,8 @@ interface BatchAnalysis {
   hasVisibleAgentOutput: boolean;
   externalUserMessageCount: number;
   agentMessageFinalized: boolean;
+  // Latest compaction state seen in the batch (undefined = no change).
+  compacting?: boolean;
 }
 
 function analyzeEntries(
@@ -169,6 +187,7 @@ function analyzeEntries(
   let hasVisibleAgentOutput = false;
   let externalUserMessageCount = 0;
   let agentMessageFinalized = false;
+  let compacting: boolean | undefined;
 
   for (const entry of entries) {
     const method = entry.notification?.method;
@@ -186,6 +205,18 @@ function analyzeEntries(
       if (method === "_posthog/error") {
         hasTurnFailed = true;
       }
+    }
+
+    if (method === "_posthog/status") {
+      const params = entry.notification?.params as
+        | { status?: string; isComplete?: boolean }
+        | undefined;
+      if (params?.status === "compacting") {
+        compacting = !params.isComplete;
+      }
+    }
+    if (method === "_posthog/compact_boundary") {
+      compacting = false;
     }
 
     if (
@@ -218,6 +249,7 @@ function analyzeEntries(
     hasVisibleAgentOutput,
     externalUserMessageCount,
     agentMessageFinalized,
+    compacting,
   };
 }
 
@@ -268,6 +300,9 @@ export interface TaskSession {
   // we should play a sound when control returns. False when reconnecting
   // to an already-running task to avoid spurious pings.
   awaitingPing?: boolean;
+  // Timestamp when the current prompt started on this device. Used to scale
+  // the completion sound's playback rate by how long the turn ran.
+  promptStartedAt?: number;
   // True after a user prompt is sent, cleared when the first piece of
   // agent output (tool call, message, etc.) arrives.
   awaitingAgentOutput?: boolean;
@@ -280,6 +315,10 @@ export interface TaskSession {
   // here so the response can be routed back to the awaiting tool call.
   cloudPermissionRequestIds?: Record<string, string>;
   pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
+  // True while the agent is compacting context. Steering cancels and resends
+  // the running turn, which would abort an in-flight compaction, so queued
+  // messages are held until compaction ends.
+  isCompacting?: boolean;
 }
 
 interface TaskSessionStore {
@@ -306,6 +345,15 @@ interface TaskSessionStore {
     },
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
+  /** Send a prompt now, interrupting the running turn first if one is live. */
+  sendInterrupting: (
+    taskId: string,
+    prompt: string,
+    attachments?: PendingAttachment[],
+  ) => Promise<void>;
+  flushQueuedMessages: (taskId: string) => Promise<void>;
+  /** Drop one queued message and resend it now as a steer (interrupt + resend). */
+  steerQueuedMessage: (taskId: string, messageId: string) => Promise<void>;
   setConfigOption: (
     taskId: string,
     configId: string,
@@ -328,6 +376,9 @@ interface TaskSessionStore {
 
 const watchHandles = new Map<string, WatchCloudTaskHandle>();
 const connectAttempts = new Set<string>();
+// Guards against a turn-end batch and a mode toggle racing to flush the same
+// queue twice.
+const flushingTasks = new Set<string>();
 
 function mapTerminalStatus(
   status: string | undefined | null,
@@ -388,6 +439,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             // us otherwise — the SSE watcher will refine these fields.
             isPromptPending: true,
             awaitingPing,
+            promptStartedAt: awaitingPing ? Date.now() : undefined,
             awaitingAgentOutput: true,
           },
         },
@@ -476,6 +528,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             localUserEchoes: nextLocalEchoes,
             isPromptPending: true,
             awaitingPing: true,
+            promptStartedAt: ts,
             awaitingAgentOutput: true,
           },
         },
@@ -587,6 +640,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             localUserEchoes: nextLocalEchoes,
             isPromptPending: true,
             awaitingPing: true,
+            promptStartedAt: ts,
             awaitingAgentOutput: true,
           },
         },
@@ -738,6 +792,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             ...state.sessions[session.taskRunId],
             isPromptPending: false,
             awaitingPing: false,
+            promptStartedAt: undefined,
             awaitingAgentOutput: false,
           },
         },
@@ -746,6 +801,64 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     } catch (error) {
       log.error("Failed to send cancel request", error);
       return false;
+    }
+  },
+
+  sendInterrupting: async (taskId, prompt, attachments) => {
+    // The cloud has no mid-turn inject, so steering interrupts the running
+    // turn and resends as a fresh prompt.
+    if (get().getSessionForTask(taskId)?.isPromptPending) {
+      await get().cancelPrompt(taskId);
+    }
+    await get().sendPrompt(taskId, prompt, attachments);
+  },
+
+  flushQueuedMessages: async (taskId: string) => {
+    if (flushingTasks.has(taskId)) return;
+    flushingTasks.add(taskId);
+    try {
+      const drained = useMessageQueueStore.getState().drain(taskId);
+      if (drained.length === 0) return;
+
+      const { text, attachments } = combineQueuedMessages(drained);
+      try {
+        await get().sendInterrupting(taskId, text, attachments);
+      } catch (err) {
+        log.warn("Failed to flush queued messages, restoring queue", {
+          taskId,
+          error: err,
+        });
+        useMessageQueueStore.getState().prepend(taskId, drained);
+      }
+    } finally {
+      flushingTasks.delete(taskId);
+    }
+  },
+
+  steerQueuedMessage: async (taskId: string, messageId: string) => {
+    const session = get().getSessionForTask(taskId);
+    // Steering only makes sense against a live turn. Mid-compaction it would
+    // abort the compaction; with no turn running there is nothing to interrupt
+    // and the message drains via the normal turn-end flush.
+    if (!session || !session.isPromptPending || session.isCompacting) return;
+
+    const message = useMessageQueueStore
+      .getState()
+      .getQueue(taskId)
+      .find((m) => m.id === messageId);
+    if (!message) return;
+
+    useMessageQueueStore.getState().remove(taskId, messageId);
+    try {
+      await get().sendInterrupting(
+        taskId,
+        message.content,
+        message.attachments,
+      );
+    } catch (err) {
+      // Restore at the head so a failed steer never silently drops the message.
+      useMessageQueueStore.getState().prepend(taskId, [message]);
+      throw err;
     }
   },
 
@@ -855,6 +968,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       );
 
       const wasAwaitingPing = existing?.awaitingPing ?? false;
+      const wasPromptPending = existing?.isPromptPending ?? false;
 
       set((state) => {
         const current = state.sessions[taskRunId];
@@ -905,6 +1019,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
               isPromptPending: nextIsPromptPending,
               awaitingPing: nextAwaitingPing,
               awaitingAgentOutput: nextAwaitingAgentOutput,
+              isCompacting: analysis.compacting ?? current.isCompacting,
               localUserEchoes: echoSet.size > 0 ? echoSet : undefined,
               lastEventAt: events.length > 0 ? Date.now() : current.lastEventAt,
             },
@@ -940,7 +1055,11 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         shouldPingForTurnComplete ||
         shouldPingForTurnFailed;
       if (shouldPingNow && usePreferencesStore.getState().pingsEnabled) {
-        playMeepSound().catch(() => {});
+        playCompletionSound(
+          undefined,
+          undefined,
+          completionPlaybackRate(existing?.promptStartedAt),
+        ).catch(() => {});
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       if (shouldPingForAwaitingInput) {
@@ -958,6 +1077,26 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           taskRunId,
           kind: "task_failed",
         });
+      }
+
+      // Turn just ended on a live delta — drain any queued messages the user
+      // buffered while it was running. Deferred a tick so the store state is
+      // committed before the flush reads it.
+      const after = get().sessions[taskRunId];
+      if (
+        !isSnapshot &&
+        wasPromptPending &&
+        after &&
+        !after.isPromptPending &&
+        after.status === "connected" &&
+        useMessageQueueStore.getState().getQueue(after.taskId).length > 0
+      ) {
+        const flushTaskId = after.taskId;
+        setTimeout(() => {
+          get()
+            .flushQueuedMessages(flushTaskId)
+            .catch((err) => log.warn("Queue flush failed", err));
+        }, 0);
       }
     }
 
@@ -983,7 +1122,11 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           };
         });
         if (shouldPing && usePreferencesStore.getState().pingsEnabled) {
-          playMeepSound().catch(() => {});
+          playCompletionSound(
+            undefined,
+            undefined,
+            completionPlaybackRate(preState?.promptStartedAt),
+          ).catch(() => {});
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
         if (shouldPing) {
@@ -1002,12 +1145,26 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     prompt: string,
   ) => {
     const freshTask = await getTask(taskId);
-    const previousBranch = freshTask.latest_run?.branch ?? null;
+    const previousRun = freshTask.latest_run;
+    const previousBranch = previousRun?.branch ?? null;
+
+    const composerConfig =
+      useTaskStore.getState().composerConfigByTaskId[taskId];
+    const previousPermissionMode = previousRun?.state?.initial_permission_mode;
+    const reasoningEffort =
+      composerConfig?.reasoning ?? previousRun?.reasoning_effort ?? undefined;
+    const initialPermissionMode =
+      composerConfig?.mode ??
+      (typeof previousPermissionMode === "string"
+        ? previousPermissionMode
+        : undefined);
 
     const updatedTask = await runTaskInCloud(taskId, {
       branch: previousBranch,
       resumeFromRunId: previousRunId,
       pendingUserMessage: prompt,
+      reasoningEffort,
+      initialPermissionMode,
     });
 
     const newRun = updatedTask.latest_run;
@@ -1030,6 +1187,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             status: "connecting",
             isPromptPending: true,
             awaitingPing: true,
+            promptStartedAt: Date.now(),
             awaitingAgentOutput: true,
           },
         },

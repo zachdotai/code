@@ -432,25 +432,40 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
 
   private readonly lastFetchTime = new Map<string, number>();
 
+  /**
+   * Always runs `git fetch`, bypassing the staleness throttle. Use when the
+   * caller has explicitly asked for a fresh view of the remote (e.g.,
+   * `fetchFromRemote: true`) — otherwise a fetch triggered by a preceding
+   * mutation can silently swallow this one and leave the snapshot stale at
+   * exactly the moment it mattered.
+   */
+  private async forceFetch(directoryPath: string): Promise<void> {
+    try {
+      await gitFetch(directoryPath);
+      this.lastFetchTime.set(directoryPath, Date.now());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `[git-service] fetch failed for ${directoryPath}; using local refs: ${message}\n`,
+      );
+    }
+  }
+
   private async fetchIfStale(directoryPath: string): Promise<void> {
     const now = Date.now();
     const lastFetch = this.lastFetchTime.get(directoryPath) ?? 0;
     if (now - lastFetch > FETCH_THROTTLE_MS) {
-      try {
-        await gitFetch(directoryPath);
-        this.lastFetchTime.set(directoryPath, now);
-      } catch {}
+      await this.forceFetch(directoryPath);
     }
   }
 
   private async getGitSyncStatusInternal(
     directoryPath: string,
-    forceRefresh = false,
+    fetchFromRemote = false,
   ): Promise<GitSyncStatus> {
-    if (forceRefresh) {
-      this.lastFetchTime.delete(directoryPath);
+    if (fetchFromRemote) {
+      await this.forceFetch(directoryPath);
     }
-    await this.fetchIfStale(directoryPath);
 
     const status = await getSyncStatus(directoryPath);
     return {
@@ -483,7 +498,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       includeChangedFiles ? this.getChangedFilesHead(directoryPath) : null,
       includeDiffStats ? this.getDiffStats(directoryPath) : null,
       includeSyncStatus
-        ? this.getGitSyncStatusInternal(directoryPath, true)
+        ? this.getGitSyncStatusInternal(directoryPath, false)
         : null,
       includeLatestCommit ? this.getLatestCommit(directoryPath) : null,
     ]);
@@ -508,9 +523,9 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
 
   async getGitSyncStatus(
     directoryPath: string,
-    forceRefresh = false,
+    fetchFromRemote = false,
   ): Promise<GitSyncStatus> {
-    return this.getGitSyncStatusInternal(directoryPath, forceRefresh);
+    return this.getGitSyncStatusInternal(directoryPath, fetchFromRemote);
   }
 
   async createBranch(directoryPath: string, branchName: string): Promise<void> {
@@ -930,7 +945,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         "api",
         `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`,
         "--jq",
-        "{state,merged,draft}",
+        "{state,merged,draft,headRefName: .head.ref}",
       ]);
 
       if (result.exitCode !== 0) {
@@ -941,6 +956,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         state: string;
         merged: boolean;
         draft: boolean;
+        headRefName: string | null;
       };
 
       return data;

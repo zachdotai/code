@@ -1,6 +1,9 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
-import type { SessionService } from "@posthog/core/sessions/sessionService";
-import { SESSION_SERVICE } from "@posthog/core/sessions/sessionService";
+import {
+  createLatestPlanTracker,
+  SESSION_SERVICE,
+  type SessionService,
+} from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
@@ -14,15 +17,23 @@ import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAut
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
-import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
+import {
+  copyFromContextMenu,
+  getGithubRefUrlFromEventTarget,
+} from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { DropZoneOverlay } from "@posthog/ui/features/sessions/components/DropZoneOverlay";
 import { ModelSelector } from "@posthog/ui/features/sessions/components/ModelSelector";
 import { PendingChatView } from "@posthog/ui/features/sessions/components/PendingChatView";
 import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStatusBar";
+import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/QueuedMessagesDock";
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
+import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
+import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
+import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
   useModeConfigOptionForTask,
@@ -34,7 +45,7 @@ import {
   useShowRawLogs,
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { useSessionHandoffInProgress } from "@posthog/ui/features/sessions/useSession";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
@@ -154,6 +165,7 @@ export function SessionView({
   hideInput = false,
 }: SessionViewProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  useSessionEventsResidency(taskId);
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
   const pendingTaskPrompt = usePendingTaskPrompt(taskId);
@@ -161,11 +173,12 @@ export function SessionView({
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
+  const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
+  const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
   const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
-  const handoffInProgress =
-    useSessionForTask(taskId)?.handoffInProgress ?? false;
+  const handoffInProgress = useSessionHandoffInProgress(taskId);
   const showInlineBanner = hasError && errorRetryable && events.length > 0;
 
   useEffect(() => {
@@ -222,9 +235,14 @@ export function SessionView({
 
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
 
+  const latestPlanTrackerRef = useRef<ReturnType<
+    typeof createLatestPlanTracker
+  > | null>(null);
+  latestPlanTrackerRef.current ??= createLatestPlanTracker();
+  const latestPlanTracker = latestPlanTrackerRef.current;
   const latestPlan = useMemo(
-    (): Plan | null => sessionService.selectLatestPlan(events) as Plan | null,
-    [events, sessionService],
+    (): Plan | null => latestPlanTracker.update(events) as Plan | null,
+    [events, latestPlanTracker],
   );
 
   const handleSubmit = useCallback(
@@ -250,6 +268,9 @@ export function SessionView({
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
   const dragCounterRef = useRef(0);
+  // URL of the GitHub chip the context menu was opened on, captured on
+  // right-click so the "Copy" item can copy the link (selections can't reach it).
+  const copyTargetUrlRef = useRef<string | null>(null);
 
   const firstPendingPermission = useMemo(() => {
     const entries = Array.from(pendingPermissions.entries());
@@ -368,7 +389,9 @@ export function SessionView({
       target.closest('input, textarea, [contenteditable="true"], .ProseMirror')
     ) {
       e.stopPropagation();
+      return;
     }
+    copyTargetUrlRef.current = getGithubRefUrlFromEventTarget(e.target);
   }, []);
 
   return (
@@ -400,7 +423,7 @@ export function SessionView({
           >
             {isSuspended ? (
               <>
-                <ConversationView
+                <ThreadView
                   events={events}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
@@ -408,6 +431,7 @@ export function SessionView({
                   taskId={taskId}
                   task={task}
                   slackThreadUrl={slackThreadUrl}
+                  scrollX={false}
                 />
                 <Box className="border-gray-4 border-t">
                   <Box
@@ -483,7 +507,7 @@ export function SessionView({
                     onRetry={onRetry}
                   />
                 )}
-                <ConversationView
+                <ThreadView
                   events={events}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
@@ -492,9 +516,10 @@ export function SessionView({
                   task={task}
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
+                  scrollX={false}
                 />
 
-                <SessionResourcesBar events={events} />
+                {!useNewChatThread && <SessionResourcesBar events={events} />}
 
                 <PlanStatusBar plan={latestPlan} />
 
@@ -542,7 +567,10 @@ export function SessionView({
                     </Flex>
                   </Flex>
                 ) : hideInput ? null : firstPendingPermission ? (
-                  <Box className="min-h-0 overflow-y-auto">
+                  // This box replaces the composer while a permission is pending, so it's an input
+                  // region: `shrink-0` keeps it from being compressed by the scroller above, and
+                  // `min-h-0 overflow-y-auto` lets a tall permission prompt scroll inside itself.
+                  <Box className="min-h-0 shrink-0 overflow-y-auto">
                     <Box
                       className={compact ? "p-1" : "mx-auto px-2 pb-3"}
                       style={
@@ -588,6 +616,7 @@ export function SessionView({
                             : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
                         }
                       >
+                        {taskId && <QueuedMessagesDock taskId={taskId} />}
                         <PromptInput
                           ref={editorRef}
                           sessionId={sessionId}
@@ -625,6 +654,14 @@ export function SessionView({
                               />
                             ) : null
                           }
+                          messagingModeToggle={
+                            taskId && !isCloudRun ? (
+                              <SteerQueueToggle taskId={taskId} />
+                            ) : undefined
+                          }
+                          onToggleMessagingMode={
+                            isCloudRun ? undefined : toggleMessagingMode
+                          }
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}
@@ -642,10 +679,15 @@ export function SessionView({
       <ContextMenu.Content size="1">
         <ContextMenu.Item
           onSelect={() => {
-            const text = window.getSelection()?.toString();
-            if (text) {
-              navigator.clipboard.writeText(text);
+            const url = copyTargetUrlRef.current;
+            const text = url ?? window.getSelection()?.toString();
+            if (!text) {
+              return;
             }
+            copyFromContextMenu(text, {
+              onSuccess: () => toast.success(url ? "Link copied" : "Copied"),
+              onError: () => toast.error("Couldn't copy"),
+            });
           }}
         >
           Copy

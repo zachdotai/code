@@ -1,7 +1,14 @@
 import { Collapsible } from "@base-ui/react/collapsible";
 import { type Icon, WrenchIcon } from "@phosphor-icons/react";
-import { cn } from "@posthog/quill";
+import {
+  ChatMarker,
+  ChatMarkerContent,
+  ChatMarkerIcon,
+  cn,
+  Spinner,
+} from "@posthog/quill";
 import { type ReactNode, useState } from "react";
+import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 import {
   ExpandableIcon,
   LoadingIcon,
@@ -69,7 +76,37 @@ export function ToolRow({
     onOpenChange?.(next);
   };
 
+  const chatChrome = useChatThreadChrome();
+
   const isCollapsible = collapsible || content != null;
+
+  // New thread: render the tool as a ChatMarker (icon + title row, collapsible detail body).
+  // Old thread (no provider) skips this and uses the Radix chrome below.
+  if (chatChrome) {
+    const IconComp = icon ?? WrenchIcon;
+    const iconNode = leading ?? (isLoading ? <Spinner /> : <IconComp />);
+    return (
+      <ChatMarker
+        body={content ?? undefined}
+        defaultOpen={defaultOpen}
+        open={open}
+        onOpenChange={onOpenChange}
+        className="opacity-50 hover:opacity-100 data-panel-open:bg-fill-selected data-panel-open:opacity-100"
+      >
+        <ChatMarkerIcon>{iconNode}</ChatMarkerIcon>
+        <ChatMarkerContent className="flex w-full min-w-0 flex-nowrap items-center gap-1">
+          {/* Example: posthog - insight-create(... */}
+          {typeof children === "string" ? (
+            <ToolTitle>{children}</ToolTitle>
+          ) : (
+            children
+          )}
+          <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
+          {trailing}
+        </ChatMarkerContent>
+      </ChatMarker>
+    );
+  }
 
   const leadingNode = leading ?? (
     <span className="flex shrink-0 items-center justify-center pt-1">
@@ -108,8 +145,12 @@ export function ToolRow({
   }
 
   return (
-    <Collapsible.Root open={isOpen} onOpenChange={setOpen}>
-      <Collapsible.Trigger className="group mb-0 flex w-full min-w-0 cursor-pointer items-start gap-2 py-0.5 text-left">
+    <Collapsible.Root
+      open={isOpen}
+      onOpenChange={setOpen}
+      className="tool-row-collapsible"
+    >
+      <Collapsible.Trigger className="group mb-0 flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-sm py-0.5 pl-1 text-left hover:bg-fill-hover data-panel-open:bg-fill-selected">
         {leadingNode}
         {header}
       </Collapsible.Trigger>

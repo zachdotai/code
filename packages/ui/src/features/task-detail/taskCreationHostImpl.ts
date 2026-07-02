@@ -12,7 +12,9 @@ import type {
   CreatedWorkspaceInfo,
   CreateWorkspaceArgs,
   DetectedRepo,
+  ImportedClaudeCliSession,
   ITaskCreationHost,
+  RecordClaudeCliImportArgs,
   SetupActionDispatch,
   TaskEnvironment,
   TaskFolderInfo,
@@ -27,6 +29,7 @@ import { injectable } from "inversify";
 import { track } from "../../shell/analytics";
 import { getAuthenticatedClient } from "../auth/authClientImperative";
 import { assertCloudUsageAvailable } from "../billing/preflightCloudUsage";
+import { resolveLocalSkillPrompt } from "../message-editor/commands";
 import { DEFAULT_PANEL_IDS } from "../panels/panelConstants";
 import { usePanelLayoutStore } from "../panels/panelLayoutStore";
 import { useProvisioningStore } from "../provisioning/store";
@@ -77,6 +80,13 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     }
 
     return null;
+  }
+
+  async ensureScratchDir(taskId: string): Promise<string> {
+    const { path } = await hostClient().workspace.ensureScratchDir.mutate({
+      taskId,
+    });
+    return path;
   }
 
   async getWorkspace(taskId: string): Promise<Workspace | null> {
@@ -137,11 +147,20 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     return getCloudPromptTransport(prompt, filePaths);
   }
 
+  async resolveLocalSkillCommandPrompt(prompt: string): Promise<string> {
+    return (
+      (await resolveLocalSkillPrompt(prompt, () =>
+        hostClient().skills.list.query(),
+      )) ?? prompt
+    );
+  }
+
   uploadRunAttachments(
     client: TaskCreationApiClient,
     taskId: string,
     runId: string,
     filePaths: string[],
+    skillBundles?: CloudPromptTransport["skillBundles"],
   ): Promise<string[]> {
     return resolveService<CloudArtifactService>(
       CLOUD_ARTIFACT_SERVICE,
@@ -150,6 +169,7 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
       taskId,
       runId,
       filePaths,
+      skillBundles,
     );
   }
 
@@ -178,5 +198,36 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
       event,
       props,
     );
+  }
+
+  importClaudeCliSession(args: {
+    repoPath: string;
+    sourceSessionId: string;
+  }): Promise<ImportedClaudeCliSession> {
+    return hostClient().claudeCliSessions.import.mutate(args);
+  }
+
+  async deleteClaudeCliImport(args: {
+    repoPath: string;
+    importedSessionId: string;
+  }): Promise<void> {
+    await hostClient().claudeCliSessions.deleteImport.mutate(args);
+  }
+
+  async recordClaudeCliImport(args: RecordClaudeCliImportArgs): Promise<void> {
+    await hostClient().claudeCliSessions.recordImport.mutate(args);
+  }
+
+  async deleteClaudeCliImportRecord(args: {
+    importedSessionId: string;
+  }): Promise<void> {
+    await hostClient().claudeCliSessions.deleteImportRecord.mutate(args);
+  }
+
+  async linkTaskBranch(args: {
+    taskId: string;
+    branchName: string;
+  }): Promise<void> {
+    await hostClient().workspace.linkBranch.mutate(args);
   }
 }

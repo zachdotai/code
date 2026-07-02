@@ -1,5 +1,6 @@
 import type {
   InboxReportActionProperties,
+  InboxReportActionSurface,
   InboxViewedProperties,
 } from "@posthog/shared/analytics-events";
 import type { SignalReport } from "@posthog/shared/domain-types";
@@ -119,6 +120,56 @@ export function resolveActionProperties(
   return { rank, list_size: listSize, priority, actionability };
 }
 
+/** Bulk-capable report actions fired from the selection toolbar / dismiss flows. */
+export type InboxBulkActionType = Extract<
+  InboxReportActionProperties["action_type"],
+  "dismiss" | "snooze" | "delete" | "reingest"
+>;
+
+export interface BuildBulkActionEventsInput {
+  /** Reports the action actually succeeded for (one event is built per report). */
+  reports: SignalReport[];
+  actionType: InboxBulkActionType;
+  surface: InboxReportActionSurface;
+  /** Dismissal metadata, only meaningful for `dismiss`. Note is truncated to 500 chars. */
+  dismissal?: { reason?: string; note?: string };
+}
+
+/**
+ * Build `INBOX_REPORT_ACTION` payloads for a bulk (or single-report) dismiss /
+ * snooze / delete / reingest. Pure so it can be unit-tested and reused across
+ * the toolbar, the per-row dismiss action, and detail-screen dismiss.
+ *
+ * `is_bulk` / `bulk_size` carry the grouping; `rank` / `list_size` are left at 0
+ * because these flows act on a selection, not a positional list slot.
+ */
+export function buildBulkActionEvents(
+  input: BuildBulkActionEventsInput,
+): InboxReportActionProperties[] {
+  const { reports, actionType, surface, dismissal } = input;
+  const bulkSize = reports.length;
+  const isBulk = bulkSize > 1;
+  return reports.map((report) => ({
+    report_id: report.id,
+    report_title: report.title ?? null,
+    report_age_hours: reportAgeHours(report.created_at),
+    priority: report.priority ?? null,
+    actionability: report.actionability ?? null,
+    action_type: actionType,
+    surface,
+    is_bulk: isBulk,
+    bulk_size: bulkSize,
+    rank: 0,
+    list_size: 0,
+    ...(actionType === "dismiss" && dismissal?.reason
+      ? { dismissal_reason: dismissal.reason }
+      : {}),
+    ...(actionType === "dismiss" && dismissal?.note
+      ? { dismissal_note: dismissal.note.slice(0, 500) }
+      : {}),
+  }));
+}
+
 export interface InboxViewedFilterState {
   sourceProductFilter: string[];
   priorityFilter: string[];
@@ -140,7 +191,7 @@ export interface BuildInboxViewedInput {
   /** Server-reported total of reports matching the active query — the headline inbox number. */
   totalCount: number;
   /** Tab badge counts shown in the v2 header (the numbers the user actually sees). */
-  tabCounts: { pulls: number; reports: number; runs: number };
+  tabCounts: { pulls: number; reports: number };
   filters: InboxViewedFilterState;
 }
 
@@ -213,6 +264,5 @@ export function buildInboxViewedProperties(
     actionability_unknown_count: actionabilityCounts.unknown,
     pulls_count: tabCounts.pulls,
     reports_count: tabCounts.reports,
-    runs_count: tabCounts.runs,
   };
 }
