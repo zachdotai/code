@@ -10,6 +10,7 @@ out/
 .turbo/
 storybook-static
 bin/
+.build/
 
 # node-gyp configure artifact from a stray run at the repo root
 /build/
@@ -62,16 +63,9 @@ test-results/
 apps/code/resources/codex-acp/
 
 # Offline voice dictation: whisper.cpp build tree + generated/downloaded artifacts
-# (built via scripts/whisper-wasm; see that dir's README).
-scripts/whisper-wasm/.build/
-apps/code/public/whisper/
-apps/web/public/whisper/
+apps/*/public/whisper/
 # Offline Vosk (streaming) model archive, downloaded on demand.
-apps/code/public/vosk/
-apps/web/public/vosk/
-# Stray Emscripten compiler-probe output (safety net; build.sh keeps these in .build).
-a.out.js
-a.out.wasm
+apps/*/public/vosk/
 
 # Licensed fonts (downloaded from S3 during CI)
 apps/code/assets/fonts/BerkeleyMono/
