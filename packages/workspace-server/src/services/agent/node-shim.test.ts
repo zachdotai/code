@@ -154,6 +154,19 @@ describe("ensureNodeShim", () => {
     expect(existsSync(join(dir, "node"))).toBe(false);
   });
 
+  it("removes a stale node.cmd when downgrading to the fallback on windows", () => {
+    const dir = makeDir();
+    ensureNodeShim(dir, APP_PATH, {
+      vendoredNodePath: "C:\\App\\vendored\\node.exe",
+      platform: "win32",
+    });
+
+    ensureNodeShim(dir, APP_PATH, { platform: "win32" });
+
+    expect(existsSync(join(dir, "node.cmd"))).toBe(false);
+    expect(lstatSync(join(dir, "node")).isSymbolicLink()).toBe(true);
+  });
+
   it("keeps the symlink behavior on windows without a vendored runtime", () => {
     const dir = makeDir();
     ensureNodeShim(dir, APP_PATH, { platform: "win32" });

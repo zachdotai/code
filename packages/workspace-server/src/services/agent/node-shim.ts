@@ -87,15 +87,19 @@ function ensureWindowsShim(
   appExecPath: string,
   vendoredNodePath: string | null,
 ): void {
+  const cmdPath = join(mockNodeDir, "node.cmd");
+
   if (vendoredNodePath) {
     // cmd/PowerShell resolve `node` through PATHEXT, so the shim must be a
     // .cmd file; the extensionless legacy symlink was never resolvable there.
-    const cmdPath = join(mockNodeDir, "node.cmd");
     ensureFileContent(cmdPath, buildWindowsCmdShim(vendoredNodePath));
     rmSync(shimPath, { force: true });
     return;
   }
 
+  // PATHEXT prefers node.cmd over an extensionless entry, so a stale cmd
+  // from a previously vendored runtime must not survive the downgrade.
+  rmSync(cmdPath, { force: true });
   try {
     symlinkSync(appExecPath, shimPath);
   } catch (err) {

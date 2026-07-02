@@ -200,17 +200,16 @@ async function downloadBinary(binary) {
   rmSync(archivePath);
 
   if (binary.getArchiveBinaryPath) {
-    const extractedBinary = join(
-      destDir,
-      binary.getArchiveBinaryPath(binary.version, target),
+    const archiveBinaryPath = binary.getArchiveBinaryPath(
+      binary.version,
+      target,
     );
+    const extractedBinary = join(destDir, archiveBinaryPath);
     if (!existsSync(extractedBinary)) {
       throw new Error(`Binary not found in archive: ${extractedBinary}`);
     }
     renameSync(extractedBinary, binaryPath);
-    const extractionRoot = binary
-      .getArchiveBinaryPath(binary.version, target)
-      .split(/[/\\]/)[0];
+    const extractionRoot = archiveBinaryPath.split(/[/\\]/)[0];
     rmSync(join(destDir, extractionRoot), { recursive: true, force: true });
   }
 
