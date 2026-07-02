@@ -505,12 +505,13 @@ function classifyTurnEventKind(
   return "other";
 }
 
+export const TASK_CREATION_IN_FLIGHT_TTL_MS = 10 * 60 * 1000;
+
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
   private reconcileSkipLogged = new Set<string>();
   private taskCreationMarks = new Map<string, number>();
-  private static readonly TASK_CREATION_IN_FLIGHT_TTL_MS = 10 * 60 * 1000;
   private activityHeartbeats = new Map<
     string,
     ReturnType<typeof setInterval>
@@ -4400,8 +4401,7 @@ export class SessionService {
   private isTaskCreationInFlight(taskId: string): boolean {
     const markedAt = this.taskCreationMarks.get(taskId);
     if (markedAt === undefined) return false;
-    const expired =
-      Date.now() - markedAt > SessionService.TASK_CREATION_IN_FLIGHT_TTL_MS;
+    const expired = Date.now() - markedAt > TASK_CREATION_IN_FLIGHT_TTL_MS;
     if (expired) {
       this.taskCreationMarks.delete(taskId);
       return false;

@@ -5,9 +5,8 @@ import {
   type ReconcileTaskConnectionParams,
   SessionService,
   type SessionServiceDeps,
+  TASK_CREATION_IN_FLIGHT_TTL_MS,
 } from "./sessionService";
-
-const IN_FLIGHT_TTL_MS = 10 * 60 * 1000;
 
 function makeSession(taskId: string): AgentSession {
   return {
@@ -157,7 +156,7 @@ describe("SessionService run-less local task recovery", () => {
     reconcile(service, task);
     expect(connectToTask).not.toHaveBeenCalled();
 
-    vi.setSystemTime(IN_FLIGHT_TTL_MS + 1);
+    vi.setSystemTime(TASK_CREATION_IN_FLIGHT_TTL_MS + 1);
     reconcile(service, task);
     expect(connectToTask).toHaveBeenCalledTimes(1);
   });
@@ -186,5 +185,48 @@ describe("SessionService run-less local task recovery", () => {
     reconcile(service, task);
 
     expect(connectToTask).toHaveBeenCalledWith({ task, repoPath: "/repo" });
+  });
+
+  function skipLogs(log: { info: ReturnType<typeof vi.fn> }, reason: string) {
+    return log.info.mock.calls.filter(
+      ([message, context]) =>
+        message === "Skipping local session reconcile" &&
+        (context as { reason?: string }).reason === reason,
+    );
+  }
+
+  it("logs the creation-in-flight skip once across repeated reconciles", () => {
+    const { service, log } = createHarness();
+    const task = makeTask();
+    service.markTaskCreationInFlight(task.id);
+
+    reconcile(service, task);
+    reconcile(service, task);
+
+    const skips = skipLogs(log, "creation-in-flight");
+    expect(skips).toHaveLength(1);
+    expect(skips[0][1]).toMatchObject({ taskId: task.id });
+  });
+
+  it("logs the missing-workspace-path skip once across repeated reconciles", () => {
+    const { service, log } = createHarness();
+    const task = makeTask();
+
+    const reconcileWithoutPath = () =>
+      service.reconcileTaskConnection({
+        task,
+        session: undefined,
+        repoPath: "",
+        isCloud: false,
+        isOnline: true,
+        cloudAuth: { status: "loading" },
+      } as ReconcileTaskConnectionParams);
+
+    reconcileWithoutPath();
+    reconcileWithoutPath();
+
+    const skips = skipLogs(log, "no-workspace-path");
+    expect(skips).toHaveLength(1);
+    expect(skips[0][1]).toMatchObject({ taskId: task.id, hasRun: false });
   });
 });
