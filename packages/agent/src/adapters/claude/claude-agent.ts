@@ -572,34 +572,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
     let lastContextWindowSize = this.session.lastContextWindowSize;
 
-    const supportsTerminalOutput =
-      (
-        this.clientCapabilities?._meta as
-          | ClientCapabilities["_meta"]
-          | undefined
-      )?.terminal_output === true;
-
-    const context = {
-      session: this.session,
-      sessionId: params.sessionId,
-      client: this.client,
-      toolUseCache: this.toolUseCache,
-      toolUseStreamCache: this.toolUseStreamCache,
-      fileContentCache: this.fileContentCache,
-      enrichedReadCache: this.enrichedReadCache,
-      logger: this.logger,
-      supportsTerminalOutput,
-      streamedAssistantBlocks: {
-        textIds: new Set<string>(),
-        thinkingIds: new Set<string>(),
-      },
-    };
+    const context = this.buildMessageContext(params.sessionId);
 
     // Wait for the idle drainer to release the query. Our user message was
     // already pushed above, so its echo is what unblocks the drainer's pending
     // `query.next()`; the drainer hands that message back to us here rather than
-    // consuming it, so `promptReplayed` still flips below.
-    let carriedMessage = await this.settleIdleDrainStop();
+    // consuming it, so `promptReplayed` still flips below. Skip the await on the
+    // common path where no drainer is running so a plain prompt pays no
+    // microtask hop.
+    let carriedMessage = this.idleDrain
+      ? await this.settleIdleDrainStop()
+      : undefined;
 
     try {
       while (true) {
@@ -1106,22 +1089,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           }
 
           case "tool_progress": {
-            await this.client.sessionUpdate({
-              sessionId: params.sessionId,
-              update: {
-                sessionUpdate: "tool_call_update",
-                toolCallId: message.tool_use_id,
-                status: "in_progress",
-                _meta: {
-                  claudeCode: {
-                    toolName: message.tool_name,
-                    toolResponse: {
-                      elapsedTimeSeconds: message.elapsed_time_seconds,
-                    },
-                  },
-                } satisfies ToolUpdateMeta,
-              },
-            });
+            await this.emitToolProgress(params.sessionId, message);
             break;
           }
           case "rate_limit_event": {
@@ -1316,6 +1284,61 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   }
 
   /**
+   * Build the per-turn message-handler context shared by the prompt turn loop
+   * and the idle drainer. Fresh `streamedAssistantBlocks` Sets per call so each
+   * turn dedupes its own streamed blocks independently.
+   */
+  private buildMessageContext(sessionId: string): MessageHandlerContext {
+    const supportsTerminalOutput =
+      (
+        this.clientCapabilities?._meta as
+          | ClientCapabilities["_meta"]
+          | undefined
+      )?.terminal_output === true;
+    return {
+      session: this.session,
+      sessionId,
+      client: this.client,
+      toolUseCache: this.toolUseCache,
+      toolUseStreamCache: this.toolUseStreamCache,
+      fileContentCache: this.fileContentCache,
+      enrichedReadCache: this.enrichedReadCache,
+      logger: this.logger,
+      supportsTerminalOutput,
+      streamedAssistantBlocks: {
+        textIds: new Set<string>(),
+        thinkingIds: new Set<string>(),
+      },
+    };
+  }
+
+  /**
+   * Forward a `tool_progress` SDK message to the client as an in-progress
+   * `tool_call_update`. Shared by the prompt turn loop and the idle drainer.
+   */
+  private async emitToolProgress(
+    sessionId: string,
+    message: Extract<SDKMessage, { type: "tool_progress" }>,
+  ): Promise<void> {
+    await this.client.sessionUpdate({
+      sessionId,
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: message.tool_use_id,
+        status: "in_progress",
+        _meta: {
+          claudeCode: {
+            toolName: message.tool_name,
+            toolResponse: {
+              elapsedTimeSeconds: message.elapsed_time_seconds,
+            },
+          },
+        } satisfies ToolUpdateMeta,
+      },
+    });
+  }
+
+  /**
    * Pump the SDK query stream between turns.
    *
    * The turn loop in `prompt()` only reads `query.next()` while a prompt is in
@@ -1340,27 +1363,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // `this.session` out from under us; binding here keeps this loop scoped to
     // the query it started on, which will end (iterator done) on that refresh.
     const query = this.session.query;
-    const supportsTerminalOutput =
-      (
-        this.clientCapabilities?._meta as
-          | ClientCapabilities["_meta"]
-          | undefined
-      )?.terminal_output === true;
-    const context: MessageHandlerContext = {
-      session: this.session,
-      sessionId,
-      client: this.client,
-      toolUseCache: this.toolUseCache,
-      toolUseStreamCache: this.toolUseStreamCache,
-      fileContentCache: this.fileContentCache,
-      enrichedReadCache: this.enrichedReadCache,
-      logger: this.logger,
-      supportsTerminalOutput,
-      streamedAssistantBlocks: {
-        textIds: new Set<string>(),
-        thinkingIds: new Set<string>(),
-      },
-    };
+    const context = this.buildMessageContext(sessionId);
 
     const state: IdleDrainState = { stop: false, done: Promise.resolve() };
     this.idleDrain = state;
@@ -1465,22 +1468,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         resetStreamDedupe();
         return;
       case "tool_progress":
-        await this.client.sessionUpdate({
-          sessionId: context.sessionId,
-          update: {
-            sessionUpdate: "tool_call_update",
-            toolCallId: message.tool_use_id,
-            status: "in_progress",
-            _meta: {
-              claudeCode: {
-                toolName: message.tool_name,
-                toolResponse: {
-                  elapsedTimeSeconds: message.elapsed_time_seconds,
-                },
-              },
-            } satisfies ToolUpdateMeta,
-          },
-        });
+        await this.emitToolProgress(context.sessionId, message);
         return;
       default:
         // auth_status, rate_limit_event, prompt_suggestion, tool_use_summary,
