@@ -1223,7 +1223,16 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         !this.session.cancelled
       ) {
         const sessionId = params.sessionId;
-        queueMicrotask(() => this.startIdleDrain(sessionId));
+        const session = this.session;
+        queueMicrotask(() => {
+          // Bail if the session was swapped (e.g. by refreshSession) between
+          // scheduling and running: startIdleDrain reads this.session at
+          // execution time, so without this it could drain the new query while
+          // tagging events with the old session id.
+          if (this.session === session) {
+            this.startIdleDrain(sessionId);
+          }
+        });
       }
     }
   }
@@ -1231,7 +1240,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   // Called by BaseAcpAgent#cancel() to interrupt the session
   protected async interrupt(): Promise<void> {
     // A cancel/close may land while the between-turns idle drainer owns the
-    // query; stop it so `query.interrupt()` below isn't racing a live reader.
+    // query; flag it now so it stops at its next boundary, and fence its exit
+    // after `query.interrupt()` below (see end of method).
     this.requestIdleDrainStop();
     this.session.cancelled = true;
     for (const [, pending] of this.session.pendingMessages) {
@@ -1255,6 +1265,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     await this.session.query.interrupt();
+
+    // Fence the drainer's exit. `query.interrupt()` unblocks a drainer suspended
+    // in `query.next()`, but one mid-forward only exits after its in-flight
+    // `client.sessionUpdate()` settles. Awaiting here keeps interrupt() from
+    // returning while the drainer can still emit an event for a cancelled
+    // session. No-op when no drainer is running.
+    await this.settleIdleDrainStop();
   }
 
   /**
@@ -1355,6 +1372,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
    * (reverting to prior behavior), never breaks the session.
    */
   private startIdleDrain(sessionId: string): void {
+    // At most one drainer at a time. Combined with "drainers are only scheduled
+    // after a completed turn", this is what keeps the slot unambiguous: while a
+    // drainer holds a handoff for an in-flight prompt(), `this.idleDrain` stays
+    // non-null (its finally skips clearing), so no second drainer can be
+    // assigned before settleIdleDrainStop() clears it.
     if (this.idleDrain) return;
     if (this.session.promptRunning) return;
     if (this.session.abortController.signal.aborted) return;

@@ -232,4 +232,21 @@ describe("ClaudeAcpAgent — between-turns idle drain (autonomous /loop turns)",
     // follow-up prompt drained the backlog).
     expect(texts.filter((t) => t === "autonomous update")).toHaveLength(1);
   });
+
+  it("cancel while idle-draining stops the drainer and returns cleanly", async () => {
+    const { agent } = makeAgent();
+    const sessionId = "s-idle-3";
+    const { query, input } = installFakeSession(agent, sessionId);
+
+    await runTurn(agent, query, input, sessionId, "loop", "answer", "r1");
+    // Drainer starts and blocks on query.next().
+    await tick();
+    const drainSlot = () =>
+      (agent as unknown as { idleDrain: unknown }).idleDrain;
+    expect(drainSlot()).not.toBeNull();
+
+    // Cancelling must await the drainer's exit (not return with it still live).
+    await agent.cancel({ sessionId });
+    expect(drainSlot()).toBeNull();
+  });
 });
