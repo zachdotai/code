@@ -64,6 +64,14 @@ export interface AgentSession {
   processedLineCount?: number;
   framework?: "claude";
   adapter?: Adapter;
+  /**
+   * Run configuration captured at session creation so retry/reset flows can
+   * recreate the session with the user's original choices instead of silently
+   * falling back to defaults (e.g. reverting a Fable run to the default model).
+   */
+  model?: string;
+  executionMode?: ExecutionMode;
+  reasoningLevel?: string;
   configOptions?: SessionConfigOption[];
   pendingPermissions: Map<string, PermissionRequest>;
   pausedDurationMs: number;
