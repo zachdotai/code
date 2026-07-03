@@ -54,6 +54,7 @@ const SOUND_OPTIONS: ReadonlyArray<{ value: CompletionSound; label: string }> =
     { value: "slide", label: "Slide" },
     { value: "drop", label: "Drop" },
     { value: "icq", label: "ICQ" },
+    { value: "random", label: "Random" },
   ];
 
 const VOLUME_OPTIONS = [

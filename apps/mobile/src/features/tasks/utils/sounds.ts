@@ -3,6 +3,7 @@ import {
   type CompletionSound,
   usePreferencesStore,
 } from "@/features/preferences/stores/preferencesStore";
+import { pickRandom } from "@/lib/pickRandom";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const dropAsset = require("../../../../assets/sounds/drop.mp3");
@@ -21,7 +22,9 @@ const shootAsset = require("../../../../assets/sounds/shoot.mp3");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const slideAsset = require("../../../../assets/sounds/slide.mp3");
 
-const SOUND_ASSETS: Record<CompletionSound, number> = {
+type BuiltInSound = Exclude<CompletionSound, "random">;
+
+const SOUND_ASSETS: Record<BuiltInSound, number> = {
   meep: meepAsset,
   "meep-smol": meepSmolAsset,
   knock: knockAsset,
@@ -31,6 +34,11 @@ const SOUND_ASSETS: Record<CompletionSound, number> = {
   drop: dropAsset,
   icq: icqAsset,
 };
+
+function resolveSoundAsset(sound: CompletionSound): number {
+  if (sound === "random") return pickRandom(Object.values(SOUND_ASSETS));
+  return SOUND_ASSETS[sound];
+}
 
 let audioModeConfigured = false;
 
@@ -49,12 +57,15 @@ export async function playCompletionSound(
   const which = sound ?? prefs.completionSound;
   const vol = (volume ?? prefs.completionVolume) / 100;
   await ensureAudioMode();
-  const { sound: player } = await Audio.Sound.createAsync(SOUND_ASSETS[which], {
-    shouldPlay: true,
-    volume: Math.max(0, Math.min(1, vol)),
-    rate: playbackRate,
-    shouldCorrectPitch: false,
-  });
+  const { sound: player } = await Audio.Sound.createAsync(
+    resolveSoundAsset(which),
+    {
+      shouldPlay: true,
+      volume: Math.max(0, Math.min(1, vol)),
+      rate: playbackRate,
+      shouldCorrectPitch: false,
+    },
+  );
   player.setOnPlaybackStatusUpdate((status) => {
     if (status.isLoaded && status.didJustFinish) {
       player.unloadAsync();

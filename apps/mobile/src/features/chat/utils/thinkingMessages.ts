@@ -1,6 +1,8 @@
 // Random thinking messages displayed while AI is generating
 // Based on posthog/frontend/src/scenes/max/utils/thinkingMessages.ts
 
+import { pickRandom } from "@/lib/pickRandom";
+
 export const THINKING_MESSAGES = [
   "Booping",
   "Crunching",
@@ -89,8 +91,7 @@ export const THINKING_MESSAGES = [
 ];
 
 export function getRandomThinkingActivity(): string {
-  const randomIndex = Math.floor(Math.random() * THINKING_MESSAGES.length);
-  return THINKING_MESSAGES[randomIndex];
+  return pickRandom(THINKING_MESSAGES);
 }
 
 export function getRandomThinkingMessage(): string {
