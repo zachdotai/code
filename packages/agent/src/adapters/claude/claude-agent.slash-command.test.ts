@@ -1,8 +1,11 @@
 import type { AgentSideConnection } from "@agentclientprotocol/sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createMockQuery, type MockQuery } from "../../test/mocks/claude-sdk";
-import { Pushable } from "../../utils/streams";
+import {
+  type ClientMocks,
+  installFakeSession,
+  makeClientMocks,
+} from "../../test/helpers/claude-agent";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: vi.fn(),
@@ -20,63 +23,10 @@ vi.mock("./mcp/tool-metadata", () => ({
 const { ClaudeAcpAgent } = await import("./claude-agent");
 type Agent = InstanceType<typeof ClaudeAcpAgent>;
 
-interface ClientMocks {
-  sessionUpdate: ReturnType<typeof vi.fn>;
-  extNotification: ReturnType<typeof vi.fn>;
-}
-
 function makeAgent(): { agent: Agent; client: ClientMocks } {
-  const client: ClientMocks = {
-    sessionUpdate: vi.fn().mockResolvedValue(undefined),
-    extNotification: vi.fn().mockResolvedValue(undefined),
-  };
+  const client = makeClientMocks();
   const agent = new ClaudeAcpAgent(client as unknown as AgentSideConnection);
   return { agent, client };
-}
-
-function installFakeSession(
-  agent: Agent,
-  sessionId: string,
-  knownSlashCommands?: Set<string>,
-): MockQuery {
-  const query = createMockQuery();
-  const input = new Pushable();
-  const abortController = new AbortController();
-
-  const session = {
-    query,
-    queryOptions: { sessionId, cwd: "/tmp/repo", abortController },
-    buildInProcessMcpServers: () => ({}),
-    localToolsServerNames: [] as string[],
-    input,
-    cancelled: false,
-    interruptReason: undefined,
-    settingsManager: { dispose: vi.fn(), getRepoRoot: () => "/tmp/repo" },
-    permissionMode: "default" as const,
-    abortController,
-    accumulatedUsage: {
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedReadTokens: 0,
-      cachedWriteTokens: 0,
-    },
-    sessionResources: new Set(),
-    configOptions: [],
-    promptRunning: false,
-    pendingMessages: new Map(),
-    nextPendingOrder: 0,
-    cwd: "/tmp/repo",
-    notificationHistory: [] as unknown[],
-    taskRunId: "run-1",
-    lastContextWindowSize: 200_000,
-    modelId: "claude-sonnet-4-6",
-    knownSlashCommands,
-  };
-
-  (agent as unknown as { session: typeof session }).session = session;
-  (agent as unknown as { sessionId: string }).sessionId = sessionId;
-
-  return query;
 }
 
 function findUnsupportedChunkText(
@@ -148,7 +98,7 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
 
   it.each(cases)("$label", async (tc) => {
     const { agent, client } = makeAgent();
-    const query = installFakeSession(
+    const { query } = installFakeSession(
       agent,
       tc.sessionId,
       tc.knownCommands as Set<string> | undefined,
@@ -208,7 +158,7 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
   it("returns 'cancelled' when the SDK never yields after interrupt (issue #680)", async () => {
     const { agent } = makeAgent();
     const sessionId = "s-wedged";
-    const query = installFakeSession(agent, sessionId);
+    const { query } = installFakeSession(agent, sessionId);
     query.interrupt.mockImplementation(async () => {});
     (agent as unknown as { forceCancelGraceMs: number }).forceCancelGraceMs = 5;
 
