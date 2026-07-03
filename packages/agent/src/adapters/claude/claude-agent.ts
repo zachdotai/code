@@ -39,6 +39,7 @@ import {
   type Options,
   type Query,
   query,
+  type SDKMessage,
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -88,6 +89,7 @@ import {
   handleStreamEvent,
   handleSystemMessage,
   handleUserAssistantMessage,
+  type MessageHandlerContext,
 } from "./conversion/sdk-to-acp";
 import {
   rehydrateTaskState,
@@ -242,6 +244,26 @@ export interface ClaudeAcpAgentOptions {
   gatewayEnv?: GatewayEnv;
 }
 
+/**
+ * Tracks the background "idle drain" loop that pumps the SDK query stream
+ * between turns (see {@link ClaudeAcpAgent.startIdleDrain}). Without it, output
+ * the SDK produces on its own — e.g. a fired `ScheduleWakeup` / `/loop`
+ * continuation — sits unread in the query iterator until the next `prompt()`
+ * call, so autonomous turns appear frozen until the user sends another message.
+ */
+interface IdleDrainState {
+  /** Set by a starting `prompt()` (or teardown) to hand the query back. */
+  stop: boolean;
+  /**
+   * A message the drainer pulled after `stop` was requested. It is handed to
+   * the incoming `prompt()` so its turn loop processes it (and, when it is the
+   * user-message echo, still sees `promptReplayed`). Never dropped.
+   */
+  handoff?: SDKMessage;
+  /** Resolves when the drain loop has fully exited. */
+  done: Promise<void>;
+}
+
 export class ClaudeAcpAgent extends BaseAcpAgent {
   readonly adapterName = "claude";
   declare session: Session;
@@ -253,6 +275,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   private options?: ClaudeAcpAgentOptions;
   private enrichment?: Enrichment;
   private enrichedReadCache: EnrichedReadCache = new Map();
+  /** Non-null while the between-turns idle drainer is running. */
+  private idleDrain: IdleDrainState | null = null;
 
   constructor(client: AgentSideConnection, options?: ClaudeAcpAgentOptions) {
     super(client);
@@ -435,6 +459,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
+    // Reclaim the query stream from the between-turns idle drainer (if running)
+    // before we touch it. This only flags it; `settleIdleDrainStop()` below waits
+    // for it to actually release ownership once our user message is pushed.
+    this.requestIdleDrainStop();
+
     const userMessage = promptToClaude(params);
     const promptUuid = randomUUID();
     userMessage.uuid = promptUuid;
@@ -566,25 +595,40 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       },
     };
 
+    // Wait for the idle drainer to release the query. Our user message was
+    // already pushed above, so its echo is what unblocks the drainer's pending
+    // `query.next()`; the drainer hands that message back to us here rather than
+    // consuming it, so `promptReplayed` still flips below.
+    let carriedMessage = await this.settleIdleDrainStop();
+
     try {
       while (true) {
-        const nextMessage = this.session.query.next();
-        const next = await withAbort(nextMessage, cancelController.signal);
-        if (next.result === "aborted" || cancelController.signal.aborted) {
-          void nextMessage.catch((err) =>
-            this.logger.warn("in-flight query.next() rejected after cancel", {
-              sessionId: params.sessionId,
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-          return {
-            stopReason: "cancelled",
-            _meta: this.session.interruptReason
-              ? { interruptReason: this.session.interruptReason }
-              : undefined,
-          };
+        let message: SDKMessage | undefined;
+        let done: boolean | undefined;
+        if (carriedMessage) {
+          message = carriedMessage;
+          carriedMessage = undefined;
+          done = false;
+        } else {
+          const nextMessage = this.session.query.next();
+          const next = await withAbort(nextMessage, cancelController.signal);
+          if (next.result === "aborted" || cancelController.signal.aborted) {
+            void nextMessage.catch((err) =>
+              this.logger.warn("in-flight query.next() rejected after cancel", {
+                sessionId: params.sessionId,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+            return {
+              stopReason: "cancelled",
+              _meta: this.session.interruptReason
+                ? { interruptReason: this.session.interruptReason }
+                : undefined,
+            };
+          }
+          message = next.value.value ?? undefined;
+          done = next.value.done;
         }
-        const { value: message, done } = next.value;
 
         if (done || !message) {
           if (this.session.cancelled) {
@@ -1172,6 +1216,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       // entries behind; without this they'd carry over into the next turn
       // and collide with new content-block indices.
       this.toolUseStreamCache.clear();
+      let handedOffQueued = false;
       if (!handedOff) {
         this.session.promptRunning = false;
         if (errored) {
@@ -1192,14 +1237,34 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           if (next) {
             next[1].resolve(false);
             this.session.pendingMessages.delete(next[0]);
+            handedOffQueued = true;
           }
         }
+      }
+
+      // Clean, idle end of turn: start pumping the query stream in the
+      // background so an autonomous continuation (a fired `ScheduleWakeup` /
+      // `/loop` turn) streams to the client immediately instead of buffering
+      // until the user sends the next message. Skip when another turn already
+      // owns the loop (handoff), when the turn errored/cancelled, or when the
+      // session is tearing down. Deferred so this prompt() returns first.
+      if (
+        !errored &&
+        !handedOff &&
+        !handedOffQueued &&
+        !this.session.cancelled
+      ) {
+        const sessionId = params.sessionId;
+        queueMicrotask(() => this.startIdleDrain(sessionId));
       }
     }
   }
 
   // Called by BaseAcpAgent#cancel() to interrupt the session
   protected async interrupt(): Promise<void> {
+    // A cancel/close may land while the between-turns idle drainer owns the
+    // query; stop it so `query.interrupt()` below isn't racing a live reader.
+    this.requestIdleDrainStop();
     this.session.cancelled = true;
     for (const [, pending] of this.session.pendingMessages) {
       pending.resolve(true);
@@ -1222,6 +1287,206 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     await this.session.query.interrupt();
+  }
+
+  /**
+   * Flag the idle drainer (if any) to release the query at its next boundary.
+   * Cheap and synchronous; `settleIdleDrainStop()` performs the actual wait.
+   */
+  private requestIdleDrainStop(): void {
+    if (this.idleDrain) {
+      this.idleDrain.stop = true;
+    }
+  }
+
+  /**
+   * Wait for a stop-requested idle drainer to release the query and return the
+   * message it pulled last (if any) so the caller's turn loop can process it.
+   * Returns undefined when no drainer was running.
+   */
+  private async settleIdleDrainStop(): Promise<SDKMessage | undefined> {
+    const state = this.idleDrain;
+    if (!state) return undefined;
+    state.stop = true;
+    await state.done;
+    if (this.idleDrain === state) {
+      this.idleDrain = null;
+    }
+    return state.handoff;
+  }
+
+  /**
+   * Pump the SDK query stream between turns.
+   *
+   * The turn loop in `prompt()` only reads `query.next()` while a prompt is in
+   * flight, so anything the SDK emits on its own after a turn ends — a fired
+   * `ScheduleWakeup` / `/loop` continuation — is never read and stays buffered
+   * in the iterator until the next `prompt()`, which is why autonomous turns
+   * look frozen until the user sends another message. This background loop reads
+   * those messages and forwards them to the client as they arrive.
+   *
+   * Ownership is single-reader: a starting `prompt()` (or `interrupt()`) calls
+   * `requestIdleDrainStop()` + `settleIdleDrainStop()`, and this loop releases
+   * the query — handing back the one message it had pulled — before `prompt()`
+   * reads it. Every step is guarded so a drainer fault only stops draining
+   * (reverting to prior behavior), never breaks the session.
+   */
+  private startIdleDrain(sessionId: string): void {
+    if (this.idleDrain) return;
+    if (this.session.promptRunning) return;
+    if (this.session.abortController.signal.aborted) return;
+
+    // Capture the query and a context up front. A `refreshSession()` may swap
+    // `this.session` out from under us; binding here keeps this loop scoped to
+    // the query it started on, which will end (iterator done) on that refresh.
+    const query = this.session.query;
+    const supportsTerminalOutput =
+      (
+        this.clientCapabilities?._meta as
+          | ClientCapabilities["_meta"]
+          | undefined
+      )?.terminal_output === true;
+    const context: MessageHandlerContext = {
+      session: this.session,
+      sessionId,
+      client: this.client,
+      toolUseCache: this.toolUseCache,
+      toolUseStreamCache: this.toolUseStreamCache,
+      fileContentCache: this.fileContentCache,
+      enrichedReadCache: this.enrichedReadCache,
+      logger: this.logger,
+      supportsTerminalOutput,
+      streamedAssistantBlocks: {
+        textIds: new Set<string>(),
+        thinkingIds: new Set<string>(),
+      },
+    };
+
+    const state: IdleDrainState = { stop: false, done: Promise.resolve() };
+    this.idleDrain = state;
+
+    state.done = (async () => {
+      try {
+        while (!state.stop) {
+          let result: IteratorResult<SDKMessage, void>;
+          try {
+            result = await query.next();
+          } catch (err) {
+            this.logger.debug("Idle drain query ended", {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            break;
+          }
+          if (state.stop) {
+            // A prompt() is taking the query back. Hand it the message we just
+            // pulled instead of processing it, so it isn't lost and so a user
+            // echo still flips promptReplayed there.
+            if (!result.done && result.value) {
+              state.handoff = result.value;
+            }
+            break;
+          }
+          if (result.done || !result.value) break;
+          try {
+            await this.forwardAutonomousMessage(result.value, context);
+          } catch (err) {
+            this.logger.warn("Idle drain failed to forward message", {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      } finally {
+        // Clear the slot unless we're holding a handoff message for an incoming
+        // prompt() — that case is cleared by settleIdleDrainStop() once it has
+        // read the message. Clearing whenever there's nothing to hand back means
+        // a stop from interrupt()/refreshSession (which never call settle) can't
+        // leak a stale drainer slot.
+        if (state.handoff === undefined && this.idleDrain === state) {
+          this.idleDrain = null;
+        }
+      }
+    })();
+  }
+
+  /**
+   * Forward a single SDK message produced by an autonomous (non-prompt) turn to
+   * the client, reusing the same handlers as the main turn loop so displayed
+   * content is identical. Turn-control concerns (usage accounting, refusal
+   * capture, pending-prompt handoff) are intentionally omitted — an autonomous
+   * turn has no awaiting `prompt()` and no queued prompts — and result/idle
+   * markers only reset per-turn streaming dedupe state.
+   */
+  private async forwardAutonomousMessage(
+    message: SDKMessage,
+    context: MessageHandlerContext,
+  ): Promise<void> {
+    const resetStreamDedupe = () => {
+      context.streamedAssistantBlocks?.textIds.clear();
+      context.streamedAssistantBlocks?.thinkingIds.clear();
+    };
+
+    switch (message.type) {
+      case "assistant":
+      case "user": {
+        if (
+          message.type === "user" &&
+          "isReplay" in message &&
+          (message as Record<string, unknown>).isReplay
+        ) {
+          return;
+        }
+        const result = await handleUserAssistantMessage(message, context);
+        if (result.error) {
+          this.logger.warn("Idle drain: user/assistant handler error", {
+            sessionId: context.sessionId,
+            error: result.error.message,
+          });
+        }
+        return;
+      }
+      case "stream_event":
+        await handleStreamEvent(message, context);
+        return;
+      case "system": {
+        if (
+          message.subtype === "session_state_changed" &&
+          (message as Record<string, unknown>).state === "idle"
+        ) {
+          resetStreamDedupe();
+          return;
+        }
+        await handleSystemMessage(message, context);
+        return;
+      }
+      case "result":
+        // Autonomous turn boundary; its content was already forwarded above.
+        resetStreamDedupe();
+        return;
+      case "tool_progress":
+        await this.client.sessionUpdate({
+          sessionId: context.sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: message.tool_use_id,
+            status: "in_progress",
+            _meta: {
+              claudeCode: {
+                toolName: message.tool_name,
+                toolResponse: {
+                  elapsedTimeSeconds: message.elapsed_time_seconds,
+                },
+              },
+            } satisfies ToolUpdateMeta,
+          },
+        });
+        return;
+      default:
+        // auth_status, rate_limit_event, prompt_suggestion, tool_use_summary,
+        // raw SDK passthroughs — nothing to surface for an autonomous turn.
+        return;
+    }
   }
 
   /**
@@ -1297,6 +1562,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       serverCount: Object.keys(mcpServers).length,
       sessionId: this.sessionId,
     });
+
+    // Stop the idle drainer before tearing the query down; the interrupt below
+    // ends its blocked `query.next()`, after which it self-clears.
+    this.requestIdleDrainStop();
 
     // Abort FIRST so any stuck in-flight HTTP request unblocks — otherwise
     // interrupt() can deadlock waiting on an API call that never returns.
