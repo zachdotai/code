@@ -165,3 +165,60 @@ describe("SessionService.connectToTask start failure", () => {
     ]);
   });
 });
+
+describe("SessionService.connectToTask missing auth", () => {
+  it("persists the run configuration on the auth-required error session", async () => {
+    const setSession = vi.fn();
+    const deps = {
+      store: {
+        getSessionByTaskId: () => undefined,
+        getSessions: () => ({}),
+        setSession,
+      },
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+      getIsOnline: () => true,
+      trpc: {
+        agent: {
+          onSessionIdleKilled: {
+            subscribe: () => ({ unsubscribe: vi.fn() }),
+          },
+        },
+      },
+    } as unknown as SessionServiceDeps;
+
+    const service = new SessionService(deps);
+    // No credentials → the no-auth branch stores an error session and returns
+    // before ever starting a run.
+    vi.spyOn(
+      service as unknown as {
+        getAuthCredentialsStatus: () => Promise<unknown>;
+      },
+      "getAuthCredentialsStatus",
+    ).mockResolvedValue({ kind: "missing" });
+
+    await service.connectToTask({
+      task: {
+        id: "task-1",
+        title: "Test task",
+        description: "Ship the fix",
+        latest_run: null,
+      } as unknown as Task,
+      repoPath: "/repo",
+      initialPrompt: [{ type: "text", text: "Ship the fix" }],
+      executionMode: "auto",
+      adapter: "claude",
+      model: "claude-fable-5",
+      reasoningLevel: "high",
+    });
+
+    const stored = setSession.mock.calls.at(-1)?.[0] as AgentSession;
+    expect(stored.status).toBe("error");
+    expect(stored.model).toBe("claude-fable-5");
+    expect(stored.adapter).toBe("claude");
+    expect(stored.executionMode).toBe("auto");
+    expect(stored.reasoningLevel).toBe("high");
+    expect(stored.initialPrompt).toEqual([
+      { type: "text", text: "Ship the fix" },
+    ]);
+  });
+});
