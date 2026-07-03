@@ -22,10 +22,12 @@ import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
+import { useFileSearchStore } from "@posthog/ui/features/command/fileSearchStore";
 import {
   formatHotkeyParts,
   SHORTCUTS,
 } from "@posthog/ui/features/command/keyboard-shortcuts";
+import { useFileSearchContext } from "@posthog/ui/features/command/useFileSearchContext";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import {
@@ -51,6 +53,7 @@ import {
   FileTextIcon,
   GearIcon,
   HomeIcon,
+  MagnifyingGlassIcon,
   MoonIcon,
   ReloadIcon,
   SunIcon,
@@ -133,6 +136,9 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   );
   const { data: tasks = [] } = useTasks();
   const [query, setQuery] = useState("");
+  const { repoPath } = useFileSearchContext();
+  const canSearchFiles = !!repoPath;
+  const openFilePicker = useFileSearchStore((state) => state.openPicker);
   const [systemPrefersDark, setSystemPrefersDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -282,6 +288,17 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       },
     ];
 
+    if (canSearchFiles) {
+      actions.push({
+        id: "search-files",
+        label: "Search files",
+        keywords: "file find open",
+        icon: <MagnifyingGlassIcon className="h-3 w-3 text-gray-11" />,
+        action: "search-files",
+        onRun: openFilePicker,
+      });
+    }
+
     const developer: Command[] = [
       {
         id: "show-log-folder",
@@ -334,6 +351,8 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     toggleLeftSidebar,
     openReviewPanel,
     reviewTaskId,
+    canSearchFiles,
+    openFilePicker,
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {
