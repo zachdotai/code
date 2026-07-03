@@ -297,6 +297,12 @@ interface ManagedSession {
   interruptReason?: InterruptReason;
   promptPending: boolean;
   pendingContext?: string;
+  /** Per-task PostHog context (project, attribution, custom instructions,
+   * folders, additional dirs) relocated off the Claude system prompt to keep
+   * the cached tools+system prefix stable across tasks. Injected as a hidden
+   * block on the first user turn, then cleared. Only set for fresh (non-resumed)
+   * sessions — resumed sessions already carry it in their history. */
+  taskContext?: string;
   configOptions?: SessionConfigOption[];
   /** Tracks in-flight MCP tool calls (toolCallId → toolKey) for cancellation */
   inFlightMcpToolCalls: Map<string, string>;
@@ -752,7 +758,7 @@ If a repository IS genuinely required, attach one in this priority order:
     });
 
     try {
-      const systemPrompt = this.buildSystemPrompt(
+      const fullSystemPrompt = this.buildSystemPrompt(
         credentials,
         taskId,
         customInstructions,
@@ -761,6 +767,20 @@ If a repository IS genuinely required, attach one in this priority order:
         channelMode,
         knownLocalFolders,
       );
+      // Prompt-cache prefix stability: for the Claude adapter, keep the
+      // per-task PostHog context OUT of the system prompt. Interpolating it
+      // there (projectId, taskId, folders, custom instructions) fragments the
+      // cached tools+system prefix across tasks, so every task pays a fresh
+      // prefix write instead of a read. Deliver it as a hidden block on the
+      // first user turn instead (see `taskContext` and `prompt()`). Codex (GPT,
+      // no Anthropic prompt caching) reads the append as developer instructions,
+      // and the canvas override is its own constrained prompt — both keep the
+      // context in the system prompt unchanged.
+      const relocateContext = adapter !== "codex" && !systemPromptOverride;
+      const systemPrompt = relocateContext ? { append: "" } : fullSystemPrompt;
+      const taskContext = relocateContext
+        ? fullSystemPrompt.append
+        : undefined;
 
       const bundledSkillsDir = join(
         this.posthogPluginService.getPluginPath(),
@@ -908,6 +928,9 @@ If a repository IS genuinely required, attach one in this priority order:
 
       let configOptions: SessionConfigOption[] | undefined;
       let agentSessionId: string | undefined;
+      // True only when we open a brand-new session below (not load/resume), which
+      // gates first-turn taskContext injection so resumed sessions don't re-inject.
+      let createdFreshSession = false;
 
       // Imported Claude Code CLI session: the transcript JSONL was copied
       // into CLAUDE_CONFIG_DIR at import time, so load it directly and let
@@ -1038,6 +1061,7 @@ If a repository IS genuinely required, attach one in this priority order:
         });
         configOptions = newSessionResponse.configOptions ?? undefined;
         agentSessionId = newSessionResponse.sessionId;
+        createdFreshSession = true;
       }
 
       config.sessionId = agentSessionId;
@@ -1054,6 +1078,7 @@ If a repository IS genuinely required, attach one in this priority order:
         config,
         promptPending: false,
         configOptions,
+        taskContext: createdFreshSession ? taskContext : undefined,
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
@@ -1229,19 +1254,31 @@ If a repository IS genuinely required, attach one in this priority order:
       };
     }
 
-    // Prepend pending context if present
+    // Prepend first-turn task context (Claude only) and any pending context.
+    // Both render as hidden blocks so the user never sees them in the thread.
     let finalPrompt = prompt;
+    const prefixBlocks: ContentBlock[] = [];
+    if (session.taskContext) {
+      // Per-task PostHog context relocated off the system prompt to keep the
+      // cached prefix stable. Injected once, on the first turn, then cleared.
+      prefixBlocks.push({
+        type: "text",
+        text: session.taskContext,
+        _meta: { ui: { hidden: true } },
+      });
+      session.taskContext = undefined;
+    }
     if (session.pendingContext) {
       this.log.info("Prepending context to prompt", { sessionId });
-      finalPrompt = [
-        {
-          type: "text",
-          text: `_${session.pendingContext}_\n\n`,
-          _meta: { ui: { hidden: true } },
-        },
-        ...prompt,
-      ];
+      prefixBlocks.push({
+        type: "text",
+        text: `_${session.pendingContext}_\n\n`,
+        _meta: { ui: { hidden: true } },
+      });
       session.pendingContext = undefined;
+    }
+    if (prefixBlocks.length > 0) {
+      finalPrompt = [...prefixBlocks, ...prompt];
     }
 
     session.lastActivityAt = Date.now();

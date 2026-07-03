@@ -307,6 +307,12 @@ export class AgentServer {
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
+  /** Per-task cloud facts (existing PR URL, base branch, Slack/inbox links)
+   * relocated off the system prompt to keep its cached prefix stable across
+   * tasks. Injected as a hidden block on the first user turn (Claude); undefined
+   * for Codex, whose facts ride in its developer instructions instead. Cleared
+   * after the first message is sent. */
+  private cloudTaskFacts: string | undefined = undefined;
   // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
   // attributions so the most recently created PR in a run wins.
   private readonly evaluatedPrUrls = new Set<string>();
@@ -1160,14 +1166,22 @@ export class AgentServer {
       : null;
 
     const runtimeAdapter = this.getRuntimeAdapter();
-    const sessionSystemPrompt = this.buildSessionSystemPrompt(
+    const sessionSystemPrompt = this.buildSessionSystemPrompt(!!prUrl);
+    // Per-task facts (PR URL, base branch, Slack/inbox links) are kept OUT of the
+    // system prompt to keep its cached prefix stable across tasks, and delivered
+    // instead as a hidden block on the first user turn (Claude) or appended to
+    // developer instructions (Codex — no Anthropic prompt caching).
+    const cloudTaskFacts = this.buildCloudTaskFacts(
       prUrl,
       slackThreadUrl,
       inboxReportUrl,
+      this.config.baseBranch,
     );
+    this.cloudTaskFacts =
+      runtimeAdapter === "codex" ? undefined : cloudTaskFacts;
     const codexInstructions =
       runtimeAdapter === "codex"
-        ? this.buildCodexInstructions(sessionSystemPrompt)
+        ? this.buildCodexInstructions(sessionSystemPrompt, cloudTaskFacts)
         : undefined;
 
     const posthogAPI = new PostHogAPIClient({
@@ -1563,6 +1577,20 @@ export class AgentServer {
       if (initialPrompt.length === 0) {
         this.logger.debug("Task has no description, skipping initial message");
         return;
+      }
+
+      // Relocated per-task facts ride in front of the first user turn as a hidden
+      // block (Claude only; undefined for Codex). Injected once, then cleared.
+      if (this.cloudTaskFacts) {
+        initialPrompt = [
+          {
+            type: "text",
+            text: this.cloudTaskFacts,
+            _meta: { ui: { hidden: true } },
+          },
+          ...initialPrompt,
+        ];
+        this.cloudTaskFacts = undefined;
       }
 
       this.logger.debug("Sending initial task message", {
@@ -2455,15 +2483,9 @@ export class AgentServer {
   }
 
   private buildSessionSystemPrompt(
-    prUrl?: string | null,
-    slackThreadUrl?: string | null,
-    inboxReportUrl?: string | null,
+    hasPr: boolean,
   ): string | { append: string } {
-    const cloudAppend = this.buildCloudSystemPrompt(
-      prUrl,
-      slackThreadUrl,
-      inboxReportUrl,
-    );
+    const cloudAppend = this.buildCloudSystemPrompt(hasPr);
     const userPrompt = this.config.claudeCode?.systemPrompt;
 
     // String override: combine user prompt with cloud instructions
@@ -2484,10 +2506,38 @@ export class AgentServer {
 
   private buildCodexInstructions(
     systemPrompt: string | { append: string },
+    taskFacts?: string,
   ): string {
-    return typeof systemPrompt === "string"
-      ? systemPrompt
-      : systemPrompt.append;
+    const base =
+      typeof systemPrompt === "string" ? systemPrompt : systemPrompt.append;
+    // Codex (GPT, no Anthropic prompt caching) carries the per-task facts in its
+    // developer instructions rather than a first-turn message block.
+    return taskFacts ? [base, taskFacts].join("\n\n") : base;
+  }
+
+  /**
+   * Builds the per-task "task facts" block (existing PR URL, base branch,
+   * Slack/inbox source links). These are deliberately kept OUT of the system
+   * prompt — interpolating them there fragments the cached tools+system prefix
+   * across tasks — and delivered on the first turn instead. Returns undefined
+   * when there are no facts to report.
+   */
+  private buildCloudTaskFacts(
+    prUrl?: string | null,
+    slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
+    baseBranch?: string | null,
+  ): string | undefined {
+    const lines: string[] = [];
+    if (prUrl) lines.push(`- Existing pull request for this task: ${prUrl}`);
+    if (baseBranch)
+      lines.push(`- Base branch for new pull requests: ${baseBranch}`);
+    if (slackThreadUrl)
+      lines.push(`- Originating Slack thread: ${slackThreadUrl}`);
+    if (inboxReportUrl)
+      lines.push(`- Originating inbox report: ${inboxReportUrl}`);
+    if (lines.length === 0) return undefined;
+    return `<task_facts>\nFacts specific to this task. Use these wherever the instructions refer to "the task facts".\n${lines.join("\n")}\n</task_facts>`;
   }
 
   /**
@@ -2556,18 +2606,13 @@ export class AgentServer {
       `IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.\n` +
       `You already have an open pull request: ${prUrl}\n` +
       `You MUST:\n` +
-      `1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`\n` +
+      `1. Check out the existing PR branch with \`gh pr checkout <the PR URL from the task facts>\`\n` +
       `2. Make changes, commit, and push to that branch\n` +
       `You MUST NOT create a new branch, close the existing PR, or create a new PR.`
     );
   }
 
-  private buildCloudSystemPrompt(
-    prUrl?: string | null,
-    slackThreadUrl?: string | null,
-    inboxReportUrl?: string | null,
-  ): string {
-    const taskId = this.config.taskId;
+  private buildCloudSystemPrompt(hasPr: boolean): string {
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
     const isSlack = this.getCloudInteractionOrigin() === "slack";
     const identityInstructions = isSlack
@@ -2635,7 +2680,7 @@ Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to 
 commit messages. The \`git_signed_commit\` tool automatically appends the only trailers
 we want:
   Generated-By: PostHog Code
-  Task-Id: ${taskId}`;
+  Task-Id: <the current task id>`;
 
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
     const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, the contents of Slack threads (do not quote or paraphrase what was said), or unreleased roadmap details. Linking to the originating Slack thread is fine and encouraged — Slack links are auth-gated and useful as context — as are channel references like "raised in #team-foo". Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
@@ -2645,18 +2690,18 @@ we want:
     const createdWith = this.isAutomatedOrigin()
       ? "Created with [PostHog](https://posthog.com?ref=pr)"
       : "Created with [PostHog Code](https://posthog.com/code?ref=pr)";
-    const prFooter = slackThreadUrl
-      ? `*${createdWith} from a [Slack thread](${slackThreadUrl})*`
-      : inboxReportUrl
-        ? `*${createdWith} from an [inbox report](${inboxReportUrl})*`
-        : `*${createdWith}*`;
+    // Static footer. The originating Slack/inbox link (if any) lives in the
+    // task facts on the first turn, not here, so this prompt stays cache-stable.
+    const prFooter = `*${createdWith}*`;
+    const footerLinkNote =
+      "If the task facts include an originating Slack thread or inbox report link, extend that footer with a markdown link to the source, using the exact URL from the task facts.";
 
-    if (prUrl) {
+    if (hasPr) {
       if (!shouldAutoCreatePr) {
         return `${identityInstructions}
 # Cloud Task Execution
 
-This task already has an open pull request: ${prUrl}
+This task already has an open pull request (its URL is listed in the task facts at the top of the conversation).
 
 Do the requested work, but stop with local changes ready for review.
 
@@ -2670,10 +2715,10 @@ ${signedCommitInstructions}
       return `${identityInstructions}
 # Cloud Task Execution
 
-This task already has an open pull request: ${prUrl}
+This task already has an open pull request (its URL is listed in the task facts at the top of the conversation).
 
 After completing the requested changes:
-1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
+1. Check out the existing PR branch with \`gh pr checkout <the PR URL from the task facts>\`
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
    - If the branch is behind its base, call the \`git_signed_merge\` tool first — it merges the base in server-side with a Verified merge commit. Only if it reports a conflict: fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
@@ -2703,7 +2748,7 @@ When the user explicitly asks to clone or work in a GitHub repository:
 - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
 ${whyContextInstruction.trimStart()}
 ${publicRepoSafetyInstruction.trimStart()}
-- End the PR description with a horizontal rule followed by this footer line: ${prFooter}
+- End the PR description with a horizontal rule followed by this footer line: ${prFooter} ${footerLinkNote}
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
       return `${identityInstructions}
@@ -2754,11 +2799,12 @@ ${publicRepoSafetyInstruction}
    - Check the repo for a PR template at \`.github/pull_request_template.md\` (also try \`.github/PULL_REQUEST_TEMPLATE.md\`, \`docs/pull_request_template.md\`, and root variants). If one exists, use its exact section headings as the PR body — do NOT fall back to a generic Summary/Test plan format.
    - If no repo-level template exists, check the org's \`.github\` repo via \`gh api /repos/<owner>/.github/contents/.github/pull_request_template.md\` (and other common paths) and use that as a fallback.
    - Search for matching open issues with \`gh issue list --state open --search '<keywords>'\` (derive keywords from the branch name, commits, and changed files; \`gh issue view <n>\` to confirm relevance). For every issue this PR would resolve, include a \`Closes #<n>\` line in the body so GitHub auto-links and auto-closes it on merge. For issues that are related but not fully resolved, use \`Refs #<n>\` instead.
-4. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and the body prepared above. Add the following footer at the end of the PR description:
+4. Create a draft pull request using \`gh pr create --draft\` with a descriptive title and the body prepared above. If the task facts specify a base branch, target it by adding \`--base <that branch>\`. Add the following footer at the end of the PR description:
 \`\`\`
 ---
 ${prFooter}
 \`\`\`
+${footerLinkNote}
 
 Important:
 - Always create the PR as a draft. Do not ask for confirmation.

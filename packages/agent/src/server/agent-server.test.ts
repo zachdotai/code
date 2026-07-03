@@ -1881,7 +1881,9 @@ describe("AgentServer HTTP Mode", () => {
         "https://github.com/org/repo/pull/1",
       );
       expect(prompt).toContain("stop with local changes ready for review");
-      expect(prompt).toContain("https://github.com/org/repo/pull/1");
+      // PR URL is relocated to the first-turn task-facts block, not the prompt.
+      expect(prompt).not.toContain("https://github.com/org/repo/pull/1");
+      expect(prompt).toContain("task facts");
       expect(prompt).toContain(
         "Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.",
       );
@@ -2018,7 +2020,7 @@ describe("AgentServer HTTP Mode", () => {
         "https://github.com/org/repo/pull/1",
       );
       expect(prompt).toContain(
-        "gh pr checkout https://github.com/org/repo/pull/1",
+        "gh pr checkout <the PR URL from the task facts>",
       );
       expect(prompt).toContain("git_signed_commit");
       expect(prompt).toContain("Committing (signed commits required)");
@@ -2033,7 +2035,7 @@ describe("AgentServer HTTP Mode", () => {
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 
-    it("includes --base flag when baseBranch is configured", () => {
+    it("keeps the base branch value out of the system prompt (relocated to task facts)", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
       server = new AgentServer({
         port,
@@ -2050,18 +2052,19 @@ describe("AgentServer HTTP Mode", () => {
       const prompt = (
         server as unknown as TestableServer
       ).buildCloudSystemPrompt();
-      expect(prompt).toContain(
-        "gh pr create --draft --base add-yolo-to-readme",
-      );
+      expect(prompt).toContain("gh pr create --draft");
+      // The concrete base branch is delivered via the task facts, not baked in.
+      expect(prompt).not.toContain("add-yolo-to-readme");
+      expect(prompt).toContain("If the task facts specify a base branch");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 
-    it("omits --base flag when baseBranch is not configured", () => {
+    it("references the base branch via task facts, not a hard-coded value", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
       const s = createServer();
       const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt();
       expect(prompt).toContain("gh pr create --draft`");
-      expect(prompt).not.toContain("--base");
+      expect(prompt).toContain("If the task facts specify a base branch");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 
@@ -2232,58 +2235,54 @@ describe("AgentServer HTTP Mode", () => {
         }
       });
 
-      it("embeds the Slack thread link in the footer when one is available", () => {
+      it("does not embed the Slack thread link in the footer (relocated to task facts)", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
         try {
           const prompt = (
             createServer() as unknown as TestableServer
-          ).buildCloudSystemPrompt(
-            null,
-            "https://posthog.slack.com/archives/C123/p456",
-          );
+          ).buildCloudSystemPrompt(null);
+          // Static footer; the actual Slack link rides in the first-turn facts.
           expect(prompt).toContain(
-            "*Created with [PostHog](https://posthog.com?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr)*",
           );
-          // The Why bullet no longer carries the thread link.
-          expect(prompt).not.toContain(
-            "this task started from a Slack thread, also link it",
+          expect(prompt).not.toContain("posthog.slack.com");
+          expect(prompt).toContain(
+            "extend that footer with a markdown link to the source",
           );
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
       });
 
-      it("embeds the inbox report link in the footer for a signal_report run", () => {
+      it("does not embed the inbox report link in the footer (relocated to task facts)", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "signal_report";
         try {
           const prompt = (
             createServer() as unknown as TestableServer
-          ).buildCloudSystemPrompt(
-            null,
-            null,
-            "http://localhost:8000/project/1/inbox/rep_1",
-          );
+          ).buildCloudSystemPrompt(null);
           expect(prompt).toContain(
-            "*Created with [PostHog](https://posthog.com?ref=pr) from an [inbox report](http://localhost:8000/project/1/inbox/rep_1)*",
+            "*Created with [PostHog](https://posthog.com?ref=pr)*",
           );
-          expect(prompt).not.toContain("from a [Slack thread]");
+          expect(prompt).not.toContain("/inbox/rep_1");
+          expect(prompt).toContain(
+            "extend that footer with a markdown link to the source",
+          );
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
       });
 
-      it("prefers the Slack thread link over the inbox report link when both are present", () => {
+      it("does not embed origin links in the footer even when both are present (relocated to task facts)", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
         try {
           const prompt = (
             createServer() as unknown as TestableServer
-          ).buildCloudSystemPrompt(
-            null,
-            "https://posthog.slack.com/archives/C123/p456",
-            "http://localhost:8000/project/1/inbox/rep_1",
+          ).buildCloudSystemPrompt(null);
+          expect(prompt).not.toContain("posthog.slack.com");
+          expect(prompt).not.toContain("/inbox/rep_1");
+          expect(prompt).toContain(
+            "*Created with [PostHog](https://posthog.com?ref=pr)*",
           );
-          expect(prompt).toContain("from a [Slack thread]");
-          expect(prompt).not.toContain("from an [inbox report]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
@@ -2305,19 +2304,17 @@ describe("AgentServer HTTP Mode", () => {
         expect(prompt).not.toContain("from a [Slack thread]");
       });
 
-      it("embeds the Slack thread link in the footer on the no-repository path when one is available", () => {
+      it("does not embed the Slack thread link in the no-repository footer (relocated to task facts)", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
         try {
           const prompt = (
             createServer({
               repositoryPath: undefined,
             }) as unknown as TestableServer
-          ).buildCloudSystemPrompt(
-            null,
-            "https://posthog.slack.com/archives/C123/p456",
-          );
+          ).buildCloudSystemPrompt(null);
+          expect(prompt).not.toContain("posthog.slack.com");
           expect(prompt).toContain(
-            "*Created with [PostHog](https://posthog.com?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+            "extend that footer with a markdown link to the source",
           );
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;

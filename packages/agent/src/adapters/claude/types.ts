@@ -84,6 +84,10 @@ export type Session = BaseSession & {
   forceCancelTimer?: ReturnType<typeof setTimeout>;
   pendingMessages: Map<string, PendingMessage>;
   nextPendingOrder: number;
+  /** Count of turns that reached a model request, incremented at the first
+   * `message_start` of each turn. Tags the prompt-cache breakdown log with a
+   * turn index and task-start detection. Unset is treated as 0. */
+  turnCount?: number;
   emitRawSDKMessages: boolean | SDKMessageFilter[];
   /** Refreshed at session init and on MCP/skill changes. */
   contextBreakdownBaseline?: ContextBreakdownBaseline;

@@ -16,10 +16,15 @@ const mockNewSession = vi.hoisted(() =>
   }),
 );
 
+const mockPrompt = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ stopReason: "end_turn" }),
+);
+
 const mockClientSideConnection = vi.hoisted(() =>
   vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.initialize = vi.fn().mockResolvedValue({});
     this.newSession = mockNewSession;
+    this.prompt = mockPrompt;
     this.loadSession = vi.fn().mockResolvedValue({ configOptions: [] });
     this.resumeSession = vi.fn().mockResolvedValue({ configOptions: [] });
   }),
@@ -233,6 +238,51 @@ describe("AgentService", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  describe("system prompt relocation (prompt-cache prefix stability)", () => {
+    it("keeps per-task context out of the Claude system prompt", async () => {
+      await service.startSession({ ...baseSessionParams, adapter: "claude" });
+
+      expect(mockNewSession).toHaveBeenCalledTimes(1);
+      // Relocated: the Claude adapter receives an empty append, so the
+      // tools+system prefix stays byte-identical across tasks.
+      expect(mockNewSession.mock.calls[0][0]._meta.systemPrompt).toEqual({
+        append: "",
+      });
+    });
+
+    it("keeps per-task context in the system prompt for codex (no Anthropic caching)", async () => {
+      await service.startSession({ ...baseSessionParams, adapter: "codex" });
+
+      expect(mockNewSession).toHaveBeenCalledTimes(1);
+      const { append } = mockNewSession.mock.calls[0][0]._meta.systemPrompt;
+      expect(append).toContain("PostHog context");
+    });
+
+    it("delivers the relocated context as a hidden block on the first Claude turn", async () => {
+      await service.startSession({ ...baseSessionParams, adapter: "claude" });
+      await service.prompt("run-1", [{ type: "text", text: "hello" }]);
+
+      expect(mockPrompt).toHaveBeenCalledTimes(1);
+      const sent = mockPrompt.mock.calls[0][0].prompt;
+      expect(sent[0]).toMatchObject({
+        type: "text",
+        _meta: { ui: { hidden: true } },
+      });
+      expect(sent[0].text).toContain("PostHog context");
+      expect(sent.at(-1)).toMatchObject({ type: "text", text: "hello" });
+    });
+
+    it("does not re-inject the context on later turns", async () => {
+      await service.startSession({ ...baseSessionParams, adapter: "claude" });
+      await service.prompt("run-1", [{ type: "text", text: "first" }]);
+      await service.prompt("run-1", [{ type: "text", text: "second" }]);
+
+      const second = mockPrompt.mock.calls[1][0].prompt;
+      expect(second).toHaveLength(1);
+      expect(second[0]).toMatchObject({ type: "text", text: "second" });
+    });
   });
 
   describe("MCP servers", () => {

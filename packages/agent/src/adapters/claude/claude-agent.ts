@@ -525,6 +525,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cache_read_input_tokens: 0,
       cache_creation_input_tokens: 0,
     };
+    // Emit the prompt-cache breakdown once per turn, at the first model request
+    // (where cache read vs. write on the tools+system prefix is revealed).
+    // Guards against the multiple message_start events an agentic turn produces.
+    let loggedTurnCacheBreakdown = false;
     // Tracks whether we're inside a compaction. The SDK emits the terminal
     // `status` (compact_result success/failed) twice for a single failed
     // compaction, and the two messages are indistinguishable, so we report the
@@ -933,6 +937,35 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                   cache_creation_input_tokens:
                     u.cache_creation_input_tokens ?? 0,
                 };
+
+                // #4 prompt-cache measurement: log read vs. write on the
+                // cacheable prefix for the turn's first model request. On a cold
+                // task start the whole tools+system prefix is a write (ratio ~0);
+                // once warm it reads back (ratio ~1). taskStart isolates the
+                // cross-task signal from within-session warm-path turns.
+                if (!loggedTurnCacheBreakdown) {
+                  loggedTurnCacheBreakdown = true;
+                  this.session.turnCount = (this.session.turnCount ?? 0) + 1;
+                  const cacheReadTokens =
+                    lastStreamUsage.cache_read_input_tokens;
+                  const cacheWriteTokens =
+                    lastStreamUsage.cache_creation_input_tokens;
+                  const cacheablePrefix = cacheReadTokens + cacheWriteTokens;
+                  this.logger.info("prompt cache breakdown", {
+                    sessionId: params.sessionId,
+                    taskRunId: this.session.taskRunId,
+                    turn: this.session.turnCount,
+                    taskStart: this.session.turnCount === 1,
+                    cacheReadTokens,
+                    cacheWriteTokens,
+                    uncachedInputTokens: lastStreamUsage.input_tokens,
+                    prefixCacheHitRatio:
+                      cacheablePrefix > 0
+                        ? Math.round((cacheReadTokens / cacheablePrefix) * 100) /
+                          100
+                        : null,
+                  });
+                }
               } else {
                 const u = message.event.usage;
                 lastStreamUsage = {
@@ -1804,6 +1837,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       promptRunning: false,
       pendingMessages: new Map(),
       nextPendingOrder: 0,
+      turnCount: 0,
       emitRawSDKMessages: meta?.claudeCode?.emitRawSDKMessages ?? false,
       contextBreakdownBaseline: {
         ...emptyBaseline(),
