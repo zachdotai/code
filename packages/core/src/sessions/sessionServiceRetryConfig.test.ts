@@ -77,12 +77,16 @@ describe("SessionService.clearSessionError retry config", () => {
 
     await service.clearSessionError("task-1", "/repo");
 
-    // args: taskId, taskTitle, repoPath, auth, initialPrompt,
-    //       executionMode, adapter, model, reasoningLevel
-    const call = createNewLocalSession.mock.calls[0];
-    expect(call[5]).toBe("auto"); // executionMode
-    expect(call[6]).toBe("claude"); // adapter
-    expect(call[7]).toBe("claude-fable-5"); // model
-    expect(call[8]).toBe("high"); // reasoningLevel
+    expect(createNewLocalSession).toHaveBeenCalledWith(
+      "task-1",
+      "Test task",
+      "/repo",
+      { client: {} },
+      session.initialPrompt,
+      "auto", // executionMode
+      "claude", // adapter
+      "claude-fable-5", // model
+      "high", // reasoningLevel
+    );
   });
 });

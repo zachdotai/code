@@ -1299,9 +1299,6 @@ export class SessionService {
     session.channel = result.channel;
     session.status = "connected";
     session.adapter = adapter;
-    // Capture the run configuration so retry/reset flows (clearSessionError)
-    // can recreate the session with the user's original choices instead of
-    // falling back to DEFAULT_GATEWAY_MODEL and losing e.g. a Fable selection.
     session.model = model;
     session.executionMode = executionMode;
     session.reasoningLevel = reasoningLevel;
@@ -3413,8 +3410,6 @@ export class SessionService {
           "Unable to reach server. Please check your connection.",
         );
       }
-      // Preserve the original run configuration so the retried session keeps
-      // the user's model/adapter/mode instead of reverting to defaults.
       await this.createNewLocalSession(
         taskId,
         taskTitle,
