@@ -51,6 +51,8 @@ export type CommandMenuAction =
   | "go-forward"
   | "open-task"
   | "open-channel"
+  | "search-files"
+  | "open-file"
   | "reload-window"
   | "show-log-folder";
 
