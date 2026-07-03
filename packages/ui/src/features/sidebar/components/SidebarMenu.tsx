@@ -1,3 +1,4 @@
+import { folderGroupId } from "@posthog/core/sidebar/groupTasks";
 import { isTaskActivelyRunning } from "@posthog/core/sidebar/taskRunning";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { Separator } from "@posthog/quill";
@@ -8,6 +9,8 @@ import {
   useArchiveTask,
 } from "@posthog/ui/features/archive/useArchiveTask";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
+import { useExternalAppAction } from "@posthog/ui/features/external-apps/useExternalAppAction";
+import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
@@ -51,6 +54,10 @@ function SidebarMenuComponent() {
 
   const { data: workspaces = {} } = useWorkspaces();
   const { markAsViewed } = useTaskViewed();
+
+  const { folders, removeFolder } = useFolders();
+
+  const openExternalApp = useExternalAppAction();
 
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
@@ -214,6 +221,35 @@ function SidebarMenuComponent() {
       }
     },
     [hostClient, queryClient, clearSelection, archiveCacheKeys],
+  );
+
+  const handleGroupContextMenu = useCallback(
+    async (groupId: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const folder = folders.find((f) => folderGroupId(f) === groupId);
+      if (!folder) return;
+      try {
+        const result =
+          await hostClient.contextMenu.showFolderContextMenu.mutate({
+            folderName: folder.name,
+            folderPath: folder.path,
+          });
+        if (result.action?.type === "remove") {
+          await removeFolder(folder.id);
+        } else if (result.action?.type === "external-app") {
+          await openExternalApp(
+            result.action.action,
+            folder.path,
+            folder.name,
+            { workspace: null },
+          );
+        }
+      } catch (error) {
+        log.error("Failed to show folder context menu", error);
+      }
+    },
+    [folders, removeFolder, hostClient, openExternalApp],
   );
 
   const handleTaskContextMenu = (
@@ -431,6 +467,7 @@ function SidebarMenuComponent() {
               onTaskTogglePin={handleTaskTogglePin}
               onTaskEditSubmit={handleTaskEditSubmit}
               onTaskEditCancel={handleTaskEditCancel}
+              onGroupContextMenu={handleGroupContextMenu}
               hasMore={sidebarData.hasMore}
             />
           )}
