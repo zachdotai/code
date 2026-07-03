@@ -14,7 +14,8 @@ import {
   SUBMIT_OPTION_ID,
 } from "@posthog/ui/primitives/ActionSelector";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuestionDraftStore } from "./questionDraftStore";
 import { type BasePermissionProps, toSelectorOptions } from "./types";
 
 function parseQuestionMeta(raw: unknown): QuestionMeta | undefined {
@@ -98,10 +99,41 @@ export function QuestionPermission({
   const allQuestions = meta?.questions ?? [];
   const totalQuestions = allQuestions.length;
 
-  const [activeStep, setActiveStep] = useState(0);
-  const [stepAnswers, setStepAnswers] = useState<Map<number, StepAnswer>>(
-    () => new Map(),
+  // Drafts are keyed per question (the tool-call id), so a half-typed answer
+  // survives switching to another session and back.
+  const questionId = toolCall.toolCallId;
+  const { getDraft, setDraft, clearDraft } = useQuestionDraftStore(
+    (s) => s.actions,
   );
+
+  const [activeStep, setActiveStep] = useState(
+    () => getDraft(questionId)?.activeStep ?? 0,
+  );
+  const [stepAnswers, setStepAnswers] = useState<Map<number, StepAnswer>>(
+    () => {
+      const saved = getDraft(questionId)?.stepAnswers;
+      return saved
+        ? new Map(
+            Object.entries(saved).map(([step, answer]) => [
+              Number(step),
+              answer,
+            ]),
+          )
+        : new Map();
+    },
+  );
+
+  // Persist the draft on every change; cleared when the question is resolved.
+  useEffect(() => {
+    setDraft(questionId, {
+      activeStep,
+      stepAnswers: Object.fromEntries(stepAnswers),
+    });
+  }, [questionId, activeStep, stepAnswers, setDraft]);
+
+  // Snapshot of persisted answers used to seed the selector's per-step state on
+  // mount, so restored values are shown when navigating between steps.
+  const [initialStepAnswers] = useState(() => Object.fromEntries(stepAnswers));
 
   const isOnSubmitStep = activeStep >= totalQuestions;
 
@@ -136,6 +168,23 @@ export function QuestionPermission({
     [activeStep, totalQuestions],
   );
 
+  const resolveSelect = useCallback(
+    (
+      optionId: string,
+      customInput?: string,
+      answers?: Record<string, string>,
+    ) => {
+      clearDraft(questionId);
+      onSelect(optionId, customInput, answers);
+    },
+    [clearDraft, questionId, onSelect],
+  );
+
+  const handleCancel = useCallback(() => {
+    clearDraft(questionId);
+    onCancel();
+  }, [clearDraft, questionId, onCancel]);
+
   const handleMultiSelect = useCallback(
     (optionIds: string[], customInput?: string) => {
       if (totalQuestions === 1) {
@@ -144,23 +193,23 @@ export function QuestionPermission({
           [0, { selectedIds: optionIds, customInput: customInput ?? "" }],
         ]);
         const answers = buildAnswersRecord(singleAnswer, allQuestions);
-        onSelect(filteredIds[0] ?? "other", customInput, answers);
+        resolveSelect(filteredIds[0] ?? "other", customInput, answers);
         return;
       }
       advanceStep(optionIds, customInput);
     },
-    [totalQuestions, onSelect, advanceStep, allQuestions],
+    [totalQuestions, resolveSelect, advanceStep, allQuestions],
   );
 
   const handleSelect = useCallback(
     (optionId: string, customInput?: string) => {
       if (isOnSubmitStep) {
         if (optionId === CANCEL_OPTION_ID) {
-          onCancel();
+          handleCancel();
           return;
         }
         const answers = buildAnswersRecord(stepAnswers, allQuestions);
-        onSelect(SUBMIT_OPTION_ID, undefined, answers);
+        resolveSelect(SUBMIT_OPTION_ID, undefined, answers);
         return;
       }
 
@@ -169,7 +218,7 @@ export function QuestionPermission({
           [0, { selectedIds: [optionId], customInput: customInput ?? "" }],
         ]);
         const answers = buildAnswersRecord(singleAnswer, allQuestions);
-        onSelect(optionId, customInput, answers);
+        resolveSelect(optionId, customInput, answers);
         return;
       }
 
@@ -180,8 +229,8 @@ export function QuestionPermission({
       stepAnswers,
       allQuestions,
       totalQuestions,
-      onSelect,
-      onCancel,
+      resolveSelect,
+      handleCancel,
       advanceStep,
     ],
   );
@@ -194,6 +243,19 @@ export function QuestionPermission({
           selectedIds: optionIds,
           customInput: customInput ?? "",
         });
+        return next;
+      });
+    },
+    [],
+  );
+
+  // Persist in-progress edits to the current step before it is committed via a
+  // step change or submit, so half-typed text is not lost on a session switch.
+  const handleDraftChange = useCallback(
+    (stepIndex: number, optionIds: string[], customInput: string) => {
+      setStepAnswers((prev) => {
+        const next = new Map(prev);
+        next.set(stepIndex, { selectedIds: optionIds, customInput });
         return next;
       });
     },
@@ -272,11 +334,14 @@ export function QuestionPermission({
       currentStep={activeStep}
       steps={steps}
       initialSelections={currentStepAnswer?.selectedIds}
+      initialCustomInput={currentStepAnswer?.customInput}
+      initialStepAnswers={initialStepAnswers}
       onSelect={handleSelect}
       onMultiSelect={handleMultiSelect}
-      onCancel={onCancel}
+      onCancel={handleCancel}
       onStepChange={handleStepChange}
       onStepAnswer={handleStepAnswer}
+      onDraftChange={handleDraftChange}
     />
   );
 }

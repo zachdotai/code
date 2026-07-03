@@ -28,6 +28,11 @@ export interface ActionSelectorProps {
   currentStep?: number;
   steps?: StepInfo[];
   initialSelections?: string[];
+  // Restores an in-progress free-text answer (e.g. after remounting).
+  initialCustomInput?: string;
+  // Seeds per-step answers so navigating between steps after a remount shows
+  // previously entered values. Only read on mount.
+  initialStepAnswers?: Record<number, StepAnswer>;
   hideSubmitButton?: boolean;
   onSelect: (optionId: string, customInput?: string) => void;
   onMultiSelect?: (optionIds: string[], customInput?: string) => void;
@@ -37,5 +42,12 @@ export interface ActionSelectorProps {
     stepIndex: number,
     optionIds: string[],
     customInput?: string,
+  ) => void;
+  // Fires on every edit to the current step's selection or free-text input, so
+  // a caller can persist a draft that is not yet committed via onStepAnswer.
+  onDraftChange?: (
+    stepIndex: number,
+    optionIds: string[],
+    customInput: string,
   ) => void;
 }

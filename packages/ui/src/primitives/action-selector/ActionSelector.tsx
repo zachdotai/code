@@ -18,12 +18,15 @@ export function ActionSelector({
   currentStep = 0,
   steps,
   initialSelections,
+  initialCustomInput,
+  initialStepAnswers,
   hideSubmitButton = false,
   onSelect,
   onMultiSelect,
   onCancel,
   onStepChange,
   onStepAnswer,
+  onDraftChange,
 }: ActionSelectorProps) {
   const state = useActionSelectorState({
     options,
@@ -33,10 +36,13 @@ export function ActionSelector({
     currentStep,
     steps,
     initialSelections,
+    initialCustomInput,
+    initialStepAnswers,
     onSelect,
     onMultiSelect,
     onStepChange,
     onStepAnswer,
+    onDraftChange,
   });
 
   const {

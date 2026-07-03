@@ -60,7 +60,9 @@ export function PermissionSelector({
     case "switch_mode":
       return <SwitchModePermission {...props} />;
     case "question":
-      return <QuestionPermission {...props} />;
+      // Key per question so answer state resets (and its draft is read) when a
+      // new question replaces the current one without unmounting.
+      return <QuestionPermission key={toolCall.toolCallId} {...props} />;
     default:
       return <DefaultPermission {...props} />;
   }

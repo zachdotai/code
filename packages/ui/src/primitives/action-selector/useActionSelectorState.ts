@@ -44,10 +44,13 @@ interface UseActionSelectorStateProps {
   currentStep: number;
   steps: ActionSelectorProps["steps"];
   initialSelections?: string[];
+  initialCustomInput?: string;
+  initialStepAnswers?: ActionSelectorProps["initialStepAnswers"];
   onSelect: ActionSelectorProps["onSelect"];
   onMultiSelect: ActionSelectorProps["onMultiSelect"];
   onStepChange: ActionSelectorProps["onStepChange"];
   onStepAnswer: ActionSelectorProps["onStepAnswer"];
+  onDraftChange?: ActionSelectorProps["onDraftChange"];
 }
 
 export function useActionSelectorState({
@@ -58,21 +61,31 @@ export function useActionSelectorState({
   currentStep,
   steps,
   initialSelections,
+  initialCustomInput,
+  initialStepAnswers,
   onSelect,
   onMultiSelect,
   onStepChange,
   onStepAnswer,
+  onDraftChange,
 }: UseActionSelectorStateProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [checkedOptions, setCheckedOptions] = useState<Set<string>>(() =>
     initialSelections?.length ? new Set(initialSelections) : new Set(),
   );
-  const [customInput, setCustomInput] = useState("");
+  const [customInput, setCustomInput] = useState(initialCustomInput ?? "");
   const [isEditing, setIsEditing] = useState(false);
   const [internalStep, setInternalStep] = useState(currentStep);
-  const [stepAnswers, setStepAnswers] = useState<Map<number, StepAnswer>>(
-    () => new Map(),
+  const [stepAnswers, setStepAnswers] = useState<Map<number, StepAnswer>>(() =>
+    initialStepAnswers
+      ? new Map(
+          Object.entries(initialStepAnswers).map(([step, answer]) => [
+            Number(step),
+            answer,
+          ]),
+        )
+      : new Map(),
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const prevActiveStepRef = useRef(currentStep);
@@ -178,6 +191,38 @@ export function useActionSelectorState({
       });
     }
   }, [selectedOption, showSubmitButton, multiSelect]);
+
+  // On mount, if a free-text answer was restored, focus its custom-input option
+  // so the recovered text is visible rather than hidden behind an unselected row.
+  const restoredCustomInputRef = useRef(false);
+  useEffect(() => {
+    if (restoredCustomInputRef.current) return;
+    restoredCustomInputRef.current = true;
+    if (!(initialCustomInput ?? "").trim()) return;
+    const idx = allOptions.findIndex((opt) => needsCustomInput(opt));
+    if (idx >= 0) {
+      setSelectedIndex(idx);
+      setIsEditing(true);
+    }
+  }, [initialCustomInput, allOptions]);
+
+  // Report every edit to the current step's draft so callers can persist it.
+  // A ref skips the initial mount, so restoring a draft does not immediately
+  // echo it back.
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  const draftReportMountedRef = useRef(false);
+  useEffect(() => {
+    if (!draftReportMountedRef.current) {
+      draftReportMountedRef.current = true;
+      return;
+    }
+    onDraftChangeRef.current?.(
+      internalStep,
+      Array.from(checkedOptions),
+      customInput,
+    );
+  }, [checkedOptions, customInput, internalStep]);
 
   const moveUp = useCallback(() => {
     setHoveredIndex(null);
