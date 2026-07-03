@@ -92,6 +92,33 @@ describe("SessionService.clearSessionError retry config", () => {
   });
 });
 
+const CONNECT_PARAMS = {
+  task: {
+    id: "task-1",
+    title: "Test task",
+    description: "Ship the fix",
+    latest_run: null,
+  } as unknown as Task,
+  repoPath: "/repo",
+  initialPrompt: [{ type: "text", text: "Ship the fix" }],
+  executionMode: "auto",
+  adapter: "claude",
+  model: "claude-fable-5",
+  reasoningLevel: "high",
+} as const;
+
+function assertRunConfigPersisted(setSession: ReturnType<typeof vi.fn>): void {
+  const stored = setSession.mock.calls.at(-1)?.[0] as AgentSession;
+  expect(stored.status).toBe("error");
+  expect(stored.model).toBe("claude-fable-5");
+  expect(stored.adapter).toBe("claude");
+  expect(stored.executionMode).toBe("auto");
+  expect(stored.reasoningLevel).toBe("high");
+  expect(stored.initialPrompt).toEqual([
+    { type: "text", text: "Ship the fix" },
+  ]);
+}
+
 describe("SessionService.connectToTask start failure", () => {
   it("persists the run configuration on the error session so retry keeps the model", async () => {
     const setSession = vi.fn();
@@ -139,30 +166,9 @@ describe("SessionService.connectToTask start failure", () => {
       },
     });
 
-    await service.connectToTask({
-      task: {
-        id: "task-1",
-        title: "Test task",
-        description: "Ship the fix",
-        latest_run: null,
-      } as unknown as Task,
-      repoPath: "/repo",
-      initialPrompt: [{ type: "text", text: "Ship the fix" }],
-      executionMode: "auto",
-      adapter: "claude",
-      model: "claude-fable-5",
-      reasoningLevel: "high",
-    });
+    await service.connectToTask(CONNECT_PARAMS);
 
-    const stored = setSession.mock.calls.at(-1)?.[0] as AgentSession;
-    expect(stored.status).toBe("error");
-    expect(stored.model).toBe("claude-fable-5");
-    expect(stored.adapter).toBe("claude");
-    expect(stored.executionMode).toBe("auto");
-    expect(stored.reasoningLevel).toBe("high");
-    expect(stored.initialPrompt).toEqual([
-      { type: "text", text: "Ship the fix" },
-    ]);
+    assertRunConfigPersisted(setSession);
   });
 });
 
@@ -196,29 +202,8 @@ describe("SessionService.connectToTask missing auth", () => {
       "getAuthCredentialsStatus",
     ).mockResolvedValue({ kind: "missing" });
 
-    await service.connectToTask({
-      task: {
-        id: "task-1",
-        title: "Test task",
-        description: "Ship the fix",
-        latest_run: null,
-      } as unknown as Task,
-      repoPath: "/repo",
-      initialPrompt: [{ type: "text", text: "Ship the fix" }],
-      executionMode: "auto",
-      adapter: "claude",
-      model: "claude-fable-5",
-      reasoningLevel: "high",
-    });
+    await service.connectToTask(CONNECT_PARAMS);
 
-    const stored = setSession.mock.calls.at(-1)?.[0] as AgentSession;
-    expect(stored.status).toBe("error");
-    expect(stored.model).toBe("claude-fable-5");
-    expect(stored.adapter).toBe("claude");
-    expect(stored.executionMode).toBe("auto");
-    expect(stored.reasoningLevel).toBe("high");
-    expect(stored.initialPrompt).toEqual([
-      { type: "text", text: "Ship the fix" },
-    ]);
+    assertRunConfigPersisted(setSession);
   });
 });
