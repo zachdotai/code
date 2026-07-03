@@ -215,6 +215,16 @@ export function createWindow(): void {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      // Keep the renderer running at full speed when the window is backgrounded
+      // or occluded. Chromium otherwise clamps (and, once the window is hidden,
+      // effectively freezes) renderer timers, which stalls the setTimeout-based
+      // flush that commits streamed agent events to the conversation store. That
+      // stall is what makes a waiting/looping agent appear to hang while
+      // backgrounded — its messages pile up unflushed and only render in a burst
+      // when the window is refocused (e.g. by sending a follow-up). Disabling
+      // throttling keeps live streaming flowing while the app sits in the
+      // background during long-running agent runs.
+      backgroundThrottling: false,
       preload: path.join(__dirname, "preload.js"),
       enableBlinkFeatures: "GetDisplayMedia",
       partition: "persist:main",
