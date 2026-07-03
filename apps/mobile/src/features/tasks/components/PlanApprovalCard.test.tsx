@@ -250,39 +250,29 @@ describe("PlanApprovalCard", () => {
     expect(onModelChange).toHaveBeenCalledWith("claude-sonnet-5");
   });
 
-  it("hides the model control when no onModelChange is provided", () => {
+  it.each([
+    {
+      name: "when no onModelChange is provided",
+      props: {
+        toolData: { toolCallId: "tool-model", status: "pending" as const },
+        permission: pendingPermission,
+        model: "claude-opus-4-8",
+      },
+    },
+    {
+      name: "once the plan is resolved",
+      props: {
+        toolData: { toolCallId: "tool-model", status: "completed" as const },
+        permission: pendingPermission,
+        model: "claude-opus-4-8",
+        onModelChange: vi.fn(),
+      },
+    },
+  ])("hides the model control $name", ({ props }) => {
     let renderer: ReturnType<typeof create> | null = null;
 
     act(() => {
-      renderer = create(
-        createElement(PlanApprovalCard, {
-          toolData: { toolCallId: "tool-model", status: "pending" },
-          permission: pendingPermission,
-          model: "claude-opus-4-8",
-        }),
-      );
-    });
-
-    if (!renderer) {
-      throw new Error("Renderer not created");
-    }
-
-    expect(renderer.root.findAllByType("Pill")).toHaveLength(0);
-    expect(renderer.root.findAllByType("SelectSheet")).toHaveLength(0);
-  });
-
-  it("hides the model control once the plan is resolved", () => {
-    let renderer: ReturnType<typeof create> | null = null;
-
-    act(() => {
-      renderer = create(
-        createElement(PlanApprovalCard, {
-          toolData: { toolCallId: "tool-model", status: "completed" },
-          permission: pendingPermission,
-          model: "claude-opus-4-8",
-          onModelChange: vi.fn(),
-        }),
-      );
+      renderer = create(createElement(PlanApprovalCard, props));
     });
 
     if (!renderer) {
