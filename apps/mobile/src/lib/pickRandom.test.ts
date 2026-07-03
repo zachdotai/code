@@ -13,10 +13,15 @@ describe("pickRandom", () => {
     }
   });
 
-  it("draws a fresh pick from the random value on each call", () => {
-    const pool = ["a", "b", "c", "d"];
-    vi.spyOn(Math, "random").mockReturnValueOnce(0).mockReturnValueOnce(0.99);
-    expect(pickRandom(pool)).toBe("a");
-    expect(pickRandom(pool)).toBe("d");
-  });
+  it.each([
+    { randomValue: 0, expected: "a" },
+    { randomValue: 0.99, expected: "d" },
+  ])(
+    "returns $expected when Math.random returns $randomValue",
+    ({ randomValue, expected }) => {
+      const pool = ["a", "b", "c", "d"];
+      vi.spyOn(Math, "random").mockReturnValueOnce(randomValue);
+      expect(pickRandom(pool)).toBe(expected);
+    },
+  );
 });
