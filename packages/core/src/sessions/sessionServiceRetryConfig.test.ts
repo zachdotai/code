@@ -1,7 +1,11 @@
 import type { AgentSession } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { describe, expect, it, vi } from "vitest";
-import { SessionService, type SessionServiceDeps } from "./sessionService";
+import {
+  type ConnectParams,
+  SessionService,
+  type SessionServiceDeps,
+} from "./sessionService";
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
@@ -92,7 +96,7 @@ describe("SessionService.clearSessionError retry config", () => {
   });
 });
 
-const CONNECT_PARAMS = {
+const CONNECT_PARAMS: ConnectParams = {
   task: {
     id: "task-1",
     title: "Test task",
@@ -105,7 +109,7 @@ const CONNECT_PARAMS = {
   adapter: "claude",
   model: "claude-fable-5",
   reasoningLevel: "high",
-} as const;
+};
 
 function assertRunConfigPersisted(setSession: ReturnType<typeof vi.fn>): void {
   // Exactly one error session should be stored — pinning this stops a future
