@@ -2,6 +2,8 @@ import { createElement } from "react";
 import { TextInput } from "react-native";
 import { act, create } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+import { modelLabel } from "../composer/options";
+import type { CloudPendingPermissionRequest } from "../types";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 
 vi.mock("phosphor-react-native", () => ({
@@ -11,6 +13,16 @@ vi.mock("phosphor-react-native", () => ({
     createElement("ChatCircle", props),
   CheckCircle: (props: Record<string, unknown>) =>
     createElement("CheckCircle", props),
+  Robot: (props: Record<string, unknown>) => createElement("Robot", props),
+}));
+
+vi.mock("../composer/Pill", () => ({
+  Pill: (props: Record<string, unknown>) => createElement("Pill", props),
+}));
+
+vi.mock("../composer/SelectSheet", () => ({
+  SelectSheet: (props: Record<string, unknown>) =>
+    createElement("SelectSheet", props),
 }));
 
 vi.mock("@/lib/theme", () => ({
@@ -195,5 +207,89 @@ describe("PlanApprovalCard", () => {
       customInput: "Keep the rollback plan tighter.",
       displayText: "Keep the rollback plan tighter.",
     });
+  });
+
+  const pendingPermission: CloudPendingPermissionRequest = {
+    requestId: "request-model",
+    toolCall: {
+      toolCallId: "tool-model",
+      title: "Ready to code?",
+      kind: "switch_mode",
+      rawInput: { plan: "Do the thing" },
+    },
+    options: [{ kind: "allow_once", optionId: "default", name: "Approve" }],
+  };
+
+  it("shows the model pill and swaps the model inline before approval", () => {
+    const onModelChange = vi.fn();
+    let renderer: ReturnType<typeof create> | null = null;
+
+    act(() => {
+      renderer = create(
+        createElement(PlanApprovalCard, {
+          toolData: { toolCallId: "tool-model", status: "pending" },
+          permission: pendingPermission,
+          model: "claude-opus-4-8",
+          onModelChange,
+        }),
+      );
+    });
+
+    if (!renderer) {
+      throw new Error("Renderer not created");
+    }
+
+    const pill = renderer.root.findByType("Pill");
+    expect(pill.props.label).toBe(modelLabel("claude-opus-4-8"));
+
+    const sheet = renderer.root.findByType("SelectSheet");
+    act(() => {
+      sheet.props.onChange("claude-sonnet-5");
+    });
+
+    expect(onModelChange).toHaveBeenCalledWith("claude-sonnet-5");
+  });
+
+  it("hides the model control when no onModelChange is provided", () => {
+    let renderer: ReturnType<typeof create> | null = null;
+
+    act(() => {
+      renderer = create(
+        createElement(PlanApprovalCard, {
+          toolData: { toolCallId: "tool-model", status: "pending" },
+          permission: pendingPermission,
+          model: "claude-opus-4-8",
+        }),
+      );
+    });
+
+    if (!renderer) {
+      throw new Error("Renderer not created");
+    }
+
+    expect(renderer.root.findAllByType("Pill")).toHaveLength(0);
+    expect(renderer.root.findAllByType("SelectSheet")).toHaveLength(0);
+  });
+
+  it("hides the model control once the plan is resolved", () => {
+    let renderer: ReturnType<typeof create> | null = null;
+
+    act(() => {
+      renderer = create(
+        createElement(PlanApprovalCard, {
+          toolData: { toolCallId: "tool-model", status: "completed" },
+          permission: pendingPermission,
+          model: "claude-opus-4-8",
+          onModelChange: vi.fn(),
+        }),
+      );
+    });
+
+    if (!renderer) {
+      throw new Error("Renderer not created");
+    }
+
+    expect(renderer.root.findAllByType("Pill")).toHaveLength(0);
+    expect(renderer.root.findAllByType("SelectSheet")).toHaveLength(0);
   });
 });

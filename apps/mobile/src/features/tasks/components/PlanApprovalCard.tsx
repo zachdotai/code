@@ -2,11 +2,15 @@ import {
   ArrowsClockwise,
   ChatCircle,
   CheckCircle,
+  Robot,
 } from "phosphor-react-native";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { MarkdownText, type ToolStatus } from "@/features/chat";
 import { useThemeColors } from "@/lib/theme";
+import { MODELS, modelLabel } from "../composer/options";
+import { Pill } from "../composer/Pill";
+import { SelectSheet } from "../composer/SelectSheet";
 import type { CloudPendingPermissionRequest } from "../types";
 
 interface ToolData {
@@ -26,6 +30,9 @@ interface PlanApprovalCardProps {
   toolData: ToolData;
   permission?: CloudPendingPermissionRequest;
   onSendPermissionResponse?: (args: PermissionResponseArgs) => void;
+  /** Current model for the task; enables the inline model swap when set. */
+  model?: string;
+  onModelChange?: (model: string) => void;
 }
 
 function optionMeta(option: CloudPendingPermissionRequest["options"][number]) {
@@ -82,12 +89,15 @@ export function PlanApprovalCard({
   toolData,
   permission,
   onSendPermissionResponse,
+  model,
+  onModelChange,
 }: PlanApprovalCardProps) {
   const themeColors = useThemeColors();
   const [selectedCustomOptionId, setSelectedCustomOptionId] = useState<
     string | null
   >(null);
   const [customInput, setCustomInput] = useState("");
+  const [modelSheetOpen, setModelSheetOpen] = useState(false);
 
   const response = permission?.response;
   const planText = useMemo(() => extractPlanText(permission), [permission]);
@@ -102,6 +112,7 @@ export function PlanApprovalCard({
     !!response ||
     toolData.status === "completed" ||
     toolData.status === "error";
+  const canSwapModel = !isResolved && !!onModelChange && !!model;
 
   if (!permission) {
     return null;
@@ -148,6 +159,17 @@ export function PlanApprovalCard({
           Approve this plan to proceed?
         </Text>
       </View>
+
+      {canSwapModel && model && (
+        <View className="flex-row items-center gap-2 px-3 pb-2">
+          <Text className="font-mono text-[12px] text-gray-11">Model</Text>
+          <Pill
+            icon={<Robot size={14} color={themeColors.gray[11]} />}
+            label={modelLabel(model)}
+            onPress={() => setModelSheetOpen(true)}
+          />
+        </View>
+      )}
 
       {planText && (
         <View className="px-3 pb-3">
@@ -266,6 +288,22 @@ export function PlanApprovalCard({
             );
           })}
         </View>
+      )}
+
+      {canSwapModel && model && (
+        <SelectSheet
+          open={modelSheetOpen}
+          title="Model"
+          value={model}
+          onChange={onModelChange}
+          onClose={() => setModelSheetOpen(false)}
+          options={MODELS.map((m) => ({
+            value: m.value,
+            label: m.label,
+            description: m.description,
+            icon: <Robot size={16} color={themeColors.gray[11]} />,
+          }))}
+        />
       )}
     </View>
   );

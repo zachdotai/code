@@ -60,6 +60,10 @@ interface TaskSessionViewProps {
   onRetry?: () => void;
   onOpenTask?: (taskId: string) => void;
   onSendPermissionResponse?: (args: PermissionResponseArgs) => void;
+  /** Current task model + setter, forwarded to the plan-approval card so the
+   *  user can swap the model inline before approving. */
+  model?: string;
+  onModelChange?: (model: string) => void;
   contentContainerStyle?: object;
   // Renders a user message at the bottom of the thread before the SSE echo
   // arrives — for the gap between submit and the live session catching up.
@@ -805,6 +809,8 @@ export function TaskSessionView({
   onRetry,
   onOpenTask,
   onSendPermissionResponse,
+  model,
+  onModelChange,
   contentContainerStyle,
   optimisticUserMessage,
 }: TaskSessionViewProps) {
@@ -963,6 +969,8 @@ export function TaskSessionView({
                 toolData={item.toolData}
                 permission={pendingPermissions?.[item.toolData.toolCallId]}
                 onSendPermissionResponse={onSendPermissionResponse}
+                model={model}
+                onModelChange={onModelChange}
               />
             );
           }
@@ -994,7 +1002,13 @@ export function TaskSessionView({
           return null;
       }
     },
-    [onOpenTask, onSendPermissionResponse, pendingPermissions],
+    [
+      onOpenTask,
+      onSendPermissionResponse,
+      pendingPermissions,
+      model,
+      onModelChange,
+    ],
   );
 
   return (

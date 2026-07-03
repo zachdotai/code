@@ -626,6 +626,8 @@ export default function TaskDetailScreen() {
           }
           onOpenTask={handleOpenTask}
           onSendPermissionResponse={handleSendPermissionResponse}
+          model={composerModel}
+          onModelChange={handleModelChange}
           optimisticUserMessage={
             optimisticPrompt
               ? {
