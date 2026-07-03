@@ -115,8 +115,8 @@ function assertRunConfigPersisted(setSession: ReturnType<typeof vi.fn>): void {
   // Exactly one error session should be stored — pinning this stops a future
   // setup change (e.g. one that lets the auto-retry loop run) from slipping an
   // intermediate session past the last-call assertions below.
-  expect(setSession.mock.calls.length).toBe(1);
-  const stored = setSession.mock.calls.at(-1)?.[0] as AgentSession;
+  expect(setSession).toHaveBeenCalledTimes(1);
+  const stored = setSession.mock.calls[0][0] as AgentSession;
   expect(stored.status).toBe("error");
   expect(stored.model).toBe("claude-fable-5");
   expect(stored.adapter).toBe("claude");
