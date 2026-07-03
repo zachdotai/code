@@ -657,6 +657,7 @@ export class SessionService {
     session.model = params.model;
     session.executionMode = params.executionMode;
     session.reasoningLevel = params.reasoningLevel;
+    // Guarded so a later non-fresh caller can't blank an existing prompt with an empty one.
     if (params.initialPrompt?.length) {
       session.initialPrompt = params.initialPrompt;
     }
