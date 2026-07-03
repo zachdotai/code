@@ -123,13 +123,23 @@ export function QuestionPermission({
     },
   );
 
-  // Persist the draft on every change; cleared when the question is resolved.
+  // Persist the draft on every change, but only while it holds real content, so
+  // questions the user never answers (or that the agent later removes without a
+  // submit/cancel) don't leave empty entries accumulating in storage.
   useEffect(() => {
-    setDraft(questionId, {
-      activeStep,
-      stepAnswers: Object.fromEntries(stepAnswers),
-    });
-  }, [questionId, activeStep, stepAnswers, setDraft]);
+    const hasContent = Array.from(stepAnswers.values()).some(
+      (answer) =>
+        answer.selectedIds.length > 0 || answer.customInput.trim() !== "",
+    );
+    if (hasContent) {
+      setDraft(questionId, {
+        activeStep,
+        stepAnswers: Object.fromEntries(stepAnswers),
+      });
+    } else {
+      clearDraft(questionId);
+    }
+  }, [questionId, activeStep, stepAnswers, setDraft, clearDraft]);
 
   // Snapshot of persisted answers used to seed the selector's per-step state on
   // mount, so restored values are shown when navigating between steps.

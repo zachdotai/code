@@ -21,7 +21,7 @@ function questionToolCall(toolCallId: string): PermissionToolCall {
         },
       ],
     },
-  } as unknown as PermissionToolCall;
+  } satisfies PermissionToolCall;
 }
 
 const options: PermissionOption[] = [];
@@ -103,6 +103,13 @@ describe("QuestionPermission draft persistence", () => {
     await user.keyboard("{Enter}");
 
     expect(onSelect).toHaveBeenCalled();
+    expect(useQuestionDraftStore.getState().actions.getDraft("q-1")).toBeNull();
+  });
+
+  it("does not persist a draft for an untouched question", async () => {
+    const { view } = renderQuestion(questionToolCall("q-1"));
+    // Mounting alone must not leave an empty draft behind on unmount.
+    view.unmount();
     expect(useQuestionDraftStore.getState().actions.getDraft("q-1")).toBeNull();
   });
 });

@@ -97,6 +97,23 @@ export function useActionSelectorState({
   const numSteps = steps?.length ?? 0;
   const showSubmitButton = !hideSubmitButton && (multiSelect || hasSteps);
 
+  // Refs let the edit handlers report the current draft imperatively without
+  // re-subscribing on every keystroke.
+  const activeStepRef = useRef(activeStep);
+  activeStepRef.current = activeStep;
+  const checkedOptionsRef = useRef(checkedOptions);
+  checkedOptionsRef.current = checkedOptions;
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+
+  const reportDraft = useCallback((checked: Set<string>, input: string) => {
+    onDraftChangeRef.current?.(
+      activeStepRef.current,
+      Array.from(checked),
+      input,
+    );
+  }, []);
+
   const allOptions = useMemo(() => {
     const opts = allowCustomInput
       ? [...options, { id: OTHER_OPTION_ID, label: "Other", description: "" }]
@@ -206,24 +223,6 @@ export function useActionSelectorState({
     }
   }, [initialCustomInput, allOptions]);
 
-  // Report every edit to the current step's draft so callers can persist it.
-  // A ref skips the initial mount, so restoring a draft does not immediately
-  // echo it back.
-  const onDraftChangeRef = useRef(onDraftChange);
-  onDraftChangeRef.current = onDraftChange;
-  const draftReportMountedRef = useRef(false);
-  useEffect(() => {
-    if (!draftReportMountedRef.current) {
-      draftReportMountedRef.current = true;
-      return;
-    }
-    onDraftChangeRef.current?.(
-      internalStep,
-      Array.from(checkedOptions),
-      customInput,
-    );
-  }, [checkedOptions, customInput, internalStep]);
-
   const moveUp = useCallback(() => {
     setHoveredIndex(null);
     setSelectedIndex((prev) => (prev > 0 ? prev - 1 : numOptions - 1));
@@ -250,26 +249,25 @@ export function useActionSelectorState({
 
   const toggleCheck = useCallback(
     (optionId: string) => {
-      setCheckedOptions((prev) => {
-        const next = new Set(prev);
-        if (multiSelect) {
-          if (next.has(optionId)) {
-            next.delete(optionId);
-          } else {
-            next.add(optionId);
-          }
+      const next = new Set(checkedOptionsRef.current);
+      if (multiSelect) {
+        if (next.has(optionId)) {
+          next.delete(optionId);
         } else {
-          if (next.has(optionId)) {
-            next.clear();
-          } else {
-            next.clear();
-            next.add(optionId);
-          }
+          next.add(optionId);
         }
-        return next;
-      });
+      } else {
+        if (next.has(optionId)) {
+          next.clear();
+        } else {
+          next.clear();
+          next.add(optionId);
+        }
+      }
+      setCheckedOptions(next);
+      reportDraft(next, customInputRef.current);
     },
-    [multiSelect],
+    [multiSelect, reportDraft],
   );
 
   const handleSubmitMulti = useCallback(() => {
@@ -475,28 +473,29 @@ export function useActionSelectorState({
   const handleCustomInputChange = useCallback(
     (value: string) => {
       setCustomInput(value);
+      let nextChecked = checkedOptionsRef.current;
       if (
         showSubmitButton &&
         selectedOption &&
         needsCustomInput(selectedOption)
       ) {
-        setCheckedOptions((prev) => {
-          const next = new Set(prev);
-          if (value.trim()) {
-            if (!prev.has(selectedOption.id)) {
-              if (!multiSelect) {
-                next.clear();
-              }
-              next.add(selectedOption.id);
+        const next = new Set(checkedOptionsRef.current);
+        if (value.trim()) {
+          if (!next.has(selectedOption.id)) {
+            if (!multiSelect) {
+              next.clear();
             }
-          } else {
-            next.delete(selectedOption.id);
+            next.add(selectedOption.id);
           }
-          return next;
-        });
+        } else {
+          next.delete(selectedOption.id);
+        }
+        nextChecked = next;
+        setCheckedOptions(next);
       }
+      reportDraft(nextChecked, value);
     },
-    [showSubmitButton, selectedOption, multiSelect],
+    [showSubmitButton, selectedOption, multiSelect, reportDraft],
   );
 
   const ensureChecked = useCallback((optionId: string) => {
