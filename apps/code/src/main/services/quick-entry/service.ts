@@ -163,10 +163,16 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
     this.emit(QuickEntryServiceEvent.Hide, true);
   }
 
+  // Kicks off task creation in the main window but leaves the overlay up so
+  // the renderer can show its confirmation state; the renderer then calls
+  // completeSubmit() to dismiss and reveal the app.
   requestCreateTask(request: CreateTaskRequest): void {
+    this.emit(QuickEntryServiceEvent.CreateTaskRequested, request);
+  }
+
+  completeSubmit(): void {
     this.hide();
     showAndFocusMainWindow();
-    this.emit(QuickEntryServiceEvent.CreateTaskRequested, request);
   }
 
   async getRecentRepos(limit = 8): Promise<RecentRepoEntry[]> {

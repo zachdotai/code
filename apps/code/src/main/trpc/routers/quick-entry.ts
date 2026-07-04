@@ -76,6 +76,10 @@ export const quickEntryRouter = router({
       getService().requestCreateTask(input);
     }),
 
+  completeSubmit: publicProcedure.mutation(() => {
+    getService().completeSubmit();
+  }),
+
   getRecentRepos: publicProcedure
     .input(
       z.object({ limit: z.number().int().positive().optional() }).optional(),

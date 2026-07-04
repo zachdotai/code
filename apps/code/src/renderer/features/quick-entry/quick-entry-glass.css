@@ -1,0 +1,211 @@
+/*
+ * Glassmorphism chrome for the quick entry overlay. Blur/tint are code
+ * constants (not user settings); accent variables are set per mode by
+ * QuickEntryView. Real CSS (vs Tailwind) because the surface needs
+ * backdrop-filter fallbacks, media queries, and ProseMirror overrides.
+ */
+
+.qe-root {
+  --qe-blur: 28px;
+  /* "smoke" tint. Alternatives: light rgba(44,44,50,.48), ink rgba(12,12,14,.74) */
+  --qe-tint: rgba(22, 22, 24, 0.6);
+  font-family: var(--font-sans);
+}
+
+.qe-panel {
+  background: var(--qe-tint);
+  backdrop-filter: blur(var(--qe-blur)) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 32px 80px -12px rgba(0, 0, 0, 0.8);
+  transition: box-shadow 160ms ease;
+}
+
+.qe-panel[data-focused="true"] {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 32px 80px -12px rgba(0, 0, 0, 0.8),
+    0 0 0 1.5px var(--qe-glow),
+    0 0 32px var(--qe-glow);
+}
+
+.qe-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.qe-chip:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.qe-chip:focus-visible {
+  outline: 1.5px solid var(--qe-accent);
+  outline-offset: 1px;
+}
+
+.qe-chip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.qe-keycap {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+}
+
+/* Editor: 16px sans, near-white, accent caret; placeholder per spec. The
+   inner selectors out-specify the cli-editor Tailwind utility classes. */
+.qe-editor .cli-editor {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.94);
+  caret-color: var(--qe-accent);
+}
+
+.qe-editor .cli-editor p.is-editor-empty:first-child::before {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.qe-editor {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* Toolbar icon buttons (paperclip et al) sit on glass, not card. */
+.qe-toolbar button[data-quill] {
+  background: transparent;
+}
+
+.qe-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+}
+
+.qe-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Glass popovers for every picker. Menus portal to document.body, so these
+   are top-level rules; the doubled class out-specifies quill's single-class
+   utility styles without !important. */
+.qe-menu.qe-menu {
+  background: rgba(28, 28, 32, 0.86);
+  backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 5px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+.qe-menu [role="menuitem"],
+.qe-menu [role="menuitemradio"] {
+  font-size: 12.5px;
+  border-radius: 6px;
+}
+
+.qe-menu [role="menuitem"]:hover,
+.qe-menu [role="menuitemradio"]:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.qe-menu[data-mono="true"] [role="menuitem"],
+.qe-menu[data-mono="true"] [role="menuitemradio"] {
+  font-family: var(--font-mono);
+}
+
+.qe-menu [role="menuitemradio"][data-checked] {
+  color: var(--qe-accent-text);
+}
+
+.qe-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: var(--qe-accent);
+  color: var(--qe-on-accent);
+  box-shadow: 0 0 16px var(--qe-glow);
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.qe-send:disabled {
+  cursor: default;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.35);
+  box-shadow: none;
+}
+
+.qe-send:focus-visible {
+  outline: 1.5px solid var(--qe-accent);
+  outline-offset: 1px;
+}
+
+.qe-confirm {
+  animation: qe-confirm-in 180ms ease;
+}
+
+@keyframes qe-confirm-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* biome-ignore lint/correctness/noUnknownMediaFeatureName: prefers-reduced-transparency is real and supported in Chromium 118+ */
+@media (prefers-reduced-transparency: reduce) {
+  .qe-panel.qe-panel,
+  .qe-menu.qe-menu {
+    background: var(--gray-2);
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qe-panel {
+    transition: none;
+  }
+  .qe-confirm {
+    animation: none;
+  }
+  .qe-send {
+    transition: none;
+  }
+}

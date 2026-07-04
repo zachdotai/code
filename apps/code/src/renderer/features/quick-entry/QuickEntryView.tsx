@@ -1,27 +1,54 @@
-import { ButtonGroup } from "@posthog/quill";
+import "./quick-entry-glass.css";
+import type { SessionConfigSelectGroup } from "@agentclientprotocol/sdk";
+import { ArrowUp, Check, Cpu, Gauge } from "@phosphor-icons/react";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
-import { FolderPicker } from "@posthog/ui/features/folder-picker/FolderPicker";
-import { BranchSelector } from "@posthog/ui/features/git-interaction/components/BranchSelector";
+import { formatHotkey } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useGitQueries } from "@posthog/ui/features/git-interaction/useGitQueries";
-import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
+import { AttachmentMenu } from "@posthog/ui/features/message-editor/components/AttachmentMenu";
+import { AttachmentsBar } from "@posthog/ui/features/message-editor/components/AttachmentsBar";
 import { contentToXml } from "@posthog/ui/features/message-editor/content";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import { useTaskInputHistoryStore } from "@posthog/ui/features/message-editor/taskInputHistoryStore";
-import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
-import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
-import { UnifiedModelSelector } from "@posthog/ui/features/sessions/components/UnifiedModelSelector";
-import { getCurrentModeFromConfigOptions } from "@posthog/ui/features/sessions/sessionStore";
+import { TiptapEditorContent } from "@posthog/ui/features/message-editor/tiptap/editorSurface";
+import { useTiptapEditor } from "@posthog/ui/features/message-editor/tiptap/useTiptapEditor";
+import { getModeStyle } from "@posthog/ui/features/sessions/modeStyles";
+import {
+  flattenSelectOptions,
+  getCurrentModeFromConfigOptions,
+} from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { usePreviewConfig } from "@posthog/ui/features/task-detail/hooks/usePreviewConfig";
-import { Flex, Text } from "@radix-ui/themes";
+import { acceleratorToHotkey } from "@posthog/ui/utils/accelerator";
+import { hasOpenOverlay } from "@posthog/ui/utils/overlay";
+import { Text } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { logger } from "@utils/logger";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import {
+  AdapterSwitchItem,
+  BranchChip,
+  GlassSelect,
+  Keycap,
+  RepoChip,
+} from "./QuickEntryGlassControls";
 
 const log = logger.scope("quick-entry-view");
 const SESSION_ID = "quick-entry";
+const CONFIRMATION_MS = 1200;
+
+// Accent follows mode: Plan is amber, everything agentic is orange.
+const PLAN_ACCENT: Record<string, string> = {
+  "--qe-accent": "var(--amber-9, #ffc53d)",
+  "--qe-accent-text": "var(--amber-11, #ffca16)",
+  "--qe-on-accent": "#16120c",
+};
+const AGENT_ACCENT: Record<string, string> = {
+  "--qe-accent": "var(--orange-9, #f76b15)",
+  "--qe-accent-text": "var(--orange-11, #ffa057)",
+  "--qe-on-accent": "#17120e",
+};
 
 function hideWindow(): void {
   trpcClient.quickEntry.hide.mutate().catch((err) => {
@@ -31,15 +58,16 @@ function hideWindow(): void {
 
 export function QuickEntryView() {
   const trpcReact = useTRPC();
-  const editorRef = useRef<EditorHandle | null>(null);
   const [selectedDirectory, setSelectedDirectory] = useState<string>("");
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editorIsEmpty, setEditorIsEmpty] = useState(true);
+  const [editorFocused, setEditorFocused] = useState(false);
+  const confirmTimerRef = useRef<number | null>(null);
 
-  const { currentBranch, branchLoading, defaultBranch, busyState } =
-    useGitQueries(selectedDirectory);
+  const { currentBranch, defaultBranch } = useGitQueries(selectedDirectory);
 
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
@@ -52,12 +80,11 @@ export function QuickEntryView() {
     defaultInitialTaskMode,
     lastUsedInitialTaskMode,
     setLastUsedReasoningEffort,
+    quickEntryShortcut,
   } = useSettingsStore();
 
   const adapter = lastUsedAdapter ?? "claude";
   // Cloud isn't supported from quick entry (no cloud repo picker here).
-  // Default to worktree so branch selection is meaningful; otherwise use
-  // the user's preferred local mode.
   const effectiveWorkspaceMode: "worktree" | "local" =
     lastUsedWorkspaceMode === "cloud"
       ? "worktree"
@@ -70,6 +97,39 @@ export function QuickEntryView() {
     isLoading: isPreviewLoading,
     setConfigOption,
   } = usePreviewConfig(adapter);
+
+  const busy = isSubmitting || confirming;
+
+  const {
+    editor,
+    focus,
+    clear,
+    getText,
+    getContent,
+    insertChip,
+    removeChipById,
+    attachments,
+    addAttachment,
+    removeAttachment,
+  } = useTiptapEditor({
+    sessionId: SESSION_ID,
+    placeholder: "What do you want to ship?",
+    disabled: busy,
+    autoFocus: true,
+    clearOnSubmit: false,
+    context: { repoPath: selectedDirectory || undefined },
+    capabilities: { commands: true, bashMode: false },
+    getPromptHistory: useCallback(
+      () => useTaskInputHistoryStore.getState().entries.map((e) => e.text),
+      [],
+    ),
+    onSubmit: () => {
+      void handleSubmitRef.current?.();
+    },
+    onEmptyChange: setEditorIsEmpty,
+    onFocus: () => setEditorFocused(true),
+    onBlur: () => setEditorFocused(false),
+  });
 
   // Seed default folder once from the most-recently-accessed repository.
   useEffect(() => {
@@ -116,7 +176,7 @@ export function QuickEntryView() {
   useSubscription(
     trpcReact.quickEntry.onFocusInput.subscriptionOptions(undefined, {
       onData: () => {
-        editorRef.current?.focus();
+        focus();
       },
     }),
   );
@@ -124,13 +184,19 @@ export function QuickEntryView() {
   useSubscription(
     trpcReact.quickEntry.onHide.subscriptionOptions(undefined, {
       onData: () => {
-        editorRef.current?.clear();
+        if (confirmTimerRef.current !== null) {
+          window.clearTimeout(confirmTimerRef.current);
+          confirmTimerRef.current = null;
+        }
+        clear();
+        setConfirming(false);
         setError(null);
       },
     }),
   );
 
-  // Reset branch selection when the repo changes.
+  // Changing repo resets branch to that repo's default (defaultBranch loads
+  // async; null means "use default once known").
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only reset when repo changes
   useEffect(() => {
     setSelectedBranch(null);
@@ -139,6 +205,8 @@ export function QuickEntryView() {
   useHotkeys(
     "escape",
     () => {
+      // Let an open popover (@-menu, pickers) consume Esc before the overlay.
+      if (hasOpenOverlay()) return;
       hideWindow();
     },
     {
@@ -146,15 +214,6 @@ export function QuickEntryView() {
       enableOnContentEditable: true,
     },
   );
-
-  const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
-  const hints = [
-    "@ to add files",
-    "/ for skills",
-    hasHistory ? "↑↓ for history" : "",
-  ]
-    .filter(Boolean)
-    .join(", ");
 
   const handleModeChange = useCallback(
     (value: string) => {
@@ -180,15 +239,10 @@ export function QuickEntryView() {
     [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
   );
 
-  const canSubmit =
-    !!editorRef.current &&
-    !!selectedDirectory &&
-    !editorIsEmpty &&
-    !isSubmitting;
+  const canSubmit = !!selectedDirectory && !editorIsEmpty && !busy;
 
   const handleSubmit = useCallback(async () => {
-    const editor = editorRef.current;
-    if (!editor || isSubmitting) return;
+    if (busy) return;
 
     if (!selectedDirectory) {
       setError("Pick a folder first");
@@ -199,11 +253,11 @@ export function QuickEntryView() {
       return;
     }
 
-    const content = editor.getContent();
+    const content = getContent();
     const xml = contentToXml(content).trim();
     if (!xml) return;
 
-    const plainText = editor.getText()?.trim();
+    const plainText = getText()?.trim();
     if (plainText) {
       useTaskInputHistoryStore.getState().addPrompt(plainText);
     }
@@ -214,7 +268,9 @@ export function QuickEntryView() {
     try {
       const workspaceMode = effectiveWorkspaceMode;
       const branchForTaskCreation =
-        workspaceMode === "worktree" ? selectedBranch : null;
+        workspaceMode === "worktree"
+          ? (selectedBranch ?? defaultBranch ?? null)
+          : null;
       const currentModel =
         modelOption?.type === "select" ? modelOption.currentValue : null;
       const currentReasoningLevel =
@@ -242,7 +298,16 @@ export function QuickEntryView() {
         executionMode: currentExecutionMode,
       });
 
-      editor.clear();
+      // In-panel confirmation, then dismiss the overlay and reveal the app.
+      setConfirming(true);
+      confirmTimerRef.current = window.setTimeout(() => {
+        confirmTimerRef.current = null;
+        clear();
+        setConfirming(false);
+        trpcClient.quickEntry.completeSubmit.mutate().catch((err) => {
+          log.warn("Failed to complete quick entry submit", { err });
+        });
+      }, CONFIRMATION_MS);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
@@ -251,9 +316,10 @@ export function QuickEntryView() {
       setIsSubmitting(false);
     }
   }, [
-    isSubmitting,
+    busy,
     selectedDirectory,
     selectedBranch,
+    defaultBranch,
     isAuthenticated,
     adapter,
     effectiveWorkspaceMode,
@@ -262,96 +328,242 @@ export function QuickEntryView() {
     modeOption,
     defaultInitialTaskMode,
     lastUsedInitialTaskMode,
+    getContent,
+    getText,
+    clear,
   ]);
 
-  const getPromptHistory = useCallback(
-    () => useTaskInputHistoryStore.getState().entries.map((e) => e.text),
+  // The tiptap Enter handler is bound once; route it through a ref so it
+  // always sees the latest submit closure.
+  const handleSubmitRef = useRef<(() => Promise<void>) | null>(null);
+  handleSubmitRef.current = canSubmit ? handleSubmit : null;
+
+  useEffect(
+    () => () => {
+      if (confirmTimerRef.current !== null) {
+        window.clearTimeout(confirmTimerRef.current);
+      }
+    },
     [],
   );
 
-  if (!isAuthenticated) {
-    return (
-      <div className="flex h-full w-full items-center justify-center p-4">
-        <Text className="text-(--gray-12) text-sm">
-          Sign in to PostHog Code to use quick entry.
-        </Text>
-      </div>
+  // Mode/model/effort option views.
+  const modeItems = useMemo(() => {
+    if (modeOption?.type !== "select") return [];
+    return flattenSelectOptions(modeOption.options).filter(
+      (opt) => opt.value !== "bypassPermissions" && opt.value !== "full-access",
     );
-  }
+  }, [modeOption]);
+  const modeValue =
+    modeOption?.type === "select" ? modeOption.currentValue : undefined;
+  const isPlanMode = modeValue === "plan";
+  const modeLabel = isPlanMode
+    ? "Plan Mode"
+    : (modeItems.find((o) => o.value === modeValue)?.name ?? "Mode");
+
+  const modelItems = useMemo(
+    () =>
+      modelOption?.type === "select"
+        ? flattenSelectOptions(modelOption.options)
+        : [],
+    [modelOption],
+  );
+  const modelGroups = useMemo(() => {
+    if (modelOption?.type !== "select" || modelOption.options.length === 0) {
+      return undefined;
+    }
+    return "group" in modelOption.options[0]
+      ? (modelOption.options as SessionConfigSelectGroup[])
+      : undefined;
+  }, [modelOption]);
+  const modelValue =
+    modelOption?.type === "select" ? modelOption.currentValue : undefined;
+  const modelLabel =
+    modelItems.find((o) => o.value === modelValue)?.name ?? "Model";
+
+  const thoughtItems = useMemo(
+    () =>
+      thoughtOption?.type === "select"
+        ? flattenSelectOptions(thoughtOption.options)
+        : [],
+    [thoughtOption],
+  );
+  const thoughtValue =
+    thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+  const thoughtLabel =
+    thoughtItems.find((o) => o.value === thoughtValue)?.name ?? "Effort";
+
+  const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
+
+  const shortcutLabel = formatHotkey(acceleratorToHotkey(quickEntryShortcut));
+
+  // Accent vars live on <html> (not .qe-root) so portaled popover menus
+  // inherit them too.
+  useEffect(() => {
+    const accent = isPlanMode ? PLAN_ACCENT : AGENT_ACCENT;
+    const root = document.documentElement;
+    for (const [name, value] of Object.entries(accent)) {
+      root.style.setProperty(name, value);
+    }
+    root.style.setProperty(
+      "--qe-glow",
+      "color-mix(in srgb, var(--qe-accent) 20%, transparent)",
+    );
+  }, [isPlanMode]);
+
+  const handleBackdropMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) hideWindow();
+  }, []);
 
   return (
-    <div className="flex h-full w-full items-start justify-center p-2">
-      <div className="flex w-full flex-col gap-2">
-        <Flex gap="2" align="center" className="min-w-0">
-          <ButtonGroup>
-            <FolderPicker
-              value={selectedDirectory}
-              onChange={setSelectedDirectory}
-              placeholder="Select repository..."
-            />
-            <BranchSelector
-              repoPath={selectedDirectory || null}
-              currentBranch={currentBranch}
-              defaultBranch={defaultBranch}
-              disabled={isSubmitting}
-              loading={branchLoading}
-              workspaceMode={effectiveWorkspaceMode}
-              selectedBranch={selectedBranch}
-              onBranchSelect={setSelectedBranch}
-              busyState={busyState}
-            />
-          </ButtonGroup>
-        </Flex>
-
-        <Flex direction="column" gap="0">
-          <PromptInput
-            ref={editorRef}
-            sessionId={SESSION_ID}
-            placeholder={`What do you want to ship? ${hints}`}
-            editorHeight="default"
-            disabled={isSubmitting}
-            isLoading={isSubmitting}
-            autoFocus
-            clearOnSubmit={false}
-            submitDisabledExternal={!canSubmit}
-            repoPath={selectedDirectory || undefined}
-            modeOption={modeOption}
-            onModeChange={handleModeChange}
-            enableCommands
-            enableBashMode={false}
-            modelSelector={
-              <UnifiedModelSelector
-                modelOption={modelOption}
-                adapter={adapter}
-                onAdapterChange={setLastUsedAdapter}
-                disabled={isSubmitting}
-                isConnecting={isPreviewLoading}
-                onModelChange={handleModelChange}
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click-to-dismiss; Esc covers keyboard
+    <div
+      className="qe-root flex h-full w-full flex-col items-center"
+      onMouseDown={handleBackdropMouseDown}
+    >
+      <section
+        className="qe-panel flex w-full flex-col gap-3 px-[14px] py-3"
+        data-focused={editorFocused || undefined}
+        aria-label="Quick entry"
+      >
+        {confirming ? (
+          <div className="qe-confirm flex items-center justify-center gap-3 py-8">
+            <span
+              className="flex h-7 w-7 items-center justify-center rounded-full"
+              style={{
+                background: "var(--qe-accent)",
+                color: "var(--qe-on-accent)",
+              }}
+            >
+              <Check size={15} weight="bold" />
+            </span>
+            <Text className="text-[14px] text-[rgba(255,255,255,.85)]">
+              Task created — opening in PostHog Code…
+            </Text>
+          </div>
+        ) : !isAuthenticated ? (
+          <div className="flex items-center justify-center py-8">
+            <Text className="text-[14px] text-[rgba(255,255,255,.85)]">
+              Sign in to PostHog Code to use quick entry.
+            </Text>
+          </div>
+        ) : (
+          <>
+            {/* Header: repo + branch chips, shortcut keycap */}
+            <div className="flex min-w-0 items-center gap-2">
+              <RepoChip
+                value={selectedDirectory}
+                onChange={setSelectedDirectory}
+                disabled={busy}
               />
-            }
-            reasoningSelector={
-              !isPreviewLoading && (
-                <ReasoningLevelSelector
-                  thoughtOption={thoughtOption}
-                  adapter={adapter}
-                  onChange={handleThoughtChange}
-                  disabled={isSubmitting}
-                />
-              )
-            }
-            getPromptHistory={getPromptHistory}
-            onEmptyChange={setEditorIsEmpty}
-            onSubmitClick={() => {
-              void handleSubmit();
-            }}
-            onSubmit={() => {
-              if (canSubmit) void handleSubmit();
-            }}
-          />
-        </Flex>
+              <BranchChip
+                repoPath={selectedDirectory || null}
+                workspaceMode={effectiveWorkspaceMode}
+                currentBranch={currentBranch ?? null}
+                defaultBranch={defaultBranch ?? null}
+                selectedBranch={selectedBranch}
+                onBranchSelect={setSelectedBranch}
+                disabled={busy}
+              />
+              <span className="ml-auto shrink-0">
+                <Keycap>{shortcutLabel}</Keycap>
+              </span>
+            </div>
 
-        {error && <Text className="px-1 text-(--red-10) text-xs">{error}</Text>}
-      </div>
+            {/* Input */}
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: focus proxy for the embedded editor */}
+            <div
+              className="qe-editor cli-editor-scroll min-h-[28px] cursor-text"
+              onMouseDown={(e) => {
+                const target = e.target as HTMLElement;
+                if (!target.closest(".ProseMirror")) {
+                  e.preventDefault();
+                  focus();
+                }
+              }}
+            >
+              <TiptapEditorContent editor={editor} />
+            </div>
+
+            {/* Attachment chips */}
+            {attachments.length > 0 && (
+              <AttachmentsBar
+                attachments={attachments}
+                onRemove={removeAttachment}
+              />
+            )}
+
+            {/* Toolbar */}
+            <div className="qe-toolbar flex items-center gap-1">
+              <AttachmentMenu
+                disabled={busy}
+                repoPath={selectedDirectory || null}
+                onAddAttachment={addAttachment}
+                onInsertChip={insertChip}
+                onRemoveChip={removeChipById}
+              />
+              <span className="qe-divider" />
+              <GlassSelect
+                icon={getModeStyle(modeValue ?? "plan").icon}
+                label={modeLabel}
+                items={modeItems}
+                currentValue={modeValue}
+                onSelect={handleModeChange}
+                disabled={busy || isPreviewLoading}
+                accented
+                aria-label="Mode"
+              />
+              <GlassSelect
+                icon={<Cpu size={13} />}
+                label={modelLabel}
+                items={modelItems}
+                groups={modelGroups}
+                currentValue={modelValue}
+                onSelect={handleModelChange}
+                disabled={busy || isPreviewLoading}
+                aria-label="Model"
+                footer={
+                  <AdapterSwitchItem
+                    adapter={adapter}
+                    onAdapterChange={setLastUsedAdapter}
+                  />
+                }
+              />
+              {thoughtItems.length > 0 && (
+                <GlassSelect
+                  icon={<Gauge size={13} />}
+                  label={thoughtLabel}
+                  items={thoughtItems}
+                  currentValue={thoughtValue}
+                  onSelect={handleThoughtChange}
+                  disabled={busy || isPreviewLoading}
+                  aria-label="Reasoning effort"
+                />
+              )}
+              <span className="ml-auto flex items-center gap-3">
+                <span className="qe-hint">
+                  @ files / skills{hasHistory ? " ↑ history" : ""}
+                </span>
+                <button
+                  type="button"
+                  className="qe-send"
+                  disabled={!canSubmit}
+                  aria-label="Create task"
+                  onClick={() => {
+                    if (canSubmit) void handleSubmit();
+                  }}
+                >
+                  <ArrowUp size={15} weight="bold" />
+                </button>
+              </span>
+            </div>
+
+            {error && (
+              <Text className="text-(--red-10) text-[12px]">{error}</Text>
+            )}
+          </>
+        )}
+      </section>
     </div>
   );
 }

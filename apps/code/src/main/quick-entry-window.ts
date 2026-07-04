@@ -15,9 +15,13 @@ const MAIN_WINDOW_VITE_NAME = "main_window";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const QUICK_ENTRY_WIDTH = 960;
-const QUICK_ENTRY_HEIGHT = 170;
-const QUICK_ENTRY_BOTTOM_MARGIN = 120;
+const QUICK_ENTRY_WIDTH = 920;
+// Window is taller than the visible glass panel: the transparent slack below
+// hosts dropdown popovers and the textarea's autogrow without clipping.
+const QUICK_ENTRY_HEIGHT = 520;
+const QUICK_ENTRY_MIN_SIDE_MARGIN = 32;
+// Panel top sits ~26% down the work area (Raycast-style), not bottom-docked.
+const QUICK_ENTRY_TOP_RATIO = 0.26;
 
 let quickEntryWindow: BrowserWindow | null = null;
 let registeredAccelerator: string | null = null;
@@ -116,11 +120,17 @@ export function showQuickEntryWindow(): boolean {
   const cursor = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursor);
   const { x: dx, y: dy, width: dw, height: dh } = display.workArea;
-  const x = Math.round(dx + (dw - QUICK_ENTRY_WIDTH) / 2);
-  const y = Math.round(
-    dy + dh - QUICK_ENTRY_HEIGHT - QUICK_ENTRY_BOTTOM_MARGIN,
+  const width = Math.min(
+    QUICK_ENTRY_WIDTH,
+    dw - QUICK_ENTRY_MIN_SIDE_MARGIN * 2,
   );
-  window.setPosition(x, y, false);
+  const height = Math.min(QUICK_ENTRY_HEIGHT, dh);
+  const x = Math.round(dx + (dw - width) / 2);
+  const y = Math.round(dy + dh * QUICK_ENTRY_TOP_RATIO);
+  // resizable:false blocks programmatic setBounds on macOS; lift it briefly.
+  window.setResizable(true);
+  window.setBounds({ x, y, width, height }, false);
+  window.setResizable(false);
 
   window.show();
   window.focus();

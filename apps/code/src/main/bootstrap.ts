@@ -60,9 +60,13 @@ app.commandLine.appendSwitch("log-level", "0");
 
 // In dev, expose the renderer over CDP (:9222) for the test-electron-app skill.
 // electron-vite launches Electron itself, so this is set in-process rather than
-// via a CLI flag.
+// via a CLI flag. Overridable because Chrome's debugger also defaults to 9222
+// and grabs it first when running.
 if (isDev) {
-  app.commandLine.appendSwitch("remote-debugging-port", "9222");
+  app.commandLine.appendSwitch(
+    "remote-debugging-port",
+    process.env.POSTHOG_CODE_CDP_PORT ?? "9222",
+  );
 }
 
 crashReporter.start({ uploadToServer: false });
