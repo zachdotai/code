@@ -32,7 +32,6 @@ describe("resolveRtkSavings", () => {
       inputTokens: 502691,
       outputTokens: 5835,
       tokensSaved: 496856,
-      avgSavingsPct: 98.8392471717218,
     });
   });
 
@@ -93,7 +92,6 @@ describe("resolveRtkSavings", () => {
       inputTokens: 0,
       outputTokens: 0,
       tokensSaved: 0,
-      avgSavingsPct: 0,
     });
   });
 });

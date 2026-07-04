@@ -15,7 +15,6 @@ export interface RtkSavingsSummary {
   inputTokens: number;
   outputTokens: number;
   tokensSaved: number;
-  avgSavingsPct: number;
 }
 
 interface ResolveRtkSavingsOptions {
@@ -41,7 +40,6 @@ function parseGainSummary(stdout: string): RtkSavingsSummary | null {
     inputTokens: toFiniteNumber(summary.total_input),
     outputTokens: toFiniteNumber(summary.total_output),
     tokensSaved: toFiniteNumber(summary.total_saved),
-    avgSavingsPct: toFiniteNumber(summary.avg_savings_pct),
   };
 }
 

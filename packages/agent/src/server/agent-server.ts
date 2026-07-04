@@ -3387,13 +3387,16 @@ ${signedCommitInstructions}
    *
    * Gauge semantics: the `cumulative_*` properties are counter READS of the
    * host's machine-global rtk tally, not per-run deltas. Consumers must group
-   * by `counter_id` and difference readings (argMax - argMin per window,
-   * treating a drop as a counter reset à la `rate()` — `rtk gain --reset`
-   * exists), never sum event values. This makes the numbers correct even when
-   * several sessions share one rtk database: concurrent reads of the shared
-   * counter dedupe under max() instead of double-counting. In the ephemeral
-   * cloud sandbox the counter starts at zero, so a single reading is also this
-   * run's savings.
+   * by `counter_id` and difference consecutive readings per counter, with an
+   * implicit 0 before a counter's first reading (a single reading therefore
+   * counts in full) and a value drop treated as a reset starting a new
+   * segment à la `rate()` — `rtk gain --reset` exists. Never sum event
+   * values. This makes the numbers correct even when several sessions share
+   * one rtk database: concurrent reads of the shared counter dedupe under
+   * max() instead of double-counting. A savings ratio is derivable as
+   * cumulative_tokens_saved / cumulative_input_tokens; rtk's per-command
+   * average is deliberately not emitted since an average cannot be
+   * differenced under this contract.
    *
    * Best-effort and cloud-only for now (no-op when the event stream isn't
    * configured; a desktop emit through the analytics pipeline can reuse the
@@ -3426,14 +3429,16 @@ ${signedCommitInstructions}
             run_id: this.config.runId,
             team_id: this.config.projectId,
             // The identity of the rtk database this reading came from — the
-            // group-by key for differencing. The cloud sandbox is fresh per
-            // run, so the run owns its counter.
-            counter_id: this.config.runId,
+            // group-by key for differencing. Keyed to the task, not the run:
+            // a warm snapshot-resume restarts the sandbox with its filesystem
+            // (and rtk tally) intact under a new run_id, so the task tracks
+            // the database's lifetime. A cold resume gets a fresh sandbox and
+            // reads a dropped value, which the reset rule already handles.
+            counter_id: this.config.taskId,
             cumulative_commands: savings.totalCommands,
             cumulative_input_tokens: savings.inputTokens,
             cumulative_output_tokens: savings.outputTokens,
             cumulative_tokens_saved: savings.tokensSaved,
-            avg_savings_pct: savings.avgSavingsPct,
           },
         },
       });

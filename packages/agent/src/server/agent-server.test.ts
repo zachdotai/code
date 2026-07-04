@@ -509,7 +509,6 @@ describe("AgentServer HTTP Mode", () => {
             inputTokens: 1000,
             outputTokens: 350,
             tokensSaved: 650,
-            avgSavingsPct: 65,
           }),
         }),
       );
@@ -534,8 +533,12 @@ describe("AgentServer HTTP Mode", () => {
               task_id: "test-task-id",
               run_id: "test-run-id",
               team_id: 1,
-              counter_id: "test-run-id",
+              // The counter follows the task: a warm snapshot-resume keeps
+              // the sandbox's rtk tally across run_ids.
+              counter_id: "test-task-id",
               cumulative_commands: 4,
+              cumulative_input_tokens: 1000,
+              cumulative_output_tokens: 350,
               cumulative_tokens_saved: 650,
             }),
           }),
@@ -559,7 +562,6 @@ describe("AgentServer HTTP Mode", () => {
           inputTokens: 100,
           outputTokens: 50,
           tokensSaved: 30,
-          avgSavingsPct: 30,
         }),
       }) as unknown as {
         eventStreamSender: {
