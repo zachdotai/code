@@ -127,14 +127,14 @@ function isStagedCopyCurrent(source: string, dest: string): boolean {
   return statSync(dest).mtimeMs >= statSync(source).mtimeMs;
 }
 
-function signClaudeBinary(destPath: string): void {
+function signDarwinBinary(destPath: string): void {
   if (targetPlatform() !== "darwin") return;
   if (process.platform !== "darwin") {
     // Can't ad-hoc sign a darwin binary from a non-darwin build host; the
     // resulting app won't launch on Apple Silicon. Fail loud rather than
     // shipping an unrunnable bundle.
     throw new Error(
-      "[copy-claude-executable] Cannot ad-hoc sign darwin binary from non-darwin host. Build on macOS.",
+      `[sign-binary] Cannot ad-hoc sign ${destPath} from a non-darwin host. Build on macOS.`,
     );
   }
   try {
@@ -142,7 +142,7 @@ function signClaudeBinary(destPath: string): void {
     execSync(`codesign --force --sign - "${destPath}"`, { stdio: "inherit" });
   } catch (err) {
     console.warn(
-      "[copy-claude-executable] FAILED to ad-hoc sign binary; macOS will reject the bundled app:",
+      `[sign-binary] FAILED to ad-hoc sign ${destPath}; macOS will reject the bundled app:`,
       err,
     );
   }
@@ -215,7 +215,7 @@ export function copyClaudeExecutable(): Plugin {
       }
       copyClaudeSupportAssets(source, destDir);
       verifyBinaryArch(destBinary);
-      signClaudeBinary(destBinary);
+      signDarwinBinary(destBinary);
       claudeCliCopied = true;
     },
   };
@@ -265,7 +265,7 @@ export function copyRtkBinary(): Plugin {
       if (targetPlatform() !== "win32") {
         execSync(`chmod +x "${destBinary}"`);
       }
-      signClaudeBinary(destBinary);
+      signDarwinBinary(destBinary);
       rtkCopied = true;
     },
   };

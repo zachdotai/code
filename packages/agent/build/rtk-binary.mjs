@@ -12,7 +12,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -174,27 +173,21 @@ export async function ensureRtkBinary(destDir) {
   if (!existsSync(cachedBinary)) {
     mkdirSync(cacheDir, { recursive: true });
     const url = rtkAssetUrl(target);
-    const archivePath = join(
-      cacheDir,
-      target.includes("windows") ? "rtk.zip" : "rtk.tar.gz",
-    );
-    await downloadFile(url, archivePath);
-    try {
-      await verifyChecksum(archivePath, target);
-    } catch (error) {
-      // Don't leave an unverified archive on disk to be reused.
-      rmSync(archivePath, { force: true });
-      throw error;
-    }
-    // Extract into a temp dir first so a killed build cannot leave a partial
-    // binary in cacheDir that existsSync accepts on the next run.
+    // Download, verify, and extract inside a per-process temp dir so a killed
+    // build cannot leave a partial or unverified artifact that a later (or
+    // concurrent) build reuses; only the final rename publishes into cacheDir.
     // Use dirname(cacheDir) so the temp dir and cacheDir are on the same
     // filesystem: rename(2) fails with EXDEV across filesystems (e.g. tmpfs /tmp
     // vs overlay node_modules/.cache in Docker / CI containers).
     const tmpDir = mkdtempSync(join(dirname(cacheDir), ".tmp-"));
     try {
+      const archivePath = join(
+        tmpDir,
+        target.includes("windows") ? "rtk.zip" : "rtk.tar.gz",
+      );
+      await downloadFile(url, archivePath);
+      await verifyChecksum(archivePath, target);
       await extractArchive(archivePath, tmpDir, target);
-      rmSync(archivePath, { force: true });
       const extractedBinary = join(tmpDir, binName);
       if (!existsSync(extractedBinary)) {
         throw new Error(

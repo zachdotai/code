@@ -621,13 +621,15 @@ describe("AgentServer HTTP Mode", () => {
           error_message: "boom",
         },
       );
-      // Assert rtk_savings enqueue precedes stop() on this seam.
-      const enqueueOrders =
-        testServer.eventStreamSender.enqueue.mock.invocationCallOrder;
-      const stopOrder =
-        testServer.eventStreamSender.stop.mock.invocationCallOrder[0];
-      // The last enqueue (rtk_savings) must land before stop()
-      expect(enqueueOrders[enqueueOrders.length - 1]).toBeLessThan(stopOrder);
+      // Pin the second enqueue as the rtk_savings emit — the order array alone
+      // would accept any payload before stop().
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notification: expect.objectContaining({
+            method: "_posthog/rtk_savings",
+          }),
+        }),
+      );
     });
 
     it("still stops event ingest when terminal failure status update fails", async () => {
