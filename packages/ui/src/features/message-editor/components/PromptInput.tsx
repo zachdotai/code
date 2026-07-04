@@ -12,6 +12,7 @@ import clsx from "clsx";
 import { forwardRef, useCallback, useEffect, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useSkills } from "../../skills/useSkills";
+import { skillToEditorCommand } from "../commands";
 import { ModeSelector } from "../components/ModeSelector";
 import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
@@ -47,6 +48,10 @@ export interface PromptInputProps {
   reasoningSelector?: React.ReactElement | null | false;
   messagingModeToggle?: React.ReactNode;
   historyButton?: React.ReactNode;
+  // Render an empty toolbar (no attach/mode/model/reasoning/history/submit).
+  // Submission falls back to the Enter key. Used by surfaces that want the
+  // editor chrome without any controls yet (e.g. the canvas composer).
+  hideDefaultToolbar?: boolean;
   // prompt history provider
   getPromptHistory?: () => string[];
   // callbacks
@@ -89,6 +94,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       reasoningSelector,
       messagingModeToggle,
       historyButton,
+      hideDefaultToolbar = false,
       getPromptHistory,
       onBeforeSubmit,
       onSubmit,
@@ -124,6 +130,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       getText,
       getContent,
       setContent,
+      insertEditorContent,
       insertChip,
       removeChipById,
       replaceChipAttrs,
@@ -164,6 +171,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getContent,
         getText,
         setContent,
+        insertEditorContent,
         insertChip,
         removeChipById,
         replaceChipAttrs,
@@ -178,6 +186,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         getContent,
         getText,
         setContent,
+        insertEditorContent,
         insertChip,
         removeChipById,
         replaceChipAttrs,
@@ -198,10 +207,9 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
     // only the built-in /good /bad /feedback commands.
     useEffect(() => {
       if (!enableCommands || !skills) return;
-      useDraftStore.getState().actions.setCommands(
-        sessionId,
-        skills.map((s) => ({ name: s.name, description: s.description })),
-      );
+      useDraftStore
+        .getState()
+        .actions.setCommands(sessionId, skills.map(skillToEditorCommand));
       return () => {
         useDraftStore.getState().actions.clearCommands(sessionId);
       };
@@ -358,33 +366,39 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
               <EditorContent editor={editor} />
             </div>
             <InputGroupAddon align="block-end" className="p-1">
-              <AttachmentMenu
-                disabled={disabled}
-                repoPath={repoPath}
-                taskId={taskId}
-                onAddAttachment={addAttachment}
-                onAttachFiles={onAttachFiles}
-                onInsertChip={insertChip}
-                onRemoveChip={removeChipById}
-              />
-              {modeOption && onModeChange && (
-                <ModeSelector
-                  modeOption={modeOption}
-                  onChange={onModeChange}
-                  allowBypassPermissions={allowBypassPermissions}
-                  disabled={disabled}
-                />
+              {!hideDefaultToolbar && (
+                <>
+                  <AttachmentMenu
+                    disabled={disabled}
+                    repoPath={repoPath}
+                    taskId={taskId}
+                    onAddAttachment={addAttachment}
+                    onAttachFiles={onAttachFiles}
+                    onInsertChip={insertChip}
+                    onRemoveChip={removeChipById}
+                  />
+                  {onModeChange && (
+                    <ModeSelector
+                      modeOption={modeOption}
+                      onChange={onModeChange}
+                      allowBypassPermissions={allowBypassPermissions}
+                      disabled={disabled}
+                    />
+                  )}
+                  {modelSelector && <span>{modelSelector}</span>}
+                  {reasoningSelector && <span>{reasoningSelector}</span>}
+                  {messagingModeToggle && <span>{messagingModeToggle}</span>}
+                  {isBashMode && (
+                    <Text className="font-mono text-(--blue-9) text-[13px]">
+                      ! bash
+                    </Text>
+                  )}
+                </>
               )}
-              {modelSelector && <span>{modelSelector}</span>}
-              {reasoningSelector && <span>{reasoningSelector}</span>}
-              {messagingModeToggle && <span>{messagingModeToggle}</span>}
-              {isBashMode && (
-                <Text className="font-mono text-(--blue-9) text-[13px]">
-                  ! bash
-                </Text>
-              )}
+              {/* Submit stays even with a blank toolbar; only the left-side
+                  addons are suppressed. */}
               <span className="ml-auto flex items-center gap-1">
-                {historyButton}
+                {!hideDefaultToolbar && historyButton}
                 {submitButton}
               </span>
             </InputGroupAddon>

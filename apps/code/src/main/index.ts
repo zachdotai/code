@@ -23,6 +23,7 @@ import {
 } from "@posthog/core/integrations/identifiers";
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
+import type { CanvasLinkService } from "@posthog/core/links/canvas-link";
 import type { InboxLinkService } from "@posthog/core/links/inbox-link";
 import type { NewTaskLinkService } from "@posthog/core/links/new-task-link";
 import type { ScoutLinkService } from "@posthog/core/links/scout-link";
@@ -52,6 +53,7 @@ import {
   APP_LIFECYCLE_SERVICE,
   APPROVAL_LINK_SERVICE,
   AUTH_SERVICE,
+  CANVAS_LINK_SERVICE,
   DATABASE_SERVICE,
   DISCORD_PRESENCE_SERVICE,
   EXTERNAL_APPS_SERVICE,
@@ -71,6 +73,7 @@ import {
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
+import { initDevToolbar } from "./services/dev-toolbar";
 import type { DiscordPresenceService } from "./services/discord-presence/service";
 import {
   focusSessionStore,
@@ -239,6 +242,8 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 async function initializeServices(): Promise<void> {
+  initDevToolbar();
+
   container.get<DatabaseService>(DATABASE_SERVICE);
   container.get<OAuthService>(OAUTH_SERVICE);
   const authService = container.get<AuthService>(AUTH_SERVICE);
@@ -249,6 +254,9 @@ async function initializeServices(): Promise<void> {
   container.get<ScoutLinkService>(SCOUT_LINK_SERVICE);
   container.get<NewTaskLinkService>(NEW_TASK_LINK_SERVICE);
   container.get<ApprovalLinkService>(APPROVAL_LINK_SERVICE);
+  // Eagerly resolved so its constructor registers the `canvas` deep-link
+  // handler at boot, before any link arrives.
+  container.get<CanvasLinkService>(CANVAS_LINK_SERVICE);
   container.get<GitHubIntegrationService>(GITHUB_INTEGRATION_SERVICE);
   container.get<SlackIntegrationService>(SLACK_INTEGRATION_SERVICE);
   container.get<ExternalAppsService>(EXTERNAL_APPS_SERVICE);
@@ -379,6 +387,19 @@ app.whenReady().then(async () => {
   await initializeServices();
   initializeDeepLinks();
   initializeQuickEntry();
+
+  if (process.env.POSTHOG_E2E_UPDATE_FEED) {
+    const updates = container.get<UpdatesService>(UPDATES_SERVICE);
+    Object.assign(globalThis, {
+      __e2eUpdates: {
+        check: () => updates.checkForUpdates(),
+        download: () => updates.requestDownload(),
+        install: () => updates.installUpdate(),
+        status: () => updates.getStatus(),
+      },
+    });
+    log.info("E2E update hook installed on globalThis.__e2eUpdates");
+  }
 });
 
 function initializeQuickEntry(): void {

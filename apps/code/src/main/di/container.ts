@@ -47,15 +47,19 @@ import { handoffModule } from "@posthog/core/handoff/handoff.module";
 import { HANDOFF_HOST } from "@posthog/core/handoff/identifiers";
 import { integrationsModule } from "@posthog/core/integrations/integrations.module";
 import { ApprovalLinkService } from "@posthog/core/links/approval-link";
+import { CanvasLinkService } from "@posthog/core/links/canvas-link";
 import {
   APPROVAL_LINK_SERVICE,
+  CANVAS_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  OPEN_TARGET_LINK_SERVICE,
   SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
 } from "@posthog/core/links/identifiers";
 import { InboxLinkService } from "@posthog/core/links/inbox-link";
 import { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import { OpenTargetLinkService } from "@posthog/core/links/open-target-link";
 import { ScoutLinkService } from "@posthog/core/links/scout-link";
 import { TaskLinkService } from "@posthog/core/links/task-link";
 import {
@@ -96,11 +100,13 @@ import {
 import { ANALYTICS_SERVICE } from "@posthog/platform/analytics";
 import { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import { APP_META_SERVICE } from "@posthog/platform/app-meta";
+import { APP_METRICS_SERVICE } from "@posthog/platform/app-metrics";
 import { BUNDLED_RESOURCES_SERVICE } from "@posthog/platform/bundled-resources";
 import { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
 import { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
+import { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
 import { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
 import { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
@@ -146,6 +152,8 @@ import {
 } from "@posthog/workspace-server/services/archive/identifiers";
 import { authProxyModule } from "@posthog/workspace-server/services/auth-proxy/auth-proxy.module";
 import { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
+import { browserTabsModule } from "@posthog/workspace-server/services/browser-tabs/browser-tabs.module";
+import { claudeCliSessionsModule } from "@posthog/workspace-server/services/claude-cli-sessions/claude-cli-sessions.module";
 import { enrichmentModule } from "@posthog/workspace-server/services/enrichment/enrichment.module";
 import {
   ENRICHMENT_AUTH,
@@ -160,6 +168,7 @@ import type { ExternalAppsPreferences } from "@posthog/workspace-server/services
 import { foldersModule } from "@posthog/workspace-server/services/folders/folders.module";
 import { GitService } from "@posthog/workspace-server/services/git/service";
 import { TaskPrStatusService } from "@posthog/workspace-server/services/git/task-pr-status";
+import { githubReleasesModule } from "@posthog/workspace-server/services/github-releases/github-releases.module";
 import {
   HANDOFF_GIT_GATEWAY,
   HANDOFF_LOG_GATEWAY,
@@ -211,10 +220,12 @@ import ExternalAppsStoreImpl from "electron-store";
 import type { FileWatcherBridge } from "../index";
 import { ElectronAppLifecycle } from "../platform-adapters/electron-app-lifecycle";
 import { ElectronAppMeta } from "../platform-adapters/electron-app-meta";
+import { ElectronAppMetrics } from "../platform-adapters/electron-app-metrics";
 import { ElectronBundledResources } from "../platform-adapters/electron-bundled-resources";
 import { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
 import { ElectronCrypto } from "../platform-adapters/electron-crypto";
+import { ElectronDevHostActions } from "../platform-adapters/electron-dev-host-actions";
 import { ElectronDialog } from "../platform-adapters/electron-dialog";
 import { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
 import { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
@@ -237,6 +248,11 @@ import {
   TokenCipherPortAdapter,
 } from "../services/auth/port-adapters";
 import { DeepLinkService } from "../services/deep-link/service";
+import { DevActionsService } from "../services/dev-actions/service";
+import { DevFlagsService } from "../services/dev-flags/service";
+import { DevLogsService } from "../services/dev-logs/service";
+import { DevMetricsService } from "../services/dev-metrics/service";
+import { DevNetworkService } from "../services/dev-network/service";
 import { DiscordPresenceService } from "../services/discord-presence/service";
 import { EncryptionService } from "../services/encryption/service";
 import { QuickEntryService } from "../services/quick-entry/service";
@@ -254,11 +270,17 @@ import {
   AUTH_PREFERENCE_REPOSITORY as MAIN_AUTH_PREFERENCE_REPOSITORY,
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
   AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
+  CANVAS_LINK_SERVICE as MAIN_CANVAS_LINK_SERVICE,
   CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
   CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
   DEEP_LINK_SERVICE as MAIN_DEEP_LINK_SERVICE,
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY as MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
+  DEV_ACTIONS_SERVICE as MAIN_DEV_ACTIONS_SERVICE,
+  DEV_FLAGS_SERVICE as MAIN_DEV_FLAGS_SERVICE,
+  DEV_LOGS_SERVICE as MAIN_DEV_LOGS_SERVICE,
+  DEV_METRICS_SERVICE as MAIN_DEV_METRICS_SERVICE,
+  DEV_NETWORK_SERVICE as MAIN_DEV_NETWORK_SERVICE,
   DISCORD_PRESENCE_SERVICE as MAIN_DISCORD_PRESENCE_SERVICE,
   ENCRYPTION_SERVICE as MAIN_ENCRYPTION_SERVICE,
   EXTERNAL_APPS_SERVICE as MAIN_EXTERNAL_APPS_SERVICE,
@@ -268,6 +290,7 @@ import {
   LLM_GATEWAY_SERVICE as MAIN_LLM_GATEWAY_SERVICE,
   MCP_APPS_SERVICE as MAIN_MCP_APPS_SERVICE,
   NEW_TASK_LINK_SERVICE as MAIN_NEW_TASK_LINK_SERVICE,
+  OPEN_TARGET_LINK_SERVICE as MAIN_OPEN_TARGET_LINK_SERVICE,
   POSTHOG_PLUGIN_SERVICE as MAIN_POSTHOG_PLUGIN_SERVICE,
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
   PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
@@ -312,6 +335,8 @@ container.bind(CONTEXT_MENU_SERVICE).to(ElectronContextMenu);
 container.bind(BUNDLED_RESOURCES_SERVICE).to(ElectronBundledResources);
 container.bind(IMAGE_PROCESSOR_SERVICE).to(ElectronImageProcessor);
 container.bind(WORKSPACE_SETTINGS_SERVICE).to(ElectronWorkspaceSettings);
+container.bind(APP_METRICS_SERVICE).to(ElectronAppMetrics);
+container.bind(DEV_HOST_ACTIONS_SERVICE).to(ElectronDevHostActions);
 
 container.load(databaseModule);
 container.load(repositoriesModule);
@@ -497,10 +522,10 @@ container.bind(GIT_DIFF_SOURCE).toDynamicValue((ctx) => {
       }),
     getPrTemplate: (directoryPath: string) =>
       git().getPrTemplate.query({ directoryPath }),
-    fetchIfStale: async (directoryPath: string) => {
+    fetchFromRemote: async (directoryPath: string) => {
       await git().getGitSyncStatus.query({
         directoryPath,
-        forceRefresh: true,
+        fetchFromRemote: true,
       });
     },
   };
@@ -585,7 +610,9 @@ container.load(posthogPluginModule);
 container.bind(MAIN_POSTHOG_PLUGIN_SERVICE).toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
 container.load(skillsMarketplaceModule);
+container.load(githubReleasesModule);
 container.load(onboardingImportModule);
+container.load(claudeCliSessionsModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_SLEEP_SERVICE).to(SleepService);
 container.bind(SLEEP_SERVICE).toService(MAIN_SLEEP_SERVICE);
@@ -624,6 +651,12 @@ container.bind(MAIN_NEW_TASK_LINK_SERVICE).to(NewTaskLinkService);
 container.bind(NEW_TASK_LINK_SERVICE).toService(MAIN_NEW_TASK_LINK_SERVICE);
 container.bind(MAIN_APPROVAL_LINK_SERVICE).to(ApprovalLinkService);
 container.bind(APPROVAL_LINK_SERVICE).toService(MAIN_APPROVAL_LINK_SERVICE);
+container.bind(MAIN_OPEN_TARGET_LINK_SERVICE).to(OpenTargetLinkService);
+container
+  .bind(OPEN_TARGET_LINK_SERVICE)
+  .toService(MAIN_OPEN_TARGET_LINK_SERVICE);
+container.bind(MAIN_CANVAS_LINK_SERVICE).to(CanvasLinkService);
+container.bind(CANVAS_LINK_SERVICE).toService(MAIN_CANVAS_LINK_SERVICE);
 container.load(watcherRegistryModule);
 container
   .bind(MAIN_WATCHER_REGISTRY_SERVICE)
@@ -697,6 +730,10 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
     },
     readLocalLogs: (taskRunId: string) =>
       ws.localLogs.read.query({ taskRunId }),
+    readLocalLogsCollapsed: (taskRunId: string) =>
+      ws.localLogs.readCollapsed.query({ taskRunId }),
+    readLocalLogsTail: (taskRunId: string, maxBytes: number) =>
+      ws.localLogs.readTail.query({ taskRunId, maxBytes }),
     writeLocalLogs: (taskRunId: string, content: string) =>
       ws.localLogs.write.mutate({ taskRunId, content }),
   };
@@ -710,3 +747,13 @@ container.bind(CORE_QUICK_ENTRY_SERVICE).toService(MAIN_QUICK_ENTRY_SERVICE);
 // live in @posthog/core (bound via canvasCoreModule) and resolve through
 // ctx.container in the host-router routers.
 container.load(canvasCoreModule);
+
+// Browser tabs for the Channels canvas surface. Authoritative sqlite-backed
+// service in the main process; resolved by the host-router browserTabs router.
+container.load(browserTabsModule);
+
+container.bind(MAIN_DEV_FLAGS_SERVICE).to(DevFlagsService);
+container.bind(MAIN_DEV_METRICS_SERVICE).to(DevMetricsService);
+container.bind(MAIN_DEV_NETWORK_SERVICE).to(DevNetworkService);
+container.bind(MAIN_DEV_LOGS_SERVICE).to(DevLogsService);
+container.bind(MAIN_DEV_ACTIONS_SERVICE).to(DevActionsService);

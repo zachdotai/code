@@ -16,6 +16,7 @@ import {
   BootErrorScreen,
 } from "@components/BootErrorBoundary";
 import { Providers } from "@components/Providers";
+import { DevToolbarHost } from "@features/dev-toolbar/DevToolbarHost";
 import { preloadHighlighter } from "@pierre/diffs";
 import { boot } from "@posthog/di/contribution";
 import { ServiceProvider } from "@posthog/di/react";
@@ -118,7 +119,7 @@ try {
               <QuickEntryRoot />
             ) : (
               <>
-                <App />
+                <App devToolbar={<DevToolbarHost />} />
                 <QuickEntryTaskListener />
               </>
             )}

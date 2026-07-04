@@ -106,6 +106,12 @@ export const NEW_TASK_LINK_SERVICE = Symbol.for(
 export const APPROVAL_LINK_SERVICE = Symbol.for(
   "posthog.host.main.approval-link.service",
 );
+export const OPEN_TARGET_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.open-target-link.service",
+);
+export const CANVAS_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.canvas-link.service",
+);
 export const WATCHER_REGISTRY_SERVICE = Symbol.for(
   "posthog.host.main.watcher-registry.service",
 );
@@ -123,4 +129,19 @@ export const DISCORD_PRESENCE_SERVICE = Symbol.for(
 );
 export const QUICK_ENTRY_SERVICE = Symbol.for(
   "posthog.host.main.quick-entry.service",
+);
+export const DEV_FLAGS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-flags.service",
+);
+export const DEV_METRICS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-metrics.service",
+);
+export const DEV_NETWORK_SERVICE = Symbol.for(
+  "posthog.host.main.dev-network.service",
+);
+export const DEV_LOGS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-logs.service",
+);
+export const DEV_ACTIONS_SERVICE = Symbol.for(
+  "posthog.host.main.dev-actions.service",
 );

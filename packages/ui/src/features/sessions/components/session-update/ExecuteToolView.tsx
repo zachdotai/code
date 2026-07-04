@@ -1,5 +1,6 @@
 import { Terminal } from "@phosphor-icons/react";
 import { compactHomePath } from "@posthog/shared";
+import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 import { ToolRow } from "./ToolRow";
 import {
   ContentPre,
@@ -34,8 +35,15 @@ export function ExecuteToolView({
 
   const executeInput = rawInput as ExecuteRawInput | undefined;
   const command = executeInput?.command ?? "";
-  const description =
-    executeInput?.description ?? (command ? undefined : title);
+  // Header text shown when there's no command to display: an explicit description, else the tool
+  // call title. Guarantees the row is never label-less (the empty-marker bug) even for execute
+  // tools whose rawInput carries no `command`.
+  const headerText = executeInput?.description ?? (command ? undefined : title);
+
+  // The command renders in both chromes but styled differently: the new thread shows it as plain
+  // mono text carried by the ChatMarker title; the legacy thread keeps the bordered inline chip so
+  // ConversationView is unchanged when the chat thread is toggled off.
+  const chatChrome = useChatThreadChrome();
 
   const output = stripCodeFences(getContentText(content) ?? "").replace(
     ANSI_REGEX,
@@ -52,17 +60,24 @@ export function ExecuteToolView({
       defaultOpen={expanded}
       content={hasOutput ? <ContentPre>{output}</ContentPre> : undefined}
     >
-      {description && <ToolTitle>{description}</ToolTitle>}
-      {command && (
-        <ToolTitle className="min-w-0 truncate">
-          <span
-            className="block truncate border border-border bg-gray-5 font-mono"
-            title={command}
-          >
-            {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
-          </span>
-        </ToolTitle>
-      )}
+      {headerText && <ToolTitle>{headerText}</ToolTitle>}
+      {command &&
+        (chatChrome ? (
+          <ToolTitle className="min-w-0 shrink truncate font-mono">
+            <span className="block truncate" title={command}>
+              {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
+            </span>
+          </ToolTitle>
+        ) : (
+          <ToolTitle className="min-w-0 shrink truncate">
+            <span
+              className="block truncate border border-border bg-gray-5 font-mono"
+              title={command}
+            >
+              {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
+            </span>
+          </ToolTitle>
+        ))}
     </ToolRow>
   );
 }

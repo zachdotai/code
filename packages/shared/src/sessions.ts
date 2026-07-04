@@ -64,6 +64,9 @@ export interface AgentSession {
   processedLineCount?: number;
   framework?: "claude";
   adapter?: Adapter;
+  model?: string;
+  executionMode?: ExecutionMode;
+  reasoningLevel?: string;
   configOptions?: SessionConfigOption[];
   pendingPermissions: Map<string, PermissionRequest>;
   pausedDurationMs: number;
@@ -76,7 +79,6 @@ export interface AgentSession {
   initialPrompt?: ContentBlock[];
   cloudBranch?: string | null;
   handoffInProgress?: boolean;
-  skipPolledPromptCount?: number;
   optimisticItems: OptimisticItem[];
   contextUsed?: number;
   contextSize?: number;

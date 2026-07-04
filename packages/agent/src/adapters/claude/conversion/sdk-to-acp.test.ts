@@ -4,13 +4,16 @@ import type {
 } from "@agentclientprotocol/sdk";
 import type {
   SDKAssistantMessage,
+  SDKModelRefusalFallbackMessage,
   SDKPartialAssistantMessage,
+  SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 import { Logger } from "../../../utils/logger";
 import type { Session } from "../types";
 import {
   handleStreamEvent,
+  handleSystemMessage,
   handleUserAssistantMessage,
   type MessageHandlerContext,
   stripMarkerTags,
@@ -63,9 +66,13 @@ describe("stripMarkerTags", () => {
 
 function createHandlerContext() {
   const updates: SessionNotification[] = [];
+  const notifications: Array<{ method: string; params: unknown }> = [];
   const client = {
     sessionUpdate: async (notification: SessionNotification) => {
       updates.push(notification);
+    },
+    extNotification: async (method: string, params: unknown) => {
+      notifications.push({ method, params });
     },
   } as unknown as AgentSideConnection;
   const context: MessageHandlerContext = {
@@ -85,7 +92,7 @@ function createHandlerContext() {
       thinkingIds: new Set(),
     },
   };
-  return { context, updates };
+  return { context, updates, notifications };
 }
 
 function streamEvent(
@@ -259,4 +266,173 @@ describe("assembled assistant text fallback", () => {
     );
     expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
   });
+});
+
+function userMessage(
+  content: string | Array<Record<string, unknown>>,
+): SDKUserMessage {
+  return {
+    type: "user",
+    parent_tool_use_id: null,
+    uuid: "00000000-0000-0000-0000-000000000003",
+    session_id: "test-session",
+    message: { role: "user", content },
+  } as unknown as SDKUserMessage;
+}
+
+function userChunkTexts(updates: SessionNotification[]): string[] {
+  return updates
+    .filter((u) => u.update.sessionUpdate === "user_message_chunk")
+    .map((u) => (u.update as { content: { text: string } }).content.text);
+}
+
+describe("import replay (no client-side history)", () => {
+  function createImportReplayContext() {
+    const { context, updates } = createHandlerContext();
+    context.streamedAssistantBlocks = undefined;
+    context.isImportReplay = true;
+    return { context, updates };
+  }
+
+  it("forwards top-level assistant text during import replay", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(
+      assistantMessage("msg_1", [{ type: "text", text: "replayed answer" }]),
+      context,
+    );
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([
+      "replayed answer",
+    ]);
+  });
+
+  it("emits and marks plain-text user prompts during import replay", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(userMessage("my earlier prompt"), context);
+    expect(userChunkTexts(updates)).toEqual(["my earlier prompt"]);
+    const chunk = updates.find(
+      (u) => u.update.sessionUpdate === "user_message_chunk",
+    );
+    expect(
+      (chunk?.update as { _meta?: { importedUserPrompt?: boolean } })._meta
+        ?.importedUserPrompt,
+    ).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "with args",
+      raw: "<command-message>review</command-message>\n<command-name>/review</command-name>\n<command-args>#2198 - findings first</command-args>",
+      expected: "/review #2198 - findings first",
+    },
+    {
+      name: "no args",
+      raw: "<command-message>compact</command-message>\n<command-name>/compact</command-name>\n<command-args></command-args>",
+      expected: "/compact",
+    },
+  ])(
+    "surfaces a typed slash command ($name), not its raw markers",
+    async ({ raw, expected }) => {
+      const { context, updates } = createImportReplayContext();
+      await handleUserAssistantMessage(userMessage(raw), context);
+      expect(userChunkTexts(updates)).toEqual([expected]);
+    },
+  );
+
+  it("strips stray markers from a non-command prompt instead of leaking them", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(
+      userMessage("note <command-args>stray</command-args>"),
+      context,
+    );
+    const [text] = userChunkTexts(updates);
+    expect(text).not.toContain("<command-args>");
+    expect(text).toContain("note");
+  });
+
+  it("skips a pure-marker user prompt instead of emitting a hollow chunk", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(
+      userMessage("<command-args>stray</command-args>"),
+      context,
+    );
+    expect(userChunkTexts(updates)).toEqual([]);
+  });
+
+  it("still drops subagent assistant text during import replay", async () => {
+    const { context, updates } = createImportReplayContext();
+    await handleUserAssistantMessage(
+      assistantMessage("msg_1", [{ type: "text", text: "subagent" }], "tool_1"),
+      context,
+    );
+    expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
+  });
+});
+
+describe("handleSystemMessage model_refusal_fallback", () => {
+  function refusalFallbackMessage(
+    overrides: Partial<SDKModelRefusalFallbackMessage> = {},
+  ): SDKModelRefusalFallbackMessage {
+    return {
+      type: "system",
+      subtype: "model_refusal_fallback",
+      trigger: "refusal",
+      direction: "retry",
+      original_model: "claude-fable-5",
+      fallback_model: "claude-opus-4-8",
+      request_id: "req_1",
+      api_refusal_category: "cyber",
+      api_refusal_explanation: "This request was declined.",
+      retracted_message_uuids: [],
+      content: "Retried on fallback model",
+      uuid: "00000000-0000-0000-0000-000000000009",
+      session_id: "test-session",
+      ...overrides,
+    };
+  }
+
+  it.each<
+    [string, Partial<SDKModelRefusalFallbackMessage>, Record<string, unknown>]
+  >([
+    [
+      "emits a refusal_fallback status notification with the model swap",
+      {},
+      {
+        sessionId: "test-session",
+        status: "refusal_fallback",
+        fromModel: "claude-fable-5",
+        toModel: "claude-opus-4-8",
+        explanation: "This request was declined.",
+      },
+    ],
+    [
+      "omits the explanation when the refused response carried none",
+      { api_refusal_explanation: null },
+      {
+        sessionId: "test-session",
+        status: "refusal_fallback",
+        fromModel: "claude-fable-5",
+        toModel: "claude-opus-4-8",
+      },
+    ],
+  ])("%s", async (_name, overrides, expectedParams) => {
+    const { context, updates, notifications } = createHandlerContext();
+
+    await handleSystemMessage(refusalFallbackMessage(overrides), context);
+
+    expect(updates).toEqual([]);
+    expect(notifications).toEqual([
+      { method: "_posthog/status", params: expectedParams },
+    ]);
+  });
+
+  it.each(["revert", "sticky"] as const)(
+    "skips the notification for the legacy %s direction",
+    async (direction) => {
+      const { context, notifications } = createHandlerContext();
+
+      await handleSystemMessage(refusalFallbackMessage({ direction }), context);
+
+      expect(notifications).toEqual([]);
+    },
+  );
 });

@@ -34,6 +34,10 @@ import {
 import type { IRepositoryRepository } from "../../db/repositories/repository-repository";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import type { IWorktreeRepository } from "../../db/repositories/worktree-repository";
+import {
+  IMPORTED_SESSION_CLEANER,
+  type ImportedSessionCleaner,
+} from "../claude-cli-sessions/identifiers";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { getBranchFromPath, hasAnyFiles } from "../repo-fs-query/repo-fs-query";
@@ -142,6 +146,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     private readonly workspaceSettings: IWorkspaceSettings,
     @inject(ANALYTICS_SERVICE)
     private readonly analytics: IAnalytics,
+    @inject(IMPORTED_SESSION_CLEANER)
+    private readonly importedSessionCleaner: ImportedSessionCleaner,
     @inject(ROOT_LOGGER)
     logger: RootLogger,
   ) {
@@ -525,6 +531,14 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     };
   }
 
+  get pendingCreationCount(): number {
+    return this.creatingWorkspaces.size;
+  }
+
+  async waitForPendingCreations(): Promise<void> {
+    await Promise.allSettled([...this.creatingWorkspaces.values()]);
+  }
+
   async createWorkspace(options: CreateWorkspaceInput): Promise<WorkspaceInfo> {
     // Prevent concurrent workspace creation for the same task
     const existingPromise = this.creatingWorkspaces.get(options.taskId);
@@ -535,11 +549,22 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       return existingPromise;
     }
 
+    const startedAt = Date.now();
     const promise = this.doCreateWorkspace(options);
     this.creatingWorkspaces.set(options.taskId, promise);
 
     try {
-      return await promise;
+      const workspaceInfo = await promise;
+      this.log.info(
+        `Workspace ready for task ${options.taskId} after ${Date.now() - startedAt}ms (mode: ${workspaceInfo.mode})`,
+      );
+      return workspaceInfo;
+    } catch (error) {
+      this.log.error(
+        `Workspace creation failed for task ${options.taskId} after ${Date.now() - startedAt}ms`,
+        error,
+      );
+      throw error;
     } finally {
       this.creatingWorkspaces.delete(options.taskId);
     }
@@ -623,6 +648,9 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         repositoryId,
         mode: "local",
       });
+      this.log.info(
+        `Workspace record persisted for task ${taskId} (mode: local)`,
+      );
 
       const localBranch = await getBranchFromPath(folderPath);
       return {
@@ -779,6 +807,14 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
   async deleteWorkspace(taskId: string, mainRepoPath: string): Promise<void> {
     this.log.info(`Deleting workspace for task ${taskId}`);
+
+    // Drop any imported CLI snapshot first, before the early returns below.
+    // Best-effort: a cleanup failure must not block deleting the task.
+    await this.importedSessionCleaner
+      .deleteImportForTask(taskId)
+      .catch((error) => {
+        this.log.warn("Failed to clean up imported session", { taskId, error });
+      });
 
     const association = this.findTaskAssociation(taskId);
     if (!association) {

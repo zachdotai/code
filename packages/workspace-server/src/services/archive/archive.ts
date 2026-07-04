@@ -40,6 +40,10 @@ import type {
   WorkspaceRepository,
 } from "../../db/repositories/workspace-repository";
 import type { WorktreeRepository } from "../../db/repositories/worktree-repository";
+import {
+  IMPORTED_SESSION_CLEANER,
+  type ImportedSessionCleaner,
+} from "../claude-cli-sessions/identifiers";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import {
@@ -77,6 +81,8 @@ export class ArchiveService {
     private readonly taskMetadataRepo: ITaskMetadataRepository,
     @inject(WORKSPACE_SETTINGS_SERVICE)
     private readonly workspaceSettings: IWorkspaceSettings,
+    @inject(IMPORTED_SESSION_CLEANER)
+    private readonly importedSessionCleaner: ImportedSessionCleaner,
     @inject(ROOT_LOGGER)
     rootLogger: RootLogger,
   ) {
@@ -240,24 +246,30 @@ export class ArchiveService {
             archivedTask.branchName = actualBranch;
           }
 
-          await step(
-            async () => {
-              if (!archivedTask.checkpointId) {
-                throw new Error("checkpointId must be set for worktree mode");
-              }
-              await this.captureWorktreeCheckpoint(
-                folderPath,
-                worktreePath,
-                archivedTask.checkpointId,
-              );
-            },
-            async () => {
-              if (archivedTask.checkpointId) {
+          const checkpointId = archivedTask.checkpointId;
+          try {
+            if (!checkpointId) {
+              throw new Error("checkpointId must be set for worktree mode");
+            }
+            await step(
+              () =>
+                this.captureWorktreeCheckpoint(
+                  folderPath,
+                  worktreePath,
+                  checkpointId,
+                ),
+              async () => {
                 const git = createGitClient(folderPath);
-                await deleteCheckpoint(git, archivedTask.checkpointId);
-              }
-            },
-          );
+                await deleteCheckpoint(git, checkpointId);
+              },
+            );
+          } catch (error) {
+            this.log.warn(
+              `Failed to capture checkpoint for ${worktreePath}; archiving without a restore point`,
+              { error },
+            );
+            archivedTask.checkpointId = null;
+          }
         }
 
         await step(
@@ -271,13 +283,39 @@ export class ArchiveService {
 
         await step(
           async () => {
-            const manager = new WorktreeManager({
-              mainRepoPath: folderPath,
-              worktreeBasePath: this.workspaceSettings.getWorktreeLocation(),
-            });
-            await manager.deleteWorktree(worktreePath);
-            const parentDir = path.dirname(worktreePath);
-            await forceRemove(parentDir);
+            try {
+              const manager = new WorktreeManager({
+                mainRepoPath: folderPath,
+                worktreeBasePath: this.workspaceSettings.getWorktreeLocation(),
+              });
+              await manager.deleteWorktree(worktreePath);
+              const parentDir = path.dirname(worktreePath);
+              await forceRemove(parentDir);
+            } catch (error) {
+              this.log.warn(
+                `Failed to remove worktree at ${worktreePath}; archiving anyway (on-disk worktree may need manual cleanup)`,
+                { error },
+              );
+              // The worktree is still registered under its original name, so a
+              // later unarchive can't re-add it from the checkpoint (git rejects
+              // the duplicate name/path), leaving the task un-restorable. Drop
+              // the restore point — and its now-orphaned checkpoint ref — so the
+              // archive record stays internally consistent, matching how a
+              // failed capture above already sets checkpointId to null.
+              const orphanedCheckpointId = archivedTask.checkpointId;
+              if (orphanedCheckpointId) {
+                archivedTask.checkpointId = null;
+                try {
+                  const git = createGitClient(folderPath);
+                  await deleteCheckpoint(git, orphanedCheckpointId);
+                } catch (cleanupError) {
+                  this.log.warn(
+                    `Failed to delete orphaned checkpoint ${orphanedCheckpointId}`,
+                    { error: cleanupError },
+                  );
+                }
+              }
+            }
           },
           async () => {},
         );
@@ -501,6 +539,14 @@ export class ArchiveService {
 
   async deleteArchivedTask(taskId: string): Promise<void> {
     this.log.info(`Deleting archived task ${taskId}`);
+
+    // Drop any imported CLI snapshot for this task. Best-effort: a cleanup
+    // failure must not block deleting the archived task.
+    await this.importedSessionCleaner
+      .deleteImportForTask(taskId)
+      .catch((error) => {
+        this.log.warn("Failed to clean up imported session", { taskId, error });
+      });
 
     const workspace = this.workspaceRepo.findByTaskId(taskId);
     if (!workspace) {

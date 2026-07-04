@@ -1,9 +1,11 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type { CloudSkillBundleRef } from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import type { Workspace, WorkspaceMode } from "@posthog/shared";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
 
 export interface CloudPromptTransport {
   filePaths: string[];
+  skillBundles: CloudSkillBundleRef[];
   messageText?: string;
   promptText: string;
 }
@@ -52,6 +54,25 @@ export interface SetupActionDispatch {
   label: string;
 }
 
+export interface ClaudeCliImportFingerprint {
+  sourceMtimeMs: number;
+  sourceSizeBytes: number;
+  sourceLastEntryUuid: string | null;
+}
+
+export interface ImportedClaudeCliSession {
+  importedSessionId: string;
+  fingerprint: ClaudeCliImportFingerprint;
+}
+
+export interface RecordClaudeCliImportArgs {
+  sourceSessionId: string;
+  importedSessionId: string;
+  repoPath: string;
+  taskId: string;
+  fingerprint: ClaudeCliImportFingerprint;
+}
+
 export interface ITaskCreationHost {
   getAuthenticatedClient(): Promise<TaskCreationApiClient | null>;
   assertCloudUsageAvailable(): Promise<void>;
@@ -83,14 +104,43 @@ export interface ITaskCreationHost {
     prompt: string | ContentBlock[],
     filePaths?: string[],
   ): CloudPromptTransport;
+  /**
+   * Rewrite a leading local-skill slash command (e.g. `/my-skill args`) into a
+   * `<skill .../>` tag so its bundle is uploaded on the first cloud message.
+   * Returns the prompt unchanged when it isn't a local-skill invocation. The
+   * follow-up message path already does this; the initial-creation path must
+   * too, or a typed `/my-skill` reaches the sandbox with no bundle attached.
+   */
+  resolveLocalSkillCommandPrompt(prompt: string): Promise<string>;
   uploadRunAttachments(
     client: TaskCreationApiClient,
     taskId: string,
     runId: string,
     filePaths: string[],
+    skillBundles?: CloudSkillBundleRef[],
   ): Promise<string[]>;
   setProvisioningActive(taskId: string): void;
   clearProvisioning(taskId: string): void;
   dispatchSetupAction(args: SetupActionDispatch): void;
   track(event: string, props?: Record<string, unknown>): void;
+  importClaudeCliSession(args: {
+    repoPath: string;
+    sourceSessionId: string;
+  }): Promise<ImportedClaudeCliSession>;
+  /** Compensate the import step: remove the copied transcript on rollback. */
+  deleteClaudeCliImport(args: {
+    repoPath: string;
+    importedSessionId: string;
+  }): Promise<void>;
+  recordClaudeCliImport(args: RecordClaudeCliImportArgs): Promise<void>;
+  /** Compensate the record step: drop the tracking row on rollback. */
+  deleteClaudeCliImportRecord(args: {
+    importedSessionId: string;
+  }): Promise<void>;
+  /**
+   * Link the task to the branch the imported session worked on, without
+   * checking it out. Lets the standard branch-mismatch prompt surface if the
+   * local checkout is on a different branch.
+   */
+  linkTaskBranch(args: { taskId: string; branchName: string }): Promise<void>;
 }
