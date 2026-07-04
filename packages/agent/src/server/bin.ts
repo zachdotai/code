@@ -11,9 +11,10 @@ import { claudeCodeConfigSchema, mcpServersSchema } from "./schemas";
  * Point RTK output-compression at the binary we vendor into `dist/rtk/`
  * (built here at dist/server/bin.cjs, so the sibling is `../rtk`). This makes
  * RTK available for cloud runs with a consistent version instead of depending
- * on rtk being on the sandbox PATH. Respect an existing POSTHOG_RTK (explicit
- * path or `0`/`false` opt-out) and stay silent when the bundle is absent so the
- * runtime resolver falls back to PATH.
+ * on rtk being on the sandbox PATH. Only default when POSTHOG_RTK is unset —
+ * any explicit value wins (a path override, or `0`/`false` to opt out, both
+ * interpreted downstream by resolveRtkPrefix). Stay silent when the bundle is
+ * absent so the runtime resolver falls back to PATH.
  */
 function applyBundledRtkDefault(): void {
   if (process.env.POSTHOG_RTK) return;

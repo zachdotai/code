@@ -131,6 +131,13 @@ async function verifyChecksum(archivePath, target) {
   }
 }
 
+// Both archive layouts are expected to place the binary at the archive root
+// (verified for rtk 0.43.0): the tar path relies on that so `extract` drops
+// `rtk` directly into destDir, and the zip path looks it up by the bare name
+// first. If a future rtk release nests the binary under a directory, the tar
+// path extracts nothing useful and the caller's post-extraction existence
+// check fails loudly — the zip path additionally tries the `rtk-<target>/`
+// prefix as a fallback.
 async function extractArchive(archivePath, destDir, target) {
   if (target.includes("windows")) {
     const entries = unzipSync(readFileSync(archivePath));
@@ -166,7 +173,7 @@ export async function ensureRtkBinary(destDir) {
     const url = rtkAssetUrl(target);
     const archivePath = join(
       cacheDir,
-      url.endsWith(".zip") ? "rtk.zip" : "rtk.tar.gz",
+      target.includes("windows") ? "rtk.zip" : "rtk.tar.gz",
     );
     await downloadFile(url, archivePath);
     try {
@@ -179,7 +186,9 @@ export async function ensureRtkBinary(destDir) {
     await extractArchive(archivePath, cacheDir, target);
     rmSync(archivePath, { force: true });
     if (!existsSync(cachedBinary)) {
-      throw new Error(`rtk binary missing after extraction: ${cachedBinary}`);
+      throw new Error(
+        `rtk binary missing after extraction: ${cachedBinary} — the release archive layout for ${target} may have changed`,
+      );
     }
   }
 

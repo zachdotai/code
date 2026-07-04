@@ -230,8 +230,6 @@ describe("AgentAuthAdapter", () => {
   });
 
   it("configures environment using the gateway proxy and current token", async () => {
-    delete process.env.POSTHOG_RTK;
-
     await adapter.configureProcessEnv({
       credentials: baseCredentials,
       mockNodeDir: "/mock/node",
@@ -250,8 +248,6 @@ describe("AgentAuthAdapter", () => {
   });
 
   it("points POSTHOG_RTK at the bundled rtk binary when provided", async () => {
-    delete process.env.POSTHOG_RTK;
-
     await adapter.configureProcessEnv({
       credentials: baseCredentials,
       mockNodeDir: "/mock/node",
