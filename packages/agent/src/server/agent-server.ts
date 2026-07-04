@@ -75,6 +75,7 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { resolveRtkSavings } from "./rtk-savings";
 import {
   handoffLocalGitStateSchema,
   jsonRpcRequestSchema,
@@ -304,6 +305,7 @@ export class AgentServer {
   private app: Hono;
   private posthogAPI: PostHogAPIClient;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
+  private rtkSavingsEmitted = false;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
@@ -2838,6 +2840,11 @@ ${signedCommitInstructions}
       error: errorMessage ?? "Agent error",
     });
 
+    // Emit before the finally below stops the stream — failed runs still used
+    // RTK-compressed commands and must be counted. cleanupSession's emit runs
+    // after this stop on the error path, so it can't rely on that one.
+    await this.emitRtkSavings();
+
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
@@ -3365,12 +3372,54 @@ ${signedCommitInstructions}
     }
 
     if (completeEventStream) {
+      await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
     }
 
     this.pendingEvents = [];
     this.lastReportedBranch = null;
     this.session = null;
+  }
+
+  /**
+   * Emit RTK's output-compression token savings for this run as a telemetry
+   * event, so PostHog can report how much context RTK saved. Best-effort and
+   * cloud-only (no-op when the event stream isn't configured). Fires at most
+   * once per run: it's called from both terminal seams (the error path stops
+   * the stream in signalTaskComplete, before cleanupSession runs) and must land
+   * before the stream is stopped, since enqueue is a no-op once stopped.
+   */
+  private async emitRtkSavings(): Promise<void> {
+    if (!this.eventStreamSender || this.rtkSavingsEmitted) return;
+    this.rtkSavingsEmitted = true;
+
+    try {
+      const savings = await resolveRtkSavings();
+      if (!savings) return;
+
+      this.eventStreamSender.enqueue({
+        type: "notification",
+        timestamp: new Date().toISOString(),
+        notification: {
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.RTK_SAVINGS,
+          // snake_case: these land as PostHog event properties.
+          params: {
+            task_id: this.config.taskId,
+            run_id: this.config.runId,
+            team_id: this.config.projectId,
+            total_commands: savings.totalCommands,
+            input_tokens: savings.inputTokens,
+            output_tokens: savings.outputTokens,
+            tokens_saved: savings.tokensSaved,
+            avg_savings_pct: savings.avgSavingsPct,
+          },
+        },
+      });
+      this.logger.debug("Emitted rtk savings", { ...savings });
+    } catch (error) {
+      this.logger.debug("Failed to emit rtk savings", { error });
+    }
   }
 
   private async captureCheckpointState(
