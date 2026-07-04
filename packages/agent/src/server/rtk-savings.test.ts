@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveRtkSavings } from "./rtk-savings";
+import { resolveRtkSavings, scrubbedGainEnv } from "./rtk-savings";
 
 const GAIN_JSON = JSON.stringify({
   summary: {
@@ -93,5 +93,42 @@ describe("resolveRtkSavings", () => {
       outputTokens: 0,
       tokensSaved: 0,
     });
+  });
+});
+
+describe("scrubbedGainEnv", () => {
+  it.each<[string, NodeJS.ProcessEnv, NodeJS.ProcessEnv]>([
+    [
+      "drops secrets and keeps platform essentials",
+      {
+        PATH: "/usr/bin",
+        HOME: "/Users/dev",
+        GITHUB_TOKEN: "ghp_secret",
+        ANTHROPIC_API_KEY: "sk-secret",
+        POSTHOG_API_KEY: "phx_secret",
+      },
+      { PATH: "/usr/bin", HOME: "/Users/dev" },
+    ],
+    [
+      "keeps windows data-dir and spawn variables",
+      {
+        USERPROFILE: "C:\\Users\\dev",
+        APPDATA: "C:\\Users\\dev\\AppData\\Roaming",
+        SystemRoot: "C:\\Windows",
+        AWS_SECRET_ACCESS_KEY: "secret",
+      },
+      {
+        USERPROFILE: "C:\\Users\\dev",
+        APPDATA: "C:\\Users\\dev\\AppData\\Roaming",
+        SystemRoot: "C:\\Windows",
+      },
+    ],
+    [
+      "omits allowlisted keys that are unset",
+      { PATH: "/usr/bin" },
+      { PATH: "/usr/bin" },
+    ],
+  ])("%s", (_case, input, expected) => {
+    expect(scrubbedGainEnv(input)).toEqual(expected);
   });
 });

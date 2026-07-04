@@ -65,9 +65,35 @@ async function defaultRunGain(
     // The daily array grows on long-lived hosts; cap the buffer explicitly so
     // ERR_CHILD_PROCESS_STDIO_MAXBUFFER never silently swallows savings on desktop reuse.
     maxBuffer: 10 * 1024 * 1024,
-    env,
+    env: scrubbedGainEnv(env),
   });
   return stdout;
+}
+
+// `rtk gain` only reads rtk's own stats database. Don't hand a third-party
+// binary the full process env (API keys, tokens) when all it needs is enough
+// to locate its data dir and spawn on each platform.
+const GAIN_ENV_ALLOWLIST = [
+  "PATH",
+  "HOME",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  "SystemRoot",
+];
+
+export function scrubbedGainEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    GAIN_ENV_ALLOWLIST.filter((key) => env[key] !== undefined).map((key) => [
+      key,
+      env[key],
+    ]),
+  );
 }
 
 /**
