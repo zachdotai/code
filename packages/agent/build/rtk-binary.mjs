@@ -6,10 +6,13 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -183,12 +186,21 @@ export async function ensureRtkBinary(destDir) {
       rmSync(archivePath, { force: true });
       throw error;
     }
-    await extractArchive(archivePath, cacheDir, target);
-    rmSync(archivePath, { force: true });
-    if (!existsSync(cachedBinary)) {
-      throw new Error(
-        `rtk binary missing after extraction: ${cachedBinary} — the release archive layout for ${target} may have changed`,
-      );
+    // Extract into a temp dir first so a killed build cannot leave a partial
+    // binary in cacheDir that existsSync accepts on the next run.
+    const tmpDir = mkdtempSync(join(tmpdir(), "posthog-rtk-"));
+    try {
+      await extractArchive(archivePath, tmpDir, target);
+      rmSync(archivePath, { force: true });
+      const extractedBinary = join(tmpDir, binName);
+      if (!existsSync(extractedBinary)) {
+        throw new Error(
+          `rtk binary missing after extraction: ${cachedBinary} — the release archive layout for ${target} may have changed`,
+        );
+      }
+      renameSync(extractedBinary, cachedBinary);
+    } finally {
+      rmSync(tmpDir, { force: true, recursive: true });
     }
   }
 

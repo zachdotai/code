@@ -305,7 +305,7 @@ export class AgentServer {
   private app: Hono;
   private posthogAPI: PostHogAPIClient;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
-  private rtkSavingsEmitted = false;
+  private rtkSavingsAttempted = false;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
@@ -2840,11 +2840,6 @@ ${signedCommitInstructions}
       error: errorMessage ?? "Agent error",
     });
 
-    // Emit before the finally below stops the stream — failed runs still used
-    // RTK-compressed commands and must be counted. cleanupSession's emit runs
-    // after this stop on the error path, so it can't rely on that one.
-    await this.emitRtkSavings();
-
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
@@ -2854,6 +2849,11 @@ ${signedCommitInstructions}
     } catch (error) {
       this.logger.error("Failed to signal task completion", error);
     } finally {
+      // Emit before stop() — failed runs still used RTK-compressed commands
+      // and must be counted. cleanupSession's emit runs after this stop on
+      // the error path, so it can't rely on that one. Placed after
+      // updateTaskRun so the "failed" status lands promptly.
+      await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
     }
   }
@@ -3390,8 +3390,10 @@ ${signedCommitInstructions}
    * before the stream is stopped, since enqueue is a no-op once stopped.
    */
   private async emitRtkSavings(): Promise<void> {
-    if (!this.eventStreamSender || this.rtkSavingsEmitted) return;
-    this.rtkSavingsEmitted = true;
+    if (!this.eventStreamSender || this.rtkSavingsAttempted) return;
+    // Set before the await: a failed attempt still counts — prevents retry
+    // storms on the terminal path.  The flag name reflects this intent.
+    this.rtkSavingsAttempted = true;
 
     try {
       const savings = await (

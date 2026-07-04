@@ -517,9 +517,13 @@ describe("AgentServer HTTP Mode", () => {
       const session = testServer.session;
       await testServer.cleanupSession({ completeEventStream: true });
       // A failed run hits both terminal seams; the savings must only count once.
+      // Re-arm session: the first cleanup nulled this.session, so without this
+      // the second cleanup exits early and never reaches emitRtkSavings.
       testServer.session = session;
       await testServer.cleanupSession({ completeEventStream: true });
 
+      // The once-only assertion is meaningful because the stubbed stop() does
+      // not gate enqueue — rtkSavingsAttempted is the actual guard under test.
       expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledOnce();
       expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({
