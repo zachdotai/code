@@ -275,6 +275,21 @@ export interface CloudStreamDisconnectedProperties {
   was_bootstrapping: boolean;
 }
 
+/**
+ * A gauge snapshot of rtk's cumulative machine-global savings counter,
+ * mirroring the cloud agent's `_posthog/rtk_savings` event shape. Consumers
+ * group by `counter_id` and difference readings (with an implicit 0 before a
+ * counter's first reading, and a value drop treated as a reset) — never sum
+ * event values, which would multiply-count re-reads of the shared counter.
+ */
+export interface RtkSavingsGaugeProperties {
+  counter_id: string;
+  cumulative_commands: number;
+  cumulative_input_tokens: number;
+  cumulative_output_tokens: number;
+  cumulative_tokens_saved: number;
+}
+
 // Permission events
 export interface PermissionRespondedProperties {
   task_id: string;
@@ -1136,9 +1151,7 @@ export const ANALYTICS_EVENTS = {
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 
-  // RTK output-compression telemetry. A gauge snapshot of rtk's cumulative
-  // machine-global savings counter: consumers group by counter_id and
-  // difference readings (never sum) — see RtkSavingsReporter in core.
+  // RTK output-compression telemetry — see RtkSavingsGaugeProperties.
   RTK_SAVINGS_GAUGE: "RTK savings gauge",
 
   // Project Bluebird (Channels) events
@@ -1291,6 +1304,9 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.CLOUD_TASK_USAGE_BLOCKED]: CloudTaskUsageBlockedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
+
+  // RTK output-compression telemetry
+  [ANALYTICS_EVENTS.RTK_SAVINGS_GAUGE]: RtkSavingsGaugeProperties;
 
   // Project Bluebird (Channels) events
   [ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED]: ChannelsSpaceViewedProperties;

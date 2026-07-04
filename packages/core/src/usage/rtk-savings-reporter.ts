@@ -7,7 +7,10 @@ import {
   APP_LIFECYCLE_SERVICE,
   type IAppLifecycle,
 } from "@posthog/platform/app-lifecycle";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import {
+  ANALYTICS_EVENTS,
+  type RtkSavingsGaugeProperties,
+} from "@posthog/shared/analytics-events";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
 import { RTK_SAVINGS_HOST, type RtkSavingsHost } from "./identifiers";
 
@@ -77,7 +80,7 @@ export class RtkSavingsReporter {
         cumulative_input_tokens: gauge.inputTokens,
         cumulative_output_tokens: gauge.outputTokens,
         cumulative_tokens_saved: gauge.tokensSaved,
-      });
+      } satisfies RtkSavingsGaugeProperties);
       this.logger.debug("Reported rtk savings gauge", { reading });
     } catch (error) {
       this.logger.debug("Failed to report rtk savings gauge", { error });
