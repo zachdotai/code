@@ -80,6 +80,7 @@ describe("AgentAuthAdapter", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete process.env.POSTHOG_RTK;
   });
 
   it("builds the default PostHog MCP server routed through the local proxy", async () => {
@@ -260,7 +261,5 @@ describe("AgentAuthAdapter", () => {
     });
 
     expect(process.env.POSTHOG_RTK).toBe("/mock/.vite/build/rtk/rtk");
-
-    delete process.env.POSTHOG_RTK;
   });
 });

@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
+  createReadStream,
   createWriteStream,
   existsSync,
   mkdirSync,
@@ -45,6 +47,23 @@ const RTK_TARGETS = {
     x64: "x86_64-unknown-linux-musl",
   },
   win32: { x64: "x86_64-pc-windows-msvc" },
+};
+
+// SHA-256 of each release archive (from the release's checksums.txt), pinned
+// alongside RTK_VERSION so a swapped release asset or a corrupt/truncated
+// download fails the build instead of being cached and bundled. Update both
+// RTK_VERSION and these hashes together when bumping rtk.
+const RTK_SHA256 = {
+  "aarch64-apple-darwin":
+    "8a17e49acbd378997eb21d0eb6f7f861111f35b4fc9b1c74edf4c7448e576c65",
+  "aarch64-unknown-linux-gnu":
+    "5519f7ca12e5c143a609f0d28a0a77b97413a8dce31c2681f1a41c24519a8731",
+  "x86_64-apple-darwin":
+    "a85f60e2637811be68366208b8d8b9c5ba1b748cb5df4477ab20cd73d3c5d9f8",
+  "x86_64-pc-windows-msvc":
+    "7c5e4a2ef816a4d4ed947ddd74ca3df851fc39ea87d49a3ca2bf3abc515a016b",
+  "x86_64-unknown-linux-musl":
+    "ff8a1e7766496e175291a85aeca1dc97c9ff6df33e51e5893d1fbc78fea2a609",
 };
 
 export function rtkBinName(platform = targetPlatform()) {
@@ -97,6 +116,21 @@ async function downloadFile(url, destPath) {
   }
 }
 
+async function verifyChecksum(archivePath, target) {
+  const expected = RTK_SHA256[target];
+  if (!expected) {
+    throw new Error(`No pinned checksum for rtk target ${target}`);
+  }
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(archivePath), hash);
+  const actual = hash.digest("hex");
+  if (actual !== expected) {
+    throw new Error(
+      `rtk checksum mismatch for ${target}: expected ${expected}, got ${actual}`,
+    );
+  }
+}
+
 async function extractArchive(archivePath, destDir, target) {
   if (target.includes("windows")) {
     const entries = unzipSync(readFileSync(archivePath));
@@ -135,6 +169,13 @@ export async function ensureRtkBinary(destDir) {
       url.endsWith(".zip") ? "rtk.zip" : "rtk.tar.gz",
     );
     await downloadFile(url, archivePath);
+    try {
+      await verifyChecksum(archivePath, target);
+    } catch (error) {
+      // Don't leave an unverified archive on disk to be reused.
+      rmSync(archivePath, { force: true });
+      throw error;
+    }
     await extractArchive(archivePath, cacheDir, target);
     rmSync(archivePath, { force: true });
     if (!existsSync(cachedBinary)) {
