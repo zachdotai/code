@@ -121,3 +121,20 @@ type MissingHostRoutes = Exclude<keyof HostRouter, keyof TrpcRouter>;
 export const servesEveryHostRoute: [MissingHostRoutes] extends [never]
   ? true
   : MissingHostRoutes = true;
+
+/**
+ * Same guard one level down for routes this assembly overrides with a local
+ * router instead of serving the @posthog/host-router one: the local router
+ * must expose every procedure the HostRouter type declares, or renderer calls
+ * to the missing procedure NOT_FOUND at runtime (quickEntry.getShortcut
+ * regressed this way).
+ */
+type MissingQuickEntryProcedures = Exclude<
+  keyof HostRouter["quickEntry"],
+  keyof TrpcRouter["quickEntry"]
+>;
+export const servesEveryQuickEntryProcedure: [
+  MissingQuickEntryProcedures,
+] extends [never]
+  ? true
+  : MissingQuickEntryProcedures = true;

@@ -7,8 +7,10 @@ import { attachWindowToIPC } from "./window";
 
 const log = logger.scope("quick-entry-window");
 
-declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
-declare const MAIN_WINDOW_VITE_NAME: string;
+// electron-vite (unlike Forge) exposes the renderer dev-server URL via env
+// rather than injected build-time globals; mirrors window.ts.
+const MAIN_WINDOW_VITE_DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
+const MAIN_WINDOW_VITE_NAME = "main_window";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

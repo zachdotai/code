@@ -22,6 +22,11 @@ function subscribeToQuickEntryEvent<K extends keyof QuickEntryServiceEvents>(
   });
 }
 
+const shortcutState = z.object({
+  accelerator: z.string(),
+  registered: z.boolean(),
+});
+
 const createTaskRequestInput = z.object({
   content: z.string(),
   repoPath: z.string(),
@@ -55,6 +60,15 @@ export const quickEntryRouter = router({
     .mutation(({ input }) => {
       getService().setEnabled(input.enabled);
     }),
+
+  getShortcut: publicProcedure
+    .output(shortcutState)
+    .query(() => getService().getShortcut()),
+
+  setShortcut: publicProcedure
+    .input(z.object({ accelerator: z.string().min(1) }))
+    .output(shortcutState)
+    .mutation(({ input }) => getService().setShortcut(input.accelerator)),
 
   requestCreateTask: publicProcedure
     .input(createTaskRequestInput)
