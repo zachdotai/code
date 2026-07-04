@@ -3382,9 +3382,22 @@ ${signedCommitInstructions}
   }
 
   /**
-   * Emit RTK's output-compression token savings for this run as a telemetry
-   * event, so PostHog can report how much context RTK saved. Best-effort and
-   * cloud-only (no-op when the event stream isn't configured). Fires at most
+   * Emit a gauge snapshot of RTK's cumulative output-compression tally as a
+   * telemetry event, so PostHog can report how much context RTK saves.
+   *
+   * Gauge semantics: the `cumulative_*` properties are counter READS of the
+   * host's machine-global rtk tally, not per-run deltas. Consumers must group
+   * by `counter_id` and difference readings (argMax - argMin per window,
+   * treating a drop as a counter reset à la `rate()` — `rtk gain --reset`
+   * exists), never sum event values. This makes the numbers correct even when
+   * several sessions share one rtk database: concurrent reads of the shared
+   * counter dedupe under max() instead of double-counting. In the ephemeral
+   * cloud sandbox the counter starts at zero, so a single reading is also this
+   * run's savings.
+   *
+   * Best-effort and cloud-only for now (no-op when the event stream isn't
+   * configured; a desktop emit through the analytics pipeline can reuse the
+   * same shape with the install's device id as `counter_id`). Fires at most
    * once per run: it's called from both terminal seams (the error path stops
    * the stream in signalTaskComplete, before cleanupSession runs) and must land
    * before the stream is stopped, since enqueue is a no-op once stopped.
@@ -3412,17 +3425,21 @@ ${signedCommitInstructions}
             task_id: this.config.taskId,
             run_id: this.config.runId,
             team_id: this.config.projectId,
-            total_commands: savings.totalCommands,
-            input_tokens: savings.inputTokens,
-            output_tokens: savings.outputTokens,
-            tokens_saved: savings.tokensSaved,
+            // The identity of the rtk database this reading came from — the
+            // group-by key for differencing. The cloud sandbox is fresh per
+            // run, so the run owns its counter.
+            counter_id: this.config.runId,
+            cumulative_commands: savings.totalCommands,
+            cumulative_input_tokens: savings.inputTokens,
+            cumulative_output_tokens: savings.outputTokens,
+            cumulative_tokens_saved: savings.tokensSaved,
             avg_savings_pct: savings.avgSavingsPct,
           },
         },
       });
-      this.logger.debug("Emitted rtk savings", { ...savings });
+      this.logger.debug("Emitted rtk savings gauge", { ...savings });
     } catch (error) {
-      this.logger.debug("Failed to emit rtk savings", { error });
+      this.logger.debug("Failed to emit rtk savings gauge", { error });
     }
   }
 

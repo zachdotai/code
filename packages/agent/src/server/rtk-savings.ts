@@ -64,9 +64,10 @@ async function defaultRunGain(
  *
  * Best-effort: returns null when RTK is disabled or unavailable, when it has
  * tracked nothing, or on any exec/parse failure — reporting savings must never
- * disrupt a run. The tally is machine-global, which equals a single run's
- * savings in the ephemeral cloud sandbox (fresh DB per run). A long-lived host
- * would need to snapshot-and-diff instead.
+ * disrupt a run. The tally is a machine-global cumulative counter shared by
+ * every session using the same rtk database — treat a reading as a gauge
+ * snapshot to be differenced downstream, not a per-run delta (see
+ * emitRtkSavings in agent-server.ts for the consumption contract).
  */
 export async function resolveRtkSavings({
   env = process.env,
