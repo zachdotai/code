@@ -258,4 +258,20 @@ describe("AgentAuthAdapter", () => {
 
     expect(process.env.POSTHOG_RTK).toBe("/mock/.vite/build/rtk/rtk");
   });
+
+  it("does not overwrite an explicit POSTHOG_RTK opt-out with the bundle", async () => {
+    process.env.POSTHOG_RTK = "0";
+
+    await adapter.configureProcessEnv({
+      credentials: baseCredentials,
+      mockNodeDir: "/mock/node",
+      proxyUrl: "http://127.0.0.1:9999",
+      claudeCliPath: "/mock/claude-cli.js",
+      rtkPath: "/mock/.vite/build/rtk/rtk",
+    });
+
+    // An explicit operator override (here, the 0/false opt-out) must win over
+    // the bundled default, matching the cloud bin's behavior.
+    expect(process.env.POSTHOG_RTK).toBe("0");
+  });
 });

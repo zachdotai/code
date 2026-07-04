@@ -156,9 +156,13 @@ export class AgentAuthAdapter {
 
     process.env.LLM_GATEWAY_URL = proxyUrl;
     process.env.CLAUDE_CODE_EXECUTABLE = claudeCliPath;
-    // Only set when the bundle is present; leaving it unset lets the agent's
-    // resolver fall back to an rtk on PATH.
-    if (rtkPath) process.env.POSTHOG_RTK = rtkPath;
+    // Default to the bundled rtk only when neither the operator nor a prior
+    // call already set POSTHOG_RTK — an explicit value (a custom path, or
+    // `0`/`false` to opt out) must win, matching the cloud bin's default. When
+    // the bundle is absent we leave it unset so the resolver falls back to PATH.
+    if (rtkPath && !process.env.POSTHOG_RTK) {
+      process.env.POSTHOG_RTK = rtkPath;
+    }
     process.env.POSTHOG_API_URL = credentials.apiHost;
     process.env.POSTHOG_PROJECT_ID = String(credentials.projectId);
   }
