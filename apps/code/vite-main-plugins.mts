@@ -261,11 +261,12 @@ export function copyRtkBinary(): Plugin {
         return;
       }
 
+      const platform = targetPlatform();
       copyFileSync(source, destBinary);
-      if (targetPlatform() !== "win32") {
+      if (platform !== "win32") {
         execSync(`chmod +x "${destBinary}"`);
       }
-      if (targetPlatform() === "darwin") {
+      if (platform === "darwin") {
         try {
           execSync(`xattr -cr "${destBinary}"`, { stdio: "inherit" });
           execSync(`codesign --force --sign - "${destBinary}"`, {
