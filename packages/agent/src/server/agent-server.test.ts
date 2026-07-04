@@ -405,6 +405,10 @@ describe("AgentServer HTTP Mode", () => {
       mode: "interactive",
       taskId: "test-task-id",
       runId: "test-run-id",
+      // Never probe the machine's real rtk: with the default resolver these
+      // tests would emit real savings wherever rtk is installed and pass
+      // everywhere else.
+      resolveRtkSavings: async () => null,
       ...overrides,
     });
     return server;
@@ -444,6 +448,7 @@ describe("AgentServer HTTP Mode", () => {
 
   describe("turn completion", () => {
     function stubSessionCleanup(testServer: unknown): {
+      session: unknown;
       cleanupSession: (options?: {
         completeEventStream?: boolean;
       }) => Promise<void>;
@@ -496,19 +501,51 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
     });
 
+    it("emits rtk savings once, before terminal cleanup stops event ingest", async () => {
+      const testServer = stubSessionCleanup(
+        createServer({
+          resolveRtkSavings: async () => ({
+            totalCommands: 4,
+            inputTokens: 1000,
+            outputTokens: 350,
+            tokensSaved: 650,
+            avgSavingsPct: 65,
+          }),
+        }),
+      );
+
+      const session = testServer.session;
+      await testServer.cleanupSession({ completeEventStream: true });
+      // A failed run hits both terminal seams; the savings must only count once.
+      testServer.session = session;
+      await testServer.cleanupSession({ completeEventStream: true });
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledOnce();
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "notification",
+          notification: expect.objectContaining({
+            method: "_posthog/rtk_savings",
+            params: expect.objectContaining({
+              task_id: "test-task-id",
+              run_id: "test-run-id",
+              team_id: 1,
+              total_commands: 4,
+              tokens_saved: 650,
+            }),
+          }),
+        }),
+      );
+      expect(
+        testServer.eventStreamSender.enqueue.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        testServer.eventStreamSender.stop.mock.invocationCallOrder[0],
+      );
+    });
+
     it("writes terminal failure status before completing event ingest", async () => {
       const order: string[] = [];
-      const testServer = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-      }) as unknown as {
+      const testServer = createServer() as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
           stop: () => Promise<void>;
@@ -575,17 +612,7 @@ describe("AgentServer HTTP Mode", () => {
     });
 
     it("still stops event ingest when terminal failure status update fails", async () => {
-      const testServer = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-      }) as unknown as {
+      const testServer = createServer() as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
           stop: () => Promise<void>;
@@ -632,17 +659,7 @@ describe("AgentServer HTTP Mode", () => {
     });
 
     it("leaves event ingest open for non-error stop reasons", async () => {
-      const testServer = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-      }) as unknown as {
+      const testServer = createServer() as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
           stop: () => Promise<void>;
@@ -686,17 +703,7 @@ describe("AgentServer HTTP Mode", () => {
 
     function createFailureTestServer() {
       const appendRawLine = vi.fn();
-      const testServer = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-      }) as unknown as {
+      const testServer = createServer() as unknown as {
         eventStreamSender: {
           enqueue: ReturnType<typeof vi.fn>;
           stop: ReturnType<typeof vi.fn>;
@@ -778,17 +785,7 @@ describe("AgentServer HTTP Mode", () => {
 
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
-      const testServer = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-      }) as unknown as {
+      const testServer = createServer() as unknown as {
         session: unknown;
         broadcastTurnComplete(stopReason: string): void;
       };
@@ -814,17 +811,7 @@ describe("AgentServer HTTP Mode", () => {
 
     it("skips one broadcast after the adapter emitted its own turn_complete", () => {
       const appendRawLine = vi.fn();
-      const testServer = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-      }) as unknown as {
+      const testServer = createServer() as unknown as {
         session: unknown;
         adapterEmittedTurnComplete: boolean;
         broadcastTurnComplete(stopReason: string): void;
@@ -2035,18 +2022,7 @@ describe("AgentServer HTTP Mode", () => {
 
     it("includes --base flag when baseBranch is configured", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
-      server = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-        baseBranch: "add-yolo-to-readme",
-      });
+      server = createServer({ baseBranch: "add-yolo-to-readme" });
       const prompt = (
         server as unknown as TestableServer
       ).buildCloudSystemPrompt();
@@ -2067,18 +2043,7 @@ describe("AgentServer HTTP Mode", () => {
 
     it("disables auto-publish for Slack-origin runs when createPr is false", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
-      server = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-        createPr: false,
-      });
+      server = createServer({ createPr: false });
       const prompt = (
         server as unknown as TestableServer
       ).buildCloudSystemPrompt();
@@ -2089,18 +2054,7 @@ describe("AgentServer HTTP Mode", () => {
 
     it("disables auto-publish for existing PRs when createPr is false", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
-      server = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-        createPr: false,
-      });
+      server = createServer({ createPr: false });
       const prompt = (
         server as unknown as TestableServer
       ).buildCloudSystemPrompt("https://github.com/org/repo/pull/1");
@@ -2356,18 +2310,7 @@ describe("AgentServer HTTP Mode", () => {
 
     it("returns review-first PR context when createPr is false", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
-      server = new AgentServer({
-        port,
-        jwtPublicKey: TEST_PUBLIC_KEY,
-        repositoryPath: repo.path,
-        apiUrl: "http://localhost:8000",
-        apiKey: "test-api-key",
-        projectId: 1,
-        mode: "interactive",
-        taskId: "test-task-id",
-        runId: "test-run-id",
-        createPr: false,
-      });
+      server = createServer({ createPr: false });
       const context = (
         server as unknown as TestableServer
       ).buildDetectedPrContext(prUrl);

@@ -3394,7 +3394,9 @@ ${signedCommitInstructions}
     this.rtkSavingsEmitted = true;
 
     try {
-      const savings = await resolveRtkSavings();
+      const savings = await (
+        this.config.resolveRtkSavings ?? resolveRtkSavings
+      )();
       if (!savings) return;
 
       this.eventStreamSender.enqueue({

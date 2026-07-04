@@ -1,4 +1,5 @@
 import type { AgentMode } from "../types";
+import type { RtkSavingsSummary } from "./rtk-savings";
 import type { RemoteMcpServer } from "./schemas";
 
 export interface ClaudeCodeConfig {
@@ -33,4 +34,6 @@ export interface AgentServerConfig {
   runtimeAdapter?: "claude" | "codex";
   model?: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+  /** Reads RTK's token-savings tally; overridable so tests never probe the machine's real rtk. */
+  resolveRtkSavings?: () => Promise<RtkSavingsSummary | null>;
 }
