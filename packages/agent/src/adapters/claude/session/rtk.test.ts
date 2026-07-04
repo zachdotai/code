@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { HookInput } from "@anthropic-ai/claude-agent-sdk";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { Logger } from "../../../utils/logger";
 import {
   createRtkRewriteHook,
@@ -140,8 +140,10 @@ describe("createRtkRewriteHook", () => {
       tool_input: { command },
     }) as unknown as HookInput;
 
+  const probeYes = () => vi.fn(async () => true);
+
   test("rewrites an eligible Bash command to updatedInput", async () => {
-    const hook = createRtkRewriteHook("rtk", logger);
+    const hook = createRtkRewriteHook("rtk", logger, probeYes());
     const result = await hook(bashInput("git status"), "tool-1", {
       signal: new AbortController().signal,
     });
@@ -154,8 +156,37 @@ describe("createRtkRewriteHook", () => {
     });
   });
 
+  test("passes eligible commands through untouched when the binary fails its probe", async () => {
+    const probe = vi.fn(async () => false);
+    const hook = createRtkRewriteHook("rtk", logger, probe);
+
+    expect(
+      await hook(bashInput("git status"), "tool-1", {
+        signal: new AbortController().signal,
+      }),
+    ).toEqual({ continue: true });
+    expect(
+      await hook(bashInput("ls -la"), "tool-2", {
+        signal: new AbortController().signal,
+      }),
+    ).toEqual({ continue: true });
+  });
+
+  test("probes at most once per session, and only for eligible commands", async () => {
+    const probe = probeYes();
+    const hook = createRtkRewriteHook("rtk", logger, probe);
+    const signal = new AbortController().signal;
+
+    await hook(bashInput("npm test"), "tool-1", { signal });
+    expect(probe).not.toHaveBeenCalled();
+
+    await hook(bashInput("git status"), "tool-2", { signal });
+    await hook(bashInput("ls -la"), "tool-3", { signal });
+    expect(probe).toHaveBeenCalledExactlyOnceWith("rtk");
+  });
+
   test("passes ineligible commands through untouched", async () => {
-    const hook = createRtkRewriteHook("rtk", logger);
+    const hook = createRtkRewriteHook("rtk", logger, probeYes());
     const result = await hook(bashInput("npm test"), "tool-1", {
       signal: new AbortController().signal,
     });
@@ -163,7 +194,7 @@ describe("createRtkRewriteHook", () => {
   });
 
   test("ignores non-Bash tools", async () => {
-    const hook = createRtkRewriteHook("rtk", logger);
+    const hook = createRtkRewriteHook("rtk", logger, probeYes());
     const input = {
       session_id: "s",
       transcript_path: "/tmp/t",

@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { promisify } from "node:util";
 import type { HookCallback, HookInput } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "../../../utils/logger";
 import { gitSubcommand } from "../git-command";
@@ -129,9 +131,32 @@ export function resolveRtkPrefix(env: NodeJS.ProcessEnv): string | undefined {
   return findOnPath("rtk", env);
 }
 
-export const createRtkRewriteHook =
-  (rtkPrefix: string, logger: Logger): HookCallback =>
-  async (input: HookInput, _toolUseID: string | undefined) => {
+/**
+ * Confirms the resolved rtk binary actually runs on this host. A binary can
+ * exist but be unexecutable — wrong arch/libc for the image, or a mac build
+ * whose ad-hoc signing failed — and rewriting every eligible command through
+ * it would fail them all, strictly worse than having no rtk.
+ */
+async function defaultProbeRtk(binary: string): Promise<boolean> {
+  try {
+    await promisify(execFile)(binary, ["--version"], { timeout: 1_500 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const createRtkRewriteHook = (
+  rtkPrefix: string,
+  logger: Logger,
+  probeRtk: (binary: string) => Promise<boolean> = defaultProbeRtk,
+): HookCallback => {
+  // Probed lazily on the first command that would be rewritten, then memoized
+  // for the session: an unusable binary downgrades to no-rewrite instead of
+  // breaking every eligible command.
+  let usable: Promise<boolean> | null = null;
+
+  return async (input: HookInput, _toolUseID: string | undefined) => {
     if (input.hook_event_name !== "PreToolUse") return { continue: true };
     if (input.tool_name !== "Bash") return { continue: true };
 
@@ -142,6 +167,16 @@ export const createRtkRewriteHook =
     const rewritten = rewriteBashForRtk(command, rtkPrefix);
     if (!rewritten) return { continue: true };
 
+    usable ??= probeRtk(rtkPrefix).then((ok) => {
+      if (!ok) {
+        logger.warn(
+          `[RtkRewriteHook] ${rtkPrefix} failed its --version probe; disabling command rewriting for this session`,
+        );
+      }
+      return ok;
+    });
+    if (!(await usable)) return { continue: true };
+
     logger.info(`[RtkRewriteHook] Rewriting: ${command} → ${rewritten}`);
     return {
       continue: true,
@@ -151,3 +186,4 @@ export const createRtkRewriteHook =
       },
     };
   };
+};
