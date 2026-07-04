@@ -188,17 +188,27 @@ export async function ensureRtkBinary(destDir) {
     }
     // Extract into a temp dir first so a killed build cannot leave a partial
     // binary in cacheDir that existsSync accepts on the next run.
-    const tmpDir = mkdtempSync(join(tmpdir(), "posthog-rtk-"));
+    // Use dirname(cacheDir) so the temp dir and cacheDir are on the same
+    // filesystem: rename(2) fails with EXDEV across filesystems (e.g. tmpfs /tmp
+    // vs overlay node_modules/.cache in Docker / CI containers).
+    const tmpDir = mkdtempSync(join(dirname(cacheDir), ".tmp-"));
     try {
       await extractArchive(archivePath, tmpDir, target);
       rmSync(archivePath, { force: true });
       const extractedBinary = join(tmpDir, binName);
       if (!existsSync(extractedBinary)) {
         throw new Error(
-          `rtk binary missing after extraction: ${cachedBinary} — the release archive layout for ${target} may have changed`,
+          `rtk binary missing after extraction: ${extractedBinary} — the release archive layout for ${target} may have changed`,
         );
       }
-      renameSync(extractedBinary, cachedBinary);
+      try {
+        renameSync(extractedBinary, cachedBinary);
+      } catch (renameError) {
+        // Two concurrent cold-cache builds can race to the same destination.
+        // On Windows renameSync throws when the destination already exists;
+        // if the winner already wrote the file, the loser can proceed safely.
+        if (!existsSync(cachedBinary)) throw renameError;
+      }
     } finally {
       rmSync(tmpDir, { force: true, recursive: true });
     }

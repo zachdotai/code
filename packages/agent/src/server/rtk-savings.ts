@@ -53,7 +53,7 @@ async function defaultRunGain(
   const { stdout } = await execFileAsync(binary, ["gain", "--format", "json"], {
     timeout: 5_000,
     // The daily array grows on long-lived hosts; cap the buffer explicitly so
-    // ENOBUFS never silently swallows savings on desktop reuse.
+    // ERR_CHILD_PROCESS_STDIO_MAXBUFFER never silently swallows savings on desktop reuse.
     maxBuffer: 10 * 1024 * 1024,
     env,
   });

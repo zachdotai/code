@@ -3392,7 +3392,7 @@ ${signedCommitInstructions}
   private async emitRtkSavings(): Promise<void> {
     if (!this.eventStreamSender || this.rtkSavingsAttempted) return;
     // Set before the await: a failed attempt still counts — prevents retry
-    // storms on the terminal path.  The flag name reflects this intent.
+    // storms on the terminal path. The flag name reflects this intent.
     this.rtkSavingsAttempted = true;
 
     try {

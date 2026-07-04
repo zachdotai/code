@@ -549,17 +549,24 @@ describe("AgentServer HTTP Mode", () => {
 
     it("writes terminal failure status before completing event ingest", async () => {
       const order: string[] = [];
-      const testServer = createServer() as unknown as {
+      // Use a savings-returning resolver so the rtk_savings enqueue fires on this
+      // path — the null default would skip emitRtkSavings and leave the ordering
+      // of rtk enqueue < stop() untested on the signalTaskComplete seam.
+      const testServer = createServer({
+        resolveRtkSavings: async () => ({
+          totalCommands: 1,
+          inputTokens: 100,
+          outputTokens: 50,
+          tokensSaved: 30,
+          avgSavingsPct: 30,
+        }),
+      }) as unknown as {
         eventStreamSender: {
-          enqueue: (event: Record<string, unknown>) => void;
-          stop: () => Promise<void>;
+          enqueue: ReturnType<typeof vi.fn>;
+          stop: ReturnType<typeof vi.fn>;
         };
         posthogAPI: {
-          updateTaskRun: (
-            taskId: string,
-            runId: string,
-            payload: Record<string, unknown>,
-          ) => Promise<unknown>;
+          updateTaskRun: ReturnType<typeof vi.fn>;
         };
         signalTaskComplete(
           payload: JwtPayload,
@@ -595,7 +602,8 @@ describe("AgentServer HTTP Mode", () => {
         "boom",
       );
 
-      expect(order).toEqual(["enqueue", "update", "stop"]);
+      // error enqueue -> status update -> rtk_savings enqueue -> stop
+      expect(order).toEqual(["enqueue", "update", "enqueue", "stop"]);
       expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "notification",
@@ -613,6 +621,13 @@ describe("AgentServer HTTP Mode", () => {
           error_message: "boom",
         },
       );
+      // Assert rtk_savings enqueue precedes stop() on this seam.
+      const enqueueOrders =
+        testServer.eventStreamSender.enqueue.mock.invocationCallOrder;
+      const stopOrder =
+        testServer.eventStreamSender.stop.mock.invocationCallOrder[0];
+      // The last enqueue (rtk_savings) must land before stop()
+      expect(enqueueOrders[enqueueOrders.length - 1]).toBeLessThan(stopOrder);
     });
 
     it("still stops event ingest when terminal failure status update fails", async () => {
