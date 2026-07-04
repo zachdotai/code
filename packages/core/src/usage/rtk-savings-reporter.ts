@@ -34,6 +34,7 @@ export class RtkSavingsReporter {
   private readonly logger;
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private lastReading: string | null = null;
+  private disposed = false;
 
   constructor(
     @inject(RTK_SAVINGS_HOST) private readonly host: RtkSavingsHost,
@@ -47,17 +48,25 @@ export class RtkSavingsReporter {
 
   @postConstruct()
   init(): void {
-    void this.appLifecycle.whenReady().then(() => {
-      void this.report();
-      this.intervalId = setInterval(
-        () => void this.report(),
-        RtkSavingsReporter.REPORT_INTERVAL_MS,
-      );
-    });
+    this.appLifecycle
+      .whenReady()
+      .then(() => {
+        // Disposed while waiting for ready — don't start a timer nobody clears.
+        if (this.disposed) return;
+        void this.report();
+        this.intervalId = setInterval(
+          () => void this.report(),
+          RtkSavingsReporter.REPORT_INTERVAL_MS,
+        );
+      })
+      .catch((error) => {
+        this.logger.debug("rtk savings reporting disabled", { error });
+      });
   }
 
   @preDestroy()
   dispose(): void {
+    this.disposed = true;
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;

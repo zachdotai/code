@@ -85,10 +85,12 @@ import type { UPDATE_LIFECYCLE_SERVICE } from "@posthog/core/updates/identifiers
 import type { UpdatesService } from "@posthog/core/updates/updates";
 import type {
   RTK_SAVINGS_HOST,
+  RTK_SAVINGS_REPORTER_SERVICE,
   RtkSavingsHost,
   USAGE_HOST,
   UsageHost,
 } from "@posthog/core/usage/identifiers";
+import type { RtkSavingsReporter } from "@posthog/core/usage/rtk-savings-reporter";
 import type { ROOT_LOGGER, RootLogger } from "@posthog/di/logger";
 import type {
   CONNECTIVITY_CLIENT,
@@ -428,6 +430,7 @@ export interface MainBindings {
   // Usage
   [USAGE_HOST]: UsageHost;
   [RTK_SAVINGS_HOST]: RtkSavingsHost;
+  [RTK_SAVINGS_REPORTER_SERVICE]: RtkSavingsReporter;
 
   // Links
   [MAIN_TASK_LINK_SERVICE]: TaskLinkService;

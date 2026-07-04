@@ -30,8 +30,9 @@ export const RTK_SAVINGS_HOST = Symbol.for("posthog.core.rtkSavingsHost");
 
 /**
  * A snapshot of rtk's cumulative token-savings counter. `counterId` identifies
- * the rtk database the reading came from (stable per install), so consumers
- * can difference readings per counter instead of summing them.
+ * the rtk database the reading came from (stable per machine and OS user,
+ * matching where rtk keeps its database), so consumers can difference readings
+ * per counter instead of summing them.
  */
 export interface RtkSavingsGauge {
   counterId: string;

@@ -8,7 +8,7 @@ import {
 } from "@posthog/agent/server/rtk-savings";
 import type { RtkSavingsHost } from "@posthog/core/usage/identifiers";
 import type { IBundledResources } from "@posthog/platform/bundled-resources";
-import { machineIdSync } from "node-machine-id";
+import { machineId } from "node-machine-id";
 
 /**
  * Reads the bundled rtk binary's cumulative savings tally for the desktop
@@ -35,7 +35,7 @@ export function createRtkSavingsHost(
       if (!summary) return null;
 
       counterId ??= createHash("sha256")
-        .update(`${machineIdSync()}:${userInfo().username}`)
+        .update(`${await machineId()}:${userInfo().username}`)
         .digest("hex");
       return { counterId, ...summary };
     },
