@@ -16,9 +16,9 @@ const __dirname = path.dirname(__filename);
 const QUICK_ENTRY_WIDTH = 960;
 const QUICK_ENTRY_HEIGHT = 170;
 const QUICK_ENTRY_BOTTOM_MARGIN = 120;
-const QUICK_ENTRY_ACCELERATOR = "Alt+Space";
 
 let quickEntryWindow: BrowserWindow | null = null;
+let registeredAccelerator: string | null = null;
 
 export interface QuickEntryWindowHandlers {
   onBlur: () => void;
@@ -141,27 +141,43 @@ export function destroyQuickEntryWindow(): void {
   }
 }
 
-export function registerQuickEntryShortcut(handler: () => void): boolean {
-  if (globalShortcut.isRegistered(QUICK_ENTRY_ACCELERATOR)) {
+export function registerQuickEntryShortcut(
+  accelerator: string,
+  handler: () => void,
+): boolean {
+  if (
+    registeredAccelerator === accelerator &&
+    globalShortcut.isRegistered(accelerator)
+  ) {
     return true;
   }
-  const ok = globalShortcut.register(QUICK_ENTRY_ACCELERATOR, handler);
+  unregisterQuickEntryShortcut();
+  let ok = false;
+  try {
+    ok = globalShortcut.register(accelerator, handler);
+  } catch (err) {
+    // globalShortcut.register throws on malformed accelerator strings.
+    log.warn(`Invalid quick-entry accelerator: ${accelerator}`, err);
+    return false;
+  }
   if (ok) {
-    log.info(
-      `Registered quick-entry global shortcut: ${QUICK_ENTRY_ACCELERATOR}`,
-    );
+    registeredAccelerator = accelerator;
+    log.info(`Registered quick-entry global shortcut: ${accelerator}`);
   } else {
     log.warn(
-      `Failed to register quick-entry global shortcut: ${QUICK_ENTRY_ACCELERATOR}`,
+      `Failed to register quick-entry global shortcut (held by another app?): ${accelerator}`,
     );
   }
   return ok;
 }
 
 export function unregisterQuickEntryShortcut(): void {
-  if (!globalShortcut.isRegistered(QUICK_ENTRY_ACCELERATOR)) return;
-  globalShortcut.unregister(QUICK_ENTRY_ACCELERATOR);
+  if (!registeredAccelerator) return;
+  if (globalShortcut.isRegistered(registeredAccelerator)) {
+    globalShortcut.unregister(registeredAccelerator);
+  }
   log.info(
-    `Unregistered quick-entry global shortcut: ${QUICK_ENTRY_ACCELERATOR}`,
+    `Unregistered quick-entry global shortcut: ${registeredAccelerator}`,
   );
+  registeredAccelerator = null;
 }

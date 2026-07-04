@@ -4,6 +4,8 @@ import {
   getShortcutsByCategory,
   type ShortcutCategory,
 } from "@posthog/ui/features/command/keyboard-shortcuts";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { acceleratorToHotkey } from "@posthog/ui/utils/accelerator";
 import { Box, Dialog, Flex, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -109,7 +111,19 @@ function ShortcutsHeader() {
 }
 
 export function KeyboardShortcutsList() {
-  const shortcutsByCategory = useMemo(() => getShortcutsByCategory(), []);
+  const quickEntryShortcut = useSettingsStore(
+    (state) => state.quickEntryShortcut,
+  );
+  const shortcutsByCategory = useMemo(() => {
+    const grouped = getShortcutsByCategory();
+    // Quick Entry is user-configurable; show the live binding.
+    grouped.general = grouped.general.map((shortcut) =>
+      shortcut.id === "quick-entry"
+        ? { ...shortcut, keys: acceleratorToHotkey(quickEntryShortcut) }
+        : shortcut,
+    );
+    return grouped;
+  }, [quickEntryShortcut]);
 
   const categoryOrder: ShortcutCategory[] = [
     "general",

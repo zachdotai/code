@@ -1,4 +1,5 @@
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
+import { DEFAULT_QUICK_ENTRY_ACCELERATOR } from "@posthog/core/quick-entry/quickEntry";
 import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
@@ -151,10 +152,12 @@ interface SettingsStore {
   preventSleepWhileRunning: boolean;
   debugLogsCloudRuns: boolean;
   quickEntryEnabled: boolean;
+  quickEntryShortcut: string;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
   setQuickEntryEnabled: (enabled: boolean) => void;
+  setQuickEntryShortcut: (accelerator: string) => void;
 
   // Terminal
   terminalFont: TerminalFont;
@@ -322,12 +325,15 @@ export const useSettingsStore = create<SettingsStore>()(
       preventSleepWhileRunning: false,
       debugLogsCloudRuns: false,
       quickEntryEnabled: true,
+      quickEntryShortcut: DEFAULT_QUICK_ENTRY_ACCELERATOR,
       setAllowBypassPermissions: (enabled) =>
         set({ allowBypassPermissions: enabled }),
       setPreventSleepWhileRunning: (enabled) =>
         set({ preventSleepWhileRunning: enabled }),
       setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
       setQuickEntryEnabled: (enabled) => set({ quickEntryEnabled: enabled }),
+      setQuickEntryShortcut: (accelerator) =>
+        set({ quickEntryShortcut: accelerator }),
 
       // Terminal
       terminalFont: "berkeley-mono",
@@ -441,6 +447,7 @@ export const useSettingsStore = create<SettingsStore>()(
         preventSleepWhileRunning: state.preventSleepWhileRunning,
         debugLogsCloudRuns: state.debugLogsCloudRuns,
         quickEntryEnabled: state.quickEntryEnabled,
+        quickEntryShortcut: state.quickEntryShortcut,
 
         // Terminal
         terminalFont: state.terminalFont,

@@ -7,6 +7,7 @@ import {
   COLLAPSE_MODE_OPTIONS,
   type CollapseMode,
 } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import { ShortcutRecorder } from "@posthog/ui/features/settings/components/ShortcutRecorder";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
   type AutoConvertLongText,
@@ -22,7 +23,7 @@ import type { ThemePreference } from "@posthog/ui/shell/themeStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { Button, Flex, Link, Select, Switch, Text } from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export function GeneralSettings() {
   const hostTRPC = useHostTRPC();
@@ -64,19 +65,38 @@ export function GeneralSettings() {
   );
 
   // Quick Entry state
-  const { quickEntryEnabled, setQuickEntryEnabled } = useSettingsStore();
+  const {
+    quickEntryEnabled,
+    quickEntryShortcut,
+    setQuickEntryEnabled,
+    setQuickEntryShortcut,
+  } = useSettingsStore();
   const { data: serverQuickEntryEnabled } = useQuery(
     hostTRPC.quickEntry.getEnabled.queryOptions(),
   );
+  const { data: serverQuickEntryShortcut, refetch: refetchQuickEntryShortcut } =
+    useQuery(hostTRPC.quickEntry.getShortcut.queryOptions());
   const quickEntryMutation = useMutation(
     hostTRPC.quickEntry.setEnabled.mutationOptions(),
   );
+  const quickEntryShortcutMutation = useMutation(
+    hostTRPC.quickEntry.setShortcut.mutationOptions(),
+  );
+  const [quickEntryShortcutRegistered, setQuickEntryShortcutRegistered] =
+    useState<boolean | null>(null);
 
   useEffect(() => {
     if (serverQuickEntryEnabled !== undefined) {
       setQuickEntryEnabled(serverQuickEntryEnabled);
     }
   }, [serverQuickEntryEnabled, setQuickEntryEnabled]);
+
+  useEffect(() => {
+    if (serverQuickEntryShortcut !== undefined) {
+      setQuickEntryShortcut(serverQuickEntryShortcut.accelerator);
+      setQuickEntryShortcutRegistered(serverQuickEntryShortcut.registered);
+    }
+  }, [serverQuickEntryShortcut, setQuickEntryShortcut]);
 
   const handleQuickEntryEnabledChange = useCallback(
     (checked: boolean) => {
@@ -86,10 +106,38 @@ export function GeneralSettings() {
         old_value: !checked,
       });
       setQuickEntryEnabled(checked);
-      quickEntryMutation.mutate({ enabled: checked });
+      quickEntryMutation.mutate(
+        { enabled: checked },
+        // Enabling (re-)registers the OS shortcut; refresh conflict state.
+        { onSuccess: () => void refetchQuickEntryShortcut() },
+      );
     },
-    [setQuickEntryEnabled, quickEntryMutation],
+    [setQuickEntryEnabled, quickEntryMutation, refetchQuickEntryShortcut],
   );
+
+  const handleQuickEntryShortcutChange = useCallback(
+    (accelerator: string) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "quick_entry_shortcut",
+        new_value: accelerator,
+        old_value: quickEntryShortcut,
+      });
+      setQuickEntryShortcut(accelerator);
+      quickEntryShortcutMutation.mutate(
+        { accelerator },
+        {
+          onSuccess: (state) => {
+            setQuickEntryShortcut(state.accelerator);
+            setQuickEntryShortcutRegistered(state.registered);
+          },
+        },
+      );
+    },
+    [quickEntryShortcut, setQuickEntryShortcut, quickEntryShortcutMutation],
+  );
+
+  const quickEntryShortcutConflict =
+    quickEntryEnabled && quickEntryShortcutRegistered === false;
 
   // Chat state
   const {
@@ -473,13 +521,32 @@ export function GeneralSettings() {
 
       <SettingRow
         label="Quick Entry"
-        description="Open a floating task input from anywhere with ⌥ Space"
-        noBorder
+        description="Open a floating task input from anywhere with a system-wide shortcut"
       >
         <Switch
           checked={quickEntryEnabled}
           onCheckedChange={handleQuickEntryEnabledChange}
           size="1"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Quick Entry shortcut"
+        description={
+          quickEntryShortcutConflict ? (
+            <Text color="red" className="text-[13px]">
+              This shortcut is held by another app (e.g. Raycast, Spotlight) —
+              pick a different combination
+            </Text>
+          ) : (
+            "Click, then press a new key combination"
+          )
+        }
+        noBorder
+      >
+        <ShortcutRecorder
+          accelerator={quickEntryShortcut}
+          onChange={handleQuickEntryShortcutChange}
         />
       </SettingRow>
 

@@ -1,3 +1,7 @@
+import {
+  DEFAULT_QUICK_ENTRY_ACCELERATOR,
+  type QuickEntryShortcutState,
+} from "@posthog/core/quick-entry/quickEntry";
 import { TypedEventEmitter } from "@posthog/shared";
 import type { FoldersService } from "@posthog/workspace-server/services/folders/folders";
 import { FOLDERS_SERVICE } from "@posthog/workspace-server/services/folders/identifiers";
@@ -31,6 +35,8 @@ const SHOW_GRACE_MS = 200;
 export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents> {
   private suppressBlurHide = false;
   private enabled: boolean;
+  private accelerator: string;
+  private shortcutRegistered = false;
 
   constructor(
     @inject(FOLDERS_SERVICE)
@@ -38,6 +44,10 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
   ) {
     super();
     this.enabled = settingsStore.get("quickEntryEnabled", true);
+    this.accelerator = settingsStore.get(
+      "quickEntryAccelerator",
+      DEFAULT_QUICK_ENTRY_ACCELERATOR,
+    );
   }
 
   // Idempotent: window.ts guards against double-creation, and if the window
@@ -51,7 +61,7 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
   initialize(): void {
     this.ensureWindow();
     if (this.enabled) {
-      registerQuickEntryShortcut(() => this.safeToggle());
+      this.registerShortcut();
     }
   }
 
@@ -65,11 +75,41 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
     this.enabled = enabled;
     settingsStore.set("quickEntryEnabled", enabled);
     if (enabled) {
-      registerQuickEntryShortcut(() => this.safeToggle());
+      this.registerShortcut();
     } else {
       unregisterQuickEntryShortcut();
+      this.shortcutRegistered = false;
       this.hide();
     }
+  }
+
+  getShortcut(): QuickEntryShortcutState {
+    return {
+      accelerator: this.accelerator,
+      registered: this.shortcutRegistered,
+    };
+  }
+
+  // Persists the accelerator even when OS registration fails (e.g. another
+  // app holds the combo), so the user's choice survives a restart; the
+  // returned `registered: false` lets the settings UI surface the conflict.
+  setShortcut(accelerator: string): QuickEntryShortcutState {
+    const next = accelerator.trim();
+    if (next.length > 0) {
+      log.info("setShortcut", { accelerator: next });
+      this.accelerator = next;
+      settingsStore.set("quickEntryAccelerator", next);
+      if (this.enabled) {
+        this.registerShortcut();
+      }
+    }
+    return this.getShortcut();
+  }
+
+  private registerShortcut(): void {
+    this.shortcutRegistered = registerQuickEntryShortcut(this.accelerator, () =>
+      this.safeToggle(),
+    );
   }
 
   private safeToggle(): void {

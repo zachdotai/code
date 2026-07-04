@@ -1,6 +1,7 @@
 import { existsSync, renameSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { DEFAULT_QUICK_ENTRY_ACCELERATOR } from "@posthog/core/quick-entry/quickEntry";
 import { LEGACY_DATA_DIRS, WORKTREES_DIR } from "@shared/constants";
 import Store from "electron-store";
 import { getUserDataDir, isDevBuild } from "../utils/env";
@@ -15,6 +16,7 @@ interface SettingsSchema {
   discordPresenceShowTaskTitle: boolean;
   discordPresenceShowRepoName: boolean;
   quickEntryEnabled: boolean;
+  quickEntryAccelerator: string;
 }
 
 function getDefaultWorktreeLocation(): string {
@@ -104,6 +106,10 @@ const schema = {
     type: "boolean" as const,
     default: true,
   },
+  quickEntryAccelerator: {
+    type: "string" as const,
+    default: DEFAULT_QUICK_ENTRY_ACCELERATOR,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -120,6 +126,7 @@ export const settingsStore = new Store<SettingsSchema>({
     discordPresenceShowTaskTitle: false,
     discordPresenceShowRepoName: false,
     quickEntryEnabled: true,
+    quickEntryAccelerator: DEFAULT_QUICK_ENTRY_ACCELERATOR,
   },
 });
 

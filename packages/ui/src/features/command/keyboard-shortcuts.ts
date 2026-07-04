@@ -3,7 +3,9 @@ import { isMac } from "@posthog/ui/utils/platform";
 export const SHORTCUTS = {
   COMMAND_MENU: "mod+k",
   NEW_TASK: "mod+n,mod+t",
-  QUICK_ENTRY: "alt+space",
+  // Default only — the user can rebind it in Settings; the shortcuts sheet
+  // overlays the live value from the settings store.
+  QUICK_ENTRY: "mod+shift+h",
   SETTINGS: "mod+,",
   SHORTCUTS_SHEET: "mod+/",
   GO_BACK: "mod+[",
