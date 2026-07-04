@@ -31,9 +31,8 @@ function toFiniteNumber(value: unknown): number {
 }
 
 function parseGainSummary(stdout: string): RtkSavingsSummary | null {
-  const parsed: unknown = JSON.parse(stdout);
-  // `JSON.parse("null")` returns null, and a non-object payload has no summary —
-  // guard before indexing rather than leaning on the caller's try/catch.
+  const parsed: unknown = JSON.parse(stdout); // throws on malformed JSON; caught by caller
+  // `JSON.parse("null")` returns null; a bare number or string has no summary field.
   if (!parsed || typeof parsed !== "object") return null;
   const summary = (parsed as { summary?: Record<string, unknown> }).summary;
   if (!summary || typeof summary !== "object") return null;

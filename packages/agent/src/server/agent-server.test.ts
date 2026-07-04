@@ -621,7 +621,8 @@ describe("AgentServer HTTP Mode", () => {
           error_message: "boom",
         },
       );
-      // Pin the second enqueue as the rtk_savings emit — the order array alone
+      // With exactly two enqueues in the order array, asserting both payloads
+      // (error above, rtk_savings here) identifies each call — the array alone
       // would accept any payload before stop().
       expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({
