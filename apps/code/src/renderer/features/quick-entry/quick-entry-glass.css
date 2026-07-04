@@ -6,15 +6,18 @@
  */
 
 .qe-root {
-  --qe-blur: 28px;
-  /* "smoke" tint. Alternatives: light rgba(44,44,50,.48), ink rgba(12,12,14,.74) */
-  --qe-tint: rgba(22, 22, 24, 0.6);
+  /* "smoke" tint. Alternatives: light rgba(44,44,50,.58), ink rgba(12,12,14,.82) */
+  --qe-tint: rgba(22, 22, 24, 0.72);
   font-family: var(--font-sans);
 }
 
+/* NO backdrop-filter here: in a transparent BrowserWindow, any backdrop-filter
+   makes Chromium composite the whole window opaque (the desktop behind the
+   window isn't part of the page backdrop), which reads as a giant dark slab.
+   The glassy look comes from the translucent tint; a real desktop blur needs
+   native vibrancy with a panel-sized window (follow-up). */
 .qe-panel {
   background: var(--qe-tint);
-  backdrop-filter: blur(var(--qe-blur)) saturate(1.5);
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 16px;
   box-shadow:
@@ -115,8 +118,8 @@
    are top-level rules; the doubled class out-specifies quill's single-class
    utility styles without !important. */
 .qe-menu.qe-menu {
-  background: rgba(28, 28, 32, 0.86);
-  backdrop-filter: blur(24px) saturate(1.4);
+  /* Near-opaque instead of blurred: see the backdrop-filter note on .qe-panel. */
+  background: rgba(28, 28, 32, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
   padding: 5px;
