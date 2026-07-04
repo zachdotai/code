@@ -102,9 +102,11 @@ function ConnectedWorkspaceProvider({
   );
 }
 
-export const Providers: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
+export const Providers: React.FC<{
+  children: React.ReactNode;
+  /** False for transparent-window surfaces (quick entry). */
+  themeHasBackground?: boolean;
+}> = ({ children, themeHasBackground }) => {
   return (
     <HotkeysProvider>
       <QueryClientProvider client={queryClient}>
@@ -114,7 +116,9 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({
             queryClient={queryClient}
           >
             <ConnectedWorkspaceProvider>
-              <ThemeWrapper>{children}</ThemeWrapper>
+              <ThemeWrapper hasBackground={themeHasBackground}>
+                {children}
+              </ThemeWrapper>
             </ConnectedWorkspaceProvider>
           </HostTRPCProvider>
         </TRPCProvider>

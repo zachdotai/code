@@ -6,34 +6,37 @@
  */
 
 .qe-root {
-  /* "smoke" tint. Alternatives: light rgba(44,44,50,.58), ink rgba(12,12,14,.82) */
-  --qe-tint: rgba(22, 22, 24, 0.72);
+  /* Smoke tint layered over the native "hud" vibrancy material — the real
+     desktop blur comes from the window, not CSS (backdrop-filter can't
+     sample anything outside the page). */
+  --qe-tint: rgba(20, 20, 24, 0.5);
   font-family: var(--font-sans);
 }
 
-/* NO backdrop-filter here: in a transparent BrowserWindow, any backdrop-filter
-   makes Chromium composite the whole window opaque (the desktop behind the
-   window isn't part of the page backdrop), which reads as a giant dark slab.
-   The glassy look comes from the translucent tint; a real desktop blur needs
-   native vibrancy with a panel-sized window (follow-up). */
+/* The window rect IS the panel: macOS provides the rounded mask, the drop
+   shadow, and the blurred material; CSS only tints and edge-lights it.
+   Border/glow are inset so nothing needs falloff room outside the window. */
 .qe-panel {
   background: var(--qe-tint);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 16px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 0 1px rgba(0, 0, 0, 0.4),
-    0 32px 80px -12px rgba(0, 0, 0, 0.8);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
   transition: box-shadow 160ms ease;
 }
 
 .qe-panel[data-focused="true"] {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 0 1px rgba(0, 0, 0, 0.4),
-    0 32px 80px -12px rgba(0, 0, 0, 0.8),
-    0 0 0 1.5px var(--qe-glow),
-    0 0 32px var(--qe-glow);
+    inset 0 0 0 1.5px var(--qe-glow),
+    inset 0 0 24px var(--qe-glow);
+}
+
+/* While a popover is open the window grows headroom above the panel; stretch
+   the panel over it (rows stay pinned to the bottom) so the popover floats
+   over uniform glass instead of a seam. */
+.qe-panel[data-headroom] {
+  height: 100%;
+  justify-content: flex-end;
 }
 
 .qe-chip {
@@ -114,39 +117,8 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
-/* Glass popovers for every picker. Menus portal to document.body, so these
-   are top-level rules; the doubled class out-specifies quill's single-class
-   utility styles without !important. */
-.qe-menu.qe-menu {
-  /* Near-opaque instead of blurred: see the backdrop-filter note on .qe-panel. */
-  background: rgba(28, 28, 32, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
-  padding: 5px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 16px 48px rgba(0, 0, 0, 0.6);
-}
-
-.qe-menu [role="menuitem"],
-.qe-menu [role="menuitemradio"] {
-  font-size: 12.5px;
-  border-radius: 6px;
-}
-
-.qe-menu [role="menuitem"]:hover,
-.qe-menu [role="menuitemradio"]:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.qe-menu[data-mono="true"] [role="menuitem"],
-.qe-menu[data-mono="true"] [role="menuitemradio"] {
-  font-family: var(--font-mono);
-}
-
-.qe-menu [role="menuitemradio"][data-checked] {
-  color: var(--qe-accent-text);
-}
+/* Pickers use native macOS menus (Menu.popup via the main process) — no
+   in-page popover styles needed for them. */
 
 .qe-send {
   display: inline-flex;
@@ -192,12 +164,12 @@
   }
 }
 
+/* macOS makes the vibrancy material itself opaque under reduced
+   transparency; this keeps the CSS tint consistent with that. */
 /* biome-ignore lint/correctness/noUnknownMediaFeatureName: prefers-reduced-transparency is real and supported in Chromium 118+ */
 @media (prefers-reduced-transparency: reduce) {
-  .qe-panel.qe-panel,
-  .qe-menu.qe-menu {
+  .qe-panel.qe-panel {
     background: var(--gray-2);
-    backdrop-filter: none;
   }
 }
 

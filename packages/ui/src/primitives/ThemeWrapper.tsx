@@ -9,7 +9,18 @@ export function getPortalContainer(): HTMLElement {
   return portalContainer ?? document.body;
 }
 
-export function ThemeWrapper({ children }: { children: React.ReactNode }) {
+export function ThemeWrapper({
+  children,
+  hasBackground,
+}: {
+  children: React.ReactNode;
+  /**
+   * Radix Theme paints an opaque background by default. Transparent-window
+   * surfaces (e.g. the quick entry overlay) pass false so the desktop shows
+   * through everything but their own panel.
+   */
+  hasBackground?: boolean;
+}) {
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const portalRef = useRef<HTMLDivElement>(null);
 
@@ -28,6 +39,7 @@ export function ThemeWrapper({ children }: { children: React.ReactNode }) {
       panelBackground="solid"
       radius="medium"
       scaling="105%"
+      hasBackground={hasBackground}
     >
       {children}
       <div ref={portalRef} id="portal-container" />

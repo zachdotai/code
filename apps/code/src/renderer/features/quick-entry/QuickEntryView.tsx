@@ -1,16 +1,19 @@
 import "./quick-entry-glass.css";
 import type { SessionConfigSelectGroup } from "@agentclientprotocol/sdk";
-import { ArrowUp, Check, Cpu, Gauge } from "@phosphor-icons/react";
+import { ArrowUp, Check, Cpu, Gauge, Paperclip } from "@phosphor-icons/react";
+import { deriveFileLabel } from "@posthog/core/message-editor/content";
+import { isRasterImageFile } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { formatHotkey } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useGitQueries } from "@posthog/ui/features/git-interaction/useGitQueries";
-import { AttachmentMenu } from "@posthog/ui/features/message-editor/components/AttachmentMenu";
 import { AttachmentsBar } from "@posthog/ui/features/message-editor/components/AttachmentsBar";
 import { contentToXml } from "@posthog/ui/features/message-editor/content";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
+import { selectAttachments } from "@posthog/ui/features/message-editor/hostApi";
 import { useTaskInputHistoryStore } from "@posthog/ui/features/message-editor/taskInputHistoryStore";
 import { TiptapEditorContent } from "@posthog/ui/features/message-editor/tiptap/editorSurface";
 import { useTiptapEditor } from "@posthog/ui/features/message-editor/tiptap/useTiptapEditor";
+import { persistImageFilePath } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { getModeStyle } from "@posthog/ui/features/sessions/modeStyles";
 import {
   flattenSelectOptions,
@@ -27,7 +30,6 @@ import { logger } from "@utils/logger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
-  AdapterSwitchItem,
   BranchChip,
   GlassSelect,
   Keycap,
@@ -37,6 +39,12 @@ import {
 const log = logger.scope("quick-entry-view");
 const SESSION_ID = "quick-entry";
 const CONFIRMATION_MS = 1200;
+// Extra window height requested while the @-mention/skills suggestion popup
+// (tippy, the only remaining in-page popover — pickers are native menus) is
+// open, so it has room to render; the window otherwise hugs the panel because
+// the vibrancy material fills the whole window rect.
+const POPOVER_HEADROOM_PX = 320;
+const POPOVER_SELECTOR = ".tippy-box";
 
 // Accent follows mode: Plan is amber, everything agentic is orange.
 const PLAN_ACCENT: Record<string, string> = {
@@ -66,6 +74,74 @@ export function QuickEntryView() {
   const [editorIsEmpty, setEditorIsEmpty] = useState(true);
   const [editorFocused, setEditorFocused] = useState(false);
   const confirmTimerRef = useRef<number | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const popoverOpenRef = useRef(false);
+  const panelHeightRef = useRef(168);
+
+  const reportWindowHeight = useCallback(() => {
+    const height =
+      panelHeightRef.current +
+      (popoverOpenRef.current ? POPOVER_HEADROOM_PX : 0);
+    trpcClient.quickEntry.setContentHeight.mutate({ height }).catch(() => {
+      // resize is cosmetic; never break the widget over it
+    });
+  }, []);
+
+  // Window height follows the panel. While a popover is open the panel is
+  // stretched to fill the window (see [data-headroom] CSS), so keep the last
+  // natural measurement instead of the stretched one.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const measure = () => {
+      if (!popoverOpenRef.current) {
+        panelHeightRef.current = Math.ceil(
+          panel.getBoundingClientRect().height,
+        );
+      }
+      reportWindowHeight();
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(panel);
+    measure();
+    return () => observer.disconnect();
+  }, [reportWindowHeight]);
+
+  // Popovers are portals; watch the DOM instead of wiring every picker. The
+  // collapse is debounced so quickly re-opening a menu doesn't bounce the
+  // window height.
+  useEffect(() => {
+    let collapseTimer: number | null = null;
+    const sync = () => {
+      const open = document.querySelector(POPOVER_SELECTOR) !== null;
+      if (open) {
+        if (collapseTimer !== null) {
+          window.clearTimeout(collapseTimer);
+          collapseTimer = null;
+        }
+        if (!popoverOpenRef.current) {
+          popoverOpenRef.current = true;
+          setPopoverOpen(true);
+          reportWindowHeight();
+        }
+      } else if (popoverOpenRef.current && collapseTimer === null) {
+        collapseTimer = window.setTimeout(() => {
+          collapseTimer = null;
+          popoverOpenRef.current = false;
+          setPopoverOpen(false);
+          reportWindowHeight();
+        }, 140);
+      }
+    };
+    const observer = new MutationObserver(sync);
+    observer.observe(document.body, { childList: true, subtree: true });
+    sync();
+    return () => {
+      observer.disconnect();
+      if (collapseTimer !== null) window.clearTimeout(collapseTimer);
+    };
+  }, [reportWindowHeight]);
 
   const { currentBranch, defaultBranch } = useGitQueries(selectedDirectory);
 
@@ -107,7 +183,6 @@ export function QuickEntryView() {
     getText,
     getContent,
     insertChip,
-    removeChipById,
     attachments,
     addAttachment,
     removeAttachment,
@@ -238,6 +313,29 @@ export function QuickEntryView() {
     },
     [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
   );
+
+  // Native file picker instead of AttachmentMenu: quick entry has no task
+  // yet (no directory-attach dialog) and no popover budget in the snug
+  // vibrancy window. Images become attachments; files/folders become chips.
+  const handleAttach = useCallback(async () => {
+    try {
+      const results = await selectAttachments({ mode: "both" });
+      for (const { path: filePath, kind } of results) {
+        if (kind === "file" && isRasterImageFile(filePath)) {
+          const attachment = await persistImageFilePath(filePath);
+          addAttachment(attachment);
+        } else {
+          insertChip({
+            type: kind === "directory" ? "folder" : "file",
+            id: filePath,
+            label: deriveFileLabel(filePath),
+          });
+        }
+      }
+    } catch (err) {
+      log.warn("Quick entry attach failed", { err });
+    }
+  }, [addAttachment, insertChip]);
 
   const canSubmit = !!selectedDirectory && !editorIsEmpty && !busy;
 
@@ -407,23 +505,19 @@ export function QuickEntryView() {
     }
     root.style.setProperty(
       "--qe-glow",
-      "color-mix(in srgb, var(--qe-accent) 20%, transparent)",
+      "color-mix(in srgb, var(--qe-accent) 14%, transparent)",
     );
   }, [isPlanMode]);
 
-  const handleBackdropMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) hideWindow();
-  }, []);
-
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click-to-dismiss; Esc covers keyboard
-    <div
-      className="qe-root flex h-full w-full flex-col items-center"
-      onMouseDown={handleBackdropMouseDown}
-    >
+    // The window hugs the panel; while a popover is open the window gains
+    // headroom and the panel stretches so the glass stays uniform behind it.
+    <div className="qe-root flex h-full w-full flex-col justify-end">
       <section
+        ref={panelRef}
         className="qe-panel flex w-full flex-col gap-3 px-[14px] py-3"
         data-focused={editorFocused || undefined}
+        data-headroom={popoverOpen || undefined}
         aria-label="Quick entry"
       >
         {confirming ? (
@@ -495,13 +589,15 @@ export function QuickEntryView() {
 
             {/* Toolbar */}
             <div className="qe-toolbar flex items-center gap-1">
-              <AttachmentMenu
+              <button
+                type="button"
+                className="qe-chip !border-transparent !bg-transparent px-2"
                 disabled={busy}
-                repoPath={selectedDirectory || null}
-                onAddAttachment={addAttachment}
-                onInsertChip={insertChip}
-                onRemoveChip={removeChipById}
-              />
+                aria-label="Attach files"
+                onClick={() => void handleAttach()}
+              >
+                <Paperclip size={14} className="opacity-70" />
+              </button>
               <span className="qe-divider" />
               <GlassSelect
                 icon={getModeStyle(modeValue ?? "plan").icon}
@@ -522,12 +618,8 @@ export function QuickEntryView() {
                 onSelect={handleModelChange}
                 disabled={busy || isPreviewLoading}
                 aria-label="Model"
-                footer={
-                  <AdapterSwitchItem
-                    adapter={adapter}
-                    onAdapterChange={setLastUsedAdapter}
-                  />
-                }
+                adapter={adapter}
+                onAdapterChange={setLastUsedAdapter}
               />
               {thoughtItems.length > 0 && (
                 <GlassSelect

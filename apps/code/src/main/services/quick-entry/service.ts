@@ -12,7 +12,10 @@ import {
   hideQuickEntryWindow,
   isQuickEntryWindowFocused,
   isQuickEntryWindowVisible,
+  type NativeMenuItemSpec,
   registerQuickEntryShortcut,
+  setQuickEntryContentHeight,
+  showQuickEntryNativeMenu,
   showQuickEntryWindow,
   unregisterQuickEntryShortcut,
 } from "../../quick-entry-window";
@@ -173,6 +176,28 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
   completeSubmit(): void {
     this.hide();
     showAndFocusMainWindow();
+  }
+
+  // The window hugs the panel (vibrancy fills the whole window rect); the
+  // renderer reports the panel's measured height plus popover headroom.
+  setContentHeight(height: number): void {
+    setQuickEntryContentHeight(height);
+  }
+
+  async showMenu(spec: {
+    items: NativeMenuItemSpec[];
+    x: number;
+    y: number;
+  }): Promise<string | null> {
+    // The native menu can pull focus events; hold blur-to-hide while open.
+    this.suppressBlurHide = true;
+    try {
+      return await showQuickEntryNativeMenu(spec);
+    } finally {
+      setTimeout(() => {
+        this.suppressBlurHide = false;
+      }, BLUR_HIDE_GRACE_MS);
+    }
   }
 
   async getRecentRepos(limit = 8): Promise<RecentRepoEntry[]> {

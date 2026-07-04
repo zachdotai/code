@@ -1,39 +1,61 @@
 import type { SessionConfigSelectGroup } from "@agentclientprotocol/sdk";
 import {
-  ArrowsClockwise,
   CaretDown,
-  Check,
   Folder as FolderIcon,
-  FolderOpen,
   GitBranch,
 } from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  MenuLabel,
-} from "@posthog/quill";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import type { AgentAdapter } from "@posthog/ui/features/settings/settingsStore";
+import { trpcClient } from "@renderer/trpc/client";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, type ReactElement, type ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 export function Keycap({ children }: { children: ReactNode }) {
   return <span className="qe-keycap">{children}</span>;
 }
 
-interface GlassChipProps {
-  icon: ReactNode;
-  label: string;
-  disabled?: boolean;
-  chevron?: boolean;
-  "aria-label"?: string;
+interface NativeMenuItem {
+  type?: "item" | "separator" | "header";
+  id?: string;
+  label?: string;
+  checked?: boolean;
+  enabled?: boolean;
 }
 
-function GlassChipContent({ icon, label, chevron = true }: GlassChipProps) {
+/**
+ * Pickers open native NSMenus (via the main process) instead of in-page
+ * popovers: the vibrancy window hugs the panel, and any in-page popover
+ * would force the window to grow — which paints a slab of raw material.
+ * Native menus float outside the window and match the macOS glass look.
+ */
+async function showNativeMenu(
+  anchor: HTMLElement,
+  items: NativeMenuItem[],
+): Promise<string | null> {
+  const rect = anchor.getBoundingClientRect();
+  return trpcClient.quickEntry.showMenu.mutate({
+    items,
+    x: Math.round(rect.left),
+    y: Math.round(rect.bottom + 4),
+  });
+}
+
+function anchorOf(event: MouseEvent): HTMLElement {
+  return event.currentTarget as HTMLElement;
+}
+
+interface GlassChipContentProps {
+  icon: ReactNode;
+  label: string;
+  chevron?: boolean;
+}
+
+function GlassChipContent({
+  icon,
+  label,
+  chevron = true,
+}: GlassChipContentProps) {
   return (
     <>
       <span className="shrink-0 opacity-70">{icon}</span>
@@ -50,60 +72,8 @@ interface SelectItem {
   name: string;
 }
 
-interface GlassMenuProps {
-  trigger: ReactElement;
-  mono?: boolean;
-  children: ReactNode;
-  minWidth?: number;
-}
-
-function GlassMenu({
-  trigger,
-  mono,
-  children,
-  minWidth = 200,
-}: GlassMenuProps) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={trigger} />
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={6}
-        data-mono={mono ? "true" : undefined}
-        className="qe-menu"
-        style={{ minWidth }}
-      >
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function SelectableItem({
-  item,
-  selected,
-  onSelect,
-}: {
-  item: SelectItem;
-  selected: boolean;
-  onSelect: (value: string) => void;
-}) {
-  return (
-    <DropdownMenuItem
-      onClick={() => onSelect(item.value)}
-      style={selected ? { color: "var(--qe-accent-text)" } : undefined}
-    >
-      <span className="min-w-0 flex-1 truncate">{item.name}</span>
-      {selected && <Check size={12} weight="bold" className="shrink-0" />}
-    </DropdownMenuItem>
-  );
-}
-
-/**
- * Generic toolbar picker: glass chip-style trigger + glass popover with a
- * check on the selected item. Groups render with labels (model picker).
- */
+/** Toolbar picker: chip-style trigger + native menu with a check on the
+ * selected item. Groups render as native section headers (model picker). */
 export function GlassSelect({
   icon,
   label,
@@ -113,7 +83,8 @@ export function GlassSelect({
   onSelect,
   disabled,
   accented,
-  footer,
+  adapter,
+  onAdapterChange,
   "aria-label": ariaLabel,
 }: {
   icon: ReactNode;
@@ -124,68 +95,65 @@ export function GlassSelect({
   onSelect: (value: string) => void;
   disabled?: boolean;
   accented?: boolean;
-  footer?: ReactNode;
+  /** When set, appends a "Switch to <other adapter>" item. */
+  adapter?: AgentAdapter;
+  onAdapterChange?: (adapter: AgentAdapter) => void;
   "aria-label"?: string;
 }) {
-  return (
-    <GlassMenu
-      trigger={
-        <button
-          type="button"
-          className="qe-chip !font-sans !text-[12px] !border-transparent !bg-transparent"
-          style={accented ? { color: "var(--qe-accent-text)" } : undefined}
-          disabled={disabled}
-          aria-label={ariaLabel ?? label}
-        >
-          <GlassChipContent icon={icon} label={label} />
-        </button>
-      }
-    >
-      {groups && groups.length > 0
-        ? groups.map((group, index) => (
-            <Fragment key={group.group}>
-              {index > 0 && <DropdownMenuSeparator />}
-              <MenuLabel>{group.name}</MenuLabel>
-              {group.options.map((item) => (
-                <SelectableItem
-                  key={item.value}
-                  item={item}
-                  selected={item.value === currentValue}
-                  onSelect={onSelect}
-                />
-              ))}
-            </Fragment>
-          ))
-        : items.map((item) => (
-            <SelectableItem
-              key={item.value}
-              item={item}
-              selected={item.value === currentValue}
-              onSelect={onSelect}
-            />
-          ))}
-      {footer}
-    </GlassMenu>
-  );
-}
+  const ADAPTER_SWITCH_ID = "__switch-adapter";
+  const otherAdapter: AgentAdapter = adapter === "claude" ? "codex" : "claude";
 
-export function AdapterSwitchItem({
-  adapter,
-  onAdapterChange,
-}: {
-  adapter: AgentAdapter;
-  onAdapterChange: (adapter: AgentAdapter) => void;
-}) {
-  const other: AgentAdapter = adapter === "claude" ? "codex" : "claude";
-  const label = other === "claude" ? "Claude Code" : "Codex";
+  const handleOpen = async (event: MouseEvent<HTMLButtonElement>) => {
+    const menuItems: NativeMenuItem[] = [];
+    if (groups && groups.length > 0) {
+      groups.forEach((group, index) => {
+        if (index > 0) menuItems.push({ type: "separator" });
+        menuItems.push({ type: "header", label: group.name });
+        for (const option of group.options) {
+          menuItems.push({
+            id: option.value,
+            label: option.name,
+            checked: option.value === currentValue,
+          });
+        }
+      });
+    } else {
+      for (const option of items) {
+        menuItems.push({
+          id: option.value,
+          label: option.name,
+          checked: option.value === currentValue,
+        });
+      }
+    }
+    if (adapter && onAdapterChange) {
+      menuItems.push({ type: "separator" });
+      menuItems.push({
+        id: ADAPTER_SWITCH_ID,
+        label: `Switch to ${otherAdapter === "claude" ? "Claude Code" : "Codex"}`,
+      });
+    }
+    const selected = await showNativeMenu(anchorOf(event), menuItems);
+    if (!selected) return;
+    if (selected === ADAPTER_SWITCH_ID) {
+      onAdapterChange?.(otherAdapter);
+    } else {
+      onSelect(selected);
+    }
+  };
+
   return (
-    <>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem onClick={() => onAdapterChange(other)}>
-        <ArrowsClockwise size={12} weight="bold" />
-        Switch to {label}
-      </DropdownMenuItem>
-    </>
+    <button
+      type="button"
+      className="qe-chip !border-transparent !bg-transparent !font-sans !text-[12px]"
+      style={accented ? { color: "var(--qe-accent-text)" } : undefined}
+      disabled={disabled}
+      aria-label={ariaLabel ?? label}
+      aria-haspopup="menu"
+      onClick={(event) => void handleOpen(event)}
+    >
+      <GlassChipContent icon={icon} label={label} />
+    </button>
   );
 }
 
@@ -199,7 +167,8 @@ export function RepoChip({
   onChange: (path: string) => void;
   disabled?: boolean;
 }) {
-  const trpcClient = useHostTRPCClient();
+  const OPEN_FOLDER_ID = "__open-folder";
+  const hostTrpcClient = useHostTRPCClient();
   const {
     getRecentFolders,
     getFolderDisplayName,
@@ -211,51 +180,46 @@ export function RepoChip({
   const recentFolders = getRecentFolders();
   const displayValue = getFolderDisplayName(value) || "Select repo";
 
-  const handleSelect = (path: string) => {
-    onChange(path);
-    const folder = getFolderByPath(path);
+  const handleOpen = async (event: MouseEvent<HTMLButtonElement>) => {
+    const menuItems: NativeMenuItem[] = [];
+    if (recentFolders.length > 0) {
+      menuItems.push({ type: "header", label: "Recent" });
+      for (const folder of recentFolders) {
+        menuItems.push({
+          id: folder.path,
+          label: folder.name,
+          checked: folder.path === value,
+        });
+      }
+      menuItems.push({ type: "separator" });
+    }
+    menuItems.push({ id: OPEN_FOLDER_ID, label: "Open folder…" });
+
+    const selected = await showNativeMenu(anchorOf(event), menuItems);
+    if (!selected) return;
+    if (selected === OPEN_FOLDER_ID) {
+      const selectedPath = await hostTrpcClient.os.selectDirectory.query();
+      if (!selectedPath) return;
+      await addFolder(selectedPath);
+      onChange(selectedPath);
+      return;
+    }
+    onChange(selected);
+    const folder = getFolderByPath(selected);
     if (folder) updateLastAccessed(folder.id);
   };
 
-  const handleOpenFilePicker = async () => {
-    const selectedPath = await trpcClient.os.selectDirectory.query();
-    if (!selectedPath) return;
-    await addFolder(selectedPath);
-    onChange(selectedPath);
-  };
-
   return (
-    <GlassMenu
-      mono
-      trigger={
-        <button
-          type="button"
-          className="qe-chip"
-          disabled={disabled}
-          aria-label="Repository"
-        >
-          <GlassChipContent
-            icon={<FolderIcon size={12} />}
-            label={displayValue}
-          />
-        </button>
-      }
+    <button
+      type="button"
+      className="qe-chip"
+      disabled={disabled}
+      aria-label="Repository"
+      aria-haspopup="menu"
+      onClick={(event) => void handleOpen(event)}
     >
-      {recentFolders.length > 0 && <MenuLabel>Recent</MenuLabel>}
-      {recentFolders.map((folder) => (
-        <SelectableItem
-          key={folder.id}
-          item={{ value: folder.path, name: folder.name }}
-          selected={folder.path === value}
-          onSelect={handleSelect}
-        />
-      ))}
-      {recentFolders.length > 0 && <DropdownMenuSeparator />}
-      <DropdownMenuItem onClick={() => void handleOpenFilePicker()}>
-        <FolderOpen size={12} className="shrink-0" />
-        Open folder...
-      </DropdownMenuItem>
-    </GlassMenu>
+      <GlassChipContent icon={<FolderIcon size={12} />} label={displayValue} />
+    </button>
   );
 }
 
@@ -292,16 +256,31 @@ export function BranchChip({
     staleTime: 60_000,
   });
 
+  const effectiveBranch = selectedBranch ?? defaultBranch;
   const displayed =
-    (isSelectionMode ? (selectedBranch ?? defaultBranch) : currentBranch) ??
-    "no branch";
+    (isSelectionMode ? effectiveBranch : currentBranch) ?? "no branch";
 
-  const chip = (
+  const handleOpen = async (event: MouseEvent<HTMLButtonElement>) => {
+    const menuItems: NativeMenuItem[] = [
+      { type: "header", label: "Base branch" },
+      ...branches.map((branch) => ({
+        id: branch,
+        label: branch,
+        checked: branch === effectiveBranch,
+      })),
+    ];
+    const selected = await showNativeMenu(anchorOf(event), menuItems);
+    if (selected) onBranchSelect(selected);
+  };
+
+  return (
     <button
       type="button"
       className="qe-chip"
       disabled={disabled || !isSelectionMode || !repoPath}
       aria-label="Branch"
+      aria-haspopup="menu"
+      onClick={(event) => void handleOpen(event)}
     >
       <GlassChipContent
         icon={<GitBranch size={12} />}
@@ -309,21 +288,5 @@ export function BranchChip({
         chevron={isSelectionMode}
       />
     </button>
-  );
-
-  if (!isSelectionMode || !repoPath) return chip;
-
-  return (
-    <GlassMenu mono trigger={chip}>
-      <MenuLabel>Base branch</MenuLabel>
-      {branches.map((branch) => (
-        <SelectableItem
-          key={branch}
-          item={{ value: branch, name: branch }}
-          selected={branch === (selectedBranch ?? defaultBranch)}
-          onSelect={onBranchSelect}
-        />
-      ))}
-    </GlassMenu>
   );
 }

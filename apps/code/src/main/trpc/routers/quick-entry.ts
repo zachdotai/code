@@ -80,6 +80,31 @@ export const quickEntryRouter = router({
     getService().completeSubmit();
   }),
 
+  setContentHeight: publicProcedure
+    .input(z.object({ height: z.number().positive() }))
+    .mutation(({ input }) => {
+      getService().setContentHeight(input.height);
+    }),
+
+  showMenu: publicProcedure
+    .input(
+      z.object({
+        items: z.array(
+          z.object({
+            type: z.enum(["item", "separator", "header"]).optional(),
+            id: z.string().optional(),
+            label: z.string().optional(),
+            checked: z.boolean().optional(),
+            enabled: z.boolean().optional(),
+          }),
+        ),
+        x: z.number(),
+        y: z.number(),
+      }),
+    )
+    .output(z.string().nullable())
+    .mutation(({ input }) => getService().showMenu(input)),
+
   getRecentRepos: publicProcedure
     .input(
       z.object({ limit: z.number().int().positive().optional() }).optional(),

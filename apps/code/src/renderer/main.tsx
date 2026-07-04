@@ -114,7 +114,7 @@ try {
     <React.StrictMode>
       <BootErrorBoundary>
         <ServiceProvider container={container}>
-          <Providers>
+          <Providers themeHasBackground={isQuickEntry ? false : undefined}>
             {isQuickEntry ? (
               <QuickEntryRoot />
             ) : (

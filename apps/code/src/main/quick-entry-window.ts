@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, globalShortcut, screen } from "electron";
+import { app, BrowserWindow, globalShortcut, Menu, screen } from "electron";
 import { isDevBuild } from "./utils/env";
 import { logger } from "./utils/logger";
 import { attachWindowToIPC } from "./window";
@@ -16,15 +16,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const QUICK_ENTRY_WIDTH = 920;
-// Window is taller than the visible glass panel: the transparent slack below
-// hosts dropdown popovers and the textarea's autogrow without clipping.
-const QUICK_ENTRY_HEIGHT = 520;
 const QUICK_ENTRY_MIN_SIDE_MARGIN = 32;
-// Panel top sits ~26% down the work area (Raycast-style), not bottom-docked.
-const QUICK_ENTRY_TOP_RATIO = 0.26;
+// Gap between the panel (window bottom) and the bottom of the work area.
+const QUICK_ENTRY_BOTTOM_MARGIN = 96;
+// The window hugs the glass panel exactly — native vibrancy fills the whole
+// window rect, so any window area beyond the panel would show raw material.
+// The renderer measures the panel and reports its height (plus popover
+// headroom while a menu is open) via setQuickEntryContentHeight.
+const QUICK_ENTRY_MIN_HEIGHT = 96;
+const QUICK_ENTRY_MAX_HEIGHT = 640;
+const QUICK_ENTRY_DEFAULT_HEIGHT = 168;
 
 let quickEntryWindow: BrowserWindow | null = null;
 let registeredAccelerator: string | null = null;
+let contentHeight = QUICK_ENTRY_DEFAULT_HEIGHT;
 
 export interface QuickEntryWindowHandlers {
   onBlur: () => void;
@@ -38,20 +43,26 @@ export function createQuickEntryWindow(
 
   const window = new BrowserWindow({
     width: QUICK_ENTRY_WIDTH,
-    height: QUICK_ENTRY_HEIGHT,
+    height: contentHeight,
     show: false,
     frame: false,
-    transparent: true,
     resizable: false,
     movable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
+    // The window IS the panel, so the OS shadow and rounded corner mask apply
+    // to the right shape. NOT `transparent: true` — transparent windows can't
+    // be rounded and fight the vibrancy view; the alpha backgroundColor plus
+    // vibrancy material is what makes the page's transparent pixels glassy.
     hasShadow: true,
     roundedCorners: true,
     alwaysOnTop: true,
     backgroundColor: "#00000000",
+    ...(process.platform === "darwin"
+      ? { vibrancy: "hud" as const, visualEffectState: "active" as const }
+      : { transparent: true }),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
@@ -124,18 +135,100 @@ export function showQuickEntryWindow(): boolean {
     QUICK_ENTRY_WIDTH,
     dw - QUICK_ENTRY_MIN_SIDE_MARGIN * 2,
   );
-  const height = Math.min(QUICK_ENTRY_HEIGHT, dh);
+  const height = Math.min(contentHeight, dh - QUICK_ENTRY_BOTTOM_MARGIN);
   const x = Math.round(dx + (dw - width) / 2);
-  const y = Math.round(dy + dh * QUICK_ENTRY_TOP_RATIO);
-  // resizable:false blocks programmatic setBounds on macOS; lift it briefly.
-  window.setResizable(true);
-  window.setBounds({ x, y, width, height }, false);
-  window.setResizable(false);
+  const y = Math.round(dy + dh - height - QUICK_ENTRY_BOTTOM_MARGIN);
+  setWindowBounds(window, { x, y, width, height });
 
   window.show();
   window.focus();
   app.focus({ steal: true });
   return true;
+}
+
+// resizable:false blocks programmatic setBounds on macOS; lift it briefly.
+function setWindowBounds(
+  window: BrowserWindow,
+  bounds: { x: number; y: number; width: number; height: number },
+): void {
+  window.setResizable(true);
+  window.setBounds(bounds, false);
+  window.setResizable(false);
+}
+
+/**
+ * Renderer-reported window height: panel height, plus headroom while a
+ * popover is open. The bottom edge stays anchored so the panel doesn't move.
+ */
+export function setQuickEntryContentHeight(height: number): void {
+  const next = Math.max(
+    QUICK_ENTRY_MIN_HEIGHT,
+    Math.min(QUICK_ENTRY_MAX_HEIGHT, Math.round(height)),
+  );
+  contentHeight = next;
+  const window = quickEntryWindow;
+  if (!window || window.isDestroyed()) return;
+  const bounds = window.getBounds();
+  if (bounds.height === next) return;
+  const bottom = bounds.y + bounds.height;
+  setWindowBounds(window, {
+    x: bounds.x,
+    y: bottom - next,
+    width: bounds.width,
+    height: next,
+  });
+}
+
+export interface NativeMenuItemSpec {
+  type?: "item" | "separator" | "header";
+  id?: string;
+  label?: string;
+  checked?: boolean;
+  enabled?: boolean;
+}
+
+/**
+ * Pickers use native NSMenus: they float outside the window, so the
+ * panel-hugging vibrancy window never has to grow to host a popover (any
+ * growth paints a slab of raw material). Resolves with the clicked item id,
+ * or null when dismissed. x/y are window-content coordinates.
+ */
+export function showQuickEntryNativeMenu(spec: {
+  items: NativeMenuItemSpec[];
+  x: number;
+  y: number;
+}): Promise<string | null> {
+  const window = quickEntryWindow;
+  if (!window || window.isDestroyed()) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let selected: string | null = null;
+    const menu = Menu.buildFromTemplate(
+      spec.items.map((item) => {
+        if (item.type === "separator") return { type: "separator" as const };
+        if (item.type === "header") {
+          return { label: item.label ?? "", enabled: false };
+        }
+        return {
+          label: item.label ?? "",
+          type:
+            item.checked !== undefined
+              ? ("checkbox" as const)
+              : ("normal" as const),
+          checked: item.checked,
+          enabled: item.enabled !== false,
+          click: () => {
+            selected = item.id ?? null;
+          },
+        };
+      }),
+    );
+    menu.popup({
+      window,
+      x: Math.round(spec.x),
+      y: Math.round(spec.y),
+      callback: () => resolve(selected),
+    });
+  });
 }
 
 export function hideQuickEntryWindow(): void {
