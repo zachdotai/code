@@ -5,6 +5,19 @@ import { resolveRtkPrefix } from "../adapters/claude/session/rtk";
 const execFileAsync = promisify(execFile);
 
 /**
+ * Where the desktop build stages the bundled rtk binary, relative to the
+ * Electron app root — written by copyRtkBinary in apps/code/vite-main-plugins.mts
+ * and read back through IBundledResources at runtime.
+ */
+export const BUNDLED_RTK_DIR = ".vite/build/rtk";
+
+export function bundledRtkBinName(
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "win32" ? "rtk.exe" : "rtk";
+}
+
+/**
  * The `summary` block of `rtk gain --format json` — RTK's own tally of the
  * output it compressed away before it reached the model. The counts are RTK's
  * token estimates (its own output labels them "Input/Output tokens" and "Tokens

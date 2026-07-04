@@ -158,6 +158,7 @@ export default defineConfig([
       "src/execution-mode.ts",
       "src/server/schemas.ts",
       "src/server/agent-server.ts",
+      "src/server/rtk-savings.ts",
     ],
     format: ["esm"],
     dts: true,

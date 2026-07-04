@@ -1136,6 +1136,11 @@ export const ANALYTICS_EVENTS = {
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 
+  // RTK output-compression telemetry. A gauge snapshot of rtk's cumulative
+  // machine-global savings counter: consumers group by counter_id and
+  // difference readings (never sum) — see RtkSavingsReporter in core.
+  RTK_SAVINGS_GAUGE: "RTK savings gauge",
+
   // Project Bluebird (Channels) events
   CHANNELS_SPACE_VIEWED: "Channels space viewed",
   CHANNEL_ACTION: "Channel action",

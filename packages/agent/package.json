@@ -87,6 +87,10 @@
     "./server/schemas": {
       "types": "./dist/server/schemas.d.ts",
       "import": "./dist/server/schemas.js"
+    },
+    "./server/rtk-savings": {
+      "types": "./dist/server/rtk-savings.d.ts",
+      "import": "./dist/server/rtk-savings.js"
     }
   },
   "bin": {

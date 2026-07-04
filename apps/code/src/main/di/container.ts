@@ -88,7 +88,8 @@ import {
   UPDATES_SERVICE,
 } from "@posthog/core/updates/identifiers";
 import { updatesCoreModule } from "@posthog/core/updates/updates.module";
-import { USAGE_HOST } from "@posthog/core/usage/identifiers";
+import { RTK_SAVINGS_HOST, USAGE_HOST } from "@posthog/core/usage/identifiers";
+import { rtkSavingsReporterModule } from "@posthog/core/usage/rtk-savings-reporter.module";
 import { usageMonitorModule } from "@posthog/core/usage/usage-monitor.module";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import { listFilesContainingText } from "@posthog/git/queries";
@@ -238,6 +239,7 @@ import { ElectronUrlLauncher } from "../platform-adapters/electron-url-launcher"
 import { electronUsageThresholdStore } from "../platform-adapters/electron-usage-threshold-store";
 import { ElectronWorkspaceSettings } from "../platform-adapters/electron-workspace-settings";
 import { posthogNodeAnalytics } from "../platform-adapters/posthog-analytics";
+import { createRtkSavingsHost } from "../platform-adapters/rtk-savings-host";
 import { AppLifecycleService } from "../services/app-lifecycle/service";
 import {
   AuthPreferencePortAdapter,
@@ -638,6 +640,13 @@ container.bind(USAGE_HOST).toDynamicValue((ctx) => {
       electronUsageThresholdStore.setThresholdsSeen(value),
   };
 });
+container.load(rtkSavingsReporterModule);
+container
+  .bind(RTK_SAVINGS_HOST)
+  .toDynamicValue((ctx) =>
+    createRtkSavingsHost(ctx.get(BUNDLED_RESOURCES_SERVICE)),
+  )
+  .inSingletonScope();
 container.bind(MAIN_TASK_LINK_SERVICE).to(TaskLinkService);
 container.bind(TASK_LINK_SERVICE).toService(MAIN_TASK_LINK_SERVICE);
 container.bind(MAIN_INBOX_LINK_SERVICE).to(InboxLinkService);

@@ -39,6 +39,10 @@ import {
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import { findPrUrl, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
+import {
+  BUNDLED_RTK_DIR,
+  bundledRtkBinName,
+} from "@posthog/agent/server/rtk-savings";
 import type * as AgentTypes from "@posthog/agent/types";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
@@ -415,12 +419,12 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
 
   /**
    * Bundled rtk binary for RTK output compression, or undefined when it wasn't
-   * vendored for this platform (the agent then falls back to rtk on PATH). Keep
-   * in sync with the destDir in apps/code/vite-main-plugins.mts (copyRtkBinary).
+   * vendored for this platform (the agent then falls back to rtk on PATH).
    */
   private getRtkPath(): string | undefined {
-    const binary = process.platform === "win32" ? "rtk.exe" : "rtk";
-    const rtkPath = this.bundledResources.resolve(`.vite/build/rtk/${binary}`);
+    const rtkPath = this.bundledResources.resolve(
+      `${BUNDLED_RTK_DIR}/${bundledRtkBinName()}`,
+    );
     return fs.existsSync(rtkPath) ? rtkPath : undefined;
   }
 

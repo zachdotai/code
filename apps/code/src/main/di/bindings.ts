@@ -83,7 +83,12 @@ import type { UI_AUTH, UI_SERVICE } from "@posthog/core/ui/identifiers";
 import type { UIService } from "@posthog/core/ui/ui";
 import type { UPDATE_LIFECYCLE_SERVICE } from "@posthog/core/updates/identifiers";
 import type { UpdatesService } from "@posthog/core/updates/updates";
-import type { USAGE_HOST, UsageHost } from "@posthog/core/usage/identifiers";
+import type {
+  RTK_SAVINGS_HOST,
+  RtkSavingsHost,
+  USAGE_HOST,
+  UsageHost,
+} from "@posthog/core/usage/identifiers";
 import type { ROOT_LOGGER, RootLogger } from "@posthog/di/logger";
 import type {
   CONNECTIVITY_CLIENT,
@@ -422,6 +427,7 @@ export interface MainBindings {
 
   // Usage
   [USAGE_HOST]: UsageHost;
+  [RTK_SAVINGS_HOST]: RtkSavingsHost;
 
   // Links
   [MAIN_TASK_LINK_SERVICE]: TaskLinkService;

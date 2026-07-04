@@ -22,3 +22,26 @@ export interface UsageLogger {
   warn(message: string, ...args: unknown[]): void;
   error(message: string, ...args: unknown[]): void;
 }
+
+export const RTK_SAVINGS_REPORTER_SERVICE = Symbol.for(
+  "posthog.core.rtkSavingsReporterService",
+);
+export const RTK_SAVINGS_HOST = Symbol.for("posthog.core.rtkSavingsHost");
+
+/**
+ * A snapshot of rtk's cumulative token-savings counter. `counterId` identifies
+ * the rtk database the reading came from (stable per install), so consumers
+ * can difference readings per counter instead of summing them.
+ */
+export interface RtkSavingsGauge {
+  counterId: string;
+  totalCommands: number;
+  inputTokens: number;
+  outputTokens: number;
+  tokensSaved: number;
+}
+
+export interface RtkSavingsHost {
+  /** Reads the gauge, or null when rtk is unavailable or has tracked nothing. */
+  readGauge(): Promise<RtkSavingsGauge | null>;
+}

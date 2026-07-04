@@ -33,6 +33,8 @@ import type { NotificationService } from "@posthog/core/notification/notificatio
 import { OAUTH_SERVICE } from "@posthog/core/oauth/identifiers";
 import type { OAuthService } from "@posthog/core/oauth/oauth";
 import type { UpdatesService } from "@posthog/core/updates/updates";
+import { RTK_SAVINGS_REPORTER_SERVICE } from "@posthog/core/usage/identifiers";
+import type { RtkSavingsReporter } from "@posthog/core/usage/rtk-savings-reporter";
 import { CONNECTIVITY_CLIENT } from "@posthog/host-router/ports/connectivity-client";
 import { ENVIRONMENT_CLIENT } from "@posthog/host-router/ports/environment-client";
 import { FILE_WATCHER_CONTROL } from "@posthog/host-router/ports/file-watcher-control";
@@ -247,6 +249,8 @@ async function initializeServices(): Promise<void> {
   const authService = container.get<AuthService>(AUTH_SERVICE);
   container.get<NotificationService>(NOTIFICATION_SERVICE);
   container.get<UpdatesService>(UPDATES_SERVICE);
+  // Eagerly resolved so its postConstruct schedules the daily gauge report.
+  container.get<RtkSavingsReporter>(RTK_SAVINGS_REPORTER_SERVICE);
   container.get<TaskLinkService>(TASK_LINK_SERVICE);
   container.get<InboxLinkService>(INBOX_LINK_SERVICE);
   container.get<ScoutLinkService>(SCOUT_LINK_SERVICE);

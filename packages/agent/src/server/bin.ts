@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { z } from "zod/v4";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
 import { AgentServer } from "./agent-server";
+import { bundledRtkBinName } from "./rtk-savings";
 import { claudeCodeConfigSchema, mcpServersSchema } from "./schemas";
 
 /**
@@ -18,8 +19,7 @@ import { claudeCodeConfigSchema, mcpServersSchema } from "./schemas";
  */
 function applyBundledRtkDefault(): void {
   if (process.env.POSTHOG_RTK) return;
-  const binName = process.platform === "win32" ? "rtk.exe" : "rtk";
-  const bundled = resolve(__dirname, "..", "rtk", binName);
+  const bundled = resolve(__dirname, "..", "rtk", bundledRtkBinName());
   if (existsSync(bundled)) process.env.POSTHOG_RTK = bundled;
 }
 
