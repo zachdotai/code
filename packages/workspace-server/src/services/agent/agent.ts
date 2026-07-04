@@ -414,6 +414,17 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   }
 
   /**
+   * Bundled rtk binary for RTK output compression, or undefined when it wasn't
+   * vendored for this platform (the agent then falls back to rtk on PATH). Keep
+   * in sync with the destDir in apps/code/vite-main-plugins.mts (copyRtkBinary).
+   */
+  private getRtkPath(): string | undefined {
+    const binary = process.platform === "win32" ? "rtk.exe" : "rtk";
+    const rtkPath = this.bundledResources.resolve(`.vite/build/rtk/${binary}`);
+    return fs.existsSync(rtkPath) ? rtkPath : undefined;
+  }
+
+  /**
    * Respond to a pending permission request from the UI.
    * This resolves the promise that the agent is waiting on.
    */
@@ -736,6 +747,7 @@ If a repository IS genuinely required, attach one in this priority order:
       mockNodeDir,
       proxyUrl,
       claudeCliPath: this.getClaudeCliPath(),
+      rtkPath: this.getRtkPath(),
     });
 
     const isPreview = taskId === "__preview__";

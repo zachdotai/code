@@ -51,6 +51,8 @@ interface ConfigureProcessEnvInput {
   mockNodeDir: string;
   proxyUrl: string;
   claudeCliPath: string;
+  /** Bundled rtk binary for output compression; omitted when unavailable. */
+  rtkPath?: string;
 }
 
 @injectable()
@@ -143,6 +145,7 @@ export class AgentAuthAdapter {
     mockNodeDir,
     proxyUrl,
     claudeCliPath,
+    rtkPath,
   }: ConfigureProcessEnvInput): Promise<void> {
     await this.getValidToken();
 
@@ -153,6 +156,9 @@ export class AgentAuthAdapter {
 
     process.env.LLM_GATEWAY_URL = proxyUrl;
     process.env.CLAUDE_CODE_EXECUTABLE = claudeCliPath;
+    // Only set when the bundle is present; leaving it unset lets the agent's
+    // resolver fall back to an rtk on PATH.
+    if (rtkPath) process.env.POSTHOG_RTK = rtkPath;
     process.env.POSTHOG_API_URL = credentials.apiHost;
     process.env.POSTHOG_PROJECT_ID = String(credentials.projectId);
   }

@@ -18,6 +18,11 @@ import {
   targetArch,
   targetPlatform,
 } from "./build/native-binary.mjs";
+import {
+  ensureRtkBinary,
+  RTK_VERSION,
+  rtkReleaseTarget,
+} from "./build/rtk-binary.mjs";
 
 function nativeBinarySourcePath(): string | undefined {
   const candidates = claudeExecutableCandidates(
@@ -78,6 +83,31 @@ function copyAssets() {
   );
 }
 
+// Vendor the pinned RTK binary into dist/rtk/ so cloud runs and the desktop app
+// use one consistent version instead of relying on rtk being on PATH. Downloads
+// on first build and caches under node_modules/.cache; best-effort so an
+// offline build still succeeds (runtime then falls back to PATH).
+async function copyRtkAsset() {
+  const rtkDir = resolve(import.meta.dirname, "dist", "rtk");
+  try {
+    const dest = await ensureRtkBinary(rtkDir);
+    if (dest) {
+      console.log(
+        `[agent/tsup] Bundled rtk ${RTK_VERSION} (${rtkReleaseTarget()})`,
+      );
+    } else {
+      console.warn(
+        `[agent/tsup] No rtk release for ${targetPlatform()}-${targetArch()}; skipping bundle (runtime falls back to PATH)`,
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[agent/tsup] Failed to bundle rtk: ${message}. Cloud runs will fall back to PATH.`,
+    );
+  }
+}
+
 const sharedOptions = {
   sourcemap: true,
   splitting: false,
@@ -135,6 +165,7 @@ export default defineConfig([
     ...sharedOptions,
     onSuccess: async () => {
       copyAssets();
+      await copyRtkAsset();
       console.log("Assets copied successfully");
 
       // Touch a trigger file to signal electron-forge to restart

@@ -27,6 +27,8 @@ import {
   targetArch,
   targetPlatform,
 } from "../../packages/agent/build/native-binary.mjs";
+// @ts-expect-error - plain ESM helper shared with packages/agent/tsup.config.ts
+import { rtkBinName } from "../../packages/agent/build/rtk-binary.mjs";
 
 export function getGitCommit(): string {
   if (process.env.BUILD_COMMIT) return process.env.BUILD_COMMIT;
@@ -62,6 +64,7 @@ export function fixFilenameCircularRef(): Plugin {
 }
 
 let claudeCliCopied = false;
+let rtkCopied = false;
 
 function verifyBinaryArch(destPath: string): void {
   // Best-effort: parse the binary's magic bytes and confirm the embedded arch
@@ -214,6 +217,65 @@ export function copyClaudeExecutable(): Plugin {
       verifyBinaryArch(destBinary);
       signClaudeBinary(destBinary);
       claudeCliCopied = true;
+    },
+  };
+}
+
+// Stages the RTK binary the agent package vendored into its dist/rtk/ into the
+// Electron app's .vite/build/rtk/, mirroring copyClaudeExecutable so both hosts
+// ship one consistent rtk version. Best-effort: warns and skips if the agent
+// package hasn't bundled rtk (e.g. an offline agent build), and the agent then
+// falls back to whatever rtk is on PATH.
+export function copyRtkBinary(): Plugin {
+  return {
+    name: "copy-rtk-binary",
+    writeBundle() {
+      const binName = rtkBinName();
+      const destDir = join(__dirname, ".vite/build/rtk");
+      const destBinary = join(destDir, binName);
+
+      if (rtkCopied && existsSync(destBinary)) {
+        return;
+      }
+
+      if (!existsSync(destDir)) {
+        mkdirSync(destDir, { recursive: true });
+      }
+
+      const packageCandidates = [
+        join(__dirname, "node_modules/@posthog/agent/dist/rtk", binName),
+        join(__dirname, "../../node_modules/@posthog/agent/dist/rtk", binName),
+        join(__dirname, "../../packages/agent/dist/rtk", binName),
+      ];
+
+      const source = packageCandidates.find((p: string) => existsSync(p));
+      if (!source) {
+        console.warn(
+          `[copy-rtk-binary] rtk binary not bundled for ${targetPlatform()}-${targetArch()}; skipping (agent falls back to PATH).`,
+        );
+        return;
+      }
+
+      if (isStagedCopyCurrent(source, destBinary)) {
+        rtkCopied = true;
+        return;
+      }
+
+      copyFileSync(source, destBinary);
+      if (targetPlatform() !== "win32") {
+        execSync(`chmod +x "${destBinary}"`);
+      }
+      if (targetPlatform() === "darwin") {
+        try {
+          execSync(`xattr -cr "${destBinary}"`, { stdio: "inherit" });
+          execSync(`codesign --force --sign - "${destBinary}"`, {
+            stdio: "inherit",
+          });
+        } catch (err) {
+          console.warn("[copy-rtk-binary] Failed to sign rtk binary:", err);
+        }
+      }
+      rtkCopied = true;
     },
   };
 }

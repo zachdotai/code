@@ -229,6 +229,8 @@ describe("AgentAuthAdapter", () => {
   });
 
   it("configures environment using the gateway proxy and current token", async () => {
+    delete process.env.POSTHOG_RTK;
+
     await adapter.configureProcessEnv({
       credentials: baseCredentials,
       mockNodeDir: "/mock/node",
@@ -241,5 +243,24 @@ describe("AgentAuthAdapter", () => {
     expect(process.env.LLM_GATEWAY_URL).toBe("http://127.0.0.1:9999");
     expect(process.env.CLAUDE_CODE_EXECUTABLE).toBe("/mock/claude-cli.js");
     expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
+    // Without a bundled rtk the resolver falls back to PATH, so we leave the
+    // override unset rather than pointing it at a missing binary.
+    expect(process.env.POSTHOG_RTK).toBeUndefined();
+  });
+
+  it("points POSTHOG_RTK at the bundled rtk binary when provided", async () => {
+    delete process.env.POSTHOG_RTK;
+
+    await adapter.configureProcessEnv({
+      credentials: baseCredentials,
+      mockNodeDir: "/mock/node",
+      proxyUrl: "http://127.0.0.1:9999",
+      claudeCliPath: "/mock/claude-cli.js",
+      rtkPath: "/mock/.vite/build/rtk/rtk",
+    });
+
+    expect(process.env.POSTHOG_RTK).toBe("/mock/.vite/build/rtk/rtk");
+
+    delete process.env.POSTHOG_RTK;
   });
 });

@@ -1,9 +1,26 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { Command } from "commander";
 import { z } from "zod/v4";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
 import { AgentServer } from "./agent-server";
 import { claudeCodeConfigSchema, mcpServersSchema } from "./schemas";
+
+/**
+ * Point RTK output-compression at the binary we vendor into `dist/rtk/`
+ * (built here at dist/server/bin.cjs, so the sibling is `../rtk`). This makes
+ * RTK available for cloud runs with a consistent version instead of depending
+ * on rtk being on the sandbox PATH. Respect an existing POSTHOG_RTK (explicit
+ * path or `0`/`false` opt-out) and stay silent when the bundle is absent so the
+ * runtime resolver falls back to PATH.
+ */
+function applyBundledRtkDefault(): void {
+  if (process.env.POSTHOG_RTK) return;
+  const binName = process.platform === "win32" ? "rtk.exe" : "rtk";
+  const bundled = resolve(__dirname, "..", "rtk", binName);
+  if (existsSync(bundled)) process.env.POSTHOG_RTK = bundled;
+}
 
 const envSchema = z.object({
   JWT_PUBLIC_KEY: z
@@ -116,6 +133,8 @@ program
     "Comma-separated list of domains allowed for web tools (WebFetch, WebSearch)",
   )
   .action(async (options) => {
+    applyBundledRtkDefault();
+
     const envResult = envSchema.safeParse(process.env);
 
     if (!envResult.success) {
