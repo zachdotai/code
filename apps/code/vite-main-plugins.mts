@@ -261,21 +261,11 @@ export function copyRtkBinary(): Plugin {
         return;
       }
 
-      const platform = targetPlatform();
       copyFileSync(source, destBinary);
-      if (platform !== "win32") {
+      if (targetPlatform() !== "win32") {
         execSync(`chmod +x "${destBinary}"`);
       }
-      if (platform === "darwin") {
-        try {
-          execSync(`xattr -cr "${destBinary}"`, { stdio: "inherit" });
-          execSync(`codesign --force --sign - "${destBinary}"`, {
-            stdio: "inherit",
-          });
-        } catch (err) {
-          console.warn("[copy-rtk-binary] Failed to sign rtk binary:", err);
-        }
-      }
+      signClaudeBinary(destBinary);
       rtkCopied = true;
     },
   };
