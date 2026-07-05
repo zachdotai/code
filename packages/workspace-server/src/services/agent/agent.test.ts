@@ -522,7 +522,9 @@ describe("AgentService", () => {
     });
 
     describe("stalled turn detection after resume", () => {
-      const STALLED_TURN_GRACE_MS = 45 * 1000;
+      const STALLED_TURN_GRACE_MS = (
+        AgentService as unknown as { STALLED_TURN_GRACE_MS: number }
+      ).STALLED_TURN_GRACE_MS;
 
       function getResumeHandler() {
         return (

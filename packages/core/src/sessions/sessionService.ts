@@ -2496,7 +2496,7 @@ export class SessionService {
         isFatalSessionError(errorMessage, errorDetails) ||
         isTransportError(errorMessage, errorDetails)
       ) {
-        this.d.log.error("Unrecoverable prompt error, attempting recovery", {
+        this.d.log.error("Prompt error, attempting session recovery", {
           taskRunId: session.taskRunId,
           errorMessage,
           errorDetails,
