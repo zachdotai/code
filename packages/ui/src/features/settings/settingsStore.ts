@@ -1,3 +1,4 @@
+import type { CachedCloudBranchMap } from "@posthog/core/integrations/branches";
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
 import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
 import {
@@ -85,6 +86,7 @@ interface SettingsStore {
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
   cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
+  cachedCloudBranchMap: CachedCloudBranchMap;
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
@@ -104,6 +106,7 @@ interface SettingsStore {
   setCachedCloudRepositoryMap: (
     map: Record<string, UserRepositoryIntegrationRef>,
   ) => void;
+  setCachedCloudBranchMap: (map: CachedCloudBranchMap) => void;
   setLastUsedEnvironment: (
     repoPath: string,
     environmentId: string | null,
@@ -223,6 +226,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
       cachedCloudRepositoryMap: {},
+      cachedCloudBranchMap: {},
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
@@ -242,6 +246,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedCloudRepository: repo }),
       setCachedCloudRepositoryMap: (map) =>
         set({ cachedCloudRepositoryMap: map }),
+      setCachedCloudBranchMap: (map) => set({ cachedCloudBranchMap: map }),
       setLastUsedEnvironment: (repoPath, environmentId) =>
         set((state) => {
           const next = { ...state.lastUsedEnvironments };
@@ -407,6 +412,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
         cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
+        cachedCloudBranchMap: state.cachedCloudBranchMap,
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,

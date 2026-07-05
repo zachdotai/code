@@ -1,5 +1,6 @@
 import { FileText, X } from "@phosphor-icons/react";
 import { buildFileLineReferencePrompt } from "@posthog/core/code-review/reviewPrompts";
+import { resolveRepositoryPickerList } from "@posthog/core/integrations/repositories";
 import { xmlToContent } from "@posthog/core/message-editor/content";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
@@ -322,6 +323,13 @@ export function TaskInput({
     hasMore: cloudRepositoriesHasMore,
     loadMore: loadMoreCloudRepositories,
   } = useUserGithubRepositories(cloudRepoSearchQuery, isCloudRepoPickerOpen);
+  const cloudRepoPickerList = resolveRepositoryPickerList({
+    pickerOpen: isCloudRepoPickerOpen,
+    pickerPending: cloudRepositoriesLoading,
+    searchActive: cloudRepoSearchQuery.trim().length > 0,
+    pickerRepositories: visibleCloudRepositories,
+    allRepositories: repositories,
+  });
   const [selectedRepository, setSelectedRepository] = useState<string | null>(
     () =>
       initialCloudRepository?.toLowerCase() ??
@@ -849,14 +857,9 @@ export function TaskInput({
                       <GitHubRepoPicker
                         value={selectedRepository}
                         onChange={handleRepositorySelect}
-                        repositories={
-                          isCloudRepoPickerOpen
-                            ? visibleCloudRepositories
-                            : repositories
-                        }
+                        repositories={cloudRepoPickerList.repositories}
                         isLoading={
-                          isLoadingRepos ||
-                          (isCloudRepoPickerOpen && cloudRepositoriesLoading)
+                          isLoadingRepos || cloudRepoPickerList.pickerLoading
                         }
                         isRefreshing={isRefreshingRepos}
                         onRefresh={handleRefreshRepositories}

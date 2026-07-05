@@ -10,6 +10,7 @@ import {
   type RepositoryCacheAction,
   type RepositoryQueryResult,
   resolveEffectiveUserRepositoryMap,
+  resolveRepositoryPickerList,
   resolveUserRepositoryCacheAction,
   sameUserRepositoryMap,
   type TeamRepositoriesResult,
@@ -308,5 +309,77 @@ describe("resolveEffectiveUserRepositoryMap", () => {
     });
     expect(result.servingFromCache).toBe(false);
     expect(result.effectiveRepositoryMap).toEqual({});
+  });
+});
+
+describe("resolveRepositoryPickerList", () => {
+  const allRepositories = ["a/x", "a/y"];
+  const pickerRepositories = ["a/x"];
+
+  it("shows the full list while the picker is closed", () => {
+    const result = resolveRepositoryPickerList({
+      pickerOpen: false,
+      pickerPending: true,
+      searchActive: false,
+      pickerRepositories,
+      allRepositories,
+    });
+    expect(result).toEqual({
+      repositories: allRepositories,
+      pickerLoading: false,
+    });
+  });
+
+  it("falls back to the full list while the first picker page loads", () => {
+    const result = resolveRepositoryPickerList({
+      pickerOpen: true,
+      pickerPending: true,
+      searchActive: false,
+      pickerRepositories: [],
+      allRepositories,
+    });
+    expect(result).toEqual({
+      repositories: allRepositories,
+      pickerLoading: false,
+    });
+  });
+
+  it("shows the loading picker list while a search is pending", () => {
+    const result = resolveRepositoryPickerList({
+      pickerOpen: true,
+      pickerPending: true,
+      searchActive: true,
+      pickerRepositories,
+      allRepositories,
+    });
+    expect(result).toEqual({
+      repositories: pickerRepositories,
+      pickerLoading: true,
+    });
+  });
+
+  it("keeps the loading state when there is no full list to fall back to", () => {
+    const result = resolveRepositoryPickerList({
+      pickerOpen: true,
+      pickerPending: true,
+      searchActive: false,
+      pickerRepositories: [],
+      allRepositories: [],
+    });
+    expect(result).toEqual({ repositories: [], pickerLoading: true });
+  });
+
+  it("shows the picker list once it settles", () => {
+    const result = resolveRepositoryPickerList({
+      pickerOpen: true,
+      pickerPending: false,
+      searchActive: false,
+      pickerRepositories,
+      allRepositories,
+    });
+    expect(result).toEqual({
+      repositories: pickerRepositories,
+      pickerLoading: false,
+    });
   });
 });

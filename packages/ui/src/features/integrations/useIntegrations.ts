@@ -4,6 +4,8 @@ import {
   computeNextBranchOffset,
   flattenBranchPages,
   type GithubBranchesPage,
+  resolveBranchCacheUpdate,
+  resolveEffectiveBranches,
 } from "@posthog/core/integrations/branches";
 import { REPOSITORIES_SERVICE } from "@posthog/core/integrations/identifiers";
 import {
@@ -14,6 +16,7 @@ import {
   getRepoEntry,
   isEmptyRepositoryMap,
   isRepoInIntegration,
+  normalizeRepoKey,
   resolveEffectiveUserRepositoryMap,
   resolveUserRepositoryCacheAction,
   type UserRepositoryIntegrationRef,
@@ -238,6 +241,7 @@ export function useUserGithubRepositories(
       },
       enabled: queryEnabled,
       staleTime: 5 * 60 * 1000,
+      placeholderData: (prev: unknown) => prev,
       meta: AUTH_SCOPED_QUERY_META,
     })),
     combine: combineRepositoryPicker<UserRepositoryIntegrationRef>,
@@ -354,9 +358,65 @@ export function useUserGithubBranches(
     },
   );
 
-  const data = useMemo(
-    () => flattenBranchPages(query.data?.pages),
-    [query.data?.pages],
+  const repoKey = repo ? normalizeRepoKey(repo) : null;
+  const searchActive = debouncedSearch.length > 0;
+  const cachedBranchMap = useSettingsStore(
+    (state) => state.cachedCloudBranchMap,
+  );
+  const setCachedCloudBranchMap = useSettingsStore(
+    (state) => state.setCachedCloudBranchMap,
+  );
+
+  const liveBranches = useMemo(
+    () => (query.data ? flattenBranchPages(query.data.pages) : null),
+    [query.data],
+  );
+
+  // Persist the freshly loaded first page so the selector has data on the next
+  // cold start — the branch counterpart of cachedCloudRepositoryMap.
+  useEffect(() => {
+    if (!queryEnabled) return;
+    const next = resolveBranchCacheUpdate({
+      repoKey,
+      searchActive,
+      livePending: query.isPending,
+      liveErrored: query.isError,
+      liveBranches,
+      cachedBranchMap,
+    });
+    if (next) {
+      setCachedCloudBranchMap(next);
+    }
+  }, [
+    queryEnabled,
+    repoKey,
+    searchActive,
+    query.isPending,
+    query.isError,
+    liveBranches,
+    cachedBranchMap,
+    setCachedCloudBranchMap,
+  ]);
+
+  const { effectiveBranches, servingFromCache } = useMemo(
+    () =>
+      resolveEffectiveBranches({
+        liveLoading: query.isPending,
+        liveErrored: query.isError,
+        searchActive,
+        liveBranches,
+        cachedBranches:
+          queryEnabled && repoKey ? cachedBranchMap[repoKey] : undefined,
+      }),
+    [
+      query.isPending,
+      query.isError,
+      searchActive,
+      liveBranches,
+      cachedBranchMap,
+      repoKey,
+      queryEnabled,
+    ],
   );
 
   const loadMore = useCallback(() => {
@@ -372,9 +432,9 @@ export function useUserGithubBranches(
   }, [query.refetch]);
 
   return {
-    data,
-    isPending: queryEnabled ? query.isPending : false,
-    isRefreshing: queryEnabled ? query.isRefetching : false,
+    data: effectiveBranches,
+    isPending: queryEnabled ? query.isPending && !servingFromCache : false,
+    isRefreshing: queryEnabled ? query.isRefetching || servingFromCache : false,
     isFetchingMore: query.isFetchingNextPage,
     hasMore: query.hasNextPage ?? false,
     loadMore,
@@ -397,6 +457,9 @@ export function useUserRepositoryIntegration() {
   const setCachedRepositoryMap = useSettingsStore(
     (state) => state.setCachedCloudRepositoryMap,
   );
+  const setCachedCloudBranchMap = useSettingsStore(
+    (state) => state.setCachedCloudBranchMap,
+  );
 
   const {
     repositoryMap,
@@ -406,7 +469,8 @@ export function useUserRepositoryIntegration() {
   } = useAllUserGithubRepositories(githubIntegrations);
 
   // Persist the freshly loaded map so the picker has data on the next cold
-  // start, and clear it once the user has no integrations.
+  // start, and clear it once the user has no integrations. The branch cache
+  // is keyed by these repos, so it is cleared alongside.
   const reposErrored = failedInstallationIds.length > 0;
   useEffect(() => {
     const action = resolveUserRepositoryCacheAction({
@@ -421,6 +485,7 @@ export function useUserRepositoryIntegration() {
       setCachedRepositoryMap(repositoryMap);
     } else if (action === "clear") {
       setCachedRepositoryMap({});
+      setCachedCloudBranchMap({});
     }
   }, [
     integrationsPending,
@@ -430,6 +495,7 @@ export function useUserRepositoryIntegration() {
     repositoryMap,
     cachedRepositoryMap,
     setCachedRepositoryMap,
+    setCachedCloudBranchMap,
   ]);
 
   const liveLoading = integrationsPending || reposPending;

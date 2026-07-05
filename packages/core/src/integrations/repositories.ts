@@ -218,6 +218,41 @@ export function resolveUserRepositoryCacheAction({
   return "write";
 }
 
+export interface RepositoryPickerListInputs {
+  pickerOpen: boolean;
+  pickerPending: boolean;
+  searchActive: boolean;
+  pickerRepositories: string[];
+  allRepositories: string[];
+}
+
+export interface RepositoryPickerList {
+  repositories: string[];
+  pickerLoading: boolean;
+}
+
+/**
+ * Picks the list the repo picker should render. While the picker's
+ * server-search query is still loading its first page with no search typed,
+ * fall back to the already-loaded full repository list so opening the picker
+ * doesn't flash "Loading repositories...".
+ */
+export function resolveRepositoryPickerList({
+  pickerOpen,
+  pickerPending,
+  searchActive,
+  pickerRepositories,
+  allRepositories,
+}: RepositoryPickerListInputs): RepositoryPickerList {
+  if (!pickerOpen) {
+    return { repositories: allRepositories, pickerLoading: false };
+  }
+  if (pickerPending && !searchActive && allRepositories.length > 0) {
+    return { repositories: allRepositories, pickerLoading: false };
+  }
+  return { repositories: pickerRepositories, pickerLoading: pickerPending };
+}
+
 export interface EffectiveUserRepositoryMap {
   effectiveRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
   servingFromCache: boolean;
