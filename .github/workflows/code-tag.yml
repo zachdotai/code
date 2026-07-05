@@ -36,11 +36,14 @@ jobs:
           app_id: ${{ secrets.GH_APP_ARRAY_RELEASER_APP_ID }}
           private_key: ${{ secrets.GH_APP_ARRAY_RELEASER_PRIVATE_KEY }}
 
+      # The tag push below authenticates via an explicit token URL, so the checkout
+      # credential does not need to persist in .git/config for the rest of the job.
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
 
       - name: Check quiet period
         id: quiet

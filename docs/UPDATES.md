@@ -29,6 +29,18 @@ electron-builder generates and uploads a `latest-mac.yml` (macOS) or `latest.yml
 2. Each push to `main` triggers a release with version `0.15.N` where N = commits since `v0.15.0`
 3. No manual `package.json` updates needed for patch releases
 
+## Release Approval
+
+Builds and asset uploads run automatically into a draft release, which
+auto-updaters never see. The `finalize-release` job, which flips the draft
+public, runs in the `Desktop Release` GitHub environment. Once required
+reviewers are configured on that environment, publishing waits for a human
+approval on the workflow run; with no reviewers configured it behaves as
+before. Approve within 24 hours: the nightly draft cleanup deletes drafts
+older than a day, after which the run must be re-triggered by re-pushing the
+tag or dispatching the workflow. The npm release process for `@posthog/agent`
+is separate, see [packages/agent/RELEASING.md](../packages/agent/RELEASING.md).
+
 ## Releasing a Patch (Automatic)
 
 Just push to `main`. The workflow computes the version automatically:
