@@ -4,6 +4,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   writeFileSync,
 } from "node:fs";
 import { builtinModules } from "node:module";
@@ -78,11 +79,24 @@ function copyAssets() {
   );
 }
 
+// Release builds (AGENT_RELEASE_BUILD=1, set only by the npm release workflow) bake in
+// the real package version; every other build keeps the 0.0.0-dev sentinel that
+// packages/ui/src/utils/agentVersion.ts treats as "latest source, satisfies any range".
+const agentVersion =
+  process.env.AGENT_RELEASE_BUILD === "1"
+    ? JSON.parse(
+        readFileSync(resolve(import.meta.dirname, "package.json"), "utf8"),
+      ).version
+    : "0.0.0-dev";
+
 const sharedOptions = {
   sourcemap: true,
   splitting: false,
   outDir: "dist",
   target: "node20",
+  define: {
+    __AGENT_VERSION__: JSON.stringify(agentVersion),
+  },
   noExternal: [
     "@posthog/shared",
     "@posthog/git",

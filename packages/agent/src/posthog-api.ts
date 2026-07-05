@@ -1,4 +1,3 @@
-import packageJson from "../package.json" with { type: "json" };
 import type {
   ArtifactType,
   PostHogAPIConfig,
@@ -12,6 +11,7 @@ import {
   getGatewayUsageUrl,
   getLlmGatewayUrl,
 } from "./utils/gateway";
+import { AGENT_VERSION } from "./version";
 
 export {
   getGatewayInvalidatePlanCacheUrl,
@@ -19,7 +19,7 @@ export {
   getLlmGatewayUrl,
 };
 
-const DEFAULT_USER_AGENT = `posthog/agent.hog.dev; version: ${packageJson.version}`;
+const DEFAULT_USER_AGENT = `posthog/agent.hog.dev; version: ${AGENT_VERSION}`;
 
 export interface TaskArtifactUploadPayload {
   name: string;

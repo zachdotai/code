@@ -1,7 +1,8 @@
 import semver from "semver";
 
-/** Sentinel version used by unbuilt dev builds (matches the placeholder in
- * `packages/agent/package.json`). Real release builds inject a real semver. */
+/** Sentinel version reported by source builds (matches the default in
+ * `packages/agent/src/version.ts`). Only npm release builds of the agent
+ * inject a real semver, via tsup with AGENT_RELEASE_BUILD=1. */
 const DEV_VERSION = "0.0.0-dev";
 
 /**

@@ -71,6 +71,7 @@ import {
 import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
+import { AGENT_VERSION } from "../../version";
 import { BaseAcpAgent } from "../base-acp-agent";
 import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
 import { resolveTaskId } from "../session-meta";
@@ -311,7 +312,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       agentInfo: {
         name: packageJson.name,
         title: "Claude Agent",
-        version: packageJson.version,
+        version: AGENT_VERSION,
       },
       authMethods: [],
     };

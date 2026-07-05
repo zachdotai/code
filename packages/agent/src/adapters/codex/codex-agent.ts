@@ -65,6 +65,7 @@ import {
   nodeReadableToWebReadable,
   nodeWritableToWebWritable,
 } from "../../utils/streams";
+import { AGENT_VERSION } from "../../version";
 import { BaseAcpAgent, type BaseSession } from "../base-acp-agent";
 import {
   buildBreakdown,
@@ -482,7 +483,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       agentInfo: {
         name: packageJson.name,
         title: "Codex Agent",
-        version: packageJson.version,
+        version: AGENT_VERSION,
       },
     };
   }

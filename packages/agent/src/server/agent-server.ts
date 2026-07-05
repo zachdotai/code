@@ -19,7 +19,6 @@ import { getCurrentBranch } from "@posthog/git/queries";
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { z } from "zod";
-import packageJson from "../../package.json" with { type: "json" };
 import { POSTHOG_METHODS, POSTHOG_NOTIFICATIONS } from "../acp-extensions";
 import {
   createAcpConnection,
@@ -68,6 +67,7 @@ import {
   resolveLlmGatewayUrl,
 } from "../utils/gateway";
 import { Logger } from "../utils/logger";
+import { AGENT_VERSION } from "../version";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
 import {
   normalizeCloudPromptContent,
@@ -377,7 +377,7 @@ export class AgentServer {
       apiUrl: config.apiUrl,
       projectId: config.projectId,
       getApiKey: () => config.apiKey,
-      userAgent: `posthog/cloud.hog.dev; version: ${config.version ?? packageJson.version}`,
+      userAgent: `posthog/cloud.hog.dev; version: ${config.version ?? AGENT_VERSION}`,
     });
     if (config.eventIngestToken) {
       this.eventStreamSender = new TaskRunEventStreamSender({
@@ -1174,7 +1174,7 @@ export class AgentServer {
       apiUrl: this.config.apiUrl,
       projectId: this.config.projectId,
       getApiKey: () => this.config.apiKey,
-      userAgent: `posthog/cloud.hog.dev; version: ${this.config.version ?? packageJson.version}`,
+      userAgent: `posthog/cloud.hog.dev; version: ${this.config.version ?? AGENT_VERSION}`,
     });
 
     const logWriter = new SessionLogWriter({
@@ -1355,9 +1355,7 @@ export class AgentServer {
       bootMs: this.sessionReadyBootMs,
       sessionInitMs: this.sessionInitMs,
     });
-    this.logger.debug(
-      `Agent version: ${this.config.version ?? packageJson.version}`,
-    );
+    this.logger.debug(`Agent version: ${this.config.version ?? AGENT_VERSION}`);
     await logAgentshRuntimeInfo(this.logger);
     this.logger.debug(`Initial permission mode: ${initialPermissionMode}`);
 
@@ -1372,7 +1370,7 @@ export class AgentServer {
         sessionId: acpSessionId,
         runId: payload.run_id,
         taskId: payload.task_id,
-        agentVersion: this.config.version ?? packageJson.version,
+        agentVersion: this.config.version ?? AGENT_VERSION,
       },
     };
     this.broadcastEvent({
