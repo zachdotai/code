@@ -2,6 +2,7 @@
   "name": "@posthog/enricher",
   "version": "1.0.0",
   "description": "Detect and enrich PostHog SDK usage in source code",
+  "private": true,
   "type": "module",
   "exports": {
     ".": {

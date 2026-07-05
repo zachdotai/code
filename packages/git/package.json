@@ -2,6 +2,7 @@
   "name": "@posthog/git",
   "version": "1.0.0",
   "description": "Git utilities for PostHog Code",
+  "private": true,
   "type": "module",
   "exports": {
     "./*": {

@@ -2,6 +2,7 @@
   "name": "@posthog/platform",
   "version": "1.0.0",
   "description": "Host-agnostic platform port interfaces. Zero runtime deps; implemented by per-host adapters (Electron, Node server, React Native, web).",
+  "private": true,
   "type": "module",
   "exports": {
     "./url-launcher": {

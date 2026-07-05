@@ -2,6 +2,7 @@
   "name": "@posthog/shared",
   "version": "1.0.0",
   "description": "Shared utilities for PostHog Code",
+  "private": true,
   "type": "module",
   "exports": {
     ".": {
