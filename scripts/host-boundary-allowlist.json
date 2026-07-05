@@ -80,6 +80,9 @@
     "apps/code/src/renderer/features/dev-toolbar/integration.tsx": [
       "feature-ui-in-host"
     ],
+    "apps/code/src/renderer/features/quick-entry/QuickEntryGlassControls.tsx": [
+      "feature-ui-in-host"
+    ],
     "apps/code/src/renderer/features/quick-entry/QuickEntryRoot.tsx": [
       "feature-ui-in-host"
     ],
