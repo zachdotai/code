@@ -814,7 +814,8 @@ export type ChannelsSurface =
   | "pinned"
   | "dashboards_grid"
   | "canvas"
-  | "context";
+  | "context"
+  | "thread_panel";
 
 export type ChannelActionType =
   | "enter_space"
@@ -840,7 +841,9 @@ export type ChannelActionType =
   | "file_task"
   | "unfile_task"
   | "archive_task"
-  | "open_task";
+  | "open_task"
+  | "collapse_thread"
+  | "expand_thread";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
