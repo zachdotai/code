@@ -9,6 +9,8 @@ permissions: {}
 
 jobs:
   notify:
+    # Desktop releases only; agent-v* npm releases are announced via Slack instead
+    if: ${{ !startsWith(github.event.release.tag_name, 'agent-v') }}
     runs-on: ubuntu-latest
     steps:
       - uses: SethCohen/github-releases-to-discord@37afa88c8c9302a9307244b5a0d4e782d528a4b5 # v1.15.1

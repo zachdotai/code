@@ -18,3 +18,4 @@
 
 - [ ] Publish to changelog?
 - [ ] Alert Sales and Marketing teams?
+- [ ] Added a changeset? (required to ship `packages/agent`, `shared`, `git` or `enricher` changes to npm; run `pnpm changeset`)

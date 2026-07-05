@@ -198,6 +198,7 @@ await boot(container);
 - `pnpm test:e2e`: run Playwright tests.
 - `pnpm --filter <pkg> typecheck|test|build`: run a scoped task.
 - `pnpm --filter code package|make`: package the Electron app.
+- `pnpm changeset`: request an npm release of `@posthog/agent` (see [packages/agent/RELEASING.md](./packages/agent/RELEASING.md)).
 - `node scripts/check-host-boundaries.mjs`: verify host boundary allowlist.
 
 ## Code Style
@@ -251,3 +252,4 @@ See [docs/testing.md](./docs/testing.md).
 - [docs/LOCAL-DEVELOPMENT.md](./docs/LOCAL-DEVELOPMENT.md)
 - [docs/UPDATES.md](./docs/UPDATES.md)
 - [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
+- [packages/agent/RELEASING.md](./packages/agent/RELEASING.md)

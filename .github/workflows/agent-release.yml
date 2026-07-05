@@ -1,25 +1,70 @@
 name: Release Agent
 
+# Hardened release pipeline for @posthog/agent, modeled on
+# https://posthog.com/handbook/engineering/sdks/releases and posthog-php's release.yml.
+# A merged changeset produces a verified release candidate that a human must approve
+# via the protected "Release" environment before anything is committed, tagged or
+# published to npm. See packages/agent/RELEASING.md.
+
 on:
   push:
-    tags:
-      - "agent-v*"
+    branches:
+      - main
+    paths:
+      - ".changeset/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: agent-release
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Publish agent to npm
+  check-changesets:
+    name: Check for changesets
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+    outputs:
+      has-changesets: ${{ steps.check.outputs.has-changesets }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Check for changesets
+        id: check
+        run: |
+          changeset_count=$(find .changeset -name '*.md' ! -name 'README.md' 2>/dev/null | wc -l)
+          if [ "$changeset_count" -gt 0 ]; then
+            echo "has-changesets=true" >> "$GITHUB_OUTPUT"
+            echo "Found $changeset_count changeset(s), ready to release"
+          else
+            echo "has-changesets=false" >> "$GITHUB_OUTPUT"
+            echo "No changesets to release"
+          fi
+
+  prepare-release-candidate:
+    name: Prepare release candidate
+    needs: check-changesets
+    if: needs.check-changesets.outputs.has-changesets == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      new-version: ${{ steps.candidate.outputs.new-version }}
+      patch-sha256: ${{ steps.candidate.outputs.patch-sha256 }}
+      source-sha: ${{ steps.candidate.outputs.source-sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup pnpm
@@ -31,40 +76,405 @@ jobs:
           node-version: 24
           cache: "pnpm"
 
-      - name: Extract version from tag
-        id: version
-        run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/agent-v}"
-          echo "Version: $TAG_VERSION"
-          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Install release tooling dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Set version in package.json
-        env:
-          APP_VERSION: ${{ steps.version.outputs.version }}
+      - name: Apply changesets and compute release candidate
+        id: candidate
         run: |
-          jq --arg v "$APP_VERSION" '.version = $v' packages/agent/package.json > tmp.json && mv tmp.json packages/agent/package.json
-          echo "Set packages/agent/package.json version to $APP_VERSION"
+          set -euo pipefail
+
+          source_sha=$(git rev-parse HEAD)
+          pnpm exec changeset version
+          new_version=$(jq -r '.version' packages/agent/package.json)
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No release candidate changes were generated" >&2
+            exit 1
+          fi
+
+          changed_files=$(git diff --cached --name-only)
+          while IFS= read -r file; do
+            case "$file" in
+              packages/agent/package.json|packages/agent/CHANGELOG.md|.changeset/*.md) ;;
+              *)
+                echo "Unexpected release candidate change: $file" >&2
+                exit 1
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          git diff --cached --binary > release.patch
+          patch_sha256=$(sha256sum release.patch | awk '{print $1}')
+
+          {
+            echo "source-sha=$source_sha"
+            echo "new-version=$new_version"
+            echo "patch-sha256=$patch_sha256"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release candidate $new_version prepared from $source_sha with patch sha256 $patch_sha256"
+
+      - name: Upload release candidate patch
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-${{ steps.candidate.outputs.source-sha }}
+          path: release.patch
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-release-candidate:
+    name: Verify release candidate
+    needs: [check-changesets, prepare-release-candidate]
+    if: needs.check-changesets.outputs.has-changesets == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout source revision
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.prepare-release-candidate.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Download release candidate patch
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-${{ needs.prepare-release-candidate.outputs.source-sha }}
+          path: release-candidate
+
+      - name: Apply and validate release candidate patch
+        env:
+          EXPECTED_PATCH_SHA256: ${{ needs.prepare-release-candidate.outputs.patch-sha256 }}
+          EXPECTED_VERSION: ${{ needs.prepare-release-candidate.outputs.new-version }}
+        run: |
+          set -euo pipefail
+
+          actual_patch_sha256=$(sha256sum release-candidate/release.patch | awk '{print $1}')
+          if [ "$actual_patch_sha256" != "$EXPECTED_PATCH_SHA256" ]; then
+            echo "Release candidate patch sha256 mismatch: expected $EXPECTED_PATCH_SHA256, got $actual_patch_sha256" >&2
+            exit 1
+          fi
+
+          git apply --index release-candidate/release.patch
+
+          package_version=$(jq -r '.version' packages/agent/package.json)
+          if [ "$EXPECTED_VERSION" != "$package_version" ]; then
+            echo "Version mismatch: expected=$EXPECTED_VERSION packages/agent/package.json=$package_version" >&2
+            exit 1
+          fi
+
+          rm -rf release-candidate
+
+      - name: Check tag and release do not already exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: agent-v${{ needs.prepare-release-candidate.outputs.new-version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          check_missing() {
+            local description="$1"
+            shift
+            local output
+            local status
+
+            if output=$("$@" 2>&1); then
+              echo "$description already exists for $RELEASE_TAG" >&2
+              exit 1
+            else
+              status=$?
+            fi
+
+            if grep -q "HTTP 404" <<< "$output" || grep -q "Not Found" <<< "$output"; then
+              return 0
+            fi
+
+            echo "Could not check whether $description exists: $output" >&2
+            exit "$status"
+          }
+
+          check_missing "GitHub release" gh api "repos/$REPOSITORY/releases/tags/$RELEASE_TAG"
+          check_missing "git tag" gh api "repos/$REPOSITORY/git/ref/tags/$RELEASE_TAG"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build shared (agent dependency)
-        run: pnpm --filter @posthog/shared run build
+      - name: Build and test the release candidate
+        env:
+          AGENT_RELEASE_BUILD: "1"
+        run: |
+          pnpm --filter @posthog/shared run build
+          pnpm --filter @posthog/git run build
+          pnpm --filter @posthog/enricher run build
+          pnpm --filter agent run build
+          pnpm --filter agent run test
 
-      - name: Build git (agent dependency)
-        run: pnpm --filter @posthog/git run build
+  notify-approval-needed:
+    name: Notify Slack - Approval Needed
+    needs: [check-changesets, prepare-release-candidate, verify-release-candidate]
+    if: needs.check-changesets.outputs.has-changesets == 'true' && needs.prepare-release-candidate.result == 'success' && needs.verify-release-candidate.result == 'success'
+    uses: posthog/.github/.github/workflows/notify-approval-needed.yml@cb0979b67dcd585828b61ac45927eef4da8f6287 # main
+    with:
+      slack_channel_id: ${{ vars.SLACK_APPROVALS_CODE_CHANNEL_ID }}
+      slack_user_group_id: ${{ vars.GROUP_CODE_SLACK_GROUP_ID }}
+      # This repo has two tag namespaces (v* desktop, agent-v* npm). The compare
+      # link must resolve against the latest agent-v* tag, which requires the
+      # non-checkout code path of the reusable workflow.
+      checkout_repository: false
+      tag_pattern: "agent-v*"
+      tag_sort: "version"
+    secrets:
+      slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+      posthog_project_api_key: ${{ secrets.POSTHOG_PROJECT_API_KEY }}
 
-      - name: Build enricher (agent dependency)
-        run: pnpm --filter @posthog/enricher run build
+  release:
+    name: Publish release
+    needs:
+      [
+        check-changesets,
+        prepare-release-candidate,
+        verify-release-candidate,
+        notify-approval-needed,
+      ]
+    runs-on: ubuntu-latest
+    # Slack notification failure (e.g. secrets not provisioned yet) must not block the
+    # release: the security gate is the environment approval, not the Slack ping.
+    if: always() && needs.check-changesets.outputs.has-changesets == 'true' && needs.verify-release-candidate.result == 'success' && (needs.notify-approval-needed.result == 'success' || needs.notify-approval-needed.result == 'failure')
+    environment: Release
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    env:
+      AGENT_RELEASE_BUILD: "1"
+    steps:
+      - name: Notify Slack - Approved
+        if: needs.notify-approval-needed.outputs.slack_ts != ''
+        continue-on-error: true
+        uses: posthog/.github/.github/actions/slack-thread-reply@cb0979b67dcd585828b61ac45927eef4da8f6287 # main
+        with:
+          slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+          slack_channel_id: ${{ vars.SLACK_APPROVALS_CODE_CHANNEL_ID }}
+          thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
+          message: "✅ Release approved! Publishing @posthog/agent@${{ needs.prepare-release-candidate.outputs.new-version }}..."
+          emoji_reaction: "white_check_mark"
 
-      - name: Build the package
-        run: pnpm --filter agent run build
+      - name: Checkout approved source revision
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.prepare-release-candidate.outputs.source-sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Run tests
-        run: pnpm --filter agent run test
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Download verified release candidate patch
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-${{ needs.prepare-release-candidate.outputs.source-sha }}
+          path: release-candidate
+
+      - name: Apply verified release candidate patch
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PATCH_SHA256: ${{ needs.prepare-release-candidate.outputs.patch-sha256 }}
+          EXPECTED_SOURCE_SHA: ${{ needs.prepare-release-candidate.outputs.source-sha }}
+          EXPECTED_VERSION: ${{ needs.prepare-release-candidate.outputs.new-version }}
+          RELEASE_TAG: agent-v${{ needs.prepare-release-candidate.outputs.new-version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          actual_patch_sha256=$(sha256sum release-candidate/release.patch | awk '{print $1}')
+          if [ "$actual_patch_sha256" != "$EXPECTED_PATCH_SHA256" ]; then
+            echo "Release candidate patch sha256 mismatch: expected $EXPECTED_PATCH_SHA256, got $actual_patch_sha256" >&2
+            exit 1
+          fi
+
+          # A pre-existing tag means a prior approved attempt already committed the
+          # version bump (and possibly failed later, e.g. at npm publish). Resume by
+          # rebuilding the same content instead of failing on "main moved".
+          if gh api "repos/$REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha' > /dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists; resuming a previously approved release"
+            echo "resume=true" >> "$GITHUB_OUTPUT"
+          else
+            current_main_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+            if [ "$current_main_sha" != "$EXPECTED_SOURCE_SHA" ]; then
+              echo "main moved since the release candidate was verified: expected $EXPECTED_SOURCE_SHA, got $current_main_sha. Re-run the workflow so a fresh candidate is prepared and verified." >&2
+              exit 1
+            fi
+            echo "resume=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          git apply --index release-candidate/release.patch
+
+          package_version=$(jq -r '.version' packages/agent/package.json)
+          if [ "$EXPECTED_VERSION" != "$package_version" ]; then
+            echo "Version mismatch: expected=$EXPECTED_VERSION packages/agent/package.json=$package_version" >&2
+            exit 1
+          fi
+
+          rm -rf release-candidate
+
+      - name: Get GitHub App token
+        id: releaser
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.GH_APP_POSTHOG_AGENT_RELEASER_APP_ID }}
+          private-key: ${{ secrets.GH_APP_POSTHOG_AGENT_RELEASER_PRIVATE_KEY }}
+
+      - name: Commit version bump
+        id: commit-version-bump
+        if: steps.guard.outputs.resume != 'true'
+        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
+        with:
+          commit_message: "chore(agent): release agent-v${{ needs.prepare-release-candidate.outputs.new-version }} [version bump] [skip ci]"
+          repo: ${{ github.repository }}
+          branch: main
+          file_pattern: "packages/agent/package.json packages/agent/CHANGELOG.md .changeset"
+        env:
+          GITHUB_TOKEN: ${{ steps.releaser.outputs.token }}
+
+      - name: Create release tag
+        if: steps.guard.outputs.resume != 'true' && steps.commit-version-bump.outputs.commit-hash != ''
+        env:
+          GH_TOKEN: ${{ steps.releaser.outputs.token }}
+          RELEASE_TAG: agent-v${{ needs.prepare-release-candidate.outputs.new-version }}
+          COMMIT_SHA: ${{ steps.commit-version-bump.outputs.commit-hash }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPOSITORY/git/refs" -f ref="refs/tags/$RELEASE_TAG" -f sha="$COMMIT_SHA"
+          echo "Created tag $RELEASE_TAG at $COMMIT_SHA"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and test the approved release
+        run: |
+          pnpm --filter @posthog/shared run build
+          pnpm --filter @posthog/git run build
+          pnpm --filter @posthog/enricher run build
+          pnpm --filter agent run build
+          pnpm --filter agent run test
+
+      - name: Check whether version is already on npm
+        id: npm-check
+        env:
+          NEW_VERSION: ${{ needs.prepare-release-candidate.outputs.new-version }}
+        run: |
+          set -euo pipefail
+          already_published=$(npm view "@posthog/agent" versions --json | jq --arg v "$NEW_VERSION" 'index($v) != null')
+          echo "already-published=$already_published" >> "$GITHUB_OUTPUT"
+          echo "@posthog/agent@$NEW_VERSION already published: $already_published"
 
       - name: Publish the package to npm registry
+        if: steps.npm-check.outputs.already-published != 'true'
         working-directory: packages/agent
         run: pnpm publish --access public --no-git-checks
         env:
           NPM_CONFIG_PROVENANCE: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ steps.releaser.outputs.token }}
+          RELEASE_TAG: agent-v${{ needs.prepare-release-candidate.outputs.new-version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if gh api "repos/$REPOSITORY/releases/tags/$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "GitHub release for $RELEASE_TAG already exists"
+            exit 0
+          fi
+
+          CHANGELOG_ENTRY=$(awk -v defText="See packages/agent/CHANGELOG.md" '/^## /{if (flag) exit; flag=1} flag; END{if (!flag) print defText}' packages/agent/CHANGELOG.md)
+          gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "$CHANGELOG_ENTRY"
+
+  notify-released:
+    name: Notify Slack - Released
+    needs: [prepare-release-candidate, notify-approval-needed, release]
+    runs-on: ubuntu-latest
+    if: always() && needs.release.result == 'success' && needs.notify-approval-needed.outputs.slack_ts != ''
+    steps:
+      - name: Notify Slack - Released
+        uses: posthog/.github/.github/actions/slack-thread-reply@cb0979b67dcd585828b61ac45927eef4da8f6287 # main
+        with:
+          slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+          slack_channel_id: ${{ vars.SLACK_APPROVALS_CODE_CHANNEL_ID }}
+          thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
+          message: "🚀 @posthog/agent@${{ needs.prepare-release-candidate.outputs.new-version }} released successfully!"
+          emoji_reaction: "rocket"
+
+  notify-release-failed:
+    name: Notify Slack - Release Failed
+    needs: [prepare-release-candidate, notify-approval-needed, release]
+    runs-on: ubuntu-latest
+    if: always() && (needs.release.result == 'failure' || needs.release.result == 'cancelled') && needs.notify-approval-needed.outputs.slack_ts != ''
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check whether release was rejected
+        id: check-failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RESPONSE=$(gh api /repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/approvals)
+          REJECTED=$(echo "$RESPONSE" | jq '[.[] | select(.state == "rejected")] | length')
+          if [ "$REJECTED" -gt 0 ]; then
+            echo "was_rejected=true" >> "$GITHUB_OUTPUT"
+            COMMENT=$(echo "$RESPONSE" | jq -r '.[] | select(.state == "rejected") | .comment // empty' | head -1)
+            if [ -n "$COMMENT" ]; then
+              {
+                echo 'message<<EOF'
+                echo "🚫 Release was rejected: $COMMENT"
+                echo 'EOF'
+              } >> "$GITHUB_OUTPUT"
+            else
+              echo "message=🚫 Release was rejected." >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "was_rejected=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify Slack - Failed
+        if: steps.check-failure.outputs.was_rejected != 'true'
+        uses: posthog/.github/.github/actions/slack-thread-reply@cb0979b67dcd585828b61ac45927eef4da8f6287 # main
+        with:
+          slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+          slack_channel_id: ${{ vars.SLACK_APPROVALS_CODE_CHANNEL_ID }}
+          thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
+          message: "❌ Release `@posthog/agent@${{ needs.prepare-release-candidate.outputs.new-version }}` failed or was cancelled! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
+          emoji_reaction: "x"
+
+      - name: Notify Slack - Rejected
+        if: steps.check-failure.outputs.was_rejected == 'true'
+        continue-on-error: true
+        uses: posthog/.github/.github/actions/slack-thread-reply@cb0979b67dcd585828b61ac45927eef4da8f6287 # main
+        with:
+          slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+          slack_channel_id: ${{ vars.SLACK_APPROVALS_CODE_CHANNEL_ID }}
+          thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
+          message: "${{ steps.check-failure.outputs.message }}"
+          emoji_reaction: "no_entry_sign"
