@@ -358,7 +358,11 @@ export function normalizePromptToBlocks(
   );
 }
 
-export { isFatalSessionError, isRateLimitError } from "@posthog/shared";
+export {
+  isFatalSessionError,
+  isRateLimitError,
+  isTransportError,
+} from "@posthog/shared";
 
 /**
  * Whether a list of events already contains a `session/prompt` request.

@@ -75,6 +75,7 @@ export {
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransportError,
   NotAuthenticatedError,
   type SerializedError,
   serializeError,

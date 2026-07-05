@@ -22,6 +22,7 @@ import {
   isJsonRpcRequest,
   isJsonRpcResponse,
   isRateLimitError,
+  isTransportError,
   mergeConfigOptions,
   type OptimisticItem,
   type PermissionRequest,
@@ -89,7 +90,7 @@ const LOCAL_SESSION_RECONNECT_BACKOFF = {
 const LOCAL_SESSION_RECOVERY_MESSAGE =
   "Lost connection to the agent. Reconnecting…";
 const LOCAL_SESSION_RECOVERY_FAILED_MESSAGE =
-  "Connecting to to the agent has been lost. Retry, or start a new session.";
+  "Connection to the agent has been lost. Retry, or start a new session.";
 const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
@@ -152,6 +153,9 @@ export interface SessionTrpc {
     onSessionEvent: TrpcSubscription;
     onPermissionRequest: TrpcSubscription;
     onSessionIdleKilled: TrpcSubscription;
+    /** Optional: only hosts with a power manager detect turns stalled by
+     * system sleep. Core subscribes when the host exposes it. */
+    onSessionStalled?: TrpcSubscription;
   };
   workspace: { verify: TrpcQuery };
   cloudTask: {
@@ -559,6 +563,7 @@ export class SessionService {
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
   >();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
+  private stalledTurnSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
    * Shared across cloud sessions so switching model/adapter reuses the list.
@@ -611,6 +616,38 @@ export class SessionService {
           d.log.debug("Idle-killed subscription error", { error: err });
         },
       },
+    );
+    this.stalledTurnSubscription =
+      d.trpc.agent.onSessionStalled?.subscribe(undefined, {
+        onData: (event: { taskRunId: string; taskId: string }) => {
+          this.handleStalledTurn(event.taskId, event.taskRunId);
+        },
+        onError: (err: unknown) => {
+          d.log.debug("Stalled-turn subscription error", { error: err });
+        },
+      }) ?? null;
+  }
+
+  /**
+   * The main process detected a turn that produced no agent traffic after a
+   * system resume: the agent is wedged on a connection that died during
+   * sleep. Reconnect in place — the resumed session keeps its history.
+   */
+  private handleStalledTurn(taskId: string, taskRunId: string): void {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session || session.taskRunId !== taskRunId || session.isCloud) {
+      return;
+    }
+    this.d.log.warn("Recovering turn stalled by system sleep", {
+      taskId,
+      taskRunId,
+    });
+    this.startAutoRecoverLocalSession(
+      taskId,
+      taskRunId,
+      session.taskTitle,
+      "Turn stalled after system sleep",
+      "The agent lost its connection while the computer was asleep. Please retry or start a new session.",
     );
   }
 
@@ -976,6 +1013,16 @@ export class SessionService {
       });
 
       if (result) {
+        if (sessionId && result.resumedExistingSession === false) {
+          this.d.log.warn(
+            "Reconnect could not restore prior agent context; continuing with a fresh session",
+            { taskId, taskRunId },
+          );
+          this.d.toast.info(
+            "Couldn't restore the agent's previous context, so it may not remember earlier turns. The transcript is unaffected.",
+          );
+        }
+
         // Cast and merge live configOptions with persisted values.
         // Fall back to persisted options if the agent doesn't return any
         // (e.g. after session compaction).
@@ -1237,8 +1284,16 @@ export class SessionService {
     reason: string,
     fallbackMessage: string,
   ): void {
-    void this.tryAutoRecoverLocalSession(taskId, taskRunId, reason).then(
-      (recovered) => {
+    void this.tryAutoRecoverLocalSession(taskId, taskRunId, reason)
+      .catch((error) => {
+        this.d.log.error("Local session recovery threw", {
+          taskId,
+          taskRunId,
+          error,
+        });
+        return false;
+      })
+      .then((recovered) => {
         if (recovered) {
           return;
         }
@@ -1257,8 +1312,7 @@ export class SessionService {
             "Connection lost",
           );
         }
-      },
-    );
+      });
   }
 
   private async createNewLocalSession(
@@ -1686,6 +1740,8 @@ export class SessionService {
     this.cloudRunIdleTracker.clear();
     this.idleKilledSubscription?.unsubscribe();
     this.idleKilledSubscription = null;
+    this.stalledTurnSubscription?.unsubscribe();
+    this.stalledTurnSubscription = null;
   }
 
   /**
@@ -2436,8 +2492,11 @@ export class SessionService {
         return { stopReason: "rate_limited" };
       }
 
-      if (isFatalSessionError(errorMessage, errorDetails)) {
-        this.d.log.error("Fatal prompt error, attempting recovery", {
+      if (
+        isFatalSessionError(errorMessage, errorDetails) ||
+        isTransportError(errorMessage, errorDetails)
+      ) {
+        this.d.log.error("Unrecoverable prompt error, attempting recovery", {
           taskRunId: session.taskRunId,
           errorMessage,
           errorDetails,

@@ -5,6 +5,7 @@ import {
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransportError,
   NotAuthenticatedError,
   serializeError,
 } from "./errors";
@@ -102,6 +103,38 @@ describe("isFatalSessionError", () => {
 
   it("returns false for ordinary recoverable errors", () => {
     expect(isFatalSessionError("temporary network blip")).toBe(false);
+  });
+});
+
+describe("isTransportError", () => {
+  it.each([
+    "read ECONNRESET",
+    "connect ECONNREFUSED 127.0.0.1:443",
+    "write EPIPE",
+    "request timed out: ETIMEDOUT",
+    "getaddrinfo ENOTFOUND api.anthropic.com",
+    "socket hang up",
+    "TypeError: fetch failed",
+    "Connection reset by peer",
+    "stream closed unexpectedly",
+    "UND_ERR_SOCKET: other side closed",
+  ])("treats %j as a transport error", (message) => {
+    expect(isTransportError(message)).toBe(true);
+  });
+
+  it("matches in details when the message is generic", () => {
+    expect(isTransportError("Unknown error", "read ECONNRESET")).toBe(true);
+  });
+
+  it("does not treat a rate-limit error as a transport error", () => {
+    expect(isTransportError("network error", "rate limit exceeded")).toBe(
+      false,
+    );
+  });
+
+  it("returns false for non-transport errors", () => {
+    expect(isTransportError("invalid prompt")).toBe(false);
+    expect(isTransportError("")).toBe(false);
   });
 });
 

@@ -136,6 +136,12 @@ export const sessionResponseSchema = z.object({
   sessionId: z.string(),
   channel: z.string(),
   configOptions: z.array(sessionConfigOptionSchema).optional(),
+  /**
+   * Whether the agent restored the prior conversation. False when a reconnect
+   * fell back to a fresh session (no stored history, or the resume failed), so
+   * the client can tell the user the agent lost its context.
+   */
+  resumedExistingSession: z.boolean().optional(),
 });
 
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
@@ -228,6 +234,7 @@ export const AgentServiceEvent = {
   PermissionRequest: "permission-request",
   SessionsIdle: "sessions-idle",
   SessionIdleKilled: "session-idle-killed",
+  SessionStalled: "session-stalled",
   AgentFileActivity: "agent-file-activity",
   LlmActivity: "llm-activity",
 } as const;
@@ -250,6 +257,11 @@ export interface SessionIdleKilledPayload {
   taskId: string;
 }
 
+export interface SessionStalledPayload {
+  taskRunId: string;
+  taskId: string;
+}
+
 export interface AgentFileActivityPayload {
   taskId: string;
   branchName: string | null;
@@ -260,6 +272,7 @@ export interface AgentServiceEvents {
   [AgentServiceEvent.PermissionRequest]: PermissionRequestPayload;
   [AgentServiceEvent.SessionsIdle]: undefined;
   [AgentServiceEvent.SessionIdleKilled]: SessionIdleKilledPayload;
+  [AgentServiceEvent.SessionStalled]: SessionStalledPayload;
   [AgentServiceEvent.AgentFileActivity]: AgentFileActivityPayload;
   [AgentServiceEvent.LlmActivity]: undefined;
 }

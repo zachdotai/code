@@ -520,6 +520,95 @@ describe("AgentService", () => {
         expect.anything(),
       );
     });
+
+    describe("stalled turn detection after resume", () => {
+      const STALLED_TURN_GRACE_MS = 45 * 1000;
+
+      function getResumeHandler() {
+        return (
+          deps.powerManager.onResume.mock.calls[0] as unknown as [() => void]
+        )[0];
+      }
+
+      function getSession(taskRunId: string) {
+        return (
+          service as unknown as {
+            sessions: Map<string, { lastActivityAt: number }>;
+          }
+        ).sessions.get(taskRunId);
+      }
+
+      it("reports a pending turn with no agent traffic since resume as stalled", () => {
+        injectSession(service, "run-1", { promptPending: true });
+        service.recordActivity("run-1");
+
+        vi.advanceTimersByTime(10 * 60 * 1000);
+        getResumeHandler()();
+        vi.advanceTimersByTime(STALLED_TURN_GRACE_MS);
+
+        expect(service.emit).toHaveBeenCalledWith(
+          "session-stalled",
+          expect.objectContaining({
+            taskRunId: "run-1",
+            taskId: "task-for-run-1",
+          }),
+        );
+      });
+
+      it("does not report a turn that produced agent traffic after resume", () => {
+        injectSession(service, "run-1", { promptPending: true });
+        service.recordActivity("run-1");
+
+        vi.advanceTimersByTime(10 * 60 * 1000);
+        getResumeHandler()();
+
+        vi.advanceTimersByTime(10 * 1000);
+        const session = getSession("run-1");
+        if (!session) throw new Error("Expected session to exist");
+        session.lastActivityAt = Date.now();
+
+        vi.advanceTimersByTime(STALLED_TURN_GRACE_MS);
+
+        expect(service.emit).not.toHaveBeenCalledWith(
+          "session-stalled",
+          expect.anything(),
+        );
+      });
+
+      it("does not report a turn that settled before the grace period ends", () => {
+        injectSession(service, "run-1", { promptPending: true });
+        service.recordActivity("run-1");
+
+        vi.advanceTimersByTime(10 * 60 * 1000);
+        getResumeHandler()();
+
+        const session = getSession("run-1") as unknown as {
+          promptPending: boolean;
+        };
+        session.promptPending = false;
+
+        vi.advanceTimersByTime(STALLED_TURN_GRACE_MS);
+
+        expect(service.emit).not.toHaveBeenCalledWith(
+          "session-stalled",
+          expect.anything(),
+        );
+      });
+
+      it("does not report sessions that had no pending turn at resume", () => {
+        injectSession(service, "run-1", { promptPending: false });
+        service.recordActivity("run-1");
+
+        vi.advanceTimersByTime(10 * 60 * 1000);
+        getResumeHandler()();
+        vi.advanceTimersByTime(STALLED_TURN_GRACE_MS);
+
+        expect(service.emit).not.toHaveBeenCalledWith(
+          "session-stalled",
+          expect.anything(),
+        );
+      });
+    });
   });
 
   describe("channel system prompt local folders", () => {

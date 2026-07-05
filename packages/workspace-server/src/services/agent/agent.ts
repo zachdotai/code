@@ -307,6 +307,8 @@ interface ManagedSession {
   // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
   prAttributed: boolean;
   evaluatedPrUrls: Set<string>;
+  /** Whether this session restored a prior conversation (vs starting fresh). */
+  resumedExistingSession: boolean;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -341,6 +343,7 @@ interface PendingPermission {
 @injectable()
 export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   private static readonly IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+  private static readonly STALLED_TURN_GRACE_MS = 45 * 1000;
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
@@ -349,6 +352,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     string,
     { handle: ReturnType<typeof setTimeout>; deadline: number }
   >();
+  private stalledTurnCheckHandle: ReturnType<typeof setTimeout> | null = null;
   private processTracking: ProcessTrackingService;
   private sleepService: AgentSleepCoordinator;
   private fsService: AgentRepoFiles;
@@ -398,7 +402,42 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     this.log = loggerFactory.scope("agent-service");
     this.onAgentLog = makeOnAgentLog(loggerFactory);
 
-    powerManager.onResume(() => this.checkIdleDeadlines());
+    powerManager.onResume(() => {
+      this.checkIdleDeadlines();
+      this.scheduleStalledTurnCheck();
+    });
+  }
+
+  /**
+   * A system sleep mid-turn can leave the agent subprocess waiting forever on
+   * an upstream connection that died, without the turn ever erroring. After
+   * resume, give in-flight turns a grace period; any that produce no agent
+   * traffic in that window are reported stalled so the client reconnects them.
+   */
+  private scheduleStalledTurnCheck(): void {
+    const resumedAt = Date.now();
+    const pendingAtResume = [...this.sessions.values()]
+      .filter((session) => session.promptPending)
+      .map((session) => session.taskRunId);
+    if (pendingAtResume.length === 0) return;
+
+    if (this.stalledTurnCheckHandle) clearTimeout(this.stalledTurnCheckHandle);
+    this.stalledTurnCheckHandle = setTimeout(() => {
+      this.stalledTurnCheckHandle = null;
+      for (const taskRunId of pendingAtResume) {
+        const session = this.sessions.get(taskRunId);
+        if (!session?.promptPending) continue;
+        if (session.lastActivityAt >= resumedAt) continue;
+        this.log.warn("Turn stalled after system resume", {
+          taskRunId,
+          taskId: session.taskId,
+        });
+        this.emit(AgentServiceEvent.SessionStalled, {
+          taskRunId,
+          taskId: session.taskId,
+        });
+      }
+    }, AgentService.STALLED_TURN_GRACE_MS);
   }
 
   private getClaudeCliPath(): string {
@@ -908,6 +947,7 @@ If a repository IS genuinely required, attach one in this priority order:
 
       let configOptions: SessionConfigOption[] | undefined;
       let agentSessionId: string | undefined;
+      let resumedExistingSession = false;
 
       // Imported Claude Code CLI session: the transcript JSONL was copied
       // into CLAUDE_CONFIG_DIR at import time, so load it directly and let
@@ -940,6 +980,7 @@ If a repository IS genuinely required, attach one in this priority order:
           });
           configOptions = loadResponse?.configOptions ?? undefined;
           agentSessionId = importedSessionId;
+          resumedExistingSession = true;
         } catch (err) {
           this.log.warn(
             "Failed to load imported session, creating new session instead",
@@ -1012,6 +1053,7 @@ If a repository IS genuinely required, attach one in this priority order:
         });
         configOptions = resumeResponse?.configOptions ?? undefined;
         agentSessionId = existingSessionId;
+        resumedExistingSession = true;
       } else if (agentSessionId === undefined) {
         if (isReconnect) {
           this.log.info("No sessionId for reconnect, creating new session", {
@@ -1059,6 +1101,7 @@ If a repository IS genuinely required, attach one in this priority order:
         toolInstallations,
         prAttributed: false,
         evaluatedPrUrls: new Set(),
+        resumedExistingSession,
       };
 
       this.sessions.set(taskRunId, session);
@@ -1123,7 +1166,8 @@ If a repository IS genuinely required, attach one in this priority order:
         config.sessionId = undefined;
         return this.getOrCreateSession(config, false, false);
       }
-      if (isReconnect) return null;
+      // Rethrow (rather than returning null) so the client can show the real
+      // failure instead of a generic "could not be resumed" message.
       throw err;
     }
   }
@@ -1536,6 +1580,10 @@ For git operations while detached:
   async cleanupAll(): Promise<void> {
     for (const { handle } of this.idleTimeouts.values()) clearTimeout(handle);
     this.idleTimeouts.clear();
+    if (this.stalledTurnCheckHandle) {
+      clearTimeout(this.stalledTurnCheckHandle);
+      this.stalledTurnCheckHandle = null;
+    }
     const sessionIds = Array.from(this.sessions.keys());
     this.log.info("Cleaning up all agent sessions", {
       sessionCount: sessionIds.length,
@@ -1646,6 +1694,11 @@ For git operations while detached:
     };
 
     const onAcpMessage = (message: unknown) => {
+      const session = this.sessions.get(taskRunId);
+      if (session) {
+        session.lastActivityAt = Date.now();
+      }
+
       const acpMessage: AcpMessage = {
         type: "acp_message",
         ts: Date.now(),
@@ -1967,6 +2020,7 @@ For git operations while detached:
       sessionId: session.taskRunId,
       channel: session.channel,
       configOptions: session.configOptions,
+      resumedExistingSession: session.resumedExistingSession,
     };
   }
 

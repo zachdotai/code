@@ -82,6 +82,29 @@ const FATAL_SESSION_ERROR_PATTERNS = [
   "session not found",
 ] as const;
 
+// Network/socket failures cut a turn short without killing the agent process —
+// typical after system sleep resets the agent's upstream connection. They are
+// recoverable by reconnecting the session, unlike FATAL_SESSION_ERROR_PATTERNS
+// which indicate the agent itself is gone.
+const TRANSPORT_ERROR_PATTERNS = [
+  "econnreset",
+  "econnrefused",
+  "epipe",
+  "etimedout",
+  "enetdown",
+  "enetunreach",
+  "ehostunreach",
+  "enotfound",
+  "socket hang up",
+  "network error",
+  "fetch failed",
+  "connection reset",
+  "connection closed",
+  "connection error",
+  "stream closed",
+  "other side closed",
+] as const;
+
 function includesAny(
   value: string | undefined,
   patterns: readonly string[],
@@ -109,5 +132,16 @@ export function isFatalSessionError(
   return (
     includesAny(errorMessage, FATAL_SESSION_ERROR_PATTERNS) ||
     includesAny(errorDetails, FATAL_SESSION_ERROR_PATTERNS)
+  );
+}
+
+export function isTransportError(
+  errorMessage: string,
+  errorDetails?: string,
+): boolean {
+  if (isRateLimitError(errorMessage, errorDetails)) return false;
+  return (
+    includesAny(errorMessage, TRANSPORT_ERROR_PATTERNS) ||
+    includesAny(errorDetails, TRANSPORT_ERROR_PATTERNS)
   );
 }

@@ -48,6 +48,9 @@ function createHarness({ spyConnect = true } = {}) {
     updateSession: vi.fn(),
   };
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  let emitStalledTurn:
+    | ((event: { taskRunId: string; taskId: string }) => void)
+    | undefined;
   const deps = {
     store,
     log,
@@ -65,6 +68,17 @@ function createHarness({ spyConnect = true } = {}) {
         onSessionIdleKilled: {
           subscribe: () => ({ unsubscribe: vi.fn() }),
         },
+        onSessionStalled: {
+          subscribe: (
+            _input: unknown,
+            handlers: {
+              onData: (event: { taskRunId: string; taskId: string }) => void;
+            },
+          ) => {
+            emitStalledTurn = handlers.onData;
+            return { unsubscribe: vi.fn() };
+          },
+        },
       },
     },
   } as unknown as SessionServiceDeps;
@@ -73,7 +87,16 @@ function createHarness({ spyConnect = true } = {}) {
   const connectToTask = spyConnect
     ? vi.spyOn(service, "connectToTask").mockResolvedValue(undefined)
     : undefined;
-  return { service, sessions, connectToTask, log };
+  return {
+    service,
+    sessions,
+    connectToTask,
+    log,
+    emitStalledTurn: (event: { taskRunId: string; taskId: string }) => {
+      if (!emitStalledTurn) throw new Error("Stalled-turn handler not wired");
+      emitStalledTurn(event);
+    },
+  };
 }
 
 function reconcile(
@@ -186,5 +209,61 @@ describe("SessionService run-less local task recovery", () => {
     reconcile(service, task);
 
     expect(connectToTask).toHaveBeenCalledWith({ task, repoPath: "/repo" });
+  });
+});
+
+describe("SessionService stalled-turn recovery", () => {
+  it("auto-recovers a local session when the main process reports a stalled turn", async () => {
+    const { service, sessions, emitStalledTurn } = createHarness();
+    sessions["run-task-1"] = makeSession("task-1");
+    (
+      service as unknown as { localRepoPaths: Map<string, string> }
+    ).localRepoPaths.set("task-1", "/repo");
+    const reconnectInPlace = vi
+      .spyOn(
+        service as unknown as {
+          reconnectInPlace: (taskId: string, repoPath: string) => unknown;
+        },
+        "reconnectInPlace",
+      )
+      .mockResolvedValue(true);
+
+    emitStalledTurn({ taskId: "task-1", taskRunId: "run-task-1" });
+
+    await vi.waitFor(() =>
+      expect(reconnectInPlace).toHaveBeenCalledWith("task-1", "/repo"),
+    );
+  });
+
+  it("ignores stalled-turn reports for cloud sessions", async () => {
+    const { service, sessions, emitStalledTurn } = createHarness();
+    sessions["run-task-1"] = { ...makeSession("task-1"), isCloud: true };
+    const reconnectInPlace = vi.spyOn(
+      service as unknown as {
+        reconnectInPlace: (taskId: string, repoPath: string) => unknown;
+      },
+      "reconnectInPlace",
+    );
+
+    emitStalledTurn({ taskId: "task-1", taskRunId: "run-task-1" });
+    await Promise.resolve();
+
+    expect(reconnectInPlace).not.toHaveBeenCalled();
+  });
+
+  it("ignores stalled-turn reports for superseded runs", async () => {
+    const { service, sessions, emitStalledTurn } = createHarness();
+    sessions["run-task-1"] = makeSession("task-1");
+    const reconnectInPlace = vi.spyOn(
+      service as unknown as {
+        reconnectInPlace: (taskId: string, repoPath: string) => unknown;
+      },
+      "reconnectInPlace",
+    );
+
+    emitStalledTurn({ taskId: "task-1", taskRunId: "run-old" });
+    await Promise.resolve();
+
+    expect(reconnectInPlace).not.toHaveBeenCalled();
   });
 });

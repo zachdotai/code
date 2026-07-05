@@ -200,6 +200,16 @@ export const agentRouter = router({
     }
   }),
 
+  onSessionStalled: publicProcedure.subscription(async function* (opts) {
+    const service = opts.ctx.container.get<AgentService>(AGENT_SERVICE);
+    for await (const event of service.toIterable(
+      AgentServiceEvent.SessionStalled,
+      { signal: opts.signal },
+    )) {
+      yield event;
+    }
+  }),
+
   onAgentFileActivity: publicProcedure.subscription(async function* (opts) {
     const service = opts.ctx.container.get<AgentService>(AGENT_SERVICE);
     for await (const event of service.toIterable(
