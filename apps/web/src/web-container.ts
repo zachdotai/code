@@ -1,11 +1,27 @@
 import "reflect-metadata";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
+import { localStoreCoreModule } from "@posthog/core/local-store/local-store.module";
 import { setRootContainer } from "@posthog/di/container";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
   HOST_TRPC_CLIENT,
   type HostTrpcClient,
 } from "@posthog/host-router/client";
+import { BroadcastCrossWindowChannel } from "@posthog/local-store/broadcastCrossWindowChannel";
+import { DexieLocalPersistence } from "@posthog/local-store/dexieLocalPersistence";
+import { WebLocksLeaderElection } from "@posthog/local-store/webLocksLeaderElection";
+import {
+  CROSS_WINDOW_CHANNEL,
+  type CrossWindowChannel,
+} from "@posthog/platform/cross-window-channel";
+import {
+  LEADER_ELECTION,
+  type LeaderElection,
+} from "@posthog/platform/leader-election";
+import {
+  LOCAL_PERSISTENCE,
+  type LocalPersistence,
+} from "@posthog/platform/local-persistence";
 import { sandboxProxyHtml } from "@posthog/shared/mcp-sandbox-proxy";
 import {
   AUTH_SIDE_EFFECTS,
@@ -43,6 +59,9 @@ interface WebBindings {
   [AUTH_SIDE_EFFECTS]: IAuthSideEffects;
   [MCP_APP_HOST_COMPONENT]: McpAppHostComponent;
   [MCP_SANDBOX_PROXY_URL]: McpSandboxProxyUrlProvider;
+  [LOCAL_PERSISTENCE]: LocalPersistence;
+  [LEADER_ELECTION]: LeaderElection;
+  [CROSS_WINDOW_CHANNEL]: CrossWindowChannel;
 }
 
 export const queryClient = new QueryClient();
@@ -95,5 +114,13 @@ container.bind(MCP_SANDBOX_PROXY_URL).toConstantValue(() => {
   }
   return sandboxProxyUrl;
 });
+
+// Local-first store: same browser implementations the desktop renderer binds.
+container.bind(LOCAL_PERSISTENCE).toConstantValue(new DexieLocalPersistence());
+container.bind(LEADER_ELECTION).toConstantValue(new WebLocksLeaderElection());
+container
+  .bind(CROSS_WINDOW_CHANNEL)
+  .toConstantValue(new BroadcastCrossWindowChannel());
+container.load(localStoreCoreModule);
 
 setRootContainer(container);

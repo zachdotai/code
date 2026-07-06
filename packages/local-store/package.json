@@ -1,0 +1,30 @@
+{
+  "name": "@posthog/local-store",
+  "version": "1.0.0",
+  "description": "Browser implementations of the local-first persistence capabilities: Dexie/IndexedDB LocalPersistence, navigator.locks leader election, BroadcastChannel cross-window fan-out. Bound by desktop-renderer and web hosts; core consumes only the @posthog/platform interfaces.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": [
+      "./src/*.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "node ../../scripts/rimraf.mjs .turbo"
+  },
+  "dependencies": {
+    "@posthog/platform": "workspace:*",
+    "dexie": "^4.4.4"
+  },
+  "devDependencies": {
+    "@posthog/tsconfig": "workspace:*",
+    "fake-indexeddb": "^6.0.0",
+    "typescript": "catalog:",
+    "vitest": "^4.1.8"
+  },
+  "files": [
+    "src/**/*"
+  ]
+}

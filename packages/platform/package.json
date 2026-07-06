@@ -91,6 +91,18 @@
     "./dev-host-actions": {
       "types": "./dist/dev-host-actions.d.ts",
       "import": "./dist/dev-host-actions.js"
+    },
+    "./local-persistence": {
+      "types": "./dist/local-persistence.d.ts",
+      "import": "./dist/local-persistence.js"
+    },
+    "./leader-election": {
+      "types": "./dist/leader-election.d.ts",
+      "import": "./dist/leader-election.js"
+    },
+    "./cross-window-channel": {
+      "types": "./dist/cross-window-channel.d.ts",
+      "import": "./dist/cross-window-channel.js"
     }
   },
   "scripts": {

@@ -124,6 +124,18 @@ import {
   type HostTrpcClient,
 } from "@posthog/host-router/client";
 import {
+  CROSS_WINDOW_CHANNEL,
+  type CrossWindowChannel,
+} from "@posthog/platform/cross-window-channel";
+import {
+  LEADER_ELECTION,
+  type LeaderElection,
+} from "@posthog/platform/leader-election";
+import {
+  LOCAL_PERSISTENCE,
+  type LocalPersistence,
+} from "@posthog/platform/local-persistence";
+import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
 } from "@posthog/platform/notifications";
@@ -307,6 +319,9 @@ export interface RendererBindings {
   [FEATURE_FLAGS]: FeatureFlags;
   [AUTH_SIDE_EFFECTS]: IAuthSideEffects;
   [SETUP_STORE]: ISetupStore;
+  [LOCAL_PERSISTENCE]: LocalPersistence;
+  [LEADER_ELECTION]: LeaderElection;
+  [CROSS_WINDOW_CHANNEL]: CrossWindowChannel;
 
   // --- desktop-contributions.ts ---
   [CONTRIBUTION]: Contribution;

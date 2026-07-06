@@ -101,6 +101,7 @@
     "@posthog/hedgehog-mode": "^0.0.48",
     "@posthog/host-router": "workspace:*",
     "@posthog/host-trpc": "workspace:*",
+    "@posthog/local-store": "workspace:*",
     "@posthog/platform": "workspace:*",
     "@posthog/quill": "catalog:",
     "@posthog/shared": "workspace:*",

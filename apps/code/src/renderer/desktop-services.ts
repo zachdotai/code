@@ -36,6 +36,12 @@ import {
 import { SETUP_STORE } from "@posthog/core/setup/identifiers";
 import { resolveService } from "@posthog/di/container";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
+import { BroadcastCrossWindowChannel } from "@posthog/local-store/broadcastCrossWindowChannel";
+import { DexieLocalPersistence } from "@posthog/local-store/dexieLocalPersistence";
+import { WebLocksLeaderElection } from "@posthog/local-store/webLocksLeaderElection";
+import { CROSS_WINDOW_CHANNEL } from "@posthog/platform/cross-window-channel";
+import { LEADER_ELECTION } from "@posthog/platform/leader-election";
+import { LOCAL_PERSISTENCE } from "@posthog/platform/local-persistence";
 import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
@@ -253,3 +259,11 @@ container
   .inSingletonScope();
 
 container.bind(SETUP_STORE).toConstantValue(setupStore);
+
+// Local-first store capabilities: both hosts are Chromium, so the browser
+// implementations (IndexedDB, navigator.locks, BroadcastChannel) bind here.
+container.bind(LOCAL_PERSISTENCE).toConstantValue(new DexieLocalPersistence());
+container.bind(LEADER_ELECTION).toConstantValue(new WebLocksLeaderElection());
+container
+  .bind(CROSS_WINDOW_CHANNEL)
+  .toConstantValue(new BroadcastCrossWindowChannel());

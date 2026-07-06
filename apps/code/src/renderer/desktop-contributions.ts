@@ -2,6 +2,7 @@ import { agentChatCoreModule } from "@posthog/core/agent-chat/agentChat.module";
 import { billingCoreModule } from "@posthog/core/billing/billing.module";
 import { inboxCoreModule } from "@posthog/core/inbox/inbox.module";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
+import { localStoreCoreModule } from "@posthog/core/local-store/local-store.module";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
 import { skillsCoreModule } from "@posthog/core/skills/skills.module";
@@ -40,6 +41,7 @@ export function registerDesktopContributions(): void {
     focusUiModule,
     githubConnectModule,
     inboxCoreModule,
+    localStoreCoreModule,
     notificationsUiModule,
     onboardingModule,
     provisioningUiModule,

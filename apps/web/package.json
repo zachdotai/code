@@ -14,6 +14,7 @@
     "@posthog/core": "workspace:*",
     "@posthog/di": "workspace:*",
     "@posthog/host-router": "workspace:*",
+    "@posthog/local-store": "workspace:*",
     "@posthog/platform": "workspace:*",
     "@posthog/shared": "workspace:*",
     "@posthog/ui": "workspace:*",
