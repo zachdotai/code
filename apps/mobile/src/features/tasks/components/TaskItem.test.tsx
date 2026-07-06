@@ -4,15 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { Task } from "../types";
 import { TaskItem } from "./TaskItem";
 
-vi.mock("phosphor-react-native", () => ({
-  Check: (props: Record<string, unknown>) => createElement("Check", props),
-  GitPullRequest: (props: Record<string, unknown>) =>
-    createElement("GitPullRequest", props),
-}));
-
 vi.mock("@/lib/theme", () => ({
   useThemeColors: () => ({
-    gray: { 11: "#444444" },
+    gray: { 10: "#666666", 11: "#444444" },
     accent: { 9: "#ff5500" },
   }),
 }));
@@ -26,7 +20,10 @@ vi.mock("./TaskStatusIcon", () => ({
     createElement("TaskStatusIcon", props),
 }));
 
-function makeTask(run?: Partial<NonNullable<Task["latest_run"]>>): Task {
+function makeTask(
+  run?: Partial<NonNullable<Task["latest_run"]>>,
+  originProduct = "code",
+): Task {
   return {
     id: "task-1",
     task_number: 1,
@@ -35,7 +32,7 @@ function makeTask(run?: Partial<NonNullable<Task["latest_run"]>>): Task {
     description: "",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
-    origin_product: "code",
+    origin_product: originProduct,
     latest_run: run
       ? {
           id: "run-1",
@@ -102,5 +99,30 @@ describe("TaskItem", () => {
     ],
   ])("does not show the PR badge when %s", (_label, task) => {
     expect(prIcons(render(task))).toHaveLength(0);
+  });
+
+  function has(renderer: ReturnType<typeof create>, type: string): boolean {
+    return (
+      renderer.root.findAll((node) => String(node.type) === type).length > 0
+    );
+  }
+
+  it.each([
+    ["slack", "SlackLogo"],
+    ["signal_report", "Broadcast"],
+    ["automation", "Robot"],
+  ])(
+    "renders the origin icon instead of the status icon for %s tasks",
+    (originProduct, iconType) => {
+      const renderer = render(makeTask(undefined, originProduct));
+      expect(has(renderer, iconType)).toBe(true);
+      expect(has(renderer, "TaskStatusIcon")).toBe(false);
+    },
+  );
+
+  it("renders the status icon for user-created tasks", () => {
+    const renderer = render(makeTask(undefined, "user_created"));
+    expect(has(renderer, "TaskStatusIcon")).toBe(true);
+    expect(has(renderer, "SlackLogo")).toBe(false);
   });
 });

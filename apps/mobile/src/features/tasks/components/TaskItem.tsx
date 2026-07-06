@@ -7,6 +7,7 @@ import { parseGithubIssueUrl } from "@/lib/githubIssueUrl";
 import { useThemeColors } from "@/lib/theme";
 import type { Task } from "../types";
 import { TaskStatusIcon } from "./TaskStatusIcon";
+import { getTaskOriginIcon } from "./taskOriginIcon";
 
 function PrBadge({ prUrl, number }: { prUrl: string; number: number }) {
   const themeColors = useThemeColors();
@@ -48,6 +49,9 @@ function TaskItemComponent({
       : format(createdAt, "MMM d");
   const prUrl = task.latest_run?.output?.pr_url;
   const prRef = typeof prUrl === "string" ? parseGithubIssueUrl(prUrl) : null;
+  const originMeta = selectionMode
+    ? undefined
+    : getTaskOriginIcon(task.origin_product);
 
   return (
     <Pressable
@@ -56,8 +60,11 @@ function TaskItemComponent({
       delayLongPress={300}
       className={`flex-row items-start gap-3 border-gray-6 border-b px-3 py-3 ${selected ? "bg-accent-3" : "active:bg-gray-3"}`}
     >
-      {/* Status icon column (or selection checkbox in selection mode) */}
-      <View className="mt-0.5 h-5 w-5 shrink-0 items-center justify-center">
+      <View
+        className="mt-0.5 h-5 w-5 shrink-0 items-center justify-center"
+        accessible={originMeta ? true : undefined}
+        accessibilityLabel={originMeta ? `From ${originMeta.label}` : undefined}
+      >
         {selectionMode ? (
           <View
             className={`h-5 w-5 items-center justify-center rounded-full border ${selected ? "border-transparent" : "border-gray-7"}`}
@@ -65,6 +72,8 @@ function TaskItemComponent({
           >
             {selected ? <Check size={12} color="#fff" weight="bold" /> : null}
           </View>
+        ) : originMeta ? (
+          <originMeta.Icon size={16} color={themeColors.gray[10]} />
         ) : (
           <TaskStatusIcon task={task} size={16} />
         )}
