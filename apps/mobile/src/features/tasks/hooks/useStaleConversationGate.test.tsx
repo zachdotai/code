@@ -70,8 +70,12 @@ describe("useStaleConversationGate", () => {
     expect(gate.usedTokens).toBe(150_000);
   });
 
-  it("never engages for non-staff", () => {
-    mockUseUserQuery.mockReturnValue({ data: { is_staff: false } });
+  it.each([
+    { name: "non-staff", data: { is_staff: false } },
+    { name: "is_staff undefined", data: {} },
+    { name: "query still loading", data: null },
+  ])("never engages when the user is $name", ({ data }) => {
+    mockUseUserQuery.mockReturnValue({ data });
     const { gate } = render("t1", [usageEvent(150_000)]);
     expect(gate.active).toBe(false);
     expect(useStaleConversationGateStore.getState().engagedSessions.size).toBe(
