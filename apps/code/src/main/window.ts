@@ -30,6 +30,10 @@ import {
   type WindowStateSchema,
   windowStateStore,
 } from "./utils/store";
+import {
+  isAllowedWebviewNavigation,
+  safeProtocol,
+} from "./utils/webview-navigation-guard";
 
 const log = logger.scope("window");
 const trpcLog = logger.scope("host-trpc");
@@ -118,42 +122,6 @@ function setupExternalLinkHandlers(window: BrowserWindow): void {
       shell.openExternal(url);
     }
   });
-}
-
-// The authoritative gate for the in-app browser guest: main process, where a
-// guest page can't route around it. The renderer's normalizeAddress is only a
-// convenience on top of this. "about:" is allowed solely for about:blank —
-// the src a new blank browser tab mounts with before the user enters a url.
-const ALLOWED_WEBVIEW_SCHEMES = new Set(["http:", "https:", "about:"]);
-
-// Blocks the IPv4 link-local range 169.254.0.0/16. On cloud VMs, requests to
-// 169.254.169.254 hit the instance-metadata endpoint, which returns IAM /
-// service-account credentials to any local caller — a hostile page redirecting
-// the webview there could exfiltrate them. Loopback and LAN are deliberately
-// allowed: browsing a local dev server is a first-class use of this browser.
-function isBlockedWebviewHost(hostname: string): boolean {
-  return /^169\.254\./.test(hostname);
-}
-
-function safeProtocol(url: string): string {
-  try {
-    return new URL(url).protocol;
-  } catch {
-    return "";
-  }
-}
-
-function isAllowedWebviewNavigation(url: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  return (
-    ALLOWED_WEBVIEW_SCHEMES.has(parsed.protocol) &&
-    !isBlockedWebviewHost(parsed.hostname)
-  );
 }
 
 // The guest runs on a shared persisted profile, so a single grant would stick
