@@ -609,10 +609,13 @@ export function updateSizes(
   return { panelTree: updatedTree };
 }
 
-export function updateTabMetadata(
+// Locates a tab by id and replaces it with `update(tab)`, leaving every other
+// tab and the tree structure untouched. No-ops if the tab is gone. The three
+// update-one-tab transforms below all share this walk, so it lives once here.
+function updateTabById(
   layout: TaskLayout,
   tabId: string,
-  metadata: Partial<Pick<Tab, "hasUnsavedChanges">>,
+  update: (tab: Tab) => Tab,
 ): Partial<TaskLayout> {
   const tabLocation = findTabInTree(layout.panelTree, tabId);
   if (!tabLocation) return {};
@@ -622,16 +625,13 @@ export function updateTabMetadata(
     tabLocation.panelId,
     (panel) => {
       if (panel.type !== "leaf") return panel;
-
-      const updatedTabs = panel.content.tabs.map((tab) =>
-        tab.id === tabId ? { ...tab, ...metadata } : tab,
-      );
-
       return {
         ...panel,
         content: {
           ...panel.content,
-          tabs: updatedTabs,
+          tabs: panel.content.tabs.map((tab) =>
+            tab.id === tabId ? update(tab) : tab,
+          ),
         },
       };
     },
@@ -640,35 +640,20 @@ export function updateTabMetadata(
   return { panelTree: updatedTree };
 }
 
+export function updateTabMetadata(
+  layout: TaskLayout,
+  tabId: string,
+  metadata: Partial<Pick<Tab, "hasUnsavedChanges">>,
+): Partial<TaskLayout> {
+  return updateTabById(layout, tabId, (tab) => ({ ...tab, ...metadata }));
+}
+
 export function updateTabLabel(
   layout: TaskLayout,
   tabId: string,
   label: string,
 ): Partial<TaskLayout> {
-  const tabLocation = findTabInTree(layout.panelTree, tabId);
-  if (!tabLocation) return {};
-
-  const updatedTree = updateTreeNode(
-    layout.panelTree,
-    tabLocation.panelId,
-    (panel) => {
-      if (panel.type !== "leaf") return panel;
-
-      const updatedTabs = panel.content.tabs.map((tab) =>
-        tab.id === tabId ? { ...tab, label } : tab,
-      );
-
-      return {
-        ...panel,
-        content: {
-          ...panel.content,
-          tabs: updatedTabs,
-        },
-      };
-    },
-  );
-
-  return { panelTree: updatedTree };
+  return updateTabById(layout, tabId, (tab) => ({ ...tab, label }));
 }
 
 export function setActiveTab(
@@ -741,29 +726,9 @@ export function updateBrowserTabUrl(
   tabId: string,
   url: string,
 ): Partial<TaskLayout> {
-  const tabLocation = findTabInTree(layout.panelTree, tabId);
-  if (!tabLocation) return {};
-
-  const updatedTree = updateTreeNode(
-    layout.panelTree,
-    tabLocation.panelId,
-    (panel) => {
-      if (panel.type !== "leaf") return panel;
-
-      const updatedTabs = panel.content.tabs.map((tab) =>
-        tab.id === tabId && tab.data.type === "browser"
-          ? { ...tab, data: { ...tab.data, url } }
-          : tab,
-      );
-
-      return {
-        ...panel,
-        content: { ...panel.content, tabs: updatedTabs },
-      };
-    },
+  return updateTabById(layout, tabId, (tab) =>
+    tab.data.type === "browser" ? { ...tab, data: { ...tab.data, url } } : tab,
   );
-
-  return { panelTree: updatedTree };
 }
 
 export function addActionTab(

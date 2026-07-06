@@ -6,6 +6,8 @@ import {
   createInitialTaskLayout,
   openTab,
   updateBrowserTabUrl,
+  updateTabLabel,
+  updateTabMetadata,
 } from "./panelLayoutTransforms";
 import { createFileTabId, resetPanelIdCounter } from "./panelStoreHelpers";
 import { findTabInTree } from "./panelTree";
@@ -122,6 +124,54 @@ describe("panelLayoutTransforms", () => {
         type: "browser",
         url: "https://example.com",
       });
+    });
+
+    it("leaves a non-browser tab untouched", () => {
+      const layout = createInitialTaskLayout();
+      const next = applyUpdates(
+        layout,
+        updateBrowserTabUrl(layout, "shell", "https://example.com"),
+      );
+      // The shell tab has no url; the guard must not graft one on.
+      expect(findTabInTree(next.panelTree, "shell")?.tab.data).toEqual(
+        findTabInTree(layout.panelTree, "shell")?.tab.data,
+      );
+    });
+  });
+
+  describe("updateTabLabel", () => {
+    it("renames an existing tab", () => {
+      const layout = createInitialTaskLayout();
+      const next = applyUpdates(
+        layout,
+        updateTabLabel(layout, "shell", "Renamed"),
+      );
+      expect(findTabInTree(next.panelTree, "shell")?.tab.label).toBe("Renamed");
+    });
+
+    it("no-ops when the tab is gone", () => {
+      const layout = createInitialTaskLayout();
+      expect(updateTabLabel(layout, "missing", "X")).toEqual({});
+    });
+  });
+
+  describe("updateTabMetadata", () => {
+    it("merges metadata into an existing tab", () => {
+      const layout = createInitialTaskLayout();
+      const next = applyUpdates(
+        layout,
+        updateTabMetadata(layout, "shell", { hasUnsavedChanges: true }),
+      );
+      expect(
+        findTabInTree(next.panelTree, "shell")?.tab.hasUnsavedChanges,
+      ).toBe(true);
+    });
+
+    it("no-ops when the tab is gone", () => {
+      const layout = createInitialTaskLayout();
+      expect(
+        updateTabMetadata(layout, "missing", { hasUnsavedChanges: true }),
+      ).toEqual({});
     });
   });
 
