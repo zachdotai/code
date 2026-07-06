@@ -96,9 +96,13 @@ export function useBranchMismatchBanner({
 
   const { mutate: linkBranch, isPending: isRelinking } = useMutation(
     trpc.workspace.linkBranch.mutationOptions({
-      // The LinkedBranchChanged event invalidates the workspace query, which
-      // clears the mismatch and hides the banner.
-      onSuccess: () => setActionError(null),
+      onSuccess: () => {
+        // The LinkedBranchChanged event refreshes the workspace query and
+        // clears the mismatch; dismissing hides the banner immediately
+        // instead of a beat later (or never, if the event is dropped).
+        dismissWarning();
+        setActionError(null);
+      },
       onError: (error) => {
         log.error("Failed to re-link branch", error);
         setActionError(

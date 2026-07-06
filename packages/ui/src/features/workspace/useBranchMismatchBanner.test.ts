@@ -193,6 +193,25 @@ describe("useBranchMismatchBanner", () => {
         current_branch: "main",
       },
     );
+
+    act(() => {
+      captured.link.onSuccess?.();
+    });
+    expect(mockDismissWarning).toHaveBeenCalled();
+  });
+
+  it("onUseCurrentBranch failure surfaces the error without dismissing", () => {
+    const { result } = renderBanner();
+
+    act(() => {
+      result.current?.onUseCurrentBranch();
+    });
+    act(() => {
+      captured.link.onError?.(new Error("no such task"));
+    });
+
+    expect(result.current?.actionError).toBe("no such task");
+    expect(mockDismissWarning).not.toHaveBeenCalled();
   });
 
   it("onDismiss dismisses for the session and tracks dismiss", () => {
