@@ -14,6 +14,7 @@ import { usePanelLayoutStore } from "../panelLayoutStore";
 import type { PanelNode } from "../panelTypes";
 import { GroupNodeRenderer } from "./GroupNodeRenderer";
 import { LeafNodeRenderer } from "./LeafNodeRenderer";
+import type { AddableTabKind } from "./TabbedPanel";
 
 interface PanelLayoutProps {
   taskId: string;
@@ -65,9 +66,13 @@ const PanelLayoutRenderer: React.FC<{
     [layoutState, taskId],
   );
 
-  const handleAddTerminal = useCallback(
-    (panelId: string) => {
-      layoutState.addTerminalTab(taskId, panelId);
+  const handleAddTab = useCallback(
+    (panelId: string, kind: AddableTabKind) => {
+      if (kind === "browser") {
+        layoutState.addBrowserTab(taskId, panelId, "about:blank");
+      } else {
+        layoutState.addTerminalTab(taskId, panelId);
+      }
     },
     [layoutState, taskId],
   );
@@ -127,7 +132,7 @@ const PanelLayoutRenderer: React.FC<{
             draggingTabPanelId={layoutState.draggingTabPanelId}
             onActiveTabChange={handleSetActiveTab}
             onPanelFocus={handlePanelFocus}
-            onAddTerminal={handleAddTerminal}
+            onAddTab={handleAddTab}
             onSplitPanel={handleSplitPanel}
           />
         );
@@ -155,7 +160,7 @@ const PanelLayoutRenderer: React.FC<{
       handleCloseTabsToRight,
       handleKeepTab,
       handlePanelFocus,
-      handleAddTerminal,
+      handleAddTab,
       handleSplitPanel,
       setGroupRef,
       handleLayout,

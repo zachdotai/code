@@ -120,6 +120,116 @@ function setupExternalLinkHandlers(window: BrowserWindow): void {
   });
 }
 
+// The authoritative gate for the in-app browser guest: main process, where a
+// guest page can't route around it. The renderer's normalizeAddress is only a
+// convenience on top of this.
+const ALLOWED_WEBVIEW_SCHEMES = new Set(["http:", "https:", "about:"]);
+
+// The link-local range (incl. cloud metadata 169.254.169.254) can hand out
+// instance credentials. Loopback and LAN are deliberately allowed — reaching a
+// local dev server is a first-class use of a coding tool's browser.
+function isBlockedWebviewHost(hostname: string): boolean {
+  return /^169\.254\./.test(hostname);
+}
+
+function safeProtocol(url: string): string {
+  try {
+    return new URL(url).protocol;
+  } catch {
+    return "";
+  }
+}
+
+function isAllowedWebviewNavigation(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return (
+    ALLOWED_WEBVIEW_SCHEMES.has(parsed.protocol) &&
+    !isBlockedWebviewHost(parsed.hostname)
+  );
+}
+
+// The guest runs on a shared persisted profile, so a single grant would stick
+// across every tab and task — deny powerful permissions outright.
+const DENIED_WEBVIEW_PERMISSIONS = new Set([
+  "media", // camera + microphone
+  "geolocation",
+  "notifications",
+  "midi",
+  "midiSysex",
+  "hid",
+  "serial",
+  "usb",
+  "pointerLock",
+  "idle-detection",
+  "openExternal", // popups are already routed through our own handler
+]);
+
+// setPermissionRequestHandler replaces (not composes with) any previous
+// handler on the session, and guests share one persisted session — install
+// once per session so a future per-guest divergence can't silently drop an
+// earlier handler.
+const hardenedWebviewSessions = new WeakSet<Electron.Session>();
+
+function hardenWebviewSession(session: Electron.Session): void {
+  if (hardenedWebviewSessions.has(session)) return;
+  hardenedWebviewSessions.add(session);
+
+  // Deny at both request time (prompts) and check time (sync fast-paths like
+  // navigator.permissions.query).
+  session.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(!DENIED_WEBVIEW_PERMISSIONS.has(permission));
+  });
+  session.setPermissionCheckHandler(
+    (_wc, permission) => !DENIED_WEBVIEW_PERMISSIONS.has(permission),
+  );
+}
+
+// Hardens <webview> guests used by the in-app browser tab. The guest renders
+// arbitrary untrusted web content inside a privileged app window.
+function setupWebviewHandlers(window: BrowserWindow): void {
+  // Strip any preload / node access an attacker page might request.
+  window.webContents.on("will-attach-webview", (_event, webPreferences) => {
+    webPreferences.preload = undefined;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+  });
+
+  window.webContents.on("did-attach-webview", (_event, guest) => {
+    hardenWebviewSession(guest.session);
+
+    guest.setWindowOpenHandler(({ url }) => {
+      // http(s)-only: a hostile page must not launch external protocol
+      // handlers (smb:, file:, custom app URIs) via window.open.
+      if (/^https?:$/i.test(safeProtocol(url))) {
+        shell.openExternal(url);
+      } else {
+        log.warn("Blocked webview popup to non-http(s) target", { url });
+      }
+      return { action: "deny" };
+    });
+
+    const guard = (
+      event: { preventDefault: () => void },
+      url: string,
+    ): void => {
+      if (!isAllowedWebviewNavigation(url)) {
+        event.preventDefault();
+        log.warn("Blocked disallowed webview navigation", { url });
+      }
+    };
+    // will-navigate + will-redirect cover top-level loads and redirect chains
+    // (the SSRF-to-metadata vector); will-frame-navigate covers sub-frames.
+    guest.on("will-navigate", guard);
+    guest.on("will-redirect", guard);
+    guest.on("will-frame-navigate", (details) => guard(details, details.url));
+  });
+}
+
 function setupCrashLogging(window: BrowserWindow): void {
   window.webContents.on("render-process-gone", (_event, details) => {
     log.error("Renderer process gone", {
@@ -230,6 +340,7 @@ export function createWindow(): void {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      webviewTag: true,
       preload: path.join(__dirname, "preload.js"),
       enableBlinkFeatures: "GetDisplayMedia",
       partition: "persist:main",
@@ -312,6 +423,7 @@ export function createWindow(): void {
   });
 
   setupExternalLinkHandlers(mainWindow);
+  setupWebviewHandlers(mainWindow);
   setupEditableContextMenu(mainWindow);
   setupCrashLogging(mainWindow);
   buildApplicationMenu();

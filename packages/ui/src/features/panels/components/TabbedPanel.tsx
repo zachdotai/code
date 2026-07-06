@@ -1,6 +1,7 @@
 import { useDroppable } from "@dnd-kit/react";
-import { Plus, SquareSplitHorizontalIcon } from "@phosphor-icons/react";
+import { Globe, Plus, SquareSplitHorizontalIcon } from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
+import { useBrowserEnabled } from "@posthog/ui/features/browser/BrowserPanel";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { PanelContent } from "@posthog/ui/features/panels/panelTypes";
@@ -9,6 +10,10 @@ import { Box, Flex } from "@radix-ui/themes";
 import type React from "react";
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { PanelTab } from "./PanelTab";
+
+// One kind-dispatching callback so new kinds don't thread another onAddX prop
+// through every panel component.
+export type AddableTabKind = "terminal" | "browser";
 
 const activeTabStyle: React.CSSProperties = {
   height: "100%",
@@ -26,12 +31,16 @@ const hiddenTabStyle: React.CSSProperties = {
 
 interface TabBarButtonProps {
   ariaLabel: string;
+  dataAttr?: string;
   onClick: () => void;
   children: React.ReactNode;
 }
 
 const TabBarButton = forwardRef<HTMLButtonElement, TabBarButtonProps>(
-  function TabBarButton({ ariaLabel, onClick, children, ...props }, ref) {
+  function TabBarButton(
+    { ariaLabel, dataAttr, onClick, children, ...props },
+    ref,
+  ) {
     const [isHovered, setIsHovered] = useState(false);
 
     return (
@@ -39,6 +48,7 @@ const TabBarButton = forwardRef<HTMLButtonElement, TabBarButtonProps>(
         ref={ref}
         type="button"
         aria-label={ariaLabel}
+        data-attr={dataAttr}
         onClick={onClick}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -64,7 +74,7 @@ interface TabbedPanelProps {
   onPanelFocus?: (panelId: string) => void;
   draggingTabId?: string | null;
   draggingTabPanelId?: string | null;
-  onAddTerminal?: () => void;
+  onAddTab?: (kind: AddableTabKind) => void;
   onSplitPanel?: (direction: SplitDirection) => void;
   rightContent?: React.ReactNode;
   emptyState?: React.ReactNode;
@@ -80,12 +90,14 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   onPanelFocus,
   draggingTabId = null,
   draggingTabPanelId = null,
-  onAddTerminal,
+  onAddTab,
   onSplitPanel,
   rightContent,
   emptyState,
 }) => {
   const hostClient = useHostTRPCClient();
+
+  const browserEnabled = useBrowserEnabled();
 
   const handleSplitClick = async () => {
     const result = await hostClient.contextMenu.showSplitContextMenu.mutate();
@@ -195,10 +207,25 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {content.droppable && onAddTerminal && (
+            {content.droppable && onAddTab && (
               <Tooltip content="New terminal" side="bottom">
-                <TabBarButton ariaLabel="Add terminal" onClick={onAddTerminal}>
+                <TabBarButton
+                  ariaLabel="Add terminal"
+                  dataAttr="panel-add-terminal"
+                  onClick={() => onAddTab("terminal")}
+                >
                   <Plus size={14} />
+                </TabBarButton>
+              </Tooltip>
+            )}
+            {content.droppable && onAddTab && browserEnabled && (
+              <Tooltip content="New browser tab" side="bottom">
+                <TabBarButton
+                  ariaLabel="Add browser tab"
+                  dataAttr="panel-add-browser-tab"
+                  onClick={() => onAddTab("browser")}
+                >
+                  <Globe size={14} />
                 </TabBarButton>
               </Tooltip>
             )}

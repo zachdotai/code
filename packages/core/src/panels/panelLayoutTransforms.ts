@@ -687,22 +687,81 @@ export function setActiveTab(
   return { panelTree: updatedTree };
 }
 
+// Tab ids key the whole tree; the monotonic suffix stops two adds within the
+// same millisecond from colliding.
+let tabIdSeq = 0;
+function uniqueTabId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${tabIdSeq++}`;
+}
+
 export function addTerminalTab(
   layout: TaskLayout,
   panelId: string,
 ): Partial<TaskLayout> {
-  const tabId = `shell-${Date.now()}`;
+  const tabId = uniqueTabId("shell");
+  return appendTab(layout, panelId, {
+    id: tabId,
+    label: "Terminal",
+    data: { type: "terminal", terminalId: tabId, cwd: "" },
+  });
+}
+
+function appendTab(
+  layout: TaskLayout,
+  panelId: string,
+  tab: { id: string; label: string; data: TabData },
+): Partial<TaskLayout> {
   const updatedTree = updateTreeNode(layout.panelTree, panelId, (panel) => {
     if (panel.type !== "leaf") return panel;
     return addTabToPanel(panel, {
-      id: tabId,
-      label: "Terminal",
-      data: { type: "terminal", terminalId: tabId, cwd: "" },
+      ...tab,
       component: null,
       draggable: true,
       closeable: true,
     });
   });
+
+  return { panelTree: updatedTree };
+}
+
+export function addBrowserTab(
+  layout: TaskLayout,
+  panelId: string,
+  url: string,
+): Partial<TaskLayout> {
+  return appendTab(layout, panelId, {
+    id: uniqueTabId("browser"),
+    label: "Browser",
+    data: { type: "browser", url },
+  });
+}
+
+export function updateBrowserTabUrl(
+  layout: TaskLayout,
+  tabId: string,
+  url: string,
+): Partial<TaskLayout> {
+  const tabLocation = findTabInTree(layout.panelTree, tabId);
+  if (!tabLocation) return {};
+
+  const updatedTree = updateTreeNode(
+    layout.panelTree,
+    tabLocation.panelId,
+    (panel) => {
+      if (panel.type !== "leaf") return panel;
+
+      const updatedTabs = panel.content.tabs.map((tab) =>
+        tab.id === tabId && tab.data.type === "browser"
+          ? { ...tab, data: { ...tab.data, url } }
+          : tab,
+      );
+
+      return {
+        ...panel,
+        content: { ...panel.content, tabs: updatedTabs },
+      };
+    },
+  );
 
   return { panelTree: updatedTree };
 }

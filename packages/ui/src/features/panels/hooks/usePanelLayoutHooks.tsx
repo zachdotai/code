@@ -2,6 +2,7 @@ import {
   ChartLineUp,
   ChatCenteredText,
   FileText,
+  Globe,
   Scroll,
   Terminal,
 } from "@phosphor-icons/react";
@@ -27,6 +28,7 @@ export interface PanelLayoutState {
   keepTab: (taskId: string, panelId: string, tabId: string) => void;
   setFocusedPanel: (taskId: string, panelId: string) => void;
   addTerminalTab: (taskId: string, panelId: string) => void;
+  addBrowserTab: (taskId: string, panelId: string, url: string) => void;
   splitPanel: (
     taskId: string,
     tabId: string,
@@ -51,6 +53,7 @@ export function usePanelLayoutState(taskId: string): PanelLayoutState {
         keepTab: state.keepTab,
         setFocusedPanel: state.setFocusedPanel,
         addTerminalTab: state.addTerminalTab,
+        addBrowserTab: state.addBrowserTab,
         splitPanel: state.splitPanel,
         draggingTabId: state.getLayout(taskId)?.draggingTabId ?? null,
         draggingTabPanelId: state.getLayout(taskId)?.draggingTabPanelId ?? null,
@@ -119,6 +122,8 @@ export function useTabInjection(
             icon = <Scroll size={14} />;
           } else if (tab.data.type === "autoresearch") {
             icon = <ChartLineUp size={14} />;
+          } else if (tab.data.type === "browser") {
+            icon = <Globe size={14} />;
           }
         }
 

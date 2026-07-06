@@ -7,7 +7,7 @@ import { useIsWorkspaceCloudRun } from "../../workspace/useWorkspace";
 import { useTabInjection } from "../hooks/usePanelLayoutHooks";
 import type { SplitDirection } from "../panelLayoutStore";
 import type { LeafPanel } from "../panelTypes";
-import { TabbedPanel } from "./TabbedPanel";
+import { type AddableTabKind, TabbedPanel } from "./TabbedPanel";
 
 interface LeafNodeRendererProps {
   node: LeafPanel;
@@ -21,7 +21,7 @@ interface LeafNodeRendererProps {
   draggingTabPanelId: string | null;
   onActiveTabChange: (panelId: string, tabId: string) => void;
   onPanelFocus: (panelId: string) => void;
-  onAddTerminal: (panelId: string) => void;
+  onAddTab: (panelId: string, kind: AddableTabKind) => void;
   onSplitPanel: (panelId: string, direction: SplitDirection) => void;
 }
 
@@ -37,7 +37,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
   draggingTabPanelId,
   onActiveTabChange,
   onPanelFocus,
-  onAddTerminal,
+  onAddTab,
   onSplitPanel,
 }) => {
   const isCloud = useIsWorkspaceCloudRun(taskId);
@@ -90,7 +90,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
       onPanelFocus={onPanelFocus}
       draggingTabId={draggingTabId}
       draggingTabPanelId={draggingTabPanelId}
-      onAddTerminal={isCloud ? undefined : () => onAddTerminal(node.id)}
+      onAddTab={isCloud ? undefined : (kind) => onAddTab(node.id, kind)}
       onSplitPanel={(direction) => onSplitPanel(node.id, direction)}
       emptyState={cloudEmptyState}
     />

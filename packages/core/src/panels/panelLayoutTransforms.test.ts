@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  addBrowserTab,
   addRecentFile,
   closeTab,
   createInitialTaskLayout,
   openTab,
+  updateBrowserTabUrl,
 } from "./panelLayoutTransforms";
 import { createFileTabId, resetPanelIdCounter } from "./panelStoreHelpers";
 import { findTabInTree } from "./panelTree";
@@ -72,6 +74,54 @@ describe("panelLayoutTransforms", () => {
       );
 
       expect(findTabInTree(closed.panelTree, tabId)).toBeNull();
+    });
+  });
+
+  describe("addBrowserTab", () => {
+    it("adds a browser tab carrying the initial url", () => {
+      const layout = createInitialTaskLayout();
+      const next = applyUpdates(
+        layout,
+        addBrowserTab(layout, "main-panel", "https://posthog.com"),
+      );
+
+      expect(next.panelTree.type).toBe("leaf");
+      if (next.panelTree.type !== "leaf") return;
+      const browserTab = next.panelTree.content.tabs.find(
+        (t) => t.data.type === "browser",
+      );
+      expect(browserTab).toBeDefined();
+      expect(browserTab?.data).toEqual({
+        type: "browser",
+        url: "https://posthog.com",
+      });
+    });
+  });
+
+  describe("updateBrowserTabUrl", () => {
+    it("updates the url of an existing browser tab", () => {
+      const layout = createInitialTaskLayout();
+      const added = applyUpdates(
+        layout,
+        addBrowserTab(layout, "main-panel", "about:blank"),
+      );
+      expect(added.panelTree.type).toBe("leaf");
+      if (added.panelTree.type !== "leaf") return;
+      const tabId = added.panelTree.content.tabs.find(
+        (t) => t.data.type === "browser",
+      )?.id;
+      if (!tabId) throw new Error("expected browser tab");
+
+      const next = applyUpdates(
+        added,
+        updateBrowserTabUrl(added, tabId, "https://example.com"),
+      );
+
+      const location = findTabInTree(next.panelTree, tabId);
+      expect(location?.tab.data).toEqual({
+        type: "browser",
+        url: "https://example.com",
+      });
     });
   });
 

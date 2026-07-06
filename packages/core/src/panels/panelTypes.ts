@@ -45,6 +45,11 @@ export type TabData =
       type: "autoresearch";
     }
   | {
+      // `url` is the last committed location, so the tab restores on reload.
+      type: "browser";
+      url: string;
+    }
+  | {
       type: "other";
     };
 

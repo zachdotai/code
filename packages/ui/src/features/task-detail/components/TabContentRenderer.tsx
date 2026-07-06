@@ -12,6 +12,7 @@ import { CanvasInstructionsTab } from "./CanvasInstructionsTab";
 import { ChangesPanel } from "./ChangesPanel";
 import { ChannelContextTab } from "./ChannelContextTab";
 import { FileTreePanel } from "./FileTreePanel";
+import { TaskBrowserTab } from "./TaskBrowserTab";
 import { TaskLogsPanel } from "./TaskLogsPanel";
 import { TaskShellPanel } from "./TaskShellPanel";
 
@@ -75,6 +76,9 @@ export function TabContentRenderer({
 
     case "autoresearch":
       return <AutoresearchPanel taskId={taskId} />;
+
+    case "browser":
+      return <TaskBrowserTab url={data.url} tabId={tab.id} taskId={taskId} />;
 
     case "other":
       switch (tab.id) {
