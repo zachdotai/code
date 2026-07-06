@@ -160,8 +160,9 @@ export interface AgentFileActivityProperties {
   branch_name: string | null;
 }
 
-// Branch link events
-type BranchLinkSource = "agent" | "user" | "unknown";
+// Branch link events. "auto" marks self-healing unlinks of branches that no
+// longer exist anywhere (e.g. deleted after a PR merge).
+type BranchLinkSource = "agent" | "user" | "auto" | "unknown";
 
 export interface BranchLinkedProperties {
   task_id: string;
