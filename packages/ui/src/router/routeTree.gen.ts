@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WebsiteRouteImport } from './routes/website'
+import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as McpServersRouteImport } from './routes/mcp-servers'
 import { Route as CommandCenterRouteImport } from './routes/command-center'
@@ -77,6 +78,11 @@ import { Route as CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport } f
 const WebsiteRoute = WebsiteRouteImport.update({
   id: '/website',
   path: '/website',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsageRoute = UsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkillsRoute = SkillsRouteImport.update({
@@ -422,6 +428,7 @@ export interface FileRoutesByFullPath {
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/usage': typeof UsageRoute
   '/website': typeof WebsiteRouteWithChildren
   '/code/agents': typeof CodeAgentsRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
@@ -488,6 +495,7 @@ export interface FileRoutesByTo {
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/usage': typeof UsageRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
@@ -544,6 +552,7 @@ export interface FileRoutesById {
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/usage': typeof UsageRoute
   '/website': typeof WebsiteRouteWithChildren
   '/code/agents': typeof CodeAgentsRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
@@ -612,6 +621,7 @@ export interface FileRouteTypes {
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/usage'
     | '/website'
     | '/code/agents'
     | '/code/archived'
@@ -678,6 +688,7 @@ export interface FileRouteTypes {
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/usage'
     | '/code/archived'
     | '/code/home'
     | '/folders/$folderId'
@@ -733,6 +744,7 @@ export interface FileRouteTypes {
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/usage'
     | '/website'
     | '/code/agents'
     | '/code/archived'
@@ -800,6 +812,7 @@ export interface RootRouteChildren {
   CommandCenterRoute: typeof CommandCenterRoute
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
+  UsageRoute: typeof UsageRoute
   WebsiteRoute: typeof WebsiteRouteWithChildren
   CodeAgentsRoute: typeof CodeAgentsRouteWithChildren
   CodeArchivedRoute: typeof CodeArchivedRoute
@@ -820,6 +833,13 @@ declare module '@tanstack/react-router' {
       path: '/website'
       fullPath: '/website'
       preLoaderRoute: typeof WebsiteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/usage': {
+      id: '/usage'
+      path: '/usage'
+      fullPath: '/usage'
+      preLoaderRoute: typeof UsageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/skills': {
@@ -1492,6 +1512,7 @@ const rootRouteChildren: RootRouteChildren = {
   CommandCenterRoute: CommandCenterRoute,
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
+  UsageRoute: UsageRoute,
   WebsiteRoute: WebsiteRouteWithChildren,
   CodeAgentsRoute: CodeAgentsRouteWithChildren,
   CodeArchivedRoute: CodeArchivedRoute,
