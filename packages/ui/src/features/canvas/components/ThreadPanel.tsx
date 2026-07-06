@@ -1,6 +1,8 @@
 import {
+  ArrowSquareOutIcon,
   CaretRightIcon,
   DotsThreeIcon,
+  GitPullRequestIcon,
   PaperPlaneRightIcon,
   RobotIcon,
   TrashIcon,
@@ -20,6 +22,16 @@ import {
   InputGroupButton,
   InputGroupTextarea,
   Spinner,
+  ThreadItem,
+  ThreadItemAction,
+  ThreadItemActions,
+  ThreadItemAuthor,
+  ThreadItemBody,
+  ThreadItemContent,
+  ThreadItemGroup,
+  ThreadItemGutter,
+  ThreadItemHeader,
+  ThreadItemTimestamp,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { Task, TaskThreadMessage } from "@posthog/shared/domain-types";
@@ -27,16 +39,27 @@ import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
+import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import {
   useTaskThread,
   useTaskThreadMutations,
 } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import {
+  ChatMarkdown,
+  ChatStreamingMarkdown,
+} from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
+import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
+import { useSessionCallbacks } from "@posthog/ui/features/sessions/hooks/useSessionCallbacks";
+import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
+import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
+import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 function ThreadMessageRow({
   message,
@@ -58,89 +81,275 @@ function ThreadMessageRow({
   const showMenu = (isTaskAuthor && !forwarded) || isOwnMessage;
 
   return (
-    <div className="group flex gap-2 rounded-md px-2 py-1.5 hover:bg-fill-secondary">
-      <Avatar size="xs" className="mt-0.5 shrink-0">
-        <AvatarFallback>{getUserInitials(message.author)}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <Text size="1" weight="medium" className="truncate">
-            {userDisplayName(message.author)}
-          </Text>
-          <Text size="1" className="shrink-0 text-muted-foreground">
+    <ThreadItem>
+      <ThreadItemGutter>
+        <Avatar size="lg">
+          <AvatarFallback>{getUserInitials(message.author)}</AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+      <ThreadItemContent>
+        <ThreadItemHeader>
+          <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
+          <ThreadItemTimestamp dateTime={message.created_at}>
             {formatRelativeTimeShort(message.created_at)}
-          </Text>
-        </div>
-        <Text size="1" className="block whitespace-pre-wrap break-words">
-          {message.content}
-        </Text>
+          </ThreadItemTimestamp>
+        </ThreadItemHeader>
+        <ThreadItemBody>{message.content}</ThreadItemBody>
         {forwarded && (
-          <Badge variant="info" className="mt-1">
+          <Badge variant="info" className="w-fit">
             <RobotIcon size={10} />
             Sent to agent
           </Badge>
         )}
-      </div>
+      </ThreadItemContent>
       {showMenu && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="default"
-                size="icon-xs"
-                aria-label="Message actions"
-                className="opacity-0 transition-opacity group-hover:opacity-100 data-popup-open:opacity-100"
-              >
-                <DotsThreeIcon size={14} />
-              </Button>
-            }
-          />
-          <DropdownMenuContent align="end">
-            {isTaskAuthor && !forwarded && (
-              <DropdownMenuItem disabled={!canForward} onClick={onSendToAgent}>
-                <PaperPlaneRightIcon size={14} />
-                Send to agent
-              </DropdownMenuItem>
-            )}
-            {isOwnMessage && (
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                <TrashIcon size={14} />
-                Delete message
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ThreadItemActions>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <ThreadItemAction label="Message actions">
+                  <DotsThreeIcon size={14} />
+                </ThreadItemAction>
+              }
+            />
+            <DropdownMenuContent align="end">
+              {isTaskAuthor && !forwarded && (
+                <DropdownMenuItem
+                  disabled={!canForward}
+                  onClick={onSendToAgent}
+                >
+                  <PaperPlaneRightIcon size={14} />
+                  Send to agent
+                </DropdownMenuItem>
+              )}
+              {isOwnMessage && (
+                <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                  <TrashIcon size={14} />
+                  Delete message
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ThreadItemActions>
       )}
-    </div>
+    </ThreadItem>
   );
 }
 
-// The right-hand thread dock: the human-only conversation around a task.
-// Nothing here reaches the agent unless the task author explicitly forwards a
-// message ("Send to agent" in the row's hover menu).
-export function ThreadPanel({
-  taskId,
-  task: taskProp,
-  onClose,
-  collapsed,
-  onToggleCollapsed,
+type AgentPhase = "active" | "needs_input" | "complete" | "error";
+
+interface AgentStatus {
+  phase: AgentPhase;
+  label: string;
+}
+
+interface AgentMessage {
+  id: string;
+  text: string;
+  ts?: number;
+}
+
+// One entry per agent turn, holding only that turn's *last* spoken message —
+// the summary the agent lands on ("Done — …", "Draft PR is open: …"). Turns are
+// split on user prompts (the initial task, and each button/steer that starts a
+// new turn), so the whole of a turn's work collapses to a single, continuously
+// updating bubble instead of one bubble per intermediate chunk. Tool calls,
+// thoughts, and diffs stay in the full task view.
+function agentTurns(items: ConversationItem[]): AgentMessage[] {
+  const turns: AgentMessage[] = [];
+  let current: AgentMessage | null = null;
+  for (const item of items) {
+    if (item.type === "user_message") {
+      // A new prompt starts a new turn; keep the turn we just finished.
+      if (current) turns.push(current);
+      current = null;
+      continue;
+    }
+    if (
+      item.type === "session_update" &&
+      item.update.sessionUpdate === "agent_message_chunk" &&
+      "content" in item.update &&
+      item.update.content.type === "text" &&
+      item.update.content.text.trim()
+    ) {
+      // Overwrite so only the turn's latest message survives.
+      current = {
+        id: item.id,
+        text: item.update.content.text,
+        ts: item.timestamp,
+      };
+    }
+  }
+  if (current) turns.push(current);
+  return turns;
+}
+
+function AgentStatusChip({ status }: { status: AgentStatus }) {
+  switch (status.phase) {
+    case "active":
+      return (
+        <span className="flex items-center gap-1 text-muted-foreground">
+          <Spinner className="size-3" />
+          <Text size="1">{status.label}</Text>
+        </span>
+      );
+    case "needs_input":
+      return <Badge variant="warning">{status.label}</Badge>;
+    case "error":
+      return <Badge variant="destructive">{status.label}</Badge>;
+    default:
+      return <Badge variant="success">{status.label}</Badge>;
+  }
+}
+
+// One agent turn as its own thread item — a full avatar/"Agent" header row with
+// a timestamp, the turn's final message, and (on the current turn) the live
+// status chip plus ship actions. The live turn's bubble streams; settled turns
+// render static and stay put as new turns arrive below.
+function AgentTurnRow({
+  message,
+  status,
+  streaming,
+  showActions,
+  hasPr,
+  onCreatePr,
+  onDraftPr,
 }: {
-  taskId: string;
-  /** The thread's task when the caller already has it; fetched otherwise. */
-  task?: Task;
-  onClose?: () => void;
-  collapsed?: boolean;
-  onToggleCollapsed?: () => void;
+  message?: AgentMessage;
+  /** The live status chip; only the current turn passes one. */
+  status?: AgentStatus;
+  streaming: boolean;
+  showActions: boolean;
+  hasPr: boolean;
+  onCreatePr: () => void;
+  onDraftPr: () => void;
 }) {
+  return (
+    <ThreadItem>
+      <ThreadItemGutter>
+        <Avatar size="lg">
+          <AvatarFallback>
+            <RobotIcon size={14} />
+          </AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+      <ThreadItemContent>
+        <ThreadItemHeader>
+          <ThreadItemAuthor>Agent</ThreadItemAuthor>
+          {status && <AgentStatusChip status={status} />}
+          {message?.ts !== undefined && (
+            <ThreadItemTimestamp dateTime={new Date(message.ts).toISOString()}>
+              {formatRelativeTimeShort(message.ts)}
+            </ThreadItemTimestamp>
+          )}
+        </ThreadItemHeader>
+        {message?.text && (
+          <ThreadItemBody>
+            <div className="rounded-md border border-border bg-muted px-2 py-1.5">
+              {streaming ? (
+                <ChatStreamingMarkdown content={message.text} />
+              ) : (
+                <ChatMarkdown content={message.text} />
+              )}
+            </div>
+          </ThreadItemBody>
+        )}
+        {showActions && !hasPr && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button variant="primary" size="xs" onClick={onCreatePr}>
+              <GitPullRequestIcon size={13} />
+              Create PR
+            </Button>
+            <Button variant="outline" size="xs" onClick={onDraftPr}>
+              Draft PR
+            </Button>
+          </div>
+        )}
+      </ThreadItemContent>
+    </ThreadItem>
+  );
+}
+
+// The agent's activity as one thread item per turn. Prior turns stay put; a new
+// turn (e.g. after "Create PR") adds another item below. The live status chip
+// and ship actions attach to the current (last) turn only.
+function AgentActivity({
+  messages,
+  status,
+  hasPr,
+  onCreatePr,
+  onDraftPr,
+}: {
+  messages: AgentMessage[];
+  status: AgentStatus;
+  /** A PR already exists for the task, so hide the create/draft actions. */
+  hasPr: boolean;
+  onCreatePr: () => void;
+  onDraftPr: () => void;
+}) {
+  // No text yet (turn just started) — still show a header row with the status.
+  if (messages.length === 0) {
+    return (
+      <AgentTurnRow
+        status={status}
+        streaming={false}
+        showActions={false}
+        hasPr={hasPr}
+        onCreatePr={onCreatePr}
+        onDraftPr={onDraftPr}
+      />
+    );
+  }
+
+  const lastIndex = messages.length - 1;
+  return (
+    <>
+      {messages.map((message, index) => {
+        const isLast = index === lastIndex;
+        return (
+          <AgentTurnRow
+            key={message.id}
+            message={message}
+            status={isLast ? status : undefined}
+            streaming={isLast && status.phase === "active"}
+            showActions={isLast && status.phase === "complete"}
+            hasPr={hasPr}
+            onCreatePr={onCreatePr}
+            onDraftPr={onDraftPr}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+// One entry in the human thread, sorted by time.
+interface HumanEntry {
+  ts: number;
+  message: TaskThreadMessage;
+}
+
+// The merged thread + task conversation: a task card pinned at the top, the
+// human thread, and a single live agent status message pinned at the bottom.
+// Owns the session connection (so the agent keeps streaming while the panel is
+// open), which is why it only mounts when the panel is expanded and the task is
+// known.
+function ThreadConversation({
+  task,
+  onClose,
+  onToggleCollapsed,
+  onOpenFull,
+}: {
+  task: Task;
+  onClose?: () => void;
+  onToggleCollapsed?: () => void;
+  onOpenFull?: () => void;
+}) {
+  const taskId = task.id;
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
-  const { data: fetchedTask } = useQuery({
-    ...taskDetailQuery(taskId),
-    enabled: !taskProp,
-  });
-  const task = taskProp ?? fetchedTask;
 
-  const { messages, isLoading } = useTaskThread(collapsed ? undefined : taskId);
+  const { messages, isLoading } = useTaskThread(taskId);
   const {
     postMessage,
     deleteMessage,
@@ -149,20 +358,111 @@ export function ThreadPanel({
     isSendingToAgent,
   } = useTaskThreadMutations(taskId);
 
+  // Live agent session — keep it connected while the panel is open so the
+  // agent's status streams in alongside the human thread.
+  const {
+    session,
+    repoPath,
+    isCloud,
+    events,
+    cloudStatus,
+    isPromptPending,
+    isInitializing,
+    hasError,
+    errorTitle,
+  } = useSessionViewState(taskId, task);
+  useSessionConnection({ taskId, task, session, repoPath, isCloud });
+  const { items } = useConversationItems(events, isPromptPending);
+  const pendingPermissions = usePendingPermissionsForTask(taskId);
+  const { handleSendPrompt } = useSessionCallbacks({
+    taskId,
+    task,
+    session,
+    repoPath,
+  });
+
+  const prUrl =
+    typeof task.latest_run?.output?.pr_url === "string"
+      ? task.latest_run.output.pr_url
+      : undefined;
+
+  const agentMsgs = useMemo(() => agentTurns(items), [items]);
+
+  const agentStatus = useMemo<AgentStatus | null>(() => {
+    const hasActivity = events.length > 0 || !!task.latest_run;
+    if (!hasActivity) return null;
+    // Note: `isRunning` is deliberately not used here — for cloud tasks it stays
+    // true until the whole run is terminal, so it can't tell "agent is typing"
+    // from "agent finished and is waiting". `isPromptPending` is the accurate
+    // "producing right now" signal; permissions mean it's blocked on the user.
+    if (hasError || cloudStatus === "failed") {
+      return { phase: "error", label: errorTitle ?? "Failed" };
+    }
+    if (pendingPermissions.size > 0) {
+      return { phase: "needs_input", label: "Needs input" };
+    }
+    if (isPromptPending || isInitializing) {
+      return { phase: "active", label: "Working…" };
+    }
+    return { phase: "complete", label: prUrl ? "Shipped" : "Ready to ship" };
+  }, [
+    events.length,
+    task.latest_run,
+    hasError,
+    cloudStatus,
+    errorTitle,
+    pendingPermissions.size,
+    isPromptPending,
+    isInitializing,
+    prUrl,
+  ]);
+
+  // Shipping a PR from a channel thread means asking the agent to open it — the
+  // uniform path that works for cloud and local runs alike (the agent owns the
+  // branch/commit). Re-engages the session, so the status flips back to active.
+  const askAgentToOpenPr = (draftPr: boolean) => {
+    void handleSendPrompt(
+      draftPr
+        ? "Create a draft pull request with these changes."
+        : "Create a pull request with these changes.",
+    );
+    toast.success(
+      draftPr
+        ? "Asked the agent to open a draft PR"
+        : "Asked the agent to open a PR",
+    );
+  };
+
+  const entries = useMemo<HumanEntry[]>(
+    () =>
+      messages
+        .map((message) => ({
+          ts: Date.parse(message.created_at) || 0,
+          message,
+        }))
+        .sort((a, b) => a.ts - b.ts),
+    [messages],
+  );
+
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Keep the newest message in view, Slack-style.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new messages
+  // Keep the newest content in view, Slack-style.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new content
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages.length]);
+  }, [
+    entries.length,
+    agentMsgs.length,
+    agentMsgs[agentMsgs.length - 1]?.text,
+    agentStatus?.phase,
+  ]);
 
   const isTaskAuthor =
-    !!currentUser?.uuid && currentUser.uuid === task?.created_by?.uuid;
+    !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
   // Forwarding needs a run the workflow can still signal, one send at a time.
   const canForward =
-    !!task?.latest_run &&
+    !!task.latest_run &&
     !isTerminalStatus(task.latest_run.status) &&
     !isSendingToAgent;
 
@@ -194,20 +494,7 @@ export function ThreadPanel({
     });
   };
 
-  if (collapsed) {
-    return (
-      <div className="flex h-full w-9 flex-col items-center border-border border-l bg-gray-1 py-2">
-        <Button
-          variant="default"
-          size="icon-sm"
-          aria-label="Expand thread"
-          onClick={onToggleCollapsed}
-        >
-          <CaretRightIcon size={14} className="rotate-180" />
-        </Button>
-      </div>
-    );
-  }
+  const isEmpty = entries.length === 0 && !agentStatus;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
@@ -216,12 +503,20 @@ export function ThreadPanel({
           <Text size="2" weight="medium" className="block">
             Thread
           </Text>
-          {task && (
-            <Text size="1" className="block truncate text-muted-foreground">
-              {task.title || "Untitled task"}
-            </Text>
-          )}
+          <Text size="1" className="block truncate text-muted-foreground">
+            {task.title || "Untitled task"}
+          </Text>
         </div>
+        {onOpenFull && (
+          <Button
+            variant="default"
+            size="icon-sm"
+            aria-label="Open full task"
+            onClick={onOpenFull}
+          >
+            <ArrowSquareOutIcon size={14} />
+          </Button>
+        )}
         {onToggleCollapsed && (
           <Button
             variant="default"
@@ -245,34 +540,47 @@ export function ThreadPanel({
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-2">
-        {isLoading && messages.length === 0 ? (
+        <div className="px-2">
+          <TaskCard task={task} onOpen={() => onOpenFull?.()} />
+        </div>
+        {isLoading && isEmpty ? (
           <div className="flex justify-center py-6">
             <Spinner />
           </div>
-        ) : messages.length === 0 ? (
+        ) : isEmpty ? (
           <div className="px-2 py-6 text-center">
             <Text size="1" className="text-muted-foreground">
-              Discuss this task with your team. Messages stay between humans
-              unless the task author sends one to the agent.
+              Discuss this task with your team. The agent's status shows up here
+              too; messages stay between humans unless the task author sends one
+              to the agent.
             </Text>
           </div>
         ) : (
-          <div className="flex flex-col gap-0.5">
-            {messages.map((message) => (
+          <ThreadItemGroup className="mt-1">
+            {entries.map((entry) => (
               <ThreadMessageRow
-                key={message.id}
-                message={message}
+                key={entry.message.id}
+                message={entry.message}
                 isTaskAuthor={isTaskAuthor}
                 isOwnMessage={
                   !!currentUser?.uuid &&
-                  currentUser.uuid === message.author?.uuid
+                  currentUser.uuid === entry.message.author?.uuid
                 }
                 canForward={canForward}
-                onSendToAgent={() => handleSendToAgent(message.id)}
-                onDelete={() => handleDelete(message.id)}
+                onSendToAgent={() => handleSendToAgent(entry.message.id)}
+                onDelete={() => handleDelete(entry.message.id)}
               />
             ))}
-          </div>
+            {agentStatus && (
+              <AgentActivity
+                messages={agentMsgs}
+                status={agentStatus}
+                hasPr={!!prUrl}
+                onCreatePr={() => askAgentToOpenPr(false)}
+                onDraftPr={() => askAgentToOpenPr(true)}
+              />
+            )}
+          </ThreadItemGroup>
         )}
       </div>
 
@@ -307,5 +615,64 @@ export function ThreadPanel({
         </InputGroup>
       </div>
     </div>
+  );
+}
+
+// The right-hand thread dock: the human conversation around a task merged with
+// the agent's live status and a pinned task card. Nothing a human types here
+// reaches the agent unless the task author explicitly forwards a message ("Send
+// to agent" in the row's hover menu). Collapses to a thin rail.
+export function ThreadPanel({
+  taskId,
+  task: taskProp,
+  onClose,
+  collapsed,
+  onToggleCollapsed,
+  onOpenFull,
+}: {
+  taskId: string;
+  /** The thread's task when the caller already has it; fetched otherwise. */
+  task?: Task;
+  onClose?: () => void;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  onOpenFull?: () => void;
+}) {
+  const { data: fetchedTask } = useQuery({
+    ...taskDetailQuery(taskId),
+    enabled: !taskProp && !collapsed,
+  });
+  const task = taskProp ?? fetchedTask;
+
+  if (collapsed) {
+    return (
+      <div className="flex h-full w-9 flex-col items-center border-border border-l bg-gray-1 py-2">
+        <Button
+          variant="default"
+          size="icon-sm"
+          aria-label="Expand thread"
+          onClick={onToggleCollapsed}
+        >
+          <CaretRightIcon size={14} className="rotate-180" />
+        </Button>
+      </div>
+    );
+  }
+
+  if (!task) {
+    return (
+      <div className="flex h-full min-w-0 flex-col items-center justify-center bg-gray-1">
+        <Spinner />
+      </div>
+    );
+  }
+
+  return (
+    <ThreadConversation
+      task={task}
+      onClose={onClose}
+      onToggleCollapsed={onToggleCollapsed}
+      onOpenFull={onOpenFull}
+    />
   );
 }

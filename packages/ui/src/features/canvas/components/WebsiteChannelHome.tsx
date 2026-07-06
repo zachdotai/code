@@ -108,21 +108,27 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     [channelId, fileTask, invalidateFeed, queryClient],
   );
 
-  // The task route's mount effect points the panel at the task, so navigating
-  // is enough here.
+  // Clicking a task opens its thread dock — the merged conversation with the
+  // task card and the agent's live replies inline — rather than navigating away
+  // to the full task view. The full view stays a click away (openFull).
   const handleOpenTask = useCallback(
-    (task: Task) => {
-      void navigate({
-        to: "/website/$channelId/tasks/$taskId",
-        params: { channelId, taskId: task.id },
-      });
-    },
-    [channelId, navigate],
+    (task: Task) => openThread(task.id),
+    [openThread],
   );
 
   const handleOpenThread = useCallback(
     (task: Task) => openThread(task.id),
     [openThread],
+  );
+
+  const handleOpenFull = useCallback(
+    (taskId: string) => {
+      void navigate({
+        to: "/website/$channelId/tasks/$taskId",
+        params: { channelId, taskId },
+      });
+    },
+    [channelId, navigate],
   );
 
   const threadTask = threadTaskId
@@ -185,6 +191,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           taskId={threadTaskId}
           task={threadTask}
           onClose={closeThread}
+          onOpenFull={() => handleOpenFull(threadTaskId)}
         />
       )}
     </div>

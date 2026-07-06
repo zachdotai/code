@@ -25,6 +25,9 @@ import {
   ChatMessageScrollerProvider,
   ChatMessageScrollerViewport,
   Spinner,
+  ThreadItemReplies,
+  ThreadItemRepliesLabel,
+  ThreadItemRepliesMeta,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -128,8 +131,9 @@ function TaskCardOrigin({ task }: { task: Task }) {
 }
 
 // The task the message kicked off, as a card everyone in the channel sees:
-// origin + status up top, bold title, then run metadata.
-function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
+// origin + status up top, bold title, then run metadata. Also pinned at the top
+// of the merged thread panel, where "open" jumps to the full task view.
+export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const prUrl =
     typeof task.latest_run?.output?.pr_url === "string"
       ? task.latest_run.output.pr_url
@@ -148,7 +152,7 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
       className="mt-1.5 w-full cursor-pointer transition-colors hover:border-border-primary"
       onClick={onOpen}
     >
-      <CardContent className="flex flex-col gap-1 py-2.5">
+      <CardContent className="flex flex-col gap-1">
         <div className="flex items-center justify-between gap-2">
           <TaskCardOrigin task={task} />
           <TaskStatusBadge task={task} />
@@ -214,25 +218,21 @@ function RepliesRow({
   const last = messages[messages.length - 1];
 
   return (
-    <button
-      type="button"
-      onClick={onOpenThread}
-      className="mt-1 flex w-fit items-center gap-2 rounded-md px-1.5 py-1 hover:bg-fill-secondary"
-    >
-      <AvatarGroup size="xs" stacked>
+    <ThreadItemReplies onClick={onOpenThread}>
+      <AvatarGroup size="xs">
         {authors.map((author, index) => (
-          <Avatar key={author?.uuid ?? index} size="xs">
+          <Avatar key={author?.uuid ?? index}>
             <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
           </Avatar>
         ))}
       </AvatarGroup>
-      <Text size="1" weight="medium" className="text-accent-11">
+      <ThreadItemRepliesLabel>
         {messages.length} {messages.length === 1 ? "reply" : "replies"}
-      </Text>
-      <Text size="1" className="text-muted-foreground">
+      </ThreadItemRepliesLabel>
+      <ThreadItemRepliesMeta>
         Last reply {formatRelativeTimeShort(last.created_at)}
-      </Text>
-    </button>
+      </ThreadItemRepliesMeta>
+    </ThreadItemReplies>
   );
 }
 
@@ -249,7 +249,7 @@ function FeedItem({
   const isAgent = !task.created_by || task.origin_product !== "user_created";
 
   return (
-    <ChatMessage className="group relative rounded-md px-3 py-2 hover:bg-fill-secondary/50">
+    <ChatMessage className="group relative rounded-md px-3 py-2">
       {/* Quill's avatar slot bottom-aligns for bubble chats; a Slack feed
           anchors it beside the name row. The slot draws its own circle, so
           drop its background and let the inner Avatar render. */}
