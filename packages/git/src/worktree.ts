@@ -1,6 +1,10 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import {
+  matchesExcludePatterns,
+  parseExcludePatterns,
+} from "./exclude-patterns";
 import { getCleanEnv, getGitOperationManager } from "./operation-manager";
 import {
   addToLocalExclude,
@@ -552,14 +556,77 @@ export class WorktreeManager {
       }
     }
 
-    await manager.executeWrite(this.mainRepoPath, async (git) => {
-      try {
-        await git.raw(["worktree", "remove", worktreePath, "--force"]);
-      } catch {
-        await forceRemove(worktreePath);
-        await git.raw(["worktree", "prune"]);
-      }
-    });
+    // Rename-to-trash and prune both run inside the write lock so the on-disk
+    // move and the git metadata update are atomic: if prune can't run (e.g. a
+    // persistent external index.lock) we roll the rename back rather than leave
+    // the worktree gone from disk but still registered (which would strand the
+    // branch). Only the slow recursive removal of the trashed copy happens
+    // outside the lock.
+    const trashedPath = await manager
+      .executeWrite(this.mainRepoPath, async (git) => {
+        const moved = await this.moveToTrash(resolvedWorktreePath);
+        if (!moved) return null;
+        try {
+          await git.raw(["worktree", "prune"]);
+          return moved;
+        } catch (pruneError) {
+          await fs.rename(moved, resolvedWorktreePath).catch(() => {});
+          throw pruneError;
+        }
+      })
+      // A null (rename couldn't happen) or a throw (prune failed, rename rolled
+      // back) both fall through to the in-place remove below.
+      .catch(() => null);
+
+    if (trashedPath) {
+      void forceRemove(trashedPath).catch(() => {});
+    } else {
+      await manager.executeWrite(this.mainRepoPath, async (git) => {
+        try {
+          await git.raw(["worktree", "remove", worktreePath, "--force"]);
+        } catch {
+          await forceRemove(worktreePath);
+          await git.raw(["worktree", "prune"]);
+        }
+      });
+    }
+
+    // Both branches leave the worktree's `<base>/<name>` parent empty; remove it
+    // so a deleted worktree never leaves a stray directory behind (best-effort:
+    // rmdir no-ops if it isn't empty).
+    await fs.rmdir(path.dirname(resolvedWorktreePath)).catch(() => {});
+  }
+
+  private getTrashFolderPath(): string {
+    return path.join(this.getWorktreeBaseFolderPath(), ".trash");
+  }
+
+  /**
+   * Renames a worktree into the trash folder so callers get an instant delete;
+   * the multi-gigabyte recursive removal then runs in the background (and
+   * `sweepTrash` mops up anything left behind by a crash). Returns null when
+   * the rename cannot work (path missing, or on a different volume), in which
+   * case the caller falls back to removing in place. Call inside the repo write
+   * lock so the move stays ordered with the follow-up `git worktree prune`.
+   */
+  private async moveToTrash(worktreePath: string): Promise<string | null> {
+    const trashDir = this.getTrashFolderPath();
+    const trashedPath = path.join(
+      trashDir,
+      `${path.basename(path.dirname(worktreePath))}-${Date.now()}`,
+    );
+    try {
+      await fs.mkdir(trashDir, { recursive: true });
+      await fs.rename(worktreePath, trashedPath);
+      return trashedPath;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Removes trashed worktrees left behind by interrupted background deletes. */
+  async sweepTrash(): Promise<void> {
+    await forceRemove(this.getTrashFolderPath());
   }
 
   async getWorktreeInfo(worktreePath: string): Promise<WorktreeInfo | null> {
@@ -657,8 +724,47 @@ export class WorktreeManager {
 
 /**
  * get all gitignored paths matching patterns from an exclude file
+ *
+ * Fast path: list candidates with `--exclude-standard` (so git collapses
+ * standard-ignored trees) and re-apply the exclude file's patterns in-process.
+ * If that in-process matching ever throws, fall back to letting git do the
+ * whole match itself (`--exclude-from` only) — slower and does not collapse
+ * ignored trees, but it is git's own battle-tested ignore logic, so a bug in
+ * the hand-rolled matcher degrades to correct-but-slower rather than failing
+ * worktree setup or silently linking nothing.
  */
-function getIgnoredPathsFromExcludeFile(
+async function getIgnoredPathsFromExcludeFile(
+  mainRepoPath: string,
+  excludeFile: string,
+): Promise<string[]> {
+  let content: string;
+  try {
+    content = await fs.readFile(path.join(mainRepoPath, excludeFile), "utf-8");
+  } catch {
+    // No exclude file (the common case) — genuinely nothing to link/copy.
+    return [];
+  }
+
+  try {
+    const patterns = parseExcludePatterns(content);
+    if (patterns.length === 0) return [];
+
+    const candidates = await listExcludeCandidates(mainRepoPath, excludeFile);
+    return candidates
+      .filter((candidate) => matchesExcludePatterns(candidate, patterns))
+      .map((candidate) => candidate.replace(/\/$/, ""));
+  } catch {
+    return listIgnoredPathsViaGit(mainRepoPath, excludeFile);
+  }
+}
+
+/**
+ * Fallback matcher: git's own ignore matching over the exclude file, without
+ * `--exclude-standard`. This is the pre-fast-path behavior — correct but it
+ * walks standard-ignored trees instead of collapsing them. Used only when the
+ * in-process matcher throws.
+ */
+function listIgnoredPathsViaGit(
   mainRepoPath: string,
   excludeFile: string,
 ): Promise<string[]> {
@@ -684,6 +790,46 @@ function getIgnoredPathsFromExcludeFile(
             .split("\n")
             .filter((line) => line.length > 0)
             .map((line) => line.replace(/\/$/, "")),
+        );
+      },
+    );
+  });
+}
+
+/**
+ * Candidate untracked paths for exclude-file matching. `--exclude-standard`
+ * lets git collapse gitignored trees (node_modules et al) into a single entry
+ * instead of recursing through them — on a large repo that turns a multi-second
+ * walk into a sub-second one. The exclude file's own patterns are then
+ * re-applied in-process, which also stops matches buried inside standard-
+ * ignored directories (e.g. a stray .env deep in node_modules) from surfacing.
+ */
+function listExcludeCandidates(
+  mainRepoPath: string,
+  excludeFile: string,
+): Promise<string[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      [
+        "ls-files",
+        "--ignored",
+        "--others",
+        "--directory",
+        "--exclude-standard",
+        `--exclude-from=${excludeFile}`,
+      ],
+      { cwd: mainRepoPath },
+      (error, stdout) => {
+        if (error || !stdout) {
+          resolve([]);
+          return;
+        }
+        resolve(
+          stdout
+            .trim()
+            .split("\n")
+            .filter((line) => line.length > 0),
         );
       },
     );
