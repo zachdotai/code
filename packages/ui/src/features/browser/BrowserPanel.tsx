@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Globe,
+  X,
 } from "@phosphor-icons/react";
 import { BROWSER_TAB_FLAG } from "@posthog/shared/constants";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -19,6 +20,7 @@ interface WebviewElement extends HTMLElement {
   getURL(): string;
   loadURL(url: string): Promise<void>;
   reload(): void;
+  stop(): void;
   // TODO: goBack/goForward/canGoBack/canGoForward are deprecated in Electron 41
   // in favour of webContents.navigationHistory.*; migrate before an Electron
   // bump removes them, otherwise the nav buttons silently no-op.
@@ -89,6 +91,7 @@ export function BrowserPanel({
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Refs so the debounce timer and event effect don't re-arm every render.
   const onUrlChangeRef = useRef(onUrlChange);
@@ -157,16 +160,23 @@ export function BrowserPanel({
       setLoadError(ev.errorDescription || "Failed to load page");
     };
 
+    const onStartLoading = () => setIsLoading(true);
+    const onStopLoading = () => setIsLoading(false);
+
     webview.addEventListener("did-navigate", onNavigate);
     webview.addEventListener("did-navigate-in-page", onNavigate);
     webview.addEventListener("page-title-updated", onTitle);
     webview.addEventListener("did-fail-load", onFailLoad);
+    webview.addEventListener("did-start-loading", onStartLoading);
+    webview.addEventListener("did-stop-loading", onStopLoading);
 
     return () => {
       webview.removeEventListener("did-navigate", onNavigate);
       webview.removeEventListener("did-navigate-in-page", onNavigate);
       webview.removeEventListener("page-title-updated", onTitle);
       webview.removeEventListener("did-fail-load", onFailLoad);
+      webview.removeEventListener("did-start-loading", onStartLoading);
+      webview.removeEventListener("did-stop-loading", onStopLoading);
     };
   }, [persistUrl]);
 
@@ -211,11 +221,15 @@ export function BrowserPanel({
           <ArrowRight size={14} />
         </NavButton>
         <NavButton
-          ariaLabel="Reload"
+          ariaLabel={isLoading ? "Stop loading" : "Reload"}
           dataAttr="browser-tab-reload"
-          onClick={() => webviewRef.current?.reload()}
+          onClick={() =>
+            isLoading
+              ? webviewRef.current?.stop()
+              : webviewRef.current?.reload()
+          }
         >
-          <ArrowClockwise size={14} />
+          {isLoading ? <X size={14} /> : <ArrowClockwise size={14} />}
         </NavButton>
         <form onSubmit={onSubmit} className="ml-1 flex-1">
           <input
@@ -231,6 +245,13 @@ export function BrowserPanel({
       </Flex>
 
       <Box flexGrow="1" position="relative" className="overflow-hidden">
+        <div
+          className={
+            isLoading
+              ? "quill-section-loading quill-section-loading--active"
+              : "quill-section-loading"
+          }
+        />
         {loadError && (
           <Flex
             direction="column"
