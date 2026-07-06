@@ -288,6 +288,12 @@ export const taskPrStatusOutput = z.object({
   hasDiff: z.boolean(),
 });
 
+export const taskPrStatusesInput = z.object({
+  items: z.array(taskPrStatusInput),
+});
+
+export const taskPrStatusesOutput = z.record(z.string(), taskPrStatusOutput);
+
 export type TaskPrStatusInput = z.infer<typeof taskPrStatusInput>;
 export type SidebarPrState = z.infer<typeof sidebarPrStateSchema>;
 export type TaskPrStatus = z.infer<typeof taskPrStatusOutput>;

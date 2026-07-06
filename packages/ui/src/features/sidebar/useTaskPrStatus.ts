@@ -1,5 +1,10 @@
-import { useHostTRPC } from "@posthog/host-router/react";
-import { useQuery } from "@tanstack/react-query";
+import type { EntityRegistry } from "@posthog/core/local-store/entityRegistry";
+import { ENTITY_REGISTRY } from "@posthog/core/local-store/identifiers";
+import type { SyncedEntity } from "@posthog/core/local-store/schemas";
+import { TASK_PR_STATUS_COLLECTION } from "@posthog/core/tasks/taskSync";
+import { useService } from "@posthog/di/react";
+import { useMemo } from "react";
+import { useStore } from "zustand";
 
 export type SidebarPrState = "merged" | "open" | "draft" | "closed" | null;
 
@@ -8,29 +13,29 @@ export interface TaskPrStatus {
   hasDiff: boolean;
 }
 
-const SIDEBAR_STALE_TIME = 60_000;
 const EMPTY: TaskPrStatus = { prState: null, hasDiff: false };
 
+/**
+ * Sidebar PR badge state, read from the local pool. The sync engine fills it
+ * with ONE batched host call for every visible task — the old version fired
+ * an IPC query per sidebar row.
+ */
 export function useTaskPrStatus(task: {
   id: string;
   cloudPrUrl?: string | null;
   taskRunEnvironment?: string | null;
 }): TaskPrStatus {
-  const trpc = useHostTRPC();
-
-  const skipQuery = task.taskRunEnvironment === "cloud" && !task.cloudPrUrl;
-
-  const { data } = useQuery(
-    trpc.workspace.getTaskPrStatus.queryOptions(
-      { taskId: task.id, cloudPrUrl: task.cloudPrUrl ?? null },
-      {
-        staleTime: SIDEBAR_STALE_TIME,
-        placeholderData: (prev) => prev,
-        enabled: !skipQuery,
-      },
-    ),
+  const registry = useService<EntityRegistry>(ENTITY_REGISTRY);
+  const pool = useMemo(
+    () => registry.getPool<SyncedEntity>(TASK_PR_STATUS_COLLECTION),
+    [registry],
   );
 
-  if (!data || (!data.prState && !data.hasDiff)) return EMPTY;
-  return data;
+  const status = useStore(
+    pool.store,
+    (state) => state.entities[task.id] as unknown as TaskPrStatus | undefined,
+  );
+
+  if (!status || (!status.prState && !status.hasDiff)) return EMPTY;
+  return { prState: status.prState, hasDiff: status.hasDiff };
 }

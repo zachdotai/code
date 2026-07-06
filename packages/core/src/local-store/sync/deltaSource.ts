@@ -10,6 +10,12 @@ import type { SyncedEntity } from "../schemas";
 export interface PulledWindow<T extends SyncedEntity> {
   /** Stable identity for this window's scope (cursors/hashes key off it). */
   key: string;
+  /**
+   * Target collection when one fetch feeds several (e.g. a channel pull
+   * yields task rows AND the channel's membership row). Defaults to the
+   * source's own collection.
+   */
+  collection?: string;
   rows: T[];
   sweep: {
     /** False when the response was truncated (e.g. hit the limit). */

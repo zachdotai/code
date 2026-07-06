@@ -9,6 +9,10 @@ import {
   SYNC_ENGINE,
 } from "@posthog/core/local-store/sync/identifiers";
 import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
+import {
+  TASK_PR_STATUS_CLIENT,
+  type TaskPrStatusClient,
+} from "@posthog/core/tasks/taskSync";
 import { registerTaskSync } from "@posthog/core/tasks/taskSyncSetup";
 import type { Contribution } from "@posthog/di/contribution";
 import {
@@ -48,6 +52,8 @@ export class LocalFirstBootContribution implements Contribution {
     private readonly clientProvider: CloudClientProvider,
     @inject(OUTBOX)
     private readonly outbox: Outbox,
+    @inject(TASK_PR_STATUS_CLIENT)
+    private readonly prStatusClient: TaskPrStatusClient,
     @inject(ROOT_LOGGER)
     rootLogger: RootLogger,
   ) {
@@ -55,7 +61,12 @@ export class LocalFirstBootContribution implements Contribution {
   }
 
   start(): void {
-    registerTaskSync(this.registry, this.engine, this.clientProvider);
+    registerTaskSync(
+      this.registry,
+      this.engine,
+      this.clientProvider,
+      this.prStatusClient,
+    );
 
     this.outbox.events.on("parked", ({ entry, error }) => {
       this.log.warn(`write parked (${entry.collection}/${entry.op})`, error);

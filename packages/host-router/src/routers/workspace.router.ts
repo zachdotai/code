@@ -34,6 +34,8 @@ import {
   markViewedInput,
   reconcileCloudWorkspacesInput,
   reconcileCloudWorkspacesOutput,
+  taskPrStatusesInput,
+  taskPrStatusesOutput,
   taskPrStatusInput,
   taskPrStatusOutput,
   togglePinInput,
@@ -231,6 +233,13 @@ export const workspaceRouter = router({
         input.taskId,
         input.cloudPrUrl,
       ),
+    ),
+
+  getTaskPrStatuses: publicProcedure
+    .input(taskPrStatusesInput)
+    .output(taskPrStatusesOutput)
+    .query(({ ctx, input }) =>
+      getGitService(ctx.container).getTaskPrStatuses(input.items),
     ),
 
   getCachedPrUrl: publicProcedure

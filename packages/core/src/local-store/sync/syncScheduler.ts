@@ -109,12 +109,25 @@ export class SyncScheduler {
     try {
       const windows = await entry.source.pull();
       if (windows !== null) {
-        const delta = this.applyPipeline.applyWindows(collection, windows);
-        if (
-          this.onDelta &&
-          (delta.upserts.length > 0 || delta.deletes.length > 0)
-        ) {
-          this.onDelta(delta);
+        // Windows may target sibling collections (PulledWindow.collection).
+        const groups = new Map<string, typeof windows>();
+        for (const window of windows) {
+          const target = window.collection ?? collection;
+          const group = groups.get(target);
+          if (group) {
+            group.push(window);
+          } else {
+            groups.set(target, [window]);
+          }
+        }
+        for (const [target, group] of groups) {
+          const delta = this.applyPipeline.applyWindows(target, group);
+          if (
+            this.onDelta &&
+            (delta.upserts.length > 0 || delta.deletes.length > 0)
+          ) {
+            this.onDelta(delta);
+          }
         }
         syncStatusSetters.markSynced(collection, new Date().toISOString());
       } else {

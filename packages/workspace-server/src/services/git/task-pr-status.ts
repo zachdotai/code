@@ -25,6 +25,28 @@ export class TaskPrStatusService {
     private readonly workspaceService: WorkspaceService,
   ) {}
 
+  /**
+   * Batch variant for the local-first PR-status pool: the whole sidebar's
+   * statuses in one host round-trip instead of one query per row.
+   */
+  async getTaskPrStatuses(
+    items: Array<{ taskId: string; cloudPrUrl: string | null }>,
+  ): Promise<Record<string, TaskPrStatus>> {
+    const results: Record<string, TaskPrStatus> = {};
+    const CHUNK_SIZE = 6;
+    for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+      await Promise.all(
+        items.slice(i, i + CHUNK_SIZE).map(async (item) => {
+          results[item.taskId] = await this.getTaskPrStatus(
+            item.taskId,
+            item.cloudPrUrl,
+          );
+        }),
+      );
+    }
+    return results;
+  }
+
   async getTaskPrStatus(
     taskId: string,
     cloudPrUrl: string | null,

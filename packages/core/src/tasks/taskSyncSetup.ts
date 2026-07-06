@@ -3,8 +3,12 @@ import type { CloudClientProvider } from "@posthog/core/local-store/sync/identif
 import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
 import { TaskUpdateExecutor } from "./taskMutations";
 import {
+  channelFeedsEntity,
+  type TaskPrStatusClient,
+  TaskPrStatusDeltaSource,
   TaskSummariesDeltaSource,
   TasksDeltaSource,
+  taskPrStatusEntity,
   taskSummariesEntity,
   tasksEntity,
 } from "./taskSync";
@@ -19,10 +23,18 @@ export function registerTaskSync(
   registry: EntityRegistry,
   engine: SyncEngine,
   provider: CloudClientProvider,
+  prStatusClient?: TaskPrStatusClient,
 ): void {
   registry.register(tasksEntity);
   registry.register(taskSummariesEntity);
+  registry.register(channelFeedsEntity);
+  registry.register(taskPrStatusEntity);
   engine.registerSource(new TasksDeltaSource(provider));
   engine.registerSource(new TaskSummariesDeltaSource(provider, registry));
+  if (prStatusClient) {
+    engine.registerSource(
+      new TaskPrStatusDeltaSource(prStatusClient, registry),
+    );
+  }
   engine.registerExecutor(new TaskUpdateExecutor(provider));
 }
