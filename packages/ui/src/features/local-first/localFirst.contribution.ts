@@ -17,7 +17,13 @@ import {
   type ScopedLogger,
 } from "@posthog/di/logger";
 import { inject, injectable } from "inversify";
+import {
+  clearAuthSnapshot,
+  loadAuthSnapshot,
+  saveAuthSnapshot,
+} from "../auth/authSnapshot";
 import { useAuthStore } from "../auth/store";
+import { clearTokenCache } from "../auth/tokenCache";
 
 /**
  * Boots the local-first engine: registers synced collections, then follows
@@ -30,6 +36,8 @@ export class LocalFirstBootContribution implements Contribution {
   private readonly log: ScopedLogger;
   /** Serializes start/stop transitions so auth flaps can't interleave them. */
   private transition: Promise<void> = Promise.resolve();
+  /** Namespace of the last authenticated session — wiped on logout. */
+  private lastNamespace: { userId: string; projectId: number } | null = null;
 
   constructor(
     @inject(SYNC_ENGINE)
@@ -58,8 +66,23 @@ export class LocalFirstBootContribution implements Contribution {
       });
     });
 
+    // Instant boot: restore the last-known auth state so the shell (and the
+    // pools hydrating beneath it) render before the real auth check finishes.
+    // This runs during boot(), ahead of the first React paint.
+    const initial = useAuthStore.getState().authState;
+    if (!initial.bootstrapComplete && initial.status === "anonymous") {
+      const snapshot = loadAuthSnapshot();
+      if (snapshot) {
+        this.log.info("restored auth snapshot for instant boot");
+        useAuthStore.getState().setAuthState(snapshot);
+      }
+    }
+
     this.apply(useAuthStore.getState().authState);
-    useAuthStore.subscribe((state) => this.apply(state.authState));
+    useAuthStore.subscribe((state) => {
+      clearTokenCache();
+      this.apply(state.authState);
+    });
   }
 
   private apply(authState: AuthState): void {
@@ -72,9 +95,25 @@ export class LocalFirstBootContribution implements Contribution {
         userId: authState.cloudRegion,
         projectId: authState.currentProjectId,
       };
+      this.lastNamespace = namespace;
+      saveAuthSnapshot(authState);
       this.enqueue(() => this.engine.start(namespace));
-    } else if (authState.status === "anonymous") {
-      this.enqueue(() => this.engine.stop());
+    } else if (
+      authState.status === "anonymous" &&
+      authState.bootstrapComplete
+    ) {
+      // Definitive logout: stop the engine and destroy this identity's local
+      // data (never leak tasks across accounts on a shared machine).
+      const namespaceToWipe = this.lastNamespace;
+      this.lastNamespace = null;
+      clearAuthSnapshot();
+      this.enqueue(async () => {
+        if (namespaceToWipe) {
+          await this.engine.wipe(namespaceToWipe);
+        } else {
+          await this.engine.stop();
+        }
+      });
     }
     // Transitional states (mid-refresh, mid-login) leave the engine as-is.
   }

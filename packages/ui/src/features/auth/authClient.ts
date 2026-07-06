@@ -5,6 +5,7 @@ import { useHostTRPCClient } from "@posthog/host-router/react";
 import { getCloudUrlFromRegion, NotAuthenticatedError } from "@posthog/shared";
 import { useMemo } from "react";
 import { useAuthStateValue } from "./store";
+import { createCachedTokenAccessors } from "./tokenCache";
 
 export function createAuthenticatedClient(
   authState: AuthState | null | undefined,
@@ -30,12 +31,12 @@ export function createAuthenticatedClient(
 }
 
 function tokenAccessors(hostClient: HostTrpcClient) {
-  return {
+  return createCachedTokenAccessors({
     getValidAccessToken: () =>
       hostClient.auth.getValidAccessToken.query().then((r) => r.accessToken),
     refreshAccessToken: () =>
       hostClient.auth.refreshAccessToken.mutate().then((r) => r.accessToken),
-  };
+  });
 }
 
 export function useOptionalAuthenticatedClient(): PostHogAPIClient | null {

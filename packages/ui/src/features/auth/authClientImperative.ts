@@ -6,20 +6,22 @@ import {
 } from "@posthog/host-router/client";
 import { createAuthenticatedClient as createClient } from "./authClient";
 import { type AuthState, fetchAuthState } from "./authQueries";
+import { createCachedTokenAccessors } from "./tokenCache";
 
 function hostClient(): HostTrpcClient {
   return resolveService<HostTrpcClient>(HOST_TRPC_CLIENT);
 }
 
-async function getValidAccessToken(): Promise<string> {
-  const { accessToken } = await hostClient().auth.getValidAccessToken.query();
-  return accessToken;
-}
-
-async function refreshAccessToken(): Promise<string> {
-  const { accessToken } = await hostClient().auth.refreshAccessToken.mutate();
-  return accessToken;
-}
+const { getValidAccessToken, refreshAccessToken } = createCachedTokenAccessors({
+  getValidAccessToken: async () => {
+    const { accessToken } = await hostClient().auth.getValidAccessToken.query();
+    return accessToken;
+  },
+  refreshAccessToken: async () => {
+    const { accessToken } = await hostClient().auth.refreshAccessToken.mutate();
+    return accessToken;
+  },
+});
 
 export function createAuthenticatedClient(
   authState: AuthState | null | undefined,
