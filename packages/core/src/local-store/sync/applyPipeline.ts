@@ -18,6 +18,15 @@ export interface AppliedDelta {
 }
 
 /**
+ * Supplies pending optimistic fields for a record (from the outbox) so pulls
+ * rebase over in-flight local edits instead of visually reverting them.
+ */
+export type PendingOverlayProvider = (
+  collection: string,
+  recordId: string,
+) => Record<string, unknown> | null;
+
+/**
  * The single choke point for remote state entering pools: content-hash
  * short-circuit → Zod parse → LWW compare → scoped deletion sweep → pool
  * apply (persisted write-behind). Every DeltaSource pull and (later) every
@@ -27,6 +36,7 @@ export interface AppliedDelta {
 export class ApplyPipeline {
   /** window key → last applied content hash (in-memory; repopulates cheaply). */
   private windowHashes = new Map<string, string>();
+  private pendingOverlay: PendingOverlayProvider | null = null;
   private readonly log: ScopedLogger;
 
   constructor(
@@ -40,6 +50,10 @@ export class ApplyPipeline {
 
   resetHashes(): void {
     this.windowHashes.clear();
+  }
+
+  setPendingOverlayProvider(provider: PendingOverlayProvider | null): void {
+    this.pendingOverlay = provider;
   }
 
   /**
@@ -105,11 +119,48 @@ export class ApplyPipeline {
       this.windowHashes.set(hashKey, hash);
     }
 
-    if (upserts.length > 0) pool.applyUpserts(upserts);
+    if (upserts.length > 0) {
+      // Pools show rebased state (pending local edits win); model tables get
+      // the raw acknowledged rows.
+      pool.applyUpserts(this.rebase(collection, upserts), {
+        persistRows: upserts,
+      });
+    }
     if (deletes.length > 0) pool.applyDeletes(deletes);
     if (!pool.store.getState().hydrated) pool.markHydrated();
 
     return { collection, upserts, deletes };
+  }
+
+  /**
+   * Apply a mutation acknowledgement: the authoritative server row persists;
+   * the pool shows it rebased over any still-pending later edits.
+   */
+  applyAcknowledged(collection: string, row: SyncedEntity): void {
+    const definition = this.registry.getDefinition(collection);
+    if (!definition) return;
+    const parsed = definition.schema.safeParse(row);
+    if (!parsed.success) {
+      this.log.warn(`acknowledged row failed validation for ${collection}`);
+      return;
+    }
+    const pool = this.registry.getPool<SyncedEntity>(collection);
+    pool.applyUpserts(this.rebase(collection, [parsed.data]), {
+      persistRows: [parsed.data],
+    });
+  }
+
+  private rebase(collection: string, rows: SyncedEntity[]): SyncedEntity[] {
+    const provider = this.pendingOverlay;
+    if (!provider) return rows;
+    let changed = false;
+    const rebased = rows.map((row) => {
+      const overlay = provider(collection, row.id);
+      if (!overlay) return row;
+      changed = true;
+      return { ...row, ...overlay };
+    });
+    return changed ? rebased : rows;
   }
 
   /** Apply a delta broadcast by the leader window. Never persists. */
@@ -123,7 +174,11 @@ export class ApplyPipeline {
       const result = definition.schema.safeParse(row);
       if (result.success) valid.push(result.data);
     }
-    if (valid.length > 0) pool.applyUpserts(valid, { persist: false });
+    if (valid.length > 0) {
+      pool.applyUpserts(this.rebase(delta.collection, valid), {
+        persist: false,
+      });
+    }
     if (delta.deletes.length > 0) {
       pool.applyDeletes(delta.deletes, { persist: false });
     }

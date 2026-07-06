@@ -130,7 +130,7 @@ export class Persister {
 
   private buffer(collection: string, change: PoolChange<SyncedEntity>): void {
     const target = this.getPending(collection);
-    for (const entity of change.upserts) {
+    for (const entity of change.persistUpserts ?? change.upserts) {
       target.deletes.delete(entity.id);
       target.upserts.set(entity.id, entity);
     }

@@ -9,7 +9,6 @@ import type {
   PulledWindow,
 } from "@posthog/core/local-store/sync/deltaSource";
 import type { CloudClientProvider } from "@posthog/core/local-store/sync/identifiers";
-import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
 import type { Task } from "@posthog/shared/domain-types";
 import { z } from "zod";
 import { createStore } from "zustand/vanilla";
@@ -173,20 +172,4 @@ export class TaskSummariesDeltaSource implements DeltaSource<SyncedEntity> {
       },
     ];
   }
-}
-
-/**
- * Registers the task collections and their delta sources with the engine.
- * Called once by the host's local-first boot contribution, before the engine
- * starts (registration participates in the schemaHash).
- */
-export function registerTaskSync(
-  registry: EntityRegistry,
-  engine: SyncEngine,
-  provider: CloudClientProvider,
-): void {
-  registry.register(tasksEntity);
-  registry.register(taskSummariesEntity);
-  engine.registerSource(new TasksDeltaSource(provider));
-  engine.registerSource(new TaskSummariesDeltaSource(provider, registry));
 }

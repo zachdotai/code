@@ -27,9 +27,15 @@ export interface PoolChange<T extends SyncedEntity> {
   deletes: string[];
   /**
    * False for changes that must NOT be written to local persistence:
-   * hydration echoes and follower windows applying broadcast deltas.
+   * optimistic writes, hydration echoes, and follower broadcast applies.
    */
   persist: boolean;
+  /**
+   * When persisting, write these rows instead of `upserts`. Used when the
+   * pool shows rebased/overlaid state but only acknowledged server state may
+   * reach the model tables.
+   */
+  persistUpserts?: T[];
 }
 
 interface PoolEvents<T extends SyncedEntity> {
@@ -38,6 +44,8 @@ interface PoolEvents<T extends SyncedEntity> {
 
 export interface ApplyOptions {
   persist?: boolean;
+  /** Rows to persist in place of the applied rows (acknowledged state). */
+  persistRows?: readonly SyncedEntity[];
 }
 
 export interface EntityPool<T extends SyncedEntity> {
@@ -92,6 +100,9 @@ export function createEntityPool<T extends SyncedEntity>(
       upserts: [...rows],
       deletes: [],
       persist: options?.persist ?? true,
+      persistUpserts: options?.persistRows
+        ? ([...options.persistRows] as T[])
+        : undefined,
     });
   };
 

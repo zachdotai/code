@@ -1,23 +1,23 @@
+import { SYNC_ENGINE } from "@posthog/core/local-store/sync/identifiers";
+import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
 import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import {
-  insertTaskDedup,
-  removeTaskFromList,
-} from "@posthog/core/tasks/taskDelete";
-import {
   TASK_DELETION_SERVICE,
   type TaskDeletionService,
 } from "@posthog/core/tasks/taskDeletionService";
+import {
+  TASK_MUTATION_SERVICE,
+  type TaskMutationService,
+} from "@posthog/core/tasks/taskMutations";
 import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
 import { destroyTaskTerminals } from "@posthog/ui/features/terminal/destroyTaskTerminals";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { logger } from "@posthog/ui/shell/logger";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { taskKeys } from "./taskKeys";
 
 const log = logger.scope("tasks");
 
@@ -40,51 +40,31 @@ export async function releaseDeletedTaskResources(
 }
 
 export function useCreateTask() {
-  const queryClient = useQueryClient();
+  const mutations = useService<TaskMutationService>(TASK_MUTATION_SERVICE);
+  const engine = useService<SyncEngine>(SYNC_ENGINE);
 
-  const invalidateTasks = (newTask?: Task) => {
-    if (newTask) {
-      // Only seed list caches that aren't scoped to a specific origin_product.
-      // An origin-scoped list (e.g. the slack-origin list behind useSlackTasks)
-      // is read by the sidebar to brand a task's icon by id membership, so
-      // seeding a freshly created, non-slack task into it would make that task
-      // briefly render as a Slack task until the list refetches. Origin-less
-      // lists, by contrast, should mirror every new task.
-      queryClient.setQueriesData<Task[]>(
-        {
-          queryKey: taskKeys.lists(),
-          predicate: (query) => {
-            const isOriginScopedList = Boolean(
-              taskKeys.filtersOf(query.queryKey)?.originProduct,
-            );
-            return !isOriginScopedList;
-          },
-        },
-        (old) => insertTaskDedup(old, newTask),
-      );
-    }
-    queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+  // Creation flows expect the fresh task to be visible everywhere right away.
+  // The pool already has it (applyAcknowledged in the service); a poke pulls
+  // anything else the server derived (e.g. its summary row).
+  const invalidateTasks = (_newTask?: Task) => {
+    engine.pokeAll();
   };
 
   const mutation = useAuthenticatedMutation(
     (
-      client,
-      {
-        description,
-        repository,
-        github_integration,
-      }: {
+      _client,
+      options: {
         description: string;
         repository?: string;
         github_integration?: number;
         createdFrom?: "cli" | "command-menu";
       },
     ) =>
-      client.createTask({
-        description,
-        repository,
-        github_integration,
-      }) as unknown as Promise<Task>,
+      mutations.createTask({
+        description: options.description,
+        repository: options.repository,
+        github_integration: options.github_integration,
+      }) as Promise<Task>,
   );
 
   return { ...mutation, invalidateTasks };
@@ -97,59 +77,26 @@ interface DeleteTaskOptions {
 }
 
 export function useDeleteTask() {
-  const queryClient = useQueryClient();
   const deletionService = useService<TaskDeletionService>(
     TASK_DELETION_SERVICE,
   );
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  const mutations = useService<TaskMutationService>(TASK_MUTATION_SERVICE);
 
-  const mutation = useAuthenticatedMutation(
-    async (client, taskId: string) => {
+  const mutation = useAuthenticatedMutation(async (client, taskId: string) => {
+    // Instant list removal; the irreversible cleanup (worktrees, sessions,
+    // terminals) still waits for server confirmation.
+    const removal = mutations.removeTaskLocally(taskId);
+    try {
       const result = await deletionService.deleteTask(client, taskId);
+      removal.confirm();
       await releaseDeletedTaskResources(taskId, sessionService);
       return result;
-    },
-    {
-      onMutate: async (taskId) => {
-        await queryClient.cancelQueries({ queryKey: taskKeys.lists() });
-
-        const previousQueries: Array<{ queryKey: unknown; data: Task[] }> = [];
-        const queries = queryClient.getQueriesData<Task[]>({
-          queryKey: taskKeys.lists(),
-        });
-        for (const [queryKey, data] of queries) {
-          if (data) {
-            previousQueries.push({ queryKey, data });
-          }
-        }
-
-        queryClient.setQueriesData<Task[]>(
-          { queryKey: taskKeys.lists() },
-          (old) => removeTaskFromList(old, taskId),
-        );
-
-        return { previousQueries };
-      },
-      onError: (_err, _taskId, context) => {
-        const ctx = context as
-          | {
-              previousQueries: Array<{
-                queryKey: readonly unknown[];
-                data: Task[];
-              }>;
-            }
-          | undefined;
-        if (ctx?.previousQueries) {
-          for (const { queryKey, data } of ctx.previousQueries) {
-            queryClient.setQueryData(queryKey, data);
-          }
-        }
-      },
-      onSettled: () => {
-        queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
-      },
-    },
-  );
+    } catch (error) {
+      removal.rollback();
+      throw error;
+    }
+  });
 
   const deleteWithConfirm = useCallback(
     (options: DeleteTaskOptions) =>

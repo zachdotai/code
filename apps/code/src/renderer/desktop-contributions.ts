@@ -6,6 +6,7 @@ import { localStoreCoreModule } from "@posthog/core/local-store/local-store.modu
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
 import { skillsCoreModule } from "@posthog/core/skills/skills.module";
+import { tasksLocalCoreModule } from "@posthog/core/tasks/tasks-local.module";
 import { CONTRIBUTION } from "@posthog/di/contribution";
 import { agentUiModule } from "@posthog/ui/features/agent/agent.module";
 import { authUiModule } from "@posthog/ui/features/auth/auth.module";
@@ -50,6 +51,7 @@ export function registerDesktopContributions(): void {
     setupCoreModule,
     setupUiModule,
     skillsCoreModule,
+    tasksLocalCoreModule,
     workspaceUiModule,
   ]) {
     container.load(module);

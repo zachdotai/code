@@ -1,13 +1,15 @@
 import type { AuthState } from "@posthog/core/auth/schemas";
 import type { EntityRegistry } from "@posthog/core/local-store/entityRegistry";
 import { ENTITY_REGISTRY } from "@posthog/core/local-store/identifiers";
+import { OUTBOX } from "@posthog/core/local-store/outbox/identifiers";
+import type { Outbox } from "@posthog/core/local-store/outbox/outbox";
 import {
   type CloudClientProvider,
   SYNC_CLOUD_CLIENT_PROVIDER,
   SYNC_ENGINE,
 } from "@posthog/core/local-store/sync/identifiers";
 import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
-import { registerTaskSync } from "@posthog/core/tasks/taskSync";
+import { registerTaskSync } from "@posthog/core/tasks/taskSyncSetup";
 import type { Contribution } from "@posthog/di/contribution";
 import {
   ROOT_LOGGER,
@@ -36,6 +38,8 @@ export class LocalFirstBootContribution implements Contribution {
     private readonly registry: EntityRegistry,
     @inject(SYNC_CLOUD_CLIENT_PROVIDER)
     private readonly clientProvider: CloudClientProvider,
+    @inject(OUTBOX)
+    private readonly outbox: Outbox,
     @inject(ROOT_LOGGER)
     rootLogger: RootLogger,
   ) {
@@ -44,6 +48,15 @@ export class LocalFirstBootContribution implements Contribution {
 
   start(): void {
     registerTaskSync(this.registry, this.engine, this.clientProvider);
+
+    this.outbox.events.on("parked", ({ entry, error }) => {
+      this.log.warn(`write parked (${entry.collection}/${entry.op})`, error);
+      void import("../../primitives/toast").then(({ toast }) => {
+        toast.error("A change couldn't be saved", {
+          description: "The change was rolled back. Please try again.",
+        });
+      });
+    });
 
     this.apply(useAuthStore.getState().authState);
     useAuthStore.subscribe((state) => this.apply(state.authState));
