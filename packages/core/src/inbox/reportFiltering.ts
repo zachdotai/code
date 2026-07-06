@@ -33,7 +33,13 @@ export const INBOX_DISMISSED_STATUS_FILTER = "suppressed,resolved";
 export const INBOX_PULL_REQUEST_STATUS_FILTER = "ready";
 
 /** Polling interval for inbox queries while the Electron window is focused. */
-export const INBOX_REFETCH_INTERVAL_MS = 3000;
+/**
+ * Background freshness for inbox queries. The local-first engine's
+ * inbox_reports pool (15s pull, see `inboxSync.ts`) is the primary freshness
+ * source; these query refetches are a slow safety net for the filtered and
+ * paginated views that still fetch server-side.
+ */
+export const INBOX_REFETCH_INTERVAL_MS = 30_000;
 
 function normalizeReviewerId(value: string): string {
   return value.trim();

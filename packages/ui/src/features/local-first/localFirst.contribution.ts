@@ -1,4 +1,5 @@
 import type { AuthState } from "@posthog/core/auth/schemas";
+import { registerInboxSync } from "@posthog/core/inbox/inboxSync";
 import type { EntityRegistry } from "@posthog/core/local-store/entityRegistry";
 import { ENTITY_REGISTRY } from "@posthog/core/local-store/identifiers";
 import { OUTBOX } from "@posthog/core/local-store/outbox/identifiers";
@@ -67,6 +68,7 @@ export class LocalFirstBootContribution implements Contribution {
       this.clientProvider,
       this.prStatusClient,
     );
+    registerInboxSync(this.registry, this.engine, this.clientProvider);
 
     this.outbox.events.on("parked", ({ entry, error }) => {
       this.log.warn(`write parked (${entry.collection}/${entry.op})`, error);

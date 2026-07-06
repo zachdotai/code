@@ -119,6 +119,11 @@ export class ApplyPipeline {
       this.windowHashes.set(hashKey, hash);
     }
 
+    // A row upserted by ANY window in this batch exists — a sibling window's
+    // sweep must not delete it (e.g. a report moving pipeline → archived).
+    const upsertIds = new Set(upserts.map((row) => row.id));
+    const confirmedDeletes = deletes.filter((id) => !upsertIds.has(id));
+
     if (upserts.length > 0) {
       // Pools show rebased state (pending local edits win); model tables get
       // the raw acknowledged rows.
@@ -126,10 +131,10 @@ export class ApplyPipeline {
         persistRows: upserts,
       });
     }
-    if (deletes.length > 0) pool.applyDeletes(deletes);
+    if (confirmedDeletes.length > 0) pool.applyDeletes(confirmedDeletes);
     if (!pool.store.getState().hydrated) pool.markHydrated();
 
-    return { collection, upserts, deletes };
+    return { collection, upserts, deletes: confirmedDeletes };
   }
 
   /**
