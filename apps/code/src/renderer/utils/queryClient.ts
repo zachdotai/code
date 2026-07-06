@@ -1,4 +1,3 @@
-import type { Task } from "@posthog/shared/domain-types";
 import { focusManager, QueryClient } from "@tanstack/react-query";
 
 export const queryClient = new QueryClient({
@@ -31,10 +30,3 @@ focusManager.setEventListener((handleFocus) => {
     document.removeEventListener("visibilitychange", onVisibilityChange);
   };
 });
-
-export function getCachedTask(taskId: string): Task | undefined {
-  return queryClient
-    .getQueriesData<Task[]>({ queryKey: ["tasks", "list"] })
-    .flatMap(([, tasks]) => tasks ?? [])
-    .find((t) => t.id === taskId);
-}

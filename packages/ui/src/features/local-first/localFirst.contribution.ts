@@ -96,6 +96,13 @@ export class LocalFirstBootContribution implements Contribution {
       clearTokenCache();
       this.apply(state.authState);
     });
+
+    // Freshness on return: one engine sweep on window focus and on network
+    // reconnect replaces the per-query focus-refetch storms.
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", () => this.engine.pokeAll());
+      window.addEventListener("online", () => this.engine.pokeAll());
+    }
   }
 
   private apply(authState: AuthState): void {

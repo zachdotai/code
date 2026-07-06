@@ -66,7 +66,10 @@ function App({ devToolbar }: AppProps) {
     client: authenticatedClient,
     enabled:
       isAuthenticated && hasCompletedOnboarding && hasCodeAccess === true,
-    refetchOnWindowFocus: "always",
+    // `true` (not "always"): non-stale user data re-renders nothing on the
+    // constant Electron focus/blur churn; the sync engine owns domain
+    // freshness on refocus via its focus sweep.
+    refetchOnWindowFocus: true,
   });
   const currentOrg = currentUser?.organization;
   const needsAiApproval =
