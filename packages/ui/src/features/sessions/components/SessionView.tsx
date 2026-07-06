@@ -247,8 +247,16 @@ export function SessionView({
       isCloud,
       allowBypassPermissions,
       currentModeId,
+      modeOption,
     });
-  }, [allowBypassPermissions, currentModeId, taskId, isCloud, sessionService]);
+  }, [
+    allowBypassPermissions,
+    currentModeId,
+    taskId,
+    isCloud,
+    sessionService,
+    modeOption,
+  ]);
 
   const handleModeChange = useCallback(
     (nextMode: string) => {
