@@ -1,7 +1,6 @@
 # Release-critical files: edits here can reshape or bypass the npm publish
 # approval gate, so they require review by the release owners.
-# TODO(ops): replace @PostHog/team-array with the team that owns agent releases.
-/.github/CODEOWNERS @PostHog/team-array
-/.github/workflows/agent-release.yml @PostHog/team-array
-/.changeset/config.json @PostHog/team-array
-/packages/agent/package.json @PostHog/team-array
+/.github/CODEOWNERS @PostHog/team-posthog-code
+/.github/workflows/agent-release.yml @PostHog/team-posthog-code
+/.changeset/config.json @PostHog/team-posthog-code
+/packages/agent/package.json @PostHog/team-posthog-code
