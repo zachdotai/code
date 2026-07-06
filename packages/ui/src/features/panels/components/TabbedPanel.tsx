@@ -1,6 +1,17 @@
 import { useDroppable } from "@dnd-kit/react";
-import { Globe, Plus, SquareSplitHorizontalIcon } from "@phosphor-icons/react";
+import {
+  Globe,
+  Plus,
+  SquareSplitHorizontalIcon,
+  Terminal,
+} from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@posthog/quill";
 import { useBrowserEnabled } from "@posthog/ui/features/browser/BrowserPanel";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
@@ -32,7 +43,9 @@ const hiddenTabStyle: React.CSSProperties = {
 interface TabBarButtonProps {
   ariaLabel: string;
   dataAttr?: string;
-  onClick: () => void;
+  // Optional so the button can serve as a DropdownMenuTrigger render target,
+  // where the trigger injects its own click handling.
+  onClick?: () => void;
   children: React.ReactNode;
 }
 
@@ -207,7 +220,9 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {content.droppable && onAddTab && (
+            {/* With only one addable kind a menu is pointless — the "+" adds
+                a terminal directly, as it always has. */}
+            {content.droppable && onAddTab && !browserEnabled && (
               <Tooltip content="New terminal" side="bottom">
                 <TabBarButton
                   ariaLabel="Add terminal"
@@ -219,15 +234,36 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
               </Tooltip>
             )}
             {content.droppable && onAddTab && browserEnabled && (
-              <Tooltip content="New browser tab" side="bottom">
-                <TabBarButton
-                  ariaLabel="Add browser tab"
-                  dataAttr="panel-add-browser-tab"
-                  onClick={() => onAddTab("browser")}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <TabBarButton ariaLabel="Add tab" dataAttr="panel-add-tab">
+                      <Plus size={14} />
+                    </TabBarButton>
+                  }
+                />
+                <DropdownMenuContent
+                  align="start"
+                  side="bottom"
+                  sideOffset={4}
+                  className="min-w-[140px]"
                 >
-                  <Globe size={14} />
-                </TabBarButton>
-              </Tooltip>
+                  <DropdownMenuItem
+                    data-attr="panel-add-terminal"
+                    onClick={() => onAddTab("terminal")}
+                  >
+                    <Terminal size={14} />
+                    Terminal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    data-attr="panel-add-browser-tab"
+                    onClick={() => onAddTab("browser")}
+                  >
+                    <Globe size={14} />
+                    Browser
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {/* Spacer to increase DND area */}
             {content.droppable && (
