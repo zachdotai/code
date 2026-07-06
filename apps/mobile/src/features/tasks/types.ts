@@ -96,6 +96,10 @@ export interface SessionNotificationAttachment {
 export interface SessionNotification {
   update?: {
     sessionUpdate?: string;
+    // Present on "usage_update" notifications: running context-window usage.
+    used?: number;
+    size?: number;
+    cost?: { amount: number; currency: string } | null;
     content?: { type: string; text: string };
     // Sidecar carrying user-uploaded attachments on user_message_chunk events.
     // The wire format embeds the bytes themselves in a separate serialized

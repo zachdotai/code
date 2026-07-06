@@ -31,12 +31,14 @@ import {
   type ReasoningEffort,
 } from "@/features/tasks/composer/options";
 import { QueuedMessagesDock } from "@/features/tasks/composer/QueuedMessagesDock";
+import { StaleConversationCostNotice } from "@/features/tasks/composer/StaleConversationCostNotice";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
 import {
   useMessagingMode,
   useQueuedCount,
   useToggleMessagingMode,
 } from "@/features/tasks/hooks/useMessagingMode";
+import { useStaleConversationGate } from "@/features/tasks/hooks/useStaleConversationGate";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
 import {
   type QueuedMessage,
@@ -48,7 +50,7 @@ import {
 } from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
-import type { Task } from "@/features/tasks/types";
+import type { SessionEvent, Task } from "@/features/tasks/types";
 import { getSessionActivityPhase } from "@/features/tasks/utils/sessionActivity";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import {
@@ -60,6 +62,10 @@ import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-detail");
+
+// Stable reference so the stale-gate memos don't recompute while no session
+// has attached yet.
+const EMPTY_EVENTS: SessionEvent[] = [];
 
 function getFirstParam(value?: string | string[]): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -117,6 +123,13 @@ export default function TaskDetailScreen() {
   useActiveTaskAnalyticsContext(task?.signal_report ?? null);
 
   const session = taskId ? getSessionForTask(taskId) : undefined;
+
+  // Warn PostHog staff before continuing a large, idle conversation whose
+  // prompt cache has likely expired (see useStaleConversationGate).
+  const staleGate = useStaleConversationGate(
+    taskId,
+    session?.events ?? EMPTY_EVENTS,
+  );
 
   // Optimistic echo set by the new-task screen (or the terminal-resume path
   // below) so the user's prompt appears in the thread immediately, before
@@ -678,25 +691,36 @@ export default function TaskDetailScreen() {
               onDiscard={handleDiscardQueued}
             />
           ) : null}
-          <TaskChatComposer
-            onSend={handleSendPrompt}
-            restoredDraft={restoredDraft}
-            onStop={handleStop}
-            isUserTurn={!(session?.isPromptPending ?? true)}
-            placeholder={
-              session?.terminalStatus ? "Resume this task..." : "Ask a question"
-            }
-            initialMessage={initialComposerMessage}
-            mode={composerMode}
-            model={composerModel}
-            reasoning={composerReasoning}
-            onModeChange={handleModeChange}
-            onModelChange={handleModelChange}
-            onReasoningChange={handleReasoningChange}
-            messagingMode={messagingMode}
-            queuedCount={queuedCount}
-            onToggleMessagingMode={toggleMessagingMode}
-          />
+          {staleGate.active ? (
+            <StaleConversationCostNotice
+              usedTokens={staleGate.usedTokens}
+              lastActivityAt={staleGate.lastActivityAt}
+              costUsd={staleGate.costUsd}
+              onContinue={staleGate.onContinue}
+            />
+          ) : (
+            <TaskChatComposer
+              onSend={handleSendPrompt}
+              restoredDraft={restoredDraft}
+              onStop={handleStop}
+              isUserTurn={!(session?.isPromptPending ?? true)}
+              placeholder={
+                session?.terminalStatus
+                  ? "Resume this task..."
+                  : "Ask a question"
+              }
+              initialMessage={initialComposerMessage}
+              mode={composerMode}
+              model={composerModel}
+              reasoning={composerReasoning}
+              onModeChange={handleModeChange}
+              onModelChange={handleModelChange}
+              onReasoningChange={handleReasoningChange}
+              messagingMode={messagingMode}
+              queuedCount={queuedCount}
+              onToggleMessagingMode={toggleMessagingMode}
+            />
+          )}
         </Animated.View>
       </Animated.View>
     </View>
