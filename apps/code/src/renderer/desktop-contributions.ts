@@ -16,6 +16,7 @@ import { connectivityUiModule } from "@posthog/ui/features/connectivity/connecti
 import { discordPresenceUiModule } from "@posthog/ui/features/discord-presence/discordPresence.module";
 import { fileWatcherUiModule } from "@posthog/ui/features/file-watcher/file-watcher.module";
 import { focusUiModule } from "@posthog/ui/features/focus/focus.module";
+import { localFirstUiModule } from "@posthog/ui/features/local-first/local-first.module";
 import { notificationsUiModule } from "@posthog/ui/features/notifications/notifications.module";
 import { provisioningUiModule } from "@posthog/ui/features/provisioning/provisioning.module";
 import { setupUiModule } from "@posthog/ui/features/setup/setup.module";
@@ -41,6 +42,7 @@ export function registerDesktopContributions(): void {
     focusUiModule,
     githubConnectModule,
     inboxCoreModule,
+    localFirstUiModule,
     localStoreCoreModule,
     notificationsUiModule,
     onboardingModule,
