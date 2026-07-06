@@ -5,6 +5,7 @@ import {
   Globe,
   X,
 } from "@phosphor-icons/react";
+import { Button } from "@posthog/quill";
 import { BROWSER_TAB_FLAG } from "@posthog/shared/constants";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { Box, Flex, Text } from "@radix-ui/themes";
@@ -204,25 +205,28 @@ export function BrowserPanel({
         px="2"
         className="h-[36px] shrink-0 border-b border-b-(--gray-6)"
       >
-        <NavButton
-          ariaLabel="Back"
-          dataAttr="browser-tab-back"
+        <Button
+          size="icon-sm"
+          aria-label="Back"
+          data-attr="browser-tab-back"
           disabled={!canGoBack}
           onClick={() => webviewRef.current?.goBack()}
         >
           <ArrowLeft size={14} />
-        </NavButton>
-        <NavButton
-          ariaLabel="Forward"
-          dataAttr="browser-tab-forward"
+        </Button>
+        <Button
+          size="icon-sm"
+          aria-label="Forward"
+          data-attr="browser-tab-forward"
           disabled={!canGoForward}
           onClick={() => webviewRef.current?.goForward()}
         >
           <ArrowRight size={14} />
-        </NavButton>
-        <NavButton
-          ariaLabel={isLoading ? "Stop loading" : "Reload"}
-          dataAttr="browser-tab-reload"
+        </Button>
+        <Button
+          size="icon-sm"
+          aria-label={isLoading ? "Stop loading" : "Reload"}
+          data-attr="browser-tab-reload"
           onClick={() =>
             isLoading
               ? webviewRef.current?.stop()
@@ -230,7 +234,7 @@ export function BrowserPanel({
           }
         >
           {isLoading ? <X size={14} /> : <ArrowClockwise size={14} />}
-        </NavButton>
+        </Button>
         <form onSubmit={onSubmit} className="ml-1 flex-1">
           <input
             aria-label="Address"
@@ -280,34 +284,5 @@ export function BrowserPanel({
         />
       </Box>
     </Flex>
-  );
-}
-
-interface NavButtonProps {
-  ariaLabel: string;
-  dataAttr: string;
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}
-
-function NavButton({
-  ariaLabel,
-  dataAttr,
-  onClick,
-  disabled,
-  children,
-}: NavButtonProps) {
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      data-attr={dataAttr}
-      onClick={onClick}
-      disabled={disabled}
-      className="flex h-[24px] w-[24px] cursor-pointer items-center justify-center rounded-(--radius-2) border-0 bg-transparent text-(--gray-11) hover:bg-(--gray-4) disabled:cursor-default disabled:opacity-40"
-    >
-      {children}
-    </button>
   );
 }

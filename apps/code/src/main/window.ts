@@ -122,12 +122,15 @@ function setupExternalLinkHandlers(window: BrowserWindow): void {
 
 // The authoritative gate for the in-app browser guest: main process, where a
 // guest page can't route around it. The renderer's normalizeAddress is only a
-// convenience on top of this.
+// convenience on top of this. "about:" is allowed solely for about:blank —
+// the src a new blank browser tab mounts with before the user enters a url.
 const ALLOWED_WEBVIEW_SCHEMES = new Set(["http:", "https:", "about:"]);
 
-// The link-local range (incl. cloud metadata 169.254.169.254) can hand out
-// instance credentials. Loopback and LAN are deliberately allowed — reaching a
-// local dev server is a first-class use of a coding tool's browser.
+// Blocks the IPv4 link-local range 169.254.0.0/16. On cloud VMs, requests to
+// 169.254.169.254 hit the instance-metadata endpoint, which returns IAM /
+// service-account credentials to any local caller — a hostile page redirecting
+// the webview there could exfiltrate them. Loopback and LAN are deliberately
+// allowed: browsing a local dev server is a first-class use of this browser.
 function isBlockedWebviewHost(hostname: string): boolean {
   return /^169\.254\./.test(hostname);
 }
@@ -169,18 +172,23 @@ const DENIED_WEBVIEW_PERMISSIONS = new Set([
   "openExternal", // popups are already routed through our own handler
 ]);
 
-// setPermissionRequestHandler replaces (not composes with) any previous
-// handler on the session, and guests share one persisted session — install
-// once per session so a future per-guest divergence can't silently drop an
-// earlier handler.
+// Every browser webview shares the one persist:browser session, and Electron's
+// setPermissionRequestHandler REPLACES the session's previous handler rather
+// than stacking. Re-installing on every webview attach would mean the latest
+// attach silently wins; this WeakSet makes installation once-per-session so
+// that can never happen.
 const hardenedWebviewSessions = new WeakSet<Electron.Session>();
 
 function hardenWebviewSession(session: Electron.Session): void {
   if (hardenedWebviewSessions.has(session)) return;
   hardenedWebviewSessions.add(session);
 
-  // Deny at both request time (prompts) and check time (sync fast-paths like
-  // navigator.permissions.query).
+  // Chromium consults two hooks when a page uses a permission-gated API:
+  // setPermissionRequestHandler decides explicit requests (the ones that would
+  // show a prompt, e.g. getUserMedia), and setPermissionCheckHandler answers
+  // synchronous status probes (navigator.permissions.query). Both must deny
+  // the same list, otherwise a page could see "granted" via the check path
+  // while actual requests are refused, or vice versa.
   session.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(!DENIED_WEBVIEW_PERMISSIONS.has(permission));
   });
