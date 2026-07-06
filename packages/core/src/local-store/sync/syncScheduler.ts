@@ -12,6 +12,7 @@ import { syncStatusSetters } from "./syncStatusStore";
 
 const MAX_BACKOFF_MS = 5 * 60_000;
 const JITTER_RATIO = 0.15;
+const OFFLINE_RECHECK_MS = 5_000;
 
 interface ScheduledSource {
   source: DeltaSource<SyncedEntity>;
@@ -103,6 +104,14 @@ export class SyncScheduler {
 
   private async tick(entry: ScheduledSource): Promise<void> {
     if (!this.started || entry.running) return;
+    // Offline: don't burn retries on pulls that can't succeed. Reads keep
+    // serving from pools; the host pokes a full sweep on reconnect. (Probed
+    // via globalThis — core has no DOM lib; non-browser hosts report online.)
+    const nav = (globalThis as { navigator?: { onLine?: boolean } }).navigator;
+    if (nav?.onLine === false) {
+      this.runSoon(entry, OFFLINE_RECHECK_MS);
+      return;
+    }
     entry.running = true;
     const { collection } = entry.source;
     syncStatusSetters.markSyncing(collection);
