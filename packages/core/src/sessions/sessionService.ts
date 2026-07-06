@@ -99,10 +99,12 @@ const MAX_SUPERSEDED_RUN_IDS = 100;
  * Streamed events are buffered and flushed on this cadence so a burst of tokens
  * coalesces into one processing pass (and roughly one render) instead of one
  * per event. Electron IPC delivers each event as its own task, so a microtask
- * flush wouldn't batch across them — a short timer does. One frame is
- * imperceptible for streamed text.
+ * flush wouldn't batch across them — a short timer does. Two-to-three frames
+ * is imperceptible for streamed text, and models routinely emit faster than
+ * 60fps — a one-frame window filled every frame, re-rendering every store
+ * subscriber at 60Hz during streams.
  */
-const SESSION_EVENT_FLUSH_MS = 16;
+const SESSION_EVENT_FLUSH_MS = 40;
 /**
  * A backgrounded session's transcript is freed this long after it stops being
  * viewed, and reloaded from disk on return. Only disconnected (idle, no live

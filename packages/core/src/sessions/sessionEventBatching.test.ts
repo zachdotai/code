@@ -4,7 +4,8 @@ import { SessionService, type SessionServiceDeps } from "./sessionService";
 
 const TASK_ID = "task-1";
 const RUN_ID = "run-1";
-const FLUSH_MS = 16;
+// Mirrors SESSION_EVENT_FLUSH_MS in sessionService.ts.
+const FLUSH_MS = 40;
 
 /** A plain streamed agent-message chunk — the common per-token event that just
  * gets appended to the transcript. */
