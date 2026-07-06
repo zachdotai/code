@@ -127,7 +127,10 @@ import type { URL_LAUNCHER_SERVICE } from "@posthog/platform/url-launcher";
 import type { WORKSPACE_SETTINGS_SERVICE } from "@posthog/platform/workspace-settings";
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
 import type { DatabaseService } from "@posthog/workspace-server/db/service";
-import type { GIT_SERVICE as WS_GIT_SERVICE } from "@posthog/workspace-server/di/tokens";
+import type {
+  BROWSER_TABS_SERVICE,
+  GIT_SERVICE as WS_GIT_SERVICE,
+} from "@posthog/workspace-server/di/tokens";
 import type { AgentService } from "@posthog/workspace-server/services/agent/agent";
 import type {
   AGENT_AUTH,
@@ -147,6 +150,7 @@ import type {
 } from "@posthog/workspace-server/services/archive/ports";
 import type { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
 import type { AuthProxyAuth } from "@posthog/workspace-server/services/auth-proxy/ports";
+import type { IBrowserTabsService } from "@posthog/workspace-server/services/browser-tabs/service";
 import type {
   ENRICHMENT_AUTH,
   ENRICHMENT_FILE_READER,
@@ -490,4 +494,5 @@ export interface MainBindings {
   [UI_SERVICE]: UIService;
   [MCP_APPS_SERVICE]: McpAppsService;
   [SUSPENSION_SERVICE]: SuspensionService;
+  [BROWSER_TABS_SERVICE]: IBrowserTabsService;
 }

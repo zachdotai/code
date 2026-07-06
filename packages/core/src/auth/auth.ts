@@ -76,6 +76,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private state: AuthState = {
     status: "anonymous",
     bootstrapComplete: false,
+    accountKey: null,
     cloudRegion: null,
     orgProjectsMap: {},
     currentOrgId: null,
@@ -456,6 +457,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     this.updateState({
       status: "restoring",
       bootstrapComplete,
+      accountKey: null,
       cloudRegion: storedSession.cloudRegion,
       orgProjectsMap: {},
       currentOrgId: null,
@@ -776,6 +778,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     this.updateState({
       status: "authenticated",
       bootstrapComplete: true,
+      accountKey: session.accountKey,
       cloudRegion: session.cloudRegion,
       orgProjectsMap: session.orgProjectsMap,
       currentOrgId: session.currentOrgId,
@@ -896,6 +899,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     this.updateState({
       status: "anonymous",
       bootstrapComplete: partial.bootstrapComplete ?? true,
+      accountKey: null,
       cloudRegion: partial.cloudRegion ?? null,
       orgProjectsMap: {},
       currentOrgId: null,

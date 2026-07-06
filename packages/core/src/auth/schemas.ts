@@ -74,6 +74,9 @@ export function pickInitialProjectId(args: {
 export const authStateSchema = z.object({
   status: authStatusSchema,
   bootstrapComplete: z.boolean(),
+  /** Stable id of the signed-in user (uuid > distinct_id > email); null when
+   * anonymous/restoring or when the user context could not be resolved. */
+  accountKey: z.string().nullable(),
   cloudRegion: cloudRegion.nullable(),
   orgProjectsMap: orgProjectsMapSchema,
   currentOrgId: z.string().nullable(),

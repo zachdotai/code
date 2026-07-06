@@ -185,24 +185,32 @@ export const authOrgProjectPreferences = sqliteTable(
  * per OS window (or web window). The primary window is never torn down by
  * closing its last tab; secondaries are.
  */
-export const browserWindows = sqliteTable("browser_windows", {
-  id: id(),
-  isPrimary: integer({ mode: "boolean" }).notNull().default(false),
-  /** Saved geometry for session restore, JSON {x,y,width,height}. Null on web. */
-  bounds: text({ mode: "json" }).$type<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null>(),
-  /** Focused tab in this window; null = channels landing. */
-  activeTabId: text(),
-  /** Ordering across windows for deterministic restore. */
-  position: integer().notNull().default(0),
-  /** Epoch ms. */
-  createdAt: integer().notNull(),
-  updatedAt: integer().notNull(),
-});
+export const browserWindows = sqliteTable(
+  "browser_windows",
+  {
+    id: id(),
+    /** Owning account, `<cloudRegion>:<accountKey>`. Null = pre-account rows
+     * from before tabs were per-user; claimed by the first login. Tabs inherit
+     * scope through their window FK. */
+    accountScope: text(),
+    isPrimary: integer({ mode: "boolean" }).notNull().default(false),
+    /** Saved geometry for session restore, JSON {x,y,width,height}. Null on web. */
+    bounds: text({ mode: "json" }).$type<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>(),
+    /** Focused tab in this window; null = channels landing. */
+    activeTabId: text(),
+    /** Ordering across windows for deterministic restore. */
+    position: integer().notNull().default(0),
+    /** Epoch ms. */
+    createdAt: integer().notNull(),
+    updatedAt: integer().notNull(),
+  },
+  (t) => [index("browser_windows_account_scope_idx").on(t.accountScope)],
+);
 
 /**
  * Open tabs in the Channels canvas surface. A tab references a canvas

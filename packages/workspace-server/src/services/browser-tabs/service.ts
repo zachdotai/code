@@ -21,6 +21,7 @@ const now = () => Date.now();
 export interface IBrowserTabsService {
   getSnapshot(): TabsSnapshot;
   getPrimaryWindowId(): string;
+  setAccountScope(accountScope: string | null): void;
   openOrFocus(
     input: TabTarget & {
       windowId: string;
@@ -51,6 +52,11 @@ export interface IBrowserTabsService {
  * one source of truth; changes fan out to all windows via the snapshot-change
  * subscription. Durable state is persisted through the repository; the
  * back/forward action timeline is per-renderer and lives in the UI, not here.
+ *
+ * Tab strips are tied to the signed-in user: the host feeds auth changes in
+ * via `setAccountScope`, and each scope change swaps the live snapshot to
+ * that account's persisted tabs. With no scope (signed out) tabs are
+ * memory-only, so no account's persisted tabs are read or overwritten.
  */
 @injectable()
 export class BrowserTabsService
@@ -58,6 +64,7 @@ export class BrowserTabsService
   implements IBrowserTabsService
 {
   private snapshot: TabsSnapshot;
+  private accountScope: string | null = null;
 
   constructor(
     @inject(BROWSER_TABS_REPOSITORY)
@@ -65,10 +72,30 @@ export class BrowserTabsService
   ) {
     super();
     this.setMaxListeners(0);
-    const loaded = this.repo.load();
+    this.snapshot = this.ensurePrimaryWindow({ windows: [], tabs: [] });
+  }
+
+  /**
+   * Point the service at an account's persisted tabs (null = signed out,
+   * memory-only). Loads that account's snapshot — adopting any pre-account
+   * rows on its first login — and fans the change out to every window.
+   */
+  setAccountScope(accountScope: string | null): void {
+    if (accountScope === this.accountScope) return;
+    this.accountScope = accountScope;
+
+    if (accountScope === null) {
+      this.snapshot = this.ensurePrimaryWindow({ windows: [], tabs: [] });
+      this.emit(BrowserTabsEvent.SnapshotChange, this.snapshot);
+      return;
+    }
+
+    this.repo.claimUnscoped(accountScope);
+    const loaded = this.repo.load(accountScope);
     const seeded = this.ensurePrimaryWindow(loaded);
-    if (seeded !== loaded) this.repo.save(seeded);
+    if (seeded !== loaded) this.repo.save(accountScope, seeded);
     this.snapshot = seeded;
+    this.emit(BrowserTabsEvent.SnapshotChange, this.snapshot);
   }
 
   /** Guarantee a primary window exists so the first open has somewhere to land. */
@@ -164,7 +191,7 @@ export class BrowserTabsService
 
   private commit(next: TabsSnapshot): TabsSnapshot {
     this.snapshot = next;
-    this.repo.save(next);
+    if (this.accountScope !== null) this.repo.save(this.accountScope, next);
     this.emit(BrowserTabsEvent.SnapshotChange, next);
     return next;
   }

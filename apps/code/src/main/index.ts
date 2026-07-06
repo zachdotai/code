@@ -9,6 +9,8 @@ import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
 import type { AuthService } from "@posthog/core/auth/auth";
+import { getAccountScopeKey } from "@posthog/core/auth/authIdentity";
+import { AuthServiceEvent } from "@posthog/core/auth/schemas";
 import { focusHostModule } from "@posthog/core/focus/focus-host.module";
 import {
   FOCUS_SESSION_STORE,
@@ -38,6 +40,8 @@ import { ENVIRONMENT_CLIENT } from "@posthog/host-router/ports/environment-clien
 import { FILE_WATCHER_CONTROL } from "@posthog/host-router/ports/file-watcher-control";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { DatabaseService } from "@posthog/workspace-server/db/service";
+import { BROWSER_TABS_SERVICE } from "@posthog/workspace-server/di/tokens";
+import type { IBrowserTabsService } from "@posthog/workspace-server/services/browser-tabs/service";
 import type { ExternalAppsService } from "@posthog/workspace-server/services/external-apps/external-apps";
 import {
   FS_SERVICE,
@@ -266,6 +270,16 @@ async function initializeServices(): Promise<void> {
   container.get<PosthogPluginService>(POSTHOG_PLUGIN_SERVICE);
   // Eagerly start the Discord presence service so it connects when enabled.
   container.get<DiscordPresenceService>(DISCORD_PRESENCE_SERVICE);
+
+  // Tie the Channels tab strips to the signed-in user: each auth change
+  // repoints the tabs service at that account's persisted tabs. "restoring"
+  // is skipped so a slow session restore doesn't flash the signed-out state.
+  const browserTabsService =
+    container.get<IBrowserTabsService>(BROWSER_TABS_SERVICE);
+  authService.on(AuthServiceEvent.StateChanged, (state) => {
+    if (state.status === "restoring") return;
+    browserTabsService.setAccountScope(getAccountScopeKey(state));
+  });
 
   await authService.initialize();
 

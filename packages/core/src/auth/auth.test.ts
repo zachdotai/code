@@ -236,6 +236,7 @@ describe("AuthService", () => {
     expect(service.getState()).toEqual({
       status: "anonymous",
       bootstrapComplete: true,
+      accountKey: null,
       cloudRegion: null,
       orgProjectsMap: {},
       currentOrgId: null,
@@ -257,6 +258,7 @@ describe("AuthService", () => {
     expect(service.getState()).toEqual({
       status: "anonymous",
       bootstrapComplete: true,
+      accountKey: null,
       cloudRegion: "us",
       orgProjectsMap: {},
       currentOrgId: null,
@@ -291,6 +293,7 @@ describe("AuthService", () => {
     expect(service.getState()).toMatchObject({
       status: "authenticated",
       bootstrapComplete: true,
+      accountKey: "user-1",
       cloudRegion: "us",
       orgProjectsMap: {
         "org-1": {

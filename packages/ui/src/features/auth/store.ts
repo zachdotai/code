@@ -7,6 +7,7 @@ export { getAuthIdentity };
 export const ANONYMOUS_AUTH_STATE: AuthState = {
   status: "anonymous",
   bootstrapComplete: false,
+  accountKey: null,
   cloudRegion: null,
   orgProjectsMap: {},
   currentOrgId: null,
