@@ -2,7 +2,9 @@ import {
   BRAINROT_CELL,
   clampZoom,
   getCellCount,
+  isBrowserCell,
   type LayoutPreset,
+  makeBrowserCellValue,
   makeTerminalCellValue,
   resizeCells,
   ZOOM_STEP,
@@ -35,6 +37,8 @@ interface CommandCenterStoreActions {
   assignTask: (cellIndex: number, taskId: string) => void;
   setBrainrotCell: (cellIndex: number) => void;
   setTerminalCell: (cellIndex: number, terminalId: string) => void;
+  setBrowserCell: (cellIndex: number, url: string) => void;
+  updateBrowserCellUrl: (cellIndex: number, url: string) => void;
   autofillCells: (taskIds: string[]) => void;
   clearCell: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
@@ -130,6 +134,31 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
             creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
             hasAutofilled: true,
           };
+        }),
+
+      setBrowserCell: (cellIndex, url) =>
+        set((state) => {
+          if (cellIndex < 0 || cellIndex >= state.cells.length) return state;
+          const cells = [...state.cells];
+          cells[cellIndex] = makeBrowserCellValue(url);
+          return {
+            cells,
+            activeTaskId: null,
+            activeCellIndex: cellIndex,
+            creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
+            hasAutofilled: true,
+          };
+        }),
+
+      // Guarded so a stale navigation callback firing after the cell was
+      // replaced can't clobber whatever now occupies it.
+      updateBrowserCellUrl: (cellIndex, url) =>
+        set((state) => {
+          if (cellIndex < 0 || cellIndex >= state.cells.length) return state;
+          if (!isBrowserCell(state.cells[cellIndex])) return state;
+          const cells = [...state.cells];
+          cells[cellIndex] = makeBrowserCellValue(url);
+          return { cells };
         }),
 
       autofillCells: (taskIds) =>

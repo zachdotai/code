@@ -1,4 +1,4 @@
-import { Lightning, Plus, Terminal } from "@phosphor-icons/react";
+import { Globe, Lightning, Plus, Terminal } from "@phosphor-icons/react";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { Popover } from "@radix-ui/themes";
 import { type ReactNode, useCallback } from "react";
@@ -12,6 +12,7 @@ interface TaskSelectorProps {
   onOpenChange: (open: boolean) => void;
   onNewTask?: () => void;
   onNewTerminal?: () => void;
+  onNewBrowser?: () => void;
   onBrainrot?: () => void;
   children: ReactNode;
 }
@@ -22,6 +23,7 @@ export function TaskSelector({
   onOpenChange,
   onNewTask,
   onNewTerminal,
+  onNewBrowser,
   onBrainrot,
   children,
 }: TaskSelectorProps) {
@@ -36,24 +38,13 @@ export function TaskSelector({
     [assignTask, cellIndex, onOpenChange],
   );
 
-  const handleNewTask = useCallback(() => {
-    onOpenChange(false);
-    if (onNewTask) {
-      onNewTask();
-    } else {
-      openTaskInput();
-    }
-  }, [onOpenChange, onNewTask]);
-
-  const handleNewTerminal = useCallback(() => {
-    onOpenChange(false);
-    onNewTerminal?.();
-  }, [onOpenChange, onNewTerminal]);
-
-  const handleBrainrot = useCallback(() => {
-    onOpenChange(false);
-    onBrainrot?.();
-  }, [onOpenChange, onBrainrot]);
+  const closeAnd = useCallback(
+    (action: () => void) => () => {
+      onOpenChange(false);
+      action();
+    },
+    [onOpenChange],
+  );
 
   return (
     <Combobox.Root
@@ -95,7 +86,7 @@ export function TaskSelector({
               <button
                 type="button"
                 className="combobox-footer-button"
-                onClick={handleNewTask}
+                onClick={closeAnd(onNewTask ?? openTaskInput)}
               >
                 <Plus size={11} weight="bold" />
                 New task
@@ -104,17 +95,27 @@ export function TaskSelector({
                 <button
                   type="button"
                   className="combobox-footer-button"
-                  onClick={handleNewTerminal}
+                  onClick={closeAnd(onNewTerminal)}
                 >
                   <Terminal size={11} weight="bold" />
                   Terminal
+                </button>
+              )}
+              {onNewBrowser && (
+                <button
+                  type="button"
+                  className="combobox-footer-button"
+                  onClick={closeAnd(onNewBrowser)}
+                >
+                  <Globe size={11} weight="bold" />
+                  Browser
                 </button>
               )}
               {onBrainrot && (
                 <button
                   type="button"
                   className="combobox-footer-button"
-                  onClick={handleBrainrot}
+                  onClick={closeAnd(onBrainrot)}
                 >
                   <Lightning size={11} weight="bold" />
                   Brainrot
