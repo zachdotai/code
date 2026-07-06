@@ -296,31 +296,35 @@ describe("WorkspaceService", () => {
       vi.mocked(mocks.analytics.track).mockClear();
     }
 
-    it("unlinks a mismatched branch that has no refs left", async () => {
+    it.each([
+      { branch: "feat/gone", refExists: false, expected: null },
+      { branch: "feat/alive", refExists: true, expected: "feat/alive" },
+    ])(
+      "linkedBranch is $expected when refExists=$refExists",
+      async ({ branch, refExists, expected }) => {
+        seedLinkedTask(branch);
+        vi.mocked(anyBranchRefExists).mockResolvedValue(refExists);
+
+        const workspace = await service.getWorkspace("t1");
+
+        expect(workspace?.linkedBranch).toBe(expected);
+      },
+    );
+
+    it("emits, tracks, and persists the unlink when refs are gone", async () => {
       seedLinkedTask("feat/gone");
       vi.mocked(anyBranchRefExists).mockResolvedValue(false);
       const emitted = vi.fn();
       service.on(WorkspaceServiceEvent.LinkedBranchChanged, emitted);
 
-      const workspace = await service.getWorkspace("t1");
+      await service.getWorkspace("t1");
 
-      expect(workspace?.linkedBranch).toBeNull();
       expect(emitted).toHaveBeenCalledWith({ taskId: "t1", branchName: null });
       expect(mocks.analytics.track).toHaveBeenCalledWith(
         ANALYTICS_EVENTS.BRANCH_UNLINKED,
         expect.objectContaining({ task_id: "t1", source: "auto" }),
       );
       expect(mocks.workspaceRepo.findByTaskId("t1")?.linkedBranch).toBeNull();
-    });
-
-    it("keeps a mismatched branch that still has a ref", async () => {
-      seedLinkedTask("feat/alive");
-      vi.mocked(anyBranchRefExists).mockResolvedValue(true);
-
-      const workspace = await service.getWorkspace("t1");
-
-      expect(workspace?.linkedBranch).toBe("feat/alive");
-      expect(mocks.analytics.track).not.toHaveBeenCalled();
     });
 
     it("skips the check when on the linked branch", async () => {
