@@ -87,7 +87,7 @@ export function BrowserPanel({
   // src is set once so re-renders never reload the page; the value comes off
   // disk and must not be trusted as a raw src.
   const initialUrl = useRef(normalizeAddress(url));
-  const [address, setAddress] = useState(url || "");
+  const [address, setAddress] = useState(url === DEFAULT_URL ? "" : url);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -137,7 +137,7 @@ export function BrowserPanel({
       // Subframe navigations must not hijack the address bar or persisted url.
       if (ev.isMainFrame === false) return;
       const next = ev.url ?? webview.getURL();
-      setAddress(next);
+      setAddress(next === DEFAULT_URL ? "" : next);
       setCanGoBack(webview.canGoBack());
       setCanGoForward(webview.canGoForward());
       setLoadError(null);
@@ -235,6 +235,8 @@ export function BrowserPanel({
           <input
             aria-label="Address"
             data-attr="browser-tab-address"
+            // biome-ignore lint/a11y/noAutofocus: a blank tab exists only to type a url into
+            autoFocus={initialUrl.current === DEFAULT_URL}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             placeholder="Search or enter address"
