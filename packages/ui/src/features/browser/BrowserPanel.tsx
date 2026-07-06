@@ -22,9 +22,11 @@ interface WebviewElement extends HTMLElement {
   loadURL(url: string): Promise<void>;
   reload(): void;
   stop(): void;
-  // TODO: goBack/goForward/canGoBack/canGoForward are deprecated in Electron 41
-  // in favour of webContents.navigationHistory.*; migrate before an Electron
-  // bump removes them, otherwise the nav buttons silently no-op.
+  // The webContents.navigationHistory.* deprecation does not apply here: these
+  // are <webview> element methods, still non-deprecated in Electron 42, and the
+  // element exposes no navigationHistory. Revisit only if Electron deprecates
+  // the tag methods themselves (the fix would be a main-process hop, not a
+  // rename).
   goBack(): void;
   goForward(): void;
   canGoBack(): boolean;
