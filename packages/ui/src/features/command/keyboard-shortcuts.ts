@@ -30,6 +30,9 @@ export const SHORTCUTS = {
   SUBMIT_BLUR: "mod+enter",
   SWITCH_MESSAGING_MODE: "mod+s",
   RELOAD_WINDOW: "mod+shift+r",
+  ZOOM_IN: "mod+=",
+  ZOOM_OUT: "mod+-",
+  RESET_ZOOM: "mod+0",
 } as const;
 
 export type ShortcutCategory = "general" | "navigation" | "panels" | "editor";
@@ -67,6 +70,24 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     id: "shortcuts",
     keys: SHORTCUTS.SHORTCUTS_SHEET,
     description: "Show keyboard shortcuts",
+    category: "general",
+  },
+  {
+    id: "zoom-in",
+    keys: SHORTCUTS.ZOOM_IN,
+    description: "Zoom in",
+    category: "general",
+  },
+  {
+    id: "zoom-out",
+    keys: SHORTCUTS.ZOOM_OUT,
+    description: "Zoom out",
+    category: "general",
+  },
+  {
+    id: "reset-zoom",
+    keys: SHORTCUTS.RESET_ZOOM,
+    description: "Reset zoom",
     category: "general",
   },
   {
@@ -264,6 +285,8 @@ function formatKey(key: string): string {
   if (k === ",") return ",";
   if (k === "[") return "[";
   if (k === "]") return "]";
+  if (k === "=") return "+";
+  if (k === "-") return "-";
   if (k === "tab") return "Tab";
   return k.toUpperCase();
 }
