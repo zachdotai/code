@@ -32,6 +32,10 @@ See [docs/LOCAL-DEVELOPMENT.md](./docs/LOCAL-DEVELOPMENT.md) for connecting to a
 - Add tests where they meaningfully improve confidence
 - Follow existing patterns and conventions in the areas you touch (see [AGENTS.md](./AGENTS.md) for architecture rules and code style)
 
+## Merging
+
+PRs merge into `main` exclusively through the Trunk merge queue -- comment `/trunk merge` on an approved, green PR rather than using the GitHub merge button. See [docs/merge-queue.md](./docs/merge-queue.md).
+
 ## What to expect
 
 - PRs are triaged and assigned to the relevant team

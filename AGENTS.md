@@ -251,3 +251,4 @@ See [docs/testing.md](./docs/testing.md).
 - [docs/LOCAL-DEVELOPMENT.md](./docs/LOCAL-DEVELOPMENT.md)
 - [docs/UPDATES.md](./docs/UPDATES.md)
 - [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
+- [docs/merge-queue.md](./docs/merge-queue.md)
