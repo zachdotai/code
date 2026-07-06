@@ -33,7 +33,7 @@ gh pr comment <number> --body "/trunk cancel"   # cancel
 Check the queue status without leaving the terminal:
 
 ```bash
-gh api repos/PostHog/code/commits/$(gh pr view <number> --json headRefOid -q .headRefOid)/check-runs \
+gh api repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/commits/$(gh pr view <number> --json headRefOid -q .headRefOid)/check-runs \
   --jq '.check_runs[] | select(.name | startswith("Trunk Merge Queue")) | {status, conclusion, details_url}'
 ```
 
