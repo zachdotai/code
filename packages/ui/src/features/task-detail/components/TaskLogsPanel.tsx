@@ -14,10 +14,10 @@ import { useSessionConnection } from "../../sessions/hooks/useSessionConnection"
 import { useSessionViewState } from "../../sessions/hooks/useSessionViewState";
 import { useRestoreTask } from "../../suspension/useRestoreTask";
 import { useSuspendedTaskIds } from "../../suspension/useSuspendedTaskIds";
-import { useBranchMismatchDialog } from "../../workspace/useBranchMismatchDialog";
+import { useBranchMismatchBanner } from "../../workspace/useBranchMismatchBanner";
 import { useWorkspaceLoaded } from "../../workspace/useWorkspace";
 import { useCreateWorkspace } from "../../workspace/useWorkspaceMutations";
-import { BranchMismatchDialog } from "../BranchMismatchDialog";
+import { BranchMismatchBanner } from "../BranchMismatchBanner";
 import { WorkspaceSetupPrompt } from "./WorkspaceSetupPrompt";
 
 interface TaskLogsPanelProps {
@@ -80,11 +80,7 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     handleBashCommand,
   } = useSessionCallbacks({ taskId, task, session, repoPath });
 
-  const { handleBeforeSubmit, dialogProps } = useBranchMismatchDialog({
-    taskId,
-    repoPath,
-    onSendPrompt: handleSendPrompt,
-  });
+  const branchMismatchBanner = useBranchMismatchBanner({ taskId, repoPath });
 
   const slackThreadUrl =
     typeof task.latest_run?.state?.slack_thread_url === "string"
@@ -166,7 +162,6 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
               isRestoring={isRestoring}
               isPromptPending={isPromptPending}
               promptStartedAt={promptStartedAt}
-              onBeforeSubmit={handleBeforeSubmit}
               onSendPrompt={handleSendPrompt}
               onBashCommand={isCloud ? undefined : handleBashCommand}
               onCancelPrompt={handleCancelPrompt}
@@ -183,12 +178,15 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
               isCloud={isCloud}
               cloudStatus={cloudStatus}
               slackThreadUrl={slackThreadUrl}
+              composerNotice={
+                branchMismatchBanner ? (
+                  <BranchMismatchBanner {...branchMismatchBanner} />
+                ) : undefined
+              }
             />
           </ErrorBoundary>
         </Box>
       </Flex>
-
-      {dialogProps && <BranchMismatchDialog {...dialogProps} />}
     </BackgroundWrapper>
   );
 }

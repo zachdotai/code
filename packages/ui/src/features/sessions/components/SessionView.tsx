@@ -94,6 +94,8 @@ interface SessionViewProps {
   isActiveSession?: boolean;
   /** Hide the message input and permission UI — log-only view. */
   hideInput?: boolean;
+  /** Ambient notice rendered above the composer (e.g. branch mismatch). */
+  composerNotice?: React.ReactNode;
 }
 
 const DEFAULT_ERROR_MESSAGE =
@@ -218,6 +220,7 @@ export function SessionView({
   compact = false,
   isActiveSession = true,
   hideInput = false,
+  composerNotice,
 }: SessionViewProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   useSessionEventsResidency(taskId);
@@ -622,6 +625,21 @@ export function SessionView({
                 {!useNewChatThread && <SessionResourcesBar events={events} />}
 
                 <PlanStatusBar plan={latestPlan} />
+
+                {!hideInput && composerNotice && (
+                  <Box
+                    className={
+                      compact
+                        ? "shrink-0 px-1 pt-1"
+                        : "mx-auto w-full shrink-0 px-2 pt-2"
+                    }
+                    style={
+                      compact ? undefined : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
+                    }
+                  >
+                    {composerNotice}
+                  </Box>
+                )}
 
                 {hasError && !showInlineBanner ? (
                   <Flex

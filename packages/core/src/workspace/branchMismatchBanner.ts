@@ -4,10 +4,10 @@ import {
   type BranchMismatchWarningShownProperties,
 } from "@posthog/shared";
 
-export type BranchMismatchDialogAction =
+export type BranchMismatchBannerAction =
   | "switch"
-  | "continue"
-  | "cancel"
+  | "relink"
+  | "dismiss"
   | "shown";
 
 export interface BranchMismatchContext {
@@ -22,6 +22,11 @@ export interface CheckoutBranchRequest {
   branchName: string;
 }
 
+export interface LinkBranchRequest {
+  taskId: string;
+  branchName: string;
+}
+
 export type BranchMismatchAnalyticsEvent =
   | {
       event: typeof ANALYTICS_EVENTS.BRANCH_MISMATCH_WARNING_SHOWN;
@@ -32,12 +37,8 @@ export type BranchMismatchAnalyticsEvent =
       properties: BranchMismatchActionProperties;
     };
 
-export function decideBeforeSubmit(shouldWarn: boolean): boolean {
-  return !shouldWarn;
-}
-
 export function buildBranchMismatchAnalyticsEvent(
-  action: BranchMismatchDialogAction,
+  action: BranchMismatchBannerAction,
   context: BranchMismatchContext,
 ): BranchMismatchAnalyticsEvent | null {
   const { taskId, linkedBranch, currentBranch, hasUncommittedChanges } =
@@ -79,6 +80,19 @@ export function buildCheckoutBranchRequest(
   return { directoryPath: repoPath, branchName: linkedBranch };
 }
 
-export function resolveSwitchErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Failed to switch branch";
+export function buildLinkBranchRequest(
+  taskId: string,
+  currentBranch: string | null,
+): LinkBranchRequest | null {
+  if (!currentBranch) {
+    return null;
+  }
+  return { taskId, branchName: currentBranch };
+}
+
+export function resolveBranchMismatchError(
+  error: unknown,
+  fallback: string,
+): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }

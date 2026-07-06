@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildBranchMismatchAnalyticsEvent,
   buildCheckoutBranchRequest,
-  decideBeforeSubmit,
-  resolveSwitchErrorMessage,
-} from "./branchMismatchDialog";
+  buildLinkBranchRequest,
+  resolveBranchMismatchError,
+} from "./branchMismatchBanner";
 
 const context = {
   taskId: "task-1",
@@ -13,16 +13,6 @@ const context = {
   currentBranch: "main",
   hasUncommittedChanges: true,
 };
-
-describe("decideBeforeSubmit", () => {
-  it("allows submit when not warning", () => {
-    expect(decideBeforeSubmit(false)).toBe(true);
-  });
-
-  it("blocks submit when warning", () => {
-    expect(decideBeforeSubmit(true)).toBe(false);
-  });
-});
 
 describe("buildBranchMismatchAnalyticsEvent", () => {
   it("builds the warning-shown event", () => {
@@ -37,21 +27,24 @@ describe("buildBranchMismatchAnalyticsEvent", () => {
     });
   });
 
-  it("builds the action event", () => {
-    expect(buildBranchMismatchAnalyticsEvent("switch", context)).toEqual({
-      event: ANALYTICS_EVENTS.BRANCH_MISMATCH_ACTION,
-      properties: {
-        task_id: "task-1",
-        action: "switch",
-        linked_branch: "feat/foo",
-        current_branch: "main",
-      },
-    });
-  });
+  it.each(["switch", "relink", "dismiss"] as const)(
+    "builds the %s action event",
+    (action) => {
+      expect(buildBranchMismatchAnalyticsEvent(action, context)).toEqual({
+        event: ANALYTICS_EVENTS.BRANCH_MISMATCH_ACTION,
+        properties: {
+          task_id: "task-1",
+          action,
+          linked_branch: "feat/foo",
+          current_branch: "main",
+        },
+      });
+    },
+  );
 
   it("returns null without both branches", () => {
     expect(
-      buildBranchMismatchAnalyticsEvent("cancel", {
+      buildBranchMismatchAnalyticsEvent("dismiss", {
         ...context,
         linkedBranch: null,
       }),
@@ -76,14 +69,29 @@ describe("buildCheckoutBranchRequest", () => {
   });
 });
 
-describe("resolveSwitchErrorMessage", () => {
-  it("uses error message", () => {
-    expect(resolveSwitchErrorMessage(new Error("dirty worktree"))).toBe(
-      "dirty worktree",
-    );
+describe("buildLinkBranchRequest", () => {
+  it("builds the request", () => {
+    expect(buildLinkBranchRequest("task-1", "main")).toEqual({
+      taskId: "task-1",
+      branchName: "main",
+    });
   });
 
-  it("falls back for non-errors", () => {
-    expect(resolveSwitchErrorMessage("oops")).toBe("Failed to switch branch");
+  it("returns null without a current branch", () => {
+    expect(buildLinkBranchRequest("task-1", null)).toBeNull();
+  });
+});
+
+describe("resolveBranchMismatchError", () => {
+  it("uses the error message", () => {
+    expect(
+      resolveBranchMismatchError(new Error("dirty worktree"), "nope"),
+    ).toBe("dirty worktree");
+  });
+
+  it.each([["oops"], [new Error("")]])("falls back for %s", (error) => {
+    expect(resolveBranchMismatchError(error, "Failed to switch branch")).toBe(
+      "Failed to switch branch",
+    );
   });
 });

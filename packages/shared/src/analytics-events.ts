@@ -315,8 +315,10 @@ export interface TourEventProperties {
   total_steps?: number;
 }
 
-// Branch mismatch events
-type BranchMismatchAction = "switch" | "continue" | "cancel";
+// Branch mismatch events. The banner replaced the blocking dialog: "relink"
+// re-links the task to the current branch (was "continue"), "dismiss" hides
+// the banner for the session (was "cancel").
+type BranchMismatchAction = "switch" | "relink" | "dismiss";
 
 export interface BranchMismatchWarningShownProperties {
   task_id: string;
