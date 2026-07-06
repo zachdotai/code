@@ -444,12 +444,15 @@ jobs:
           REJECTED=$(echo "$RESPONSE" | jq '[.[] | select(.state == "rejected")] | length')
           if [ "$REJECTED" -gt 0 ]; then
             echo "was_rejected=true" >> "$GITHUB_OUTPUT"
-            COMMENT=$(echo "$RESPONSE" | jq -r '.[] | select(.state == "rejected") | .comment // empty' | head -1)
+            COMMENT=$(echo "$RESPONSE" | jq -r '[.[] | select(.state == "rejected") | .comment // empty] | first // empty')
             if [ -n "$COMMENT" ]; then
+              # Random delimiter so reviewer-controlled comment text can never
+              # terminate the heredoc early and truncate the output.
+              delimiter="msg_$(openssl rand -hex 16)"
               {
-                echo 'message<<EOF'
+                echo "message<<$delimiter"
                 echo "🚫 Release was rejected: $COMMENT"
-                echo 'EOF'
+                echo "$delimiter"
               } >> "$GITHUB_OUTPUT"
             else
               echo "message=🚫 Release was rejected." >> "$GITHUB_OUTPUT"
