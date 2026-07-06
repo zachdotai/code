@@ -1,19 +1,20 @@
+import type { SyncedEntity } from "@posthog/core/local-store/schemas";
+import type { ApplyPipeline } from "@posthog/core/local-store/sync/applyPipeline";
+import { APPLY_PIPELINE } from "@posthog/core/local-store/sync/identifiers";
 import {
   TASK_SERVICE,
   type TaskService,
 } from "@posthog/core/task-detail/taskService";
+import { TASKS_COLLECTION } from "@posthog/core/tasks/taskSync";
 import { useService } from "@posthog/di/react";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
-import type { Task } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
-import { taskKeys } from "@posthog/ui/features/tasks/taskKeys";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openTask as openTaskHelper } from "@posthog/ui/router/useOpenTask";
 import { logger } from "@posthog/ui/shell/logger";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 
 const log = logger.scope("open-task");
@@ -31,7 +32,7 @@ export function useHandleOpenTask(): (
 ) => Promise<void> {
   const taskService = useService<TaskService>(TASK_SERVICE);
   const { markAsViewed } = useTaskViewed();
-  const queryClient = useQueryClient();
+  const applyPipeline = useService<ApplyPipeline>(APPLY_PIPELINE);
 
   // A task filed to a Project Bluebird channel opens in the channel-organized
   // view under /website. Gate the channel fetches behind the flag.
@@ -67,17 +68,12 @@ export function useHandleOpenTask(): (
         }
 
         const { task } = result.data;
-        queryClient.setQueryData<Task[]>(taskKeys.list(), (old) => {
-          if (!old) return [task];
-          const existingIndex = old.findIndex((t) => t.id === task.id);
-          if (existingIndex >= 0) {
-            const updated = [...old];
-            updated[existingIndex] = task;
-            return updated;
-          }
-          return [task, ...old];
-        });
-        queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+        // Deep-linked tasks may not be synced yet (another user's task, a
+        // fresh create): acknowledge the fetched row straight into the pool.
+        applyPipeline.applyAcknowledged(
+          TASKS_COLLECTION,
+          task as unknown as SyncedEntity,
+        );
 
         markAsViewed(taskId);
         const channel = bluebirdEnabled
@@ -93,6 +89,6 @@ export function useHandleOpenTask(): (
         toast.error("Failed to open task");
       }
     },
-    [markAsViewed, queryClient, taskService, bluebirdEnabled],
+    [markAsViewed, applyPipeline, taskService, bluebirdEnabled],
   );
 }

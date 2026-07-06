@@ -1,3 +1,6 @@
+import type { EntityRegistry } from "@posthog/core/local-store/entityRegistry";
+import { ENTITY_REGISTRY } from "@posthog/core/local-store/identifiers";
+import { TASKS_COLLECTION } from "@posthog/core/tasks/taskSync";
 import { resolveService } from "@posthog/di/container";
 import { NotAuthenticatedError } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
@@ -26,13 +29,17 @@ export function taskDetailQuery(taskId: string) {
   });
 }
 
-// Read a task from the already-loaded sidebar list cache without fetching.
-// Lets the task-detail route loader resolve synchronously from cache.
+// Read a task from the local-first pool without fetching. Lets the
+// task-detail route loader resolve synchronously from local data.
 export function getCachedTask(taskId: string): Task | undefined {
-  return resolveService<ImperativeQueryClient>(IMPERATIVE_QUERY_CLIENT)
-    .getQueriesData<Task[]>({ queryKey: taskKeys.lists() })
-    .flatMap(([, tasks]) => tasks ?? [])
-    .find((t) => t.id === taskId);
+  try {
+    return resolveService<EntityRegistry>(ENTITY_REGISTRY)
+      .getPool(TASKS_COLLECTION)
+      .get(taskId) as unknown as Task | undefined;
+  } catch {
+    // Pool not registered yet (pre-boot loader) — fall back to fetching.
+    return undefined;
+  }
 }
 
 // Read the seeded task-detail cache entry (set by openTask) without fetching.

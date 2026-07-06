@@ -1,11 +1,23 @@
+import {
+  CHANNELS_COLLECTION,
+  TASK_CHANNELS_COLLECTION,
+} from "@posthog/core/canvas/channelsSync";
+import type { EntityRegistry } from "@posthog/core/local-store/entityRegistry";
+import { ENTITY_REGISTRY } from "@posthog/core/local-store/identifiers";
+import type { SyncedEntity } from "@posthog/core/local-store/schemas";
+import type { ApplyPipeline } from "@posthog/core/local-store/sync/applyPipeline";
+import {
+  APPLY_PIPELINE,
+  SYNC_ENGINE,
+} from "@posthog/core/local-store/sync/identifiers";
+import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
+import { useService } from "@posthog/di/react";
 import type { TaskChannel } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
-import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
-
-const TASK_CHANNELS_POLL_INTERVAL_MS = 30_000;
-export const TASK_CHANNELS_QUERY_KEY = ["task-channels"] as const;
+import { useStore } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 
 /** Name reserved for the personal channel; mirrors the backend constant. */
 export const PERSONAL_CHANNEL_NAME = "me";
@@ -18,24 +30,33 @@ export function normalizeChannelName(name: string): string {
 /**
  * Backend task channels — the feed/ownership side of a channel (the sidebar's
  * folder "channels" stay on the desktop file system for CONTEXT.md and
- * artifacts). Listing also lazily provisions the requester's #me channel.
+ * artifacts). Local-first: read from the synced pool; the channels source's
+ * list pull also lazily provisions the requester's #me channel.
  */
 export function useTaskChannels(): {
   channels: TaskChannel[];
   personalChannel: TaskChannel | undefined;
   isLoading: boolean;
 } {
-  const query = useAuthenticatedQuery<TaskChannel[]>(
-    TASK_CHANNELS_QUERY_KEY,
-    (client) => client.getTaskChannels(),
-    { refetchInterval: TASK_CHANNELS_POLL_INTERVAL_MS },
+  const registry = useService<EntityRegistry>(ENTITY_REGISTRY);
+  const pool = useMemo(
+    () => registry.getPool<SyncedEntity>(TASK_CHANNELS_COLLECTION),
+    [registry],
   );
-  const channels = useMemo(() => query.data ?? [], [query.data]);
+  const channels = useStore(
+    pool.store,
+    useShallow((state) =>
+      state.ids
+        .map((id) => state.entities[id] as unknown as TaskChannel)
+        .filter(Boolean),
+    ),
+  );
+  const hydrated = useStore(pool.store, (state) => state.hydrated);
   const personalChannel = useMemo(
     () => channels.find((c) => c.channel_type === "personal"),
     [channels],
   );
-  return { channels, personalChannel, isLoading: query.isLoading };
+  return { channels, personalChannel, isLoading: !hydrated };
 }
 
 /**
@@ -52,7 +73,8 @@ export function useBackendChannel(channelName: string | undefined): {
   const isPersonal = normalized === PERSONAL_CHANNEL_NAME;
   const { channels, personalChannel, isLoading } = useTaskChannels();
   const client = useOptionalAuthenticatedClient();
-  const queryClient = useQueryClient();
+  const engine = useService<SyncEngine>(SYNC_ENGINE);
+  const applyPipeline = useService<ApplyPipeline>(APPLY_PIPELINE);
 
   const existing = isPersonal
     ? personalChannel
@@ -61,21 +83,19 @@ export function useBackendChannel(channelName: string | undefined): {
       );
 
   // Resolve-or-create is a POST, so it runs as a mutation fired once per
-  // missing name — not a query TanStack would refire on focus/remount. The
-  // result is merged into the channels-list cache, which stops the effect.
+  // missing name. The result acknowledges into the pool, which stops the
+  // effect.
   const resolveMutation = useMutation({
     mutationFn: async (name: string) => {
       if (!client) throw new Error("Not authenticated");
       return client.resolveTaskChannel(name);
     },
     onSuccess: (channel) => {
-      queryClient.setQueryData<TaskChannel[]>(
-        TASK_CHANNELS_QUERY_KEY,
-        (prev) =>
-          prev?.some((c) => c.id === channel.id)
-            ? prev
-            : [...(prev ?? []), channel],
+      applyPipeline.applyAcknowledged(
+        TASK_CHANNELS_COLLECTION,
+        channel as unknown as SyncedEntity,
       );
+      engine.poke(CHANNELS_COLLECTION);
     },
   });
   const { mutate: resolve, isPending: isResolving } = resolveMutation;

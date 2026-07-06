@@ -1,11 +1,20 @@
 import type { Schemas } from "@posthog/api-client";
+import { CHANNELS_COLLECTION } from "@posthog/core/canvas/channelsSync";
+import type { EntityRegistry } from "@posthog/core/local-store/entityRegistry";
+import { ENTITY_REGISTRY } from "@posthog/core/local-store/identifiers";
+import type { SyncedEntity } from "@posthog/core/local-store/schemas";
+import type { ApplyPipeline } from "@posthog/core/local-store/sync/applyPipeline";
+import {
+  APPLY_PIPELINE,
+  SYNC_ENGINE,
+} from "@posthog/core/local-store/sync/identifiers";
+import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
+import { useService } from "@posthog/di/react";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
-import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
-
-const CHANNELS_POLL_INTERVAL_MS = 30_000;
-const CHANNELS_QUERY_KEY = ["canvas-channels"] as const;
+import { useMutation } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useStore } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 
 /** A Home-space channel: a top-level folder on the desktop file system. */
 export interface Channel {
@@ -39,43 +48,48 @@ function toChannel(fs: Schemas.FileSystem): Channel {
   };
 }
 
-/** List the project's channels (top-level desktop file-system folders). */
-export function useChannels(options?: { enabled?: boolean }): {
-  channels: Channel[];
-  isLoading: boolean;
-} {
-  const query = useAuthenticatedQuery<Schemas.FileSystem[]>(
-    CHANNELS_QUERY_KEY,
-    (client) => client.getDesktopFileSystemChannels(),
-    {
-      enabled: options?.enabled ?? true,
-      refetchInterval: CHANNELS_POLL_INTERVAL_MS,
-    },
+function useChannelsPool() {
+  const registry = useService<EntityRegistry>(ENTITY_REGISTRY);
+  return useMemo(
+    () => registry.getPool<SyncedEntity>(CHANNELS_COLLECTION),
+    [registry],
   );
-  // Memoize so the array reference is stable while the underlying data is
-  // unchanged — callers depend on `channels` in their own memos/effects.
-  const channels = useMemo(
-    () =>
-      (query.data ?? [])
-        .filter((fs) => fs.type === "folder")
-        .map(toChannel)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [query.data],
-  );
-  return { channels, isLoading: query.isLoading };
 }
 
 /**
- * Create/delete channels. Both invalidate the shared query key so the list
- * refetches immediately rather than waiting on the poll.
+ * List the project's channels (top-level desktop file-system folders) —
+ * local-first: rendered from the synced pool, kept fresh by the channels
+ * delta source instead of a per-hook poll.
+ */
+export function useChannels(_options?: { enabled?: boolean }): {
+  channels: Channel[];
+  isLoading: boolean;
+} {
+  const pool = useChannelsPool();
+  const channels = useStore(
+    pool.store,
+    useShallow((state) =>
+      state.ids
+        .map((id) => state.entities[id] as unknown as Schemas.FileSystem)
+        .filter((fs) => fs && fs.type === "folder")
+        .map(toChannel)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    ),
+  );
+  const hydrated = useStore(pool.store, (state) => state.hydrated);
+  return { channels, isLoading: !hydrated };
+}
+
+/**
+ * Create/delete/rename channels. Server responses acknowledge straight into
+ * the pool so the sidebar updates the instant the request resolves; a poke
+ * reconciles anything derived.
  */
 export function useChannelMutations() {
   const client = useOptionalAuthenticatedClient();
-  const queryClient = useQueryClient();
-
-  const invalidate = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY });
-  }, [queryClient]);
+  const engine = useService<SyncEngine>(SYNC_ENGINE);
+  const applyPipeline = useService<ApplyPipeline>(APPLY_PIPELINE);
+  const pool = useChannelsPool();
 
   const createMutation = useMutation({
     mutationFn: async (name: string) => {
@@ -83,27 +97,24 @@ export function useChannelMutations() {
       return client.createDesktopFileSystemChannel(name);
     },
     onSuccess: (newFs) => {
-      // Insert the created channel into the cache immediately so the sidebar
-      // updates the instant the POST resolves, rather than waiting on the
-      // paginated refetch that `invalidate` triggers.
-      queryClient.setQueryData<Schemas.FileSystem[]>(
-        CHANNELS_QUERY_KEY,
-        (old) => {
-          if (!old) return [newFs];
-          if (old.some((fs) => fs.id === newFs.id)) return old;
-          return [...old, newFs];
-        },
+      applyPipeline.applyAcknowledged(
+        CHANNELS_COLLECTION,
+        newFs as unknown as SyncedEntity,
       );
-      invalidate();
+      engine.poke(CHANNELS_COLLECTION);
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       if (!client) throw new Error("Not authenticated");
-      return client.deleteDesktopFileSystem(id);
+      await client.deleteDesktopFileSystem(id);
+      return id;
     },
-    onSuccess: invalidate,
+    onSuccess: (id) => {
+      pool.applyDeletes([id]);
+      engine.poke(CHANNELS_COLLECTION);
+    },
   });
 
   const renameMutation = useMutation({
@@ -111,7 +122,13 @@ export function useChannelMutations() {
       if (!client) throw new Error("Not authenticated");
       return client.renameDesktopFileSystemChannel(id, name);
     },
-    onSuccess: invalidate,
+    onSuccess: (renamed) => {
+      applyPipeline.applyAcknowledged(
+        CHANNELS_COLLECTION,
+        renamed as unknown as SyncedEntity,
+      );
+      engine.poke(CHANNELS_COLLECTION);
+    },
   });
 
   return {

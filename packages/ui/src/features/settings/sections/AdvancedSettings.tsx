@@ -1,5 +1,6 @@
 import { useServiceOptional } from "@posthog/di/react";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { SyncInspector } from "@posthog/ui/features/local-first/SyncInspector";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import {
   DEV_MODE_CLIENT,
@@ -81,6 +82,14 @@ export function AdvancedSettings() {
         />
       </SettingRow>
       {devModeClient && <DevModeRow client={devModeClient} />}
+      <SettingRow
+        label="Local-first sync"
+        description="Engine status, per-collection freshness, and the pending-write outbox"
+        noBorder
+      >
+        <span />
+      </SettingRow>
+      <SyncInspector />
     </Flex>
   );
 }

@@ -1,4 +1,5 @@
-import type { Schemas } from "@posthog/api-client";
+import type { EntityRegistry } from "@posthog/core/local-store/entityRegistry";
+import { ENTITY_REGISTRY } from "@posthog/core/local-store/identifiers";
 import {
   decideTitleGeneration,
   formatPromptsForTitleInput,
@@ -10,9 +11,13 @@ import type { SessionService } from "@posthog/core/sessions/sessionService";
 import { SESSION_SERVICE } from "@posthog/core/sessions/sessionService";
 import { TITLE_GENERATOR_SERVICE } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import type { TitleGeneratorService } from "@posthog/core/sessions/titleGeneratorService";
+import {
+  TASK_MUTATION_SERVICE,
+  type TaskMutationService,
+} from "@posthog/core/tasks/taskMutations";
+import { TASKS_COLLECTION } from "@posthog/core/tasks/taskSync";
 import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
   sessionStoreSetters,
@@ -21,29 +26,33 @@ import {
 import { taskKeys } from "@posthog/ui/features/tasks/taskKeys";
 import { logger } from "@posthog/ui/shell/logger";
 import { titleAttachmentStoreApi } from "@posthog/ui/shell/titleAttachmentStore";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 const log = logger.scope("chat-title-generator");
 
-function getCachedTask(
-  queryClient: QueryClient,
+function getPoolTask(
+  registry: EntityRegistry,
   taskId: string,
 ): Task | undefined {
-  return queryClient
-    .getQueriesData<Task[]>({ queryKey: taskKeys.lists() })
-    .flatMap(([, tasks]) => tasks ?? [])
-    .find((t) => t.id === taskId);
+  try {
+    return registry.getPool(TASKS_COLLECTION).get(taskId) as unknown as
+      | Task
+      | undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function useChatTitleGenerator(task: Task): void {
   const taskId = task.id;
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  const registry = useService<EntityRegistry>(ENTITY_REGISTRY);
+  const mutations = useService<TaskMutationService>(TASK_MUTATION_SERVICE);
   const titleGenerator = useService<TitleGeneratorService>(
     TITLE_GENERATOR_SERVICE,
   );
   const queryClient = useQueryClient();
-  const client = useOptionalAuthenticatedClient();
   const lastGeneratedAtCount = useRef(0);
   const initialDescriptionHandled = useRef(false);
   const isGenerating = useRef(false);
@@ -110,37 +119,21 @@ export function useChatTitleGenerator(task: Task): void {
           titleAttachmentStoreApi.clear(taskId);
           const { title, summary } = result;
           const titleLocked = isAutoTitleLocked(
-            getCachedTask(queryClient, taskId) ?? task,
+            getPoolTask(registry, taskId) ?? task,
           );
 
           if (title && titleLocked) {
             log.debug("Skipping auto-title, user renamed task", { taskId });
           } else if (title) {
-            if (client) {
-              await client.updateTask(taskId, { title });
-              queryClient.setQueriesData<Task[]>(
-                { queryKey: taskKeys.lists() },
-                (old) =>
-                  old?.map((task) =>
-                    task.id === taskId ? { ...task, title } : task,
-                  ),
-              );
-              queryClient.setQueriesData<Schemas.TaskSummary[]>(
-                { queryKey: taskKeys.allSummaries() },
-                (old) =>
-                  old?.map((task) =>
-                    task.id === taskId ? { ...task, title } : task,
-                  ),
-              );
-              queryClient.setQueryData<Task>(taskKeys.detail(taskId), (old) =>
-                old ? { ...old, title } : old,
-              );
-              sessionService.updateSessionTaskTitle(taskId, title);
-              log.debug("Updated task title from conversation", {
-                taskId,
-                promptCount,
-              });
-            }
+            await mutations.updateTask(taskId, { title });
+            queryClient.setQueryData<Task>(taskKeys.detail(taskId), (old) =>
+              old ? { ...old, title } : old,
+            );
+            sessionService.updateSessionTaskTitle(taskId, title);
+            log.debug("Updated task title from conversation", {
+              taskId,
+              promptCount,
+            });
           }
 
           if (summary && taskRunId) {
@@ -173,9 +166,10 @@ export function useChatTitleGenerator(task: Task): void {
     promptCount,
     taskId,
     task,
-    client,
     queryClient,
     sessionService,
     titleGenerator,
+    mutations.updateTask,
+    registry,
   ]);
 }

@@ -1,4 +1,5 @@
 import { HostTRPCProvider } from "@posthog/host-router/react";
+import { LocalFirstStatusBanner } from "@posthog/ui/features/local-first/LocalFirstStatusBanner";
 import { ThemeWrapper } from "@posthog/ui/primitives/ThemeWrapper";
 import { WorkspaceClientProvider } from "@posthog/workspace-client/provider";
 import {
@@ -97,6 +98,7 @@ function ConnectedWorkspaceProvider({
           disabled={restartServer.isPending}
         />
       ) : null}
+      <LocalFirstStatusBanner />
       {children}
     </WorkspaceClientProvider>
   );

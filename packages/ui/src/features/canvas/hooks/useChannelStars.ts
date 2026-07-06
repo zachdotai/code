@@ -1,59 +1,83 @@
 import type { Schemas } from "@posthog/api-client";
+import {
+  CHANNEL_STARS_COLLECTION,
+  CHANNELS_COLLECTION,
+} from "@posthog/core/canvas/channelsSync";
+import type { EntityRegistry } from "@posthog/core/local-store/entityRegistry";
+import { ENTITY_REGISTRY } from "@posthog/core/local-store/identifiers";
+import type { SyncedEntity } from "@posthog/core/local-store/schemas";
+import type { ApplyPipeline } from "@posthog/core/local-store/sync/applyPipeline";
+import {
+  APPLY_PIPELINE,
+  SYNC_ENGINE,
+} from "@posthog/core/local-store/sync/identifiers";
+import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
+import { useService } from "@posthog/di/react";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { toast } from "@posthog/ui/primitives/toast";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
-
-const STARS_POLL_INTERVAL_MS = 60_000;
-const STARS_QUERY_KEY = ["canvas-channel-stars"] as const;
+import { useMutation } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
+import { useStore } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 
 // Channels are folders, so their stars are folder-typed shortcuts. Anything
 // else on the desktop surface (a starred insight, say) is ignored here.
 const FOLDER_SHORTCUT_TYPE = "folder";
 
-/**
- * The current user's starred channels, persisted in the PostHog backend as
- * per-user desktop file-system shortcuts. Returns a map from a channel's raw
- * path (the shortcut `ref`) to the shortcut id, so callers can both check
- * whether a channel is starred and delete the right shortcut when unstarring.
- */
-export function useChannelStars(options?: { enabled?: boolean }): {
-  starredRefToShortcutId: Map<string, string>;
-  isLoading: boolean;
-} {
-  const query = useAuthenticatedQuery<Schemas.FileSystemShortcut[]>(
-    STARS_QUERY_KEY,
-    (client) => client.getDesktopFileSystemShortcuts(),
-    {
-      enabled: options?.enabled ?? true,
-      refetchInterval: STARS_POLL_INTERVAL_MS,
-    },
+function useStarsPool() {
+  const registry = useService<EntityRegistry>(ENTITY_REGISTRY);
+  return useMemo(
+    () => registry.getPool<SyncedEntity>(CHANNEL_STARS_COLLECTION),
+    [registry],
   );
-
-  const starredRefToShortcutId = new Map<string, string>();
-  for (const shortcut of query.data ?? []) {
-    if (shortcut.type === FOLDER_SHORTCUT_TYPE && shortcut.ref) {
-      starredRefToShortcutId.set(shortcut.ref, shortcut.id);
-    }
-  }
-
-  return { starredRefToShortcutId, isLoading: query.isLoading };
 }
 
 /**
- * Star/unstar a channel by creating or deleting its desktop shortcut. Both
- * paths update the shared shortcuts cache immediately so the sidebar re-sorts
- * the instant the request resolves, rather than waiting on the poll.
+ * The current user's starred channels, persisted in the PostHog backend as
+ * per-user desktop file-system shortcuts — read from the local-first pool.
+ * Returns a map from a channel's raw path (the shortcut `ref`) to the
+ * shortcut id, so callers can both check whether a channel is starred and
+ * delete the right shortcut when unstarring.
+ */
+export function useChannelStars(_options?: { enabled?: boolean }): {
+  starredRefToShortcutId: Map<string, string>;
+  isLoading: boolean;
+} {
+  const pool = useStarsPool();
+  const shortcuts = useStore(
+    pool.store,
+    useShallow((state) =>
+      state.ids
+        .map(
+          (id) => state.entities[id] as unknown as Schemas.FileSystemShortcut,
+        )
+        .filter((s) => s && s.type === FOLDER_SHORTCUT_TYPE && s.ref),
+    ),
+  );
+  const hydrated = useStore(pool.store, (state) => state.hydrated);
+
+  const starredRefToShortcutId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const shortcut of shortcuts) {
+      if (shortcut.ref) map.set(shortcut.ref, shortcut.id);
+    }
+    return map;
+  }, [shortcuts]);
+
+  return { starredRefToShortcutId, isLoading: !hydrated };
+}
+
+/**
+ * Star/unstar a channel by creating or deleting its desktop shortcut. Server
+ * responses acknowledge straight into the pool so the sidebar re-sorts the
+ * instant the request resolves.
  */
 export function useChannelStarMutations() {
   const client = useOptionalAuthenticatedClient();
-  const queryClient = useQueryClient();
-
-  const invalidate = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: STARS_QUERY_KEY });
-  }, [queryClient]);
+  const engine = useService<SyncEngine>(SYNC_ENGINE);
+  const applyPipeline = useService<ApplyPipeline>(APPLY_PIPELINE);
+  const pool = useStarsPool();
 
   const starMutation = useMutation({
     mutationFn: async (channel: Channel) => {
@@ -65,15 +89,11 @@ export function useChannelStarMutations() {
       });
     },
     onSuccess: (created) => {
-      queryClient.setQueryData<Schemas.FileSystemShortcut[]>(
-        STARS_QUERY_KEY,
-        (old) => {
-          if (!old) return [created];
-          if (old.some((s) => s.id === created.id)) return old;
-          return [...old, created];
-        },
+      applyPipeline.applyAcknowledged(
+        CHANNEL_STARS_COLLECTION,
+        created as unknown as SyncedEntity,
       );
-      invalidate();
+      engine.poke(CHANNELS_COLLECTION);
     },
   });
 
@@ -84,11 +104,8 @@ export function useChannelStarMutations() {
       return shortcutId;
     },
     onSuccess: (shortcutId) => {
-      queryClient.setQueryData<Schemas.FileSystemShortcut[]>(
-        STARS_QUERY_KEY,
-        (old) => (old ?? []).filter((s) => s.id !== shortcutId),
-      );
-      invalidate();
+      pool.applyDeletes([shortcutId]);
+      engine.poke(CHANNELS_COLLECTION);
     },
   });
 
@@ -101,9 +118,8 @@ export function useChannelStarMutations() {
 }
 
 /**
- * Per-channel star state plus the actions a channel row needs. Wraps the shared
- * stars query and mutations so the row components stay declarative. Multiple
- * rows calling this share one underlying query (React Query dedupes by key).
+ * Per-channel star state plus the actions a channel row needs. Wraps the
+ * shared pool read and mutations so the row components stay declarative.
  */
 export function useChannelStarToggle(channel: Channel): {
   isStarred: boolean;

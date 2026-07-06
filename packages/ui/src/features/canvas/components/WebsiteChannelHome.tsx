@@ -1,3 +1,7 @@
+import { SYNC_ENGINE } from "@posthog/core/local-store/sync/identifiers";
+import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
+import { TASKS_COLLECTION } from "@posthog/core/tasks/taskSync";
+import { useService } from "@posthog/di/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
@@ -8,10 +12,7 @@ import {
   type ChannelHomeComposerHandle,
 } from "@posthog/ui/features/canvas/components/ChannelHomeComposer";
 import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
-import {
-  channelFeedQueryKey,
-  useChannelFeed,
-} from "@posthog/ui/features/canvas/hooks/useChannelFeed";
+import { useChannelFeed } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
@@ -69,11 +70,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     [],
   );
 
+  const engine = useService<SyncEngine>(SYNC_ENGINE);
   const invalidateFeed = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: channelFeedQueryKey(backendChannel?.id),
-    });
-  }, [queryClient, backendChannel?.id]);
+    // The feed is pool-backed; a poke pulls the channel window immediately.
+    engine.poke(TASKS_COLLECTION);
+  }, [engine]);
 
   // Slack behavior: submitting keeps you in the channel; the new card appears
   // in the feed and updates live. Filing into the folder keeps the Artifacts /
