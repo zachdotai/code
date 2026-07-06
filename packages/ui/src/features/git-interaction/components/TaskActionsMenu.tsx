@@ -8,7 +8,10 @@ import {
   GitFork,
   GitPullRequest,
 } from "@phosphor-icons/react";
-import { getPrVisualConfig } from "@posthog/core/git-interaction/prStatus";
+import {
+  getPrVisualConfig,
+  type MergeQueueVisualState,
+} from "@posthog/core/git-interaction/prStatus";
 import {
   ButtonGroup,
   DropdownMenuContent,
@@ -30,6 +33,7 @@ import {
   type GitMenuActionId,
   useGitInteraction,
 } from "../useGitInteraction";
+import { useMergeQueueStatus } from "../useMergeQueueStatus";
 import { usePrActions } from "../usePrActions";
 import { usePrDetails } from "../usePrDetails";
 import { useTaskPrUrl } from "../useTaskPrUrl";
@@ -84,6 +88,9 @@ export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
   } = usePrDetails(prUrl);
   const { execute: executePrAction, isPending: isPrActionPending } =
     usePrActions(prUrl);
+  const { mergeQueueState } = useMergeQueueStatus(prUrl, {
+    enabled: prState === "open" && !merged,
+  });
 
   const pr = prUrl && prState !== null ? { url: prUrl, state: prState } : null;
 
@@ -109,6 +116,7 @@ export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
             prState={pr.state}
             merged={merged}
             draft={draft}
+            mergeQueueState={mergeQueueState}
             branchName={headRefName}
             isPrPending={isPrActionPending}
             gitItems={gitItems}
@@ -211,6 +219,7 @@ interface PrBadgeControlProps {
   prState: string;
   merged: boolean;
   draft: boolean;
+  mergeQueueState: MergeQueueVisualState;
   branchName: string | null;
   isPrPending: boolean;
   gitItems: GitMenuAction[];
@@ -223,13 +232,14 @@ function PrBadgeControl({
   prState,
   merged,
   draft,
+  mergeQueueState,
   branchName,
   isPrPending,
   gitItems,
   onGitSelect,
   onPrSelect,
 }: PrBadgeControlProps) {
-  const config = getPrVisualConfig(prState, merged, draft);
+  const config = getPrVisualConfig(prState, merged, draft, mergeQueueState);
   const lifecycleItems = config.actions;
   const hasMenuItems = gitItems.length + lifecycleItems.length > 0;
   const hasDropdown = hasMenuItems || !!branchName;
@@ -251,6 +261,7 @@ function PrBadgeControl({
         prState={prState}
         merged={merged}
         draft={draft}
+        mergeQueueState={mergeQueueState}
         isPrPending={isPrPending}
         attachedRight={hasDropdown}
       />

@@ -79,6 +79,7 @@ import type {
   PrDiffStats,
   PrInfoByUrlOutput,
   PrMergeMethod,
+  PrMergeQueueStatus,
   PrReviewComment,
   PrReviewThread,
   PrStatusOutput,
@@ -90,11 +91,22 @@ import type {
   SyncOutput,
   UpdatePrByUrlOutput,
 } from "./schemas";
-import { getPrInfoByUrlOutput, prConversationCommentSchema } from "./schemas";
+import {
+  getPrInfoByUrlOutput,
+  prConversationCommentSchema,
+  prMergeQueueStatusSchema,
+} from "./schemas";
 
 const FETCH_THROTTLE_MS = 30_000;
 /** Max PRs per GraphQL request – stays well under GitHub's complexity ceiling. */
 const PR_DIFF_STATS_BATCH_CHUNK_SIZE = 25;
+
+/**
+ * Name prefix of the GitHub check run Trunk posts on a PR head commit while it
+ * moves through the merge queue. The full name carries the target branch
+ * (`Trunk Merge Queue (main)`), so we match by prefix to stay branch-agnostic.
+ */
+export const TRUNK_MERGE_CHECK_PREFIX = "Trunk Merge Queue";
 
 /**
  * Escape a string for embedding in a GraphQL double-quoted literal. GitHub
@@ -1015,6 +1027,77 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     }
   }
 
+  /**
+   * Read the Trunk merge-queue status for a PR from the `Trunk Merge Queue`
+   * check run on its head commit. Returns null when the PR has never been
+   * enqueued (no such check run) or the lookup fails — callers treat null as
+   * "not in the queue" and fall back to the plain PR lifecycle badge.
+   */
+  async getPrMergeQueueStatus(
+    prUrl: string,
+  ): Promise<PrMergeQueueStatus | null> {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return null;
+
+    try {
+      const shaResult = await execGh([
+        "api",
+        `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`,
+        "--jq",
+        ".head.sha",
+      ]);
+      if (shaResult.exitCode !== 0) return null;
+      const headSha = shaResult.stdout.trim();
+      if (!headSha) return null;
+
+      const runsResult = await execGh([
+        "api",
+        `repos/${pr.owner}/${pr.repo}/commits/${headSha}/check-runs?per_page=100`,
+      ]);
+      if (runsResult.exitCode !== 0) return null;
+
+      const { check_runs: checkRuns } = JSON.parse(runsResult.stdout) as {
+        check_runs?: Array<{
+          name: string;
+          status: string;
+          conclusion: string | null;
+          details_url: string | null;
+          html_url: string | null;
+          started_at: string | null;
+        }>;
+      };
+      if (!checkRuns?.length) return null;
+
+      const trunkRuns = checkRuns.filter((run) =>
+        run.name.startsWith(TRUNK_MERGE_CHECK_PREFIX),
+      );
+      if (trunkRuns.length === 0) return null;
+
+      // A PR can accumulate stale check runs across re-enqueues; take the most
+      // recently started one as the live status.
+      const latest = trunkRuns.reduce((a, b) =>
+        (b.started_at ?? "") > (a.started_at ?? "") ? b : a,
+      );
+
+      const status = prMergeQueueStatusSchema.shape.status.safeParse(
+        latest.status,
+      );
+      if (!status.success) return null;
+      const conclusion = prMergeQueueStatusSchema.shape.conclusion.safeParse(
+        latest.conclusion,
+      );
+
+      return {
+        status: status.data,
+        conclusion: conclusion.success ? conclusion.data : null,
+        detailsUrl: latest.details_url ?? latest.html_url ?? null,
+        name: latest.name,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async getPrChangedFiles(prUrl: string): Promise<ChangedFile[]> {
     const pr = parseGithubUrl(prUrl);
     if (pr?.kind !== "pr") return [];
@@ -1304,6 +1387,29 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     const pr = parseGithubUrl(prUrl);
     if (pr?.kind !== "pr") {
       return { success: false, message: "Invalid PR URL" };
+    }
+
+    // Merge-queue submit/cancel are driven by Trunk's GitHub comment commands
+    // rather than a `gh pr` subcommand.
+    if (action === "merge-queue" || action === "merge-queue-cancel") {
+      const body = action === "merge-queue" ? "/trunk merge" : "/trunk cancel";
+      const commentResult = await execGh([
+        "pr",
+        "comment",
+        String(pr.number),
+        "--repo",
+        `${pr.owner}/${pr.repo}`,
+        "--body",
+        body,
+      ]);
+      if (commentResult.exitCode !== 0) {
+        return {
+          success: false,
+          message:
+            commentResult.stderr || commentResult.error || "Unknown error",
+        };
+      }
+      return { success: true, message: commentResult.stdout };
     }
 
     try {

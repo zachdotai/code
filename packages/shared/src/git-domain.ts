@@ -64,8 +64,17 @@ export type GitHubIssue = GithubRef;
 export type GithubPullRequest = GithubRef;
 
 // PR action intent. Shared between the git host service (updatePrByUrl) and the
-// git-interaction UI (PR status menu actions).
-export const prActionTypeSchema = z.enum(["close", "reopen", "ready", "draft"]);
+// git-interaction UI (PR status menu actions). `merge-queue` submits the PR to
+// the Trunk merge queue (posts a `/trunk merge` comment) and `merge-queue-cancel`
+// pulls it back out (`/trunk cancel`).
+export const prActionTypeSchema = z.enum([
+  "close",
+  "reopen",
+  "ready",
+  "draft",
+  "merge-queue",
+  "merge-queue-cancel",
+]);
 export type PrActionType = z.infer<typeof prActionTypeSchema>;
 
 // Native PR review schemas (PR overview, approve/merge, CI checks,

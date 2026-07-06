@@ -33,6 +33,38 @@ export function usePrActions(prUrl: string | null) {
         void queryClient.invalidateQueries(
           trpc.git.getPrDiffStatsBatch.pathFilter(),
         );
+
+        // Merge-queue submit/cancel change queue status, not the PR lifecycle.
+        // Patch the queue-status cache optimistically so the badge flips
+        // immediately, then invalidate so the next poll reconciles with Trunk.
+        if (variables.action === "merge-queue") {
+          queryClient.setQueryData(
+            trpc.git.getPrMergeQueueStatus.queryKey({
+              prUrl: variables.prUrl,
+            }),
+            () => ({
+              status: "queued" as const,
+              conclusion: null,
+              detailsUrl: null,
+              name: "Trunk Merge Queue",
+            }),
+          );
+        } else if (variables.action === "merge-queue-cancel") {
+          queryClient.setQueryData(
+            trpc.git.getPrMergeQueueStatus.queryKey({
+              prUrl: variables.prUrl,
+            }),
+            () => null,
+          );
+        }
+        if (
+          variables.action === "merge-queue" ||
+          variables.action === "merge-queue-cancel"
+        ) {
+          void queryClient.invalidateQueries(
+            trpc.git.getPrMergeQueueStatus.pathFilter(),
+          );
+        }
       } else {
         toast.error("Failed to update PR", { description: data.message });
       }

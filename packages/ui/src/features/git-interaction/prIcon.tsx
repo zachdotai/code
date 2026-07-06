@@ -4,6 +4,7 @@ import {
   GitPullRequest,
   type Icon,
   PencilSimple,
+  Queue,
   X,
 } from "@phosphor-icons/react";
 import type { PrVisualIcon } from "@posthog/core/git-interaction/prStatus";
@@ -15,6 +16,8 @@ export function getPrVisualIcon(icon: PrVisualIcon): Icon {
       return GitMerge;
     case "pull-request":
       return GitPullRequest;
+    case "queue":
+      return Queue;
   }
 }
 
@@ -28,5 +31,9 @@ export function getPrActionIcon(action: PrActionType): React.ReactNode {
       return <Check size={12} weight="bold" />;
     case "draft":
       return <PencilSimple size={12} weight="bold" />;
+    case "merge-queue":
+      return <GitMerge size={12} weight="bold" />;
+    case "merge-queue-cancel":
+      return <X size={12} weight="bold" />;
   }
 }

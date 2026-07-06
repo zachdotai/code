@@ -413,7 +413,14 @@ export const replyToPrCommentOutput = z.object({
 
 export type ReplyToPrCommentOutput = z.infer<typeof replyToPrCommentOutput>;
 
-export const prActionType = z.enum(["close", "reopen", "ready", "draft"]);
+export const prActionType = z.enum([
+  "close",
+  "reopen",
+  "ready",
+  "draft",
+  "merge-queue",
+  "merge-queue-cancel",
+]);
 export type PrActionType = z.infer<typeof prActionType>;
 
 export const updatePrByUrlInput = z.object({
@@ -458,6 +465,32 @@ export {
   prConversationCommentSchema,
   prMergeMethodSchema,
 } from "@posthog/shared";
+
+// Trunk merge-queue status, read from the `Trunk Merge Queue (<branch>)` GitHub
+// check run on the PR's head commit. Null when the PR has never been enqueued
+// (no such check run exists). Mirrors `prMergeQueueStatusSchema` in
+// `@posthog/core/git/router-schemas`.
+export const prMergeQueueStatusSchema = z.object({
+  status: z.enum(["queued", "in_progress", "completed"]),
+  conclusion: z
+    .enum([
+      "success",
+      "failure",
+      "cancelled",
+      "neutral",
+      "skipped",
+      "timed_out",
+      "action_required",
+      "stale",
+    ])
+    .nullable(),
+  detailsUrl: z.string().nullable(),
+  name: z.string(),
+});
+export type PrMergeQueueStatus = z.infer<typeof prMergeQueueStatusSchema>;
+
+export const getPrMergeQueueStatusInput = z.object({ prUrl: z.string() });
+export const getPrMergeQueueStatusOutput = prMergeQueueStatusSchema.nullable();
 
 export const getPrTemplateInput = directoryPathInput;
 

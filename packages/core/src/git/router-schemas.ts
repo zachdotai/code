@@ -387,6 +387,30 @@ export const getPrDetailsByUrlOutput = z.object({
 });
 export type PrDetailsByUrlOutput = z.infer<typeof getPrDetailsByUrlOutput>;
 
+// getPrMergeQueueStatus schemas. Mirrors `prMergeQueueStatusSchema` in
+// `@posthog/workspace-server`'s git schemas. Null = PR not in the Trunk queue.
+export const prMergeQueueStatusSchema = z.object({
+  status: z.enum(["queued", "in_progress", "completed"]),
+  conclusion: z
+    .enum([
+      "success",
+      "failure",
+      "cancelled",
+      "neutral",
+      "skipped",
+      "timed_out",
+      "action_required",
+      "stale",
+    ])
+    .nullable(),
+  detailsUrl: z.string().nullable(),
+  name: z.string(),
+});
+export type PrMergeQueueStatus = z.infer<typeof prMergeQueueStatusSchema>;
+
+export const getPrMergeQueueStatusInput = z.object({ prUrl: z.string() });
+export const getPrMergeQueueStatusOutput = prMergeQueueStatusSchema.nullable();
+
 export {
   prActionTypeSchema,
   prReviewCommentSchema,

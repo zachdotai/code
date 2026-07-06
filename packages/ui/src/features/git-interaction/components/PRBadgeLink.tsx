@@ -1,5 +1,6 @@
 import {
   getPrVisualConfig,
+  type MergeQueueVisualState,
   type PrVisualConfig,
   parsePrNumber,
 } from "@posthog/core/git-interaction/prStatus";
@@ -11,6 +12,8 @@ interface PRBadgeLinkProps {
   prState: string;
   merged: boolean;
   draft: boolean;
+  /** Live Trunk merge-queue state; drives the queued/testing/failed badge. */
+  mergeQueueState?: MergeQueueVisualState;
   isPrPending?: boolean;
   /**
    * When true, flatten the right edge so a dropdown trigger button can sit
@@ -30,6 +33,7 @@ const COMPACT_COLOR_CLASSES: Record<PrVisualConfig["color"], string> = {
   green: "bg-(--green-3) text-(--green-11) hover:bg-(--green-4)",
   red: "bg-(--red-3) text-(--red-11) hover:bg-(--red-4)",
   purple: "bg-(--purple-3) text-(--purple-11) hover:bg-(--purple-4)",
+  orange: "bg-(--orange-3) text-(--orange-11) hover:bg-(--orange-4)",
 };
 
 /**
@@ -43,13 +47,16 @@ export function PRBadgeLink({
   prState,
   merged,
   draft,
+  mergeQueueState = null,
   isPrPending = false,
   attachedRight = false,
   compact = false,
 }: PRBadgeLinkProps) {
-  const config = getPrVisualConfig(prState, merged, draft);
+  const config = getPrVisualConfig(prState, merged, draft, mergeQueueState);
   const PrIcon = getPrVisualIcon(config.icon);
   const prNumber = parsePrNumber(prUrl);
+  // Spin while the queue is actively testing, in addition to any pending action.
+  const showSpinner = isPrPending || mergeQueueState === "testing";
 
   if (compact) {
     return (
@@ -60,7 +67,7 @@ export function PRBadgeLink({
         onClick={(e) => e.stopPropagation()}
         className={`inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] no-underline ${COMPACT_COLOR_CLASSES[config.color]}`}
       >
-        {isPrPending ? (
+        {showSpinner ? (
           <Spinner size="1" />
         ) : (
           <PrIcon size={10} weight="bold" />
@@ -88,7 +95,7 @@ export function PRBadgeLink({
         onClick={(e) => e.stopPropagation()}
       >
         <Flex align="center" gap="2">
-          {isPrPending ? (
+          {showSpinner ? (
             <Spinner size="1" />
           ) : (
             <PrIcon size={12} weight="bold" />

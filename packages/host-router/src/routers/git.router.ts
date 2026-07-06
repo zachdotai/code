@@ -70,6 +70,8 @@ import {
   getPrDiffStatsBatchOutput,
   getPrInfoByUrlInput,
   getPrInfoByUrlOutput,
+  getPrMergeQueueStatusInput,
+  getPrMergeQueueStatusOutput,
   getPrReviewCommentsInput,
   getPrReviewCommentsOutput,
   getPrTemplateInput,
@@ -528,6 +530,15 @@ export const gitRouter = router({
         }
       );
     }),
+
+  getPrMergeQueueStatus: publicProcedure
+    .input(getPrMergeQueueStatusInput)
+    .output(getPrMergeQueueStatusOutput)
+    .query(({ ctx, input }) =>
+      getWorkspaceClient(ctx.container).git.getPrMergeQueueStatus.query({
+        prUrl: input.prUrl,
+      }),
+    ),
 
   updatePrByUrl: publicProcedure
     .input(updatePrByUrlInput)

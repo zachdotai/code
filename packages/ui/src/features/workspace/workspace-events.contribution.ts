@@ -11,6 +11,7 @@ import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "../../shell/queryClient";
+import { NotificationBus } from "../notifications/notifications";
 import { WORKSPACE_QUERY_KEY } from "./identifiers";
 
 /**
@@ -27,6 +28,8 @@ export class WorkspaceEventsContribution implements Contribution {
     private readonly hostClient: HostTrpcClient,
     @inject(IMPERATIVE_QUERY_CLIENT)
     private readonly queryClient: ImperativeQueryClient,
+    @inject(NotificationBus)
+    private readonly notificationBus: NotificationBus,
   ) {}
 
   start(): void {
@@ -85,6 +88,17 @@ export class WorkspaceEventsContribution implements Contribution {
           options.workspace.getCachedPrUrl.queryKey({ taskId }),
           { prUrl },
         );
+
+        // The server emits this event only on a real state change, so a
+        // `merged` transition fires the notification exactly once. The bus
+        // decides suppress / toast / native based on whether the task is in view.
+        if (prState === "merged") {
+          this.notificationBus.notify({
+            body: "Pull request merged",
+            target: { kind: "task", taskId },
+            toast: { level: "success" },
+          });
+        }
       },
     });
   }

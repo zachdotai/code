@@ -1,6 +1,7 @@
 import type { HostTrpcClient } from "@posthog/host-router/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImperativeQueryClient } from "../../shell/queryClient";
+import type { NotificationBus } from "../notifications/notifications";
 
 const invalidateQueries = vi.hoisted(() => vi.fn());
 const setQueriesData = vi.hoisted(() => vi.fn());
@@ -10,6 +11,9 @@ const queryClient = {
   setQueriesData,
   setQueryData,
 } as unknown as ImperativeQueryClient;
+
+const notify = vi.hoisted(() => vi.fn());
+const notificationBus = { notify } as unknown as NotificationBus;
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), info: vi.fn() }));
 vi.mock("../../primitives/toast", () => ({ toast }));
@@ -48,6 +52,7 @@ describe("WorkspaceEventsContribution", () => {
     new WorkspaceEventsContribution(
       client as unknown as HostTrpcClient,
       queryClient,
+      notificationBus,
     ).start();
     expect(Object.keys(client.handlers).sort()).toEqual([
       "onBranchChanged",
@@ -63,6 +68,7 @@ describe("WorkspaceEventsContribution", () => {
     new WorkspaceEventsContribution(
       client as unknown as HostTrpcClient,
       queryClient,
+      notificationBus,
     ).start();
     client.handlers.onPromoted({ fromBranch: "feat/x" });
     expect(invalidateQueries).toHaveBeenCalledWith({
@@ -76,6 +82,7 @@ describe("WorkspaceEventsContribution", () => {
     new WorkspaceEventsContribution(
       client as unknown as HostTrpcClient,
       queryClient,
+      notificationBus,
     ).start();
     client.handlers.onError({ message: "boom" });
     expect(toast.error).toHaveBeenCalledWith("Workspace error", {
@@ -89,6 +96,7 @@ describe("WorkspaceEventsContribution", () => {
     new WorkspaceEventsContribution(
       client as unknown as HostTrpcClient,
       queryClient,
+      notificationBus,
     ).start();
     client.handlers.onBranchChanged(undefined);
     expect(invalidateQueries).toHaveBeenCalledWith({
@@ -101,6 +109,7 @@ describe("WorkspaceEventsContribution", () => {
     new WorkspaceEventsContribution(
       client as unknown as HostTrpcClient,
       queryClient,
+      notificationBus,
     ).start();
     client.handlers.onTaskPrInfoChanged({
       taskId: "task-1",
@@ -140,5 +149,39 @@ describe("WorkspaceEventsContribution", () => {
       ],
       { prUrl: "https://github.com/o/r/pull/1" },
     );
+  });
+
+  it("notifies when a PR transitions to merged", () => {
+    const client = makeClient();
+    new WorkspaceEventsContribution(
+      client as unknown as HostTrpcClient,
+      queryClient,
+      notificationBus,
+    ).start();
+    client.handlers.onTaskPrInfoChanged({
+      taskId: "task-1",
+      prUrl: "https://github.com/o/r/pull/1",
+      prState: "merged",
+    });
+    expect(notify).toHaveBeenCalledWith({
+      body: "Pull request merged",
+      target: { kind: "task", taskId: "task-1" },
+      toast: { level: "success" },
+    });
+  });
+
+  it("does not notify for non-merged PR states", () => {
+    const client = makeClient();
+    new WorkspaceEventsContribution(
+      client as unknown as HostTrpcClient,
+      queryClient,
+      notificationBus,
+    ).start();
+    client.handlers.onTaskPrInfoChanged({
+      taskId: "task-1",
+      prUrl: "https://github.com/o/r/pull/1",
+      prState: "open",
+    });
+    expect(notify).not.toHaveBeenCalled();
   });
 });
