@@ -9,7 +9,7 @@ import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
 import type { AuthService } from "@posthog/core/auth/auth";
-import { getAccountScopeKey } from "@posthog/core/auth/authIdentity";
+import { getAccountScope } from "@posthog/core/auth/authIdentity";
 import { AuthServiceEvent } from "@posthog/core/auth/schemas";
 import { focusHostModule } from "@posthog/core/focus/focus-host.module";
 import {
@@ -272,13 +272,16 @@ async function initializeServices(): Promise<void> {
   container.get<DiscordPresenceService>(DISCORD_PRESENCE_SERVICE);
 
   // Tie the Channels tab strips to the signed-in user: each auth change
-  // repoints the tabs service at that account's persisted tabs. "restoring"
-  // is skipped so a slow session restore doesn't flash the signed-out state.
+  // repoints the tabs service at that account's persisted tabs. An undefined
+  // scope means the identity isn't determined yet (session still restoring,
+  // or the user-context fetch hasn't resolved) — leave the current scope in
+  // place rather than treating it as signed out.
   const browserTabsService =
     container.get<IBrowserTabsService>(BROWSER_TABS_SERVICE);
   authService.on(AuthServiceEvent.StateChanged, (state) => {
-    if (state.status === "restoring") return;
-    browserTabsService.setAccountScope(getAccountScopeKey(state));
+    const scope = getAccountScope(state);
+    if (scope === undefined) return;
+    browserTabsService.setAccountScope(scope);
   });
 
   await authService.initialize();

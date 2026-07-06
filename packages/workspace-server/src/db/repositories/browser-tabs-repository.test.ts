@@ -1,7 +1,7 @@
-import type { TabsSnapshot } from "@posthog/shared";
+import type { AccountScope, TabsSnapshot } from "@posthog/shared";
 import { isNull } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { browserWindows } from "../schema";
+import { browserTabs, browserWindows } from "../schema";
 import type { DatabaseService } from "../service";
 import { createTestDb, type TestDatabase } from "../test-helpers";
 import { BrowserTabsRepository } from "./browser-tabs-repository";
@@ -18,6 +18,10 @@ beforeEach(() => {
 afterEach(() => {
   testDb.close();
 });
+
+const alice: AccountScope = { accountKey: "alice", cloudRegion: "us" };
+const bob: AccountScope = { accountKey: "bob", cloudRegion: "us" };
+const aliceEu: AccountScope = { accountKey: "alice", cloudRegion: "eu" };
 
 const snapshot = (
   windowId: string,
@@ -42,26 +46,36 @@ const snapshot = (
 describe("BrowserTabsRepository", () => {
   it("round-trips a snapshot within one account scope", () => {
     const saved = snapshot("win-a", ["tab-1", "tab-2"]);
-    repo.save("us:alice", saved);
+    repo.save(alice, saved);
 
-    const loaded = repo.load("us:alice");
+    const loaded = repo.load(alice);
     expect(loaded.windows.map((w) => w.id)).toEqual(["win-a"]);
     expect(loaded.tabs.map((t) => t.id)).toEqual(["tab-1", "tab-2"]);
   });
 
   it("keeps accounts isolated: saving one scope never touches another", () => {
-    repo.save("us:alice", snapshot("win-a", ["tab-a"]));
-    repo.save("us:bob", snapshot("win-b", ["tab-b"]));
+    repo.save(alice, snapshot("win-a", ["tab-a"]));
+    repo.save(bob, snapshot("win-b", ["tab-b"]));
 
-    repo.save("us:alice", snapshot("win-a2", []));
+    repo.save(alice, snapshot("win-a2", []));
 
-    expect(repo.load("us:alice").windows.map((w) => w.id)).toEqual(["win-a2"]);
-    expect(repo.load("us:bob").tabs.map((t) => t.id)).toEqual(["tab-b"]);
+    expect(repo.load(alice).windows.map((w) => w.id)).toEqual(["win-a2"]);
+    expect(repo.load(bob).tabs.map((t) => t.id)).toEqual(["tab-b"]);
   });
 
-  it("loads empty for a scope with no rows", () => {
-    repo.save("us:alice", snapshot("win-a", ["tab-a"]));
-    expect(repo.load("eu:alice")).toEqual({ windows: [], tabs: [] });
+  it("keeps the same account isolated across regions", () => {
+    repo.save(alice, snapshot("win-a", ["tab-a"]));
+    expect(repo.load(aliceEu)).toEqual({ windows: [], tabs: [] });
+  });
+
+  it("cascades tab deletion when a save replaces an account's windows", () => {
+    repo.save(alice, snapshot("win-a", ["tab-1", "tab-2"]));
+    repo.save(alice, snapshot("win-a2", []));
+
+    // save() relies on the window FK cascade to remove the old tabs;
+    // orphaned rows here would mean the cascade is not firing.
+    const allTabs = testDb.db.select().from(browserTabs).all();
+    expect(allTabs).toHaveLength(0);
   });
 
   it("claimUnscoped adopts pre-account rows into the first account", () => {
@@ -77,21 +91,19 @@ describe("BrowserTabsRepository", () => {
       })
       .run();
 
-    repo.claimUnscoped("us:alice");
+    repo.claimUnscoped(alice);
 
-    expect(repo.load("us:alice").windows.map((w) => w.id)).toEqual([
-      "legacy-win",
-    ]);
+    expect(repo.load(alice).windows.map((w) => w.id)).toEqual(["legacy-win"]);
     const unscoped = testDb.db
       .select()
       .from(browserWindows)
-      .where(isNull(browserWindows.accountScope))
+      .where(isNull(browserWindows.accountKey))
       .all();
     expect(unscoped).toHaveLength(0);
   });
 
   it("claimUnscoped is a no-op when the account already has rows", () => {
-    repo.save("us:alice", snapshot("win-a", []));
+    repo.save(alice, snapshot("win-a", []));
     testDb.db
       .insert(browserWindows)
       .values({
@@ -103,8 +115,8 @@ describe("BrowserTabsRepository", () => {
       })
       .run();
 
-    repo.claimUnscoped("us:alice");
+    repo.claimUnscoped(alice);
 
-    expect(repo.load("us:alice").windows.map((w) => w.id)).toEqual(["win-a"]);
+    expect(repo.load(alice).windows.map((w) => w.id)).toEqual(["win-a"]);
   });
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CloudRegion } from "./regions";
 
 /**
  * Persisted browser-tab domain shapes for the Channels canvas surface.
@@ -63,3 +64,13 @@ export const tabsSnapshotSchema = z.object({
   tabs: z.array(browserTabSchema),
 });
 export type TabsSnapshot = z.infer<typeof tabsSnapshotSchema>;
+
+/**
+ * Owner of a persisted tab strip: one PostHog account on one cloud region.
+ * Mirrors the (accountKey, cloudRegion) pair the auth-preferences store uses
+ * to scope per-user local state.
+ */
+export interface AccountScope {
+  accountKey: string;
+  cloudRegion: CloudRegion;
+}

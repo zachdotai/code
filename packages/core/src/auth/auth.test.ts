@@ -378,6 +378,81 @@ describe("AuthService", () => {
     }
   });
 
+  it("discards a background restore that completes after an explicit logout", async () => {
+    vi.useFakeTimers();
+    try {
+      seedStoredSession({ selectedProjectId: 42 });
+      stubAuthFetch();
+      let resolveRefresh!: (value: unknown) => void;
+      oauthFlow.refreshToken.mockReturnValue(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+
+      const initPromise = service.initialize();
+      await vi.advanceTimersByTimeAsync(20_001);
+      await initPromise;
+      expect(service.getState().status).toBe("restoring");
+
+      await service.logout();
+      expect(service.getState().status).toBe("anonymous");
+
+      // The old session's restore landing now must not resurrect it.
+      resolveRefresh(mockTokenResponse());
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(service.getState().status).toBe("anonymous");
+      expect(sessionPort.getCurrent()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not let a stale background restore clobber a newer login", async () => {
+    vi.useFakeTimers();
+    try {
+      seedStoredSession({ selectedProjectId: 42 });
+      stubAuthFetch();
+      let resolveRefresh!: (value: unknown) => void;
+      oauthFlow.refreshToken.mockReturnValue(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+
+      const initPromise = service.initialize();
+      await vi.advanceTimersByTimeAsync(20_001);
+      await initPromise;
+      expect(service.getState().status).toBe("restoring");
+
+      await service.logout();
+      oauthFlow.startFlow.mockResolvedValue(
+        mockTokenResponse({
+          accessToken: "login-access-token",
+          refreshToken: "login-refresh-token",
+        }),
+      );
+      await service.login("us");
+      const afterLogin = service.getState();
+      expect(afterLogin.status).toBe("authenticated");
+
+      // The pre-logout restore resolving late must not overwrite the new
+      // session's state or stored refresh token.
+      resolveRefresh(
+        mockTokenResponse({ refreshToken: "stale-refresh-token" }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(service.getState()).toEqual(afterLogin);
+      expect(sessionPort.getCurrent()?.refreshTokenEncrypted).toBe(
+        "login-refresh-token",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shares the in-flight bootstrap refresh with token callers after the deadline", async () => {
     vi.useFakeTimers();
     try {

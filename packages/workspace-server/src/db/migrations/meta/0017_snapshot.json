@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9f16d1a0-fb93-4e5d-a523-e8f9a281f22b",
+  "id": "8d4bfe04-f191-44a4-8fd4-7a236b56bddd",
   "prevId": "d684dd2a-3a32-4007-963f-8af1a5e72848",
   "tables": {
     "archives": {
@@ -368,8 +368,15 @@
           "notNull": true,
           "autoincrement": false
         },
-        "account_scope": {
-          "name": "account_scope",
+        "account_key": {
+          "name": "account_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cloud_region": {
+          "name": "cloud_region",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -421,9 +428,9 @@
         }
       },
       "indexes": {
-        "browser_windows_account_scope_idx": {
-          "name": "browser_windows_account_scope_idx",
-          "columns": ["account_scope"],
+        "browser_windows_account_region_idx": {
+          "name": "browser_windows_account_region_idx",
+          "columns": ["account_key", "cloud_region"],
           "isUnique": false
         }
       },

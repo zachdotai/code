@@ -87,6 +87,13 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private session: InMemorySession | null = null;
   private initializePromise: Promise<void> | null = null;
   private refreshPromise: Promise<InMemorySession> | null = null;
+  /**
+   * Bumped whenever the active session is discarded or replaced (logout, a
+   * new login flow). Async restore/refresh paths capture it before awaiting
+   * and abandon their result if it moved — a background restore finishing
+   * after a logout must not resurrect the old session or clobber a newer one.
+   */
+  private sessionEpoch = 0;
   constructor(
     @inject(AUTH_PREFERENCE_STORE)
     private readonly authPreference: IAuthPreferenceStore,
@@ -375,6 +382,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   async logout(): Promise<AuthState> {
     const { cloudRegion, currentProjectId } = this.state;
 
+    this.sessionEpoch++;
     this.authSession.clearCurrent();
     this.session = null;
     this.setAnonymousState({ cloudRegion, currentProjectId });
@@ -424,6 +432,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
 
     this.setRestoringState(storedSession, false);
 
+    // Guards every deferred handler below: after a logout or new login the
+    // restore's outcome (success or failure) is about a dead session and must
+    // not touch state.
+    const epoch = this.sessionEpoch;
     try {
       const restore = this.ensureValidSession().then(() => undefined);
       const outcome = await withTimeout(restore, AUTH_BOOTSTRAP_DEADLINE_MS);
@@ -440,12 +452,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
           this.logger.warn("Background auth restore failed after deadline", {
             error,
           });
-          this.handleStoredSessionRestoreFailure(storedSession);
+          if (epoch === this.sessionEpoch) {
+            this.handleStoredSessionRestoreFailure(storedSession);
+          }
         });
       }
     } catch (error) {
       this.logger.warn("Failed to restore stored auth session", { error });
-      this.handleStoredSessionRestoreFailure(storedSession);
+      if (epoch === this.sessionEpoch) {
+        this.handleStoredSessionRestoreFailure(storedSession);
+      }
     }
   }
 
@@ -504,7 +520,13 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     const sessionInput = this.getSessionInputForRefresh();
 
     const refreshAndSync = async (): Promise<InMemorySession> => {
-      const session = await this.refreshSession(sessionInput);
+      const epoch = this.sessionEpoch;
+      const session = await this.refreshSession(sessionInput, epoch);
+      if (epoch !== this.sessionEpoch) {
+        // The session this refresh belonged to was logged out or replaced
+        // while the request was in flight; publishing it would resurrect it.
+        throw new NotAuthenticatedError();
+      }
       await this.syncAuthenticatedSession(session);
       return session;
     };
@@ -534,6 +556,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   }
   private async refreshSession(
     input: StoredSessionInput,
+    epoch: number,
   ): Promise<InMemorySession> {
     if (!this.connectivity.getStatus().isOnline) {
       throw new Error("Offline");
@@ -559,12 +582,17 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
 
       if (result.errorCode === "auth_error") {
         this.logger.warn("Refresh token rejected by server, forcing logout");
-        this.authSession.clearCurrent();
-        this.session = null;
-        this.setAnonymousState({
-          cloudRegion: input.cloudRegion,
-          currentProjectId: input.selectedProjectId,
-        });
+        // Only force the logout if this refresh's session is still current —
+        // a stale rejection must not clear a session the user re-created in
+        // the meantime.
+        if (epoch === this.sessionEpoch) {
+          this.authSession.clearCurrent();
+          this.session = null;
+          this.setAnonymousState({
+            cloudRegion: input.cloudRegion,
+            currentProjectId: input.selectedProjectId,
+          });
+        }
         throw new Error(lastError);
       }
 
@@ -753,6 +781,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     region: CloudRegion,
     fallbackError: string,
   ): Promise<void> {
+    // A fresh login supersedes whatever session any in-flight restore or
+    // refresh belongs to; bumping the epoch makes those abandon their result.
+    this.sessionEpoch++;
+    const epoch = this.sessionEpoch;
     const result = await runFlow();
     if (!result.success || !result.data) {
       throw new Error(result.error || fallbackError);
@@ -762,6 +794,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       cloudRegion: region,
       selectedProjectId: this.state.currentProjectId,
     });
+    if (epoch !== this.sessionEpoch) {
+      throw new Error("Session was replaced while signing in");
+    }
     await this.syncAuthenticatedSession(session);
   }
   private async syncAuthenticatedSession(

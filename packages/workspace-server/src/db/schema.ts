@@ -189,10 +189,12 @@ export const browserWindows = sqliteTable(
   "browser_windows",
   {
     id: id(),
-    /** Owning account, `<cloudRegion>:<accountKey>`. Null = pre-account rows
-     * from before tabs were per-user; claimed by the first login. Tabs inherit
-     * scope through their window FK. */
-    accountScope: text(),
+    /** Owning account, same (accountKey, cloudRegion) convention as
+     * auth_preferences. Both null = pre-account rows from before tabs were
+     * per-user; claimed by the first login. Tabs inherit scope through their
+     * window FK. */
+    accountKey: text(),
+    cloudRegion: text({ enum: ["us", "eu", "dev"] }),
     isPrimary: integer({ mode: "boolean" }).notNull().default(false),
     /** Saved geometry for session restore, JSON {x,y,width,height}. Null on web. */
     bounds: text({ mode: "json" }).$type<{
@@ -209,7 +211,9 @@ export const browserWindows = sqliteTable(
     createdAt: integer().notNull(),
     updatedAt: integer().notNull(),
   },
-  (t) => [index("browser_windows_account_scope_idx").on(t.accountScope)],
+  (t) => [
+    index("browser_windows_account_region_idx").on(t.accountKey, t.cloudRegion),
+  ],
 );
 
 /**

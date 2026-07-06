@@ -33,6 +33,7 @@ export {
   type TabTarget,
 } from "./browser-tabs";
 export {
+  type AccountScope,
   type BrowserTab,
   type BrowserWindow,
   browserTabSchema,
