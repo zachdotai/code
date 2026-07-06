@@ -47,6 +47,19 @@ export function isProbablyText(bytes: Uint8Array): boolean {
   return !bytes.subarray(0, 4096).includes(0);
 }
 
+const IGNORED_SKILL_ENTRIES = new Set([
+  ".DS_Store",
+  ".git",
+  "node_modules",
+  "__pycache__",
+]);
+
+/** Junk names and hidden directories are never skill content; hidden files count. */
+export function isIgnoredSkillEntry(entry: fs.Dirent): boolean {
+  if (IGNORED_SKILL_ENTRIES.has(entry.name)) return true;
+  return entry.isDirectory() && entry.name.startsWith(".");
+}
+
 export async function findSkillDirs(
   sourceSkillsDir: string,
 ): Promise<string[]> {
@@ -135,7 +148,8 @@ export async function getMarketplaceInstallPaths(): Promise<string[]> {
 
 /**
  * Recursively lists regular files inside a skill directory. Symlinks are
- * skipped so a crafted skill cannot expose files outside its directory.
+ * skipped so a crafted skill cannot expose files outside its directory;
+ * hidden directories and junk entries are skipped to match cloud bundles.
  */
 export async function listSkillFiles(
   skillDir: string,
@@ -147,6 +161,7 @@ export async function listSkillFiles(
     const entries = await fs.promises.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (files.length >= maxFiles) return;
+      if (isIgnoredSkillEntry(entry)) continue;
       const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {

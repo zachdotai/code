@@ -140,6 +140,23 @@ describe("listSkillFiles", () => {
     expect(files.map((f) => f.path)).toEqual(["SKILL.md"]);
   });
 
+  it("skips hidden directories and junk but keeps hidden files", async () => {
+    const skillsDir = path.join(root, "skills");
+    await createSkill(skillsDir, "alpha", "hello");
+    const skillPath = path.join(skillsDir, "alpha");
+    await mkdir(path.join(skillPath, ".venv", "lib"), { recursive: true });
+    await writeFile(path.join(skillPath, ".venv", "lib", "site.py"), "x");
+    await mkdir(path.join(skillPath, "node_modules", "pkg"), {
+      recursive: true,
+    });
+    await writeFile(path.join(skillPath, "node_modules", "pkg", "i.js"), "x");
+    await writeFile(path.join(skillPath, ".gitignore"), "*.log");
+
+    const files = await listSkillFiles(skillPath, 500);
+
+    expect(files.map((f) => f.path)).toEqual(["SKILL.md", ".gitignore"]);
+  });
+
   it("stops at the file cap", async () => {
     const skillsDir = path.join(root, "skills");
     await createSkill(skillsDir, "alpha");

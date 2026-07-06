@@ -3,15 +3,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { strToU8, zipSync } from "fflate";
 import type { BundleLocalSkillOutput, UploadableSkillSource } from "./schemas";
+import { isIgnoredSkillEntry } from "./skill-discovery";
 
 const SKILL_BUNDLE_MAX_BYTES = 30 * 1024 * 1024;
 const SKILL_BUNDLE_MAX_FILES = 1000;
-const IGNORED_ENTRIES = new Set([
-  ".DS_Store",
-  ".git",
-  "node_modules",
-  "__pycache__",
-]);
 
 function toZipPath(filePath: string): string {
   return filePath.split(path.sep).join("/");
@@ -42,6 +37,8 @@ function isInsideRoot(root: string, candidate: string): boolean {
 }
 
 interface SkillFileAccumulator {
+  skillName: string;
+  root: string;
   files: Record<string, Uint8Array>;
   totalBytes: number;
 }
@@ -54,11 +51,15 @@ async function addSkillFile(
 ): Promise<void> {
   if (Object.keys(acc.files).length >= SKILL_BUNDLE_MAX_FILES) {
     throw new Error(
-      `Local skill bundle contains more than ${SKILL_BUNDLE_MAX_FILES} files`,
+      `Skill "${acc.skillName}" (${acc.root}) contains more than ` +
+        `${SKILL_BUNDLE_MAX_FILES} files. Cloud runs upload every file in ` +
+        `the skill folder, so move data and build artifacts out of it.`,
     );
   }
   if (acc.totalBytes + size > SKILL_BUNDLE_MAX_BYTES) {
-    throw new Error("Local skill bundle exceeds the 30MB cloud run limit");
+    throw new Error(
+      `Skill "${acc.skillName}" (${acc.root}) exceeds the 30MB cloud run upload limit`,
+    );
   }
   const content = await fs.promises.readFile(sourcePath);
   acc.files[toZipPath(relativePath)] = new Uint8Array(content);
@@ -66,7 +67,6 @@ async function addSkillFile(
 }
 
 async function collectSkillFiles(
-  root: string,
   currentDir: string,
   acc: SkillFileAccumulator,
 ): Promise<void> {
@@ -75,12 +75,12 @@ async function collectSkillFiles(
   });
 
   for (const entry of entries) {
-    if (IGNORED_ENTRIES.has(entry.name)) {
+    if (isIgnoredSkillEntry(entry)) {
       continue;
     }
 
     const absolutePath = path.join(currentDir, entry.name);
-    const relativePath = path.relative(root, absolutePath);
+    const relativePath = path.relative(acc.root, absolutePath);
     if (
       !relativePath ||
       relativePath.startsWith("..") ||
@@ -93,7 +93,7 @@ async function collectSkillFiles(
       const realPath = await fs.promises
         .realpath(absolutePath)
         .catch(() => null);
-      if (!realPath || !isInsideRoot(root, realPath)) {
+      if (!realPath || !isInsideRoot(acc.root, realPath)) {
         continue;
       }
       const stat = await fs.promises.stat(realPath);
@@ -105,7 +105,7 @@ async function collectSkillFiles(
     }
 
     if (entry.isDirectory()) {
-      await collectSkillFiles(root, absolutePath, acc);
+      await collectSkillFiles(absolutePath, acc);
       continue;
     }
 
@@ -128,8 +128,13 @@ export async function bundleLocalSkill({
   skillPath: string;
 }): Promise<BundleLocalSkillOutput> {
   const root = await assertSkillRoot(skillPath);
-  const acc: SkillFileAccumulator = { files: {}, totalBytes: 0 };
-  await collectSkillFiles(root, root, acc);
+  const acc: SkillFileAccumulator = {
+    skillName: name,
+    root,
+    files: {},
+    totalBytes: 0,
+  };
+  await collectSkillFiles(root, acc);
   const files = acc.files;
   const fileNames = Object.keys(files).sort();
 
@@ -152,7 +157,7 @@ export async function bundleLocalSkill({
   const zipped = zipSync(zipInput, { level: 6 });
   if (zipped.byteLength > SKILL_BUNDLE_MAX_BYTES) {
     throw new Error(
-      "Local skill bundle archive exceeds the 30MB cloud run limit",
+      `Skill "${name}" (${root}) zip archive exceeds the 30MB cloud run upload limit`,
     );
   }
 
