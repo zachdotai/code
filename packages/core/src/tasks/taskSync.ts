@@ -16,6 +16,7 @@ import { createStore } from "zustand/vanilla";
 export const TASKS_COLLECTION = "tasks";
 export const TASK_SUMMARIES_COLLECTION = "task_summaries";
 export const CHANNEL_FEEDS_COLLECTION = "channel_feeds";
+export const TASK_THREADS_COLLECTION = "task_threads";
 export const TASK_PR_STATUS_COLLECTION = "task_pr_status";
 
 /** Cloud task lists were polled every 30s by three hooks; one source now. */
@@ -23,6 +24,9 @@ const TASKS_PULL_INTERVAL_MS = 30_000;
 /** Feeds are multiplayer: pull faster while a channel is on screen. */
 const TASKS_WITH_CHANNELS_INTERVAL_MS = 10_000;
 const PR_STATUS_INTERVAL_MS = 60_000;
+const THREADS_ACTIVE_INTERVAL_MS = 10_000;
+const THREADS_IDLE_INTERVAL_MS = 60_000;
+const THREAD_FETCH_CHUNK = 4;
 const TASKS_PAGE_LIMIT = 500;
 
 /**
@@ -78,6 +82,19 @@ export const channelFeedsEntity = defineEntity<SyncedEntity>({
   hydration: "eager",
 });
 
+/** One row per task: its human-side thread messages, replaced wholesale. */
+export const taskThreadEntitySchema = z.looseObject({
+  id: z.string(),
+  messages: z.array(z.unknown()),
+});
+
+export const taskThreadsEntity = defineEntity<SyncedEntity>({
+  name: TASK_THREADS_COLLECTION,
+  version: 1,
+  schema: taskThreadEntitySchema as unknown as z.ZodType<SyncedEntity>,
+  hydration: "eager",
+});
+
 /** One row per task: sidebar PR state derived by the host's git services. */
 export const taskPrStatusEntitySchema = z.looseObject({
   id: z.string(),
@@ -101,11 +118,14 @@ export interface TaskSyncConfig {
   includeInternal: boolean;
   /** Channels with an open feed — each gets its own pull window. */
   activeChannels: string[];
+  /** Tasks whose thread is on screen (feed rows and open panels). */
+  activeThreads: string[];
 }
 
 export const taskSyncConfigStore = createStore<TaskSyncConfig>(() => ({
   includeInternal: false,
   activeChannels: [],
+  activeThreads: [],
 }));
 
 export function setTaskSyncIncludeInternal(includeInternal: boolean): void {
@@ -123,6 +143,20 @@ export function addActiveChannel(channelId: string): void {
 export function removeActiveChannel(channelId: string): void {
   taskSyncConfigStore.setState((state) => ({
     activeChannels: state.activeChannels.filter((id) => id !== channelId),
+  }));
+}
+
+export function addActiveThread(taskId: string): void {
+  taskSyncConfigStore.setState((state) =>
+    state.activeThreads.includes(taskId)
+      ? state
+      : { activeThreads: [...state.activeThreads, taskId] },
+  );
+}
+
+export function removeActiveThread(taskId: string): void {
+  taskSyncConfigStore.setState((state) => ({
+    activeThreads: state.activeThreads.filter((id) => id !== taskId),
   }));
 }
 
@@ -198,6 +232,47 @@ export class TasksDeltaSource implements DeltaSource<SyncedEntity> {
     }
 
     return windows;
+  }
+}
+
+/**
+ * Pulls thread messages for every on-screen thread (feed rows register their
+ * task while visible; the open panel too). One centralized loop instead of a
+ * poll per row; rows replace wholesale, so reopening a thread is instant from
+ * the local store.
+ */
+export class TaskThreadsDeltaSource implements DeltaSource<SyncedEntity> {
+  readonly collection = TASK_THREADS_COLLECTION;
+
+  constructor(private readonly provider: CloudClientProvider) {}
+
+  get intervalMs(): number {
+    return taskSyncConfigStore.getState().activeThreads.length > 0
+      ? THREADS_ACTIVE_INTERVAL_MS
+      : THREADS_IDLE_INTERVAL_MS;
+  }
+
+  async pull(): Promise<PulledWindow<SyncedEntity>[] | null> {
+    const client = this.provider.getClient();
+    if (!client) return null;
+    const threadIds = taskSyncConfigStore.getState().activeThreads;
+    if (threadIds.length === 0) return [];
+
+    const rows: SyncedEntity[] = [];
+    for (let i = 0; i < threadIds.length; i += THREAD_FETCH_CHUNK) {
+      const chunk = threadIds.slice(i, i + THREAD_FETCH_CHUNK);
+      const fetched = await Promise.all(
+        chunk.map(async (taskId) => ({
+          id: taskId,
+          messages: await client.getTaskThreadMessages(taskId),
+        })),
+      );
+      rows.push(...(fetched as unknown as SyncedEntity[]));
+    }
+
+    // No sweep: rows replace wholesale per task; stale thread rows for
+    // deleted tasks are harmless and vanish with a schema bump or wipe.
+    return [{ key: "active-threads", rows, sweep: null }];
   }
 }
 

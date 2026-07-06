@@ -8,9 +8,11 @@ import {
   TaskPrStatusDeltaSource,
   TaskSummariesDeltaSource,
   TasksDeltaSource,
+  TaskThreadsDeltaSource,
   taskPrStatusEntity,
   taskSummariesEntity,
   tasksEntity,
+  taskThreadsEntity,
 } from "./taskSync";
 
 /**
@@ -28,9 +30,11 @@ export function registerTaskSync(
   registry.register(tasksEntity);
   registry.register(taskSummariesEntity);
   registry.register(channelFeedsEntity);
+  registry.register(taskThreadsEntity);
   registry.register(taskPrStatusEntity);
   engine.registerSource(new TasksDeltaSource(provider));
   engine.registerSource(new TaskSummariesDeltaSource(provider, registry));
+  engine.registerSource(new TaskThreadsDeltaSource(provider));
   if (prStatusClient) {
     engine.registerSource(
       new TaskPrStatusDeltaSource(prStatusClient, registry),

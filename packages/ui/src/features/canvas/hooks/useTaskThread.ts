@@ -1,57 +1,91 @@
+import type { EntityRegistry } from "@posthog/core/local-store/entityRegistry";
+import { ENTITY_REGISTRY } from "@posthog/core/local-store/identifiers";
+import type { SyncedEntity } from "@posthog/core/local-store/schemas";
+import { SYNC_ENGINE } from "@posthog/core/local-store/sync/identifiers";
+import type { SyncEngine } from "@posthog/core/local-store/sync/syncEngine";
+import {
+  addActiveThread,
+  removeActiveThread,
+  TASK_THREADS_COLLECTION,
+} from "@posthog/core/tasks/taskSync";
+import { useService } from "@posthog/di/react";
 import type { TaskThreadMessage } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
-import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
-
-const THREAD_POLL_INTERVAL_MS = 5_000;
+import { useMutation } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo } from "react";
+import { useStore } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 
 export function taskThreadQueryKey(taskId: string | undefined) {
   return ["task-thread", taskId ?? "none"] as const;
 }
 
-/** A task's thread — the human side conversation — in chronological order. */
+const EMPTY_MESSAGES: TaskThreadMessage[] = [];
+
+/**
+ * A task's thread — the human side conversation — in chronological order.
+ * Local-first: messages render from the synced task_threads pool (instant on
+ * reopen); mounting registers the task so the engine pulls it on the fast
+ * cadence — one centralized loop instead of a poll per feed row.
+ */
 export function useTaskThread(
   taskId: string | undefined,
-  options?: {
-    /** Poll cadence override; feed rows poll slower than the open panel. */
+  _options?: {
+    /** Ignored: freshness is owned by the sync engine's thread cadence. */
     pollIntervalMs?: number;
   },
 ): {
   messages: TaskThreadMessage[];
   isLoading: boolean;
 } {
-  const pollIntervalMs = options?.pollIntervalMs ?? THREAD_POLL_INTERVAL_MS;
-  const query = useAuthenticatedQuery<TaskThreadMessage[]>(
-    taskThreadQueryKey(taskId),
-    (client) => client.getTaskThreadMessages(taskId as string),
-    {
-      enabled: !!taskId,
-      refetchInterval: pollIntervalMs,
-      // Fresh-within-the-poll-window so focus/remount doesn't refire every
-      // feed row's thread query on top of the interval.
-      staleTime: pollIntervalMs,
-    },
+  const registry = useService<EntityRegistry>(ENTITY_REGISTRY);
+  const engine = useService<SyncEngine>(SYNC_ENGINE);
+
+  useEffect(() => {
+    if (!taskId) return;
+    addActiveThread(taskId);
+    engine.poke(TASK_THREADS_COLLECTION);
+    return () => removeActiveThread(taskId);
+  }, [taskId, engine]);
+
+  const pool = useMemo(
+    () => registry.getPool<SyncedEntity>(TASK_THREADS_COLLECTION),
+    [registry],
   );
-  return { messages: query.data ?? [], isLoading: query.isLoading };
+
+  const messages = useStore(
+    pool.store,
+    useShallow((state) => {
+      if (!taskId) return EMPTY_MESSAGES;
+      const row = state.entities[taskId] as
+        | { messages?: TaskThreadMessage[] }
+        | undefined;
+      return row?.messages ?? EMPTY_MESSAGES;
+    }),
+  );
+  const hasRow = useStore(pool.store, (state) =>
+    taskId ? state.entities[taskId] !== undefined : false,
+  );
+
+  return { messages, isLoading: !!taskId && !hasRow };
 }
 
 export function useTaskThreadMutations(taskId: string | undefined) {
   const client = useOptionalAuthenticatedClient();
-  const queryClient = useQueryClient();
+  const engine = useService<SyncEngine>(SYNC_ENGINE);
 
-  const invalidate = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: taskThreadQueryKey(taskId),
-    });
-  }, [queryClient, taskId]);
+  // Thread writes await the server (they're panel interactions, not bulk
+  // edits); the poke pulls the authoritative thread straight into the pool.
+  const refresh = useCallback(() => {
+    engine.poke(TASK_THREADS_COLLECTION);
+  }, [engine]);
 
   const postMutation = useMutation({
     mutationFn: async (content: string) => {
       if (!client || !taskId) throw new Error("Not authenticated");
       return client.createTaskThreadMessage(taskId, content);
     },
-    onSuccess: invalidate,
+    onSuccess: refresh,
   });
 
   const deleteMutation = useMutation({
@@ -59,7 +93,7 @@ export function useTaskThreadMutations(taskId: string | undefined) {
       if (!client || !taskId) throw new Error("Not authenticated");
       return client.deleteTaskThreadMessage(taskId, messageId);
     },
-    onSuccess: invalidate,
+    onSuccess: refresh,
   });
 
   const sendToAgentMutation = useMutation({
@@ -67,7 +101,7 @@ export function useTaskThreadMutations(taskId: string | undefined) {
       if (!client || !taskId) throw new Error("Not authenticated");
       return client.sendTaskThreadMessageToAgent(taskId, messageId);
     },
-    onSuccess: invalidate,
+    onSuccess: refresh,
   });
 
   return {
