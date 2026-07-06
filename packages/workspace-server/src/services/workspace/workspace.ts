@@ -7,6 +7,7 @@ import {
 } from "@posthog/di/logger";
 import { createGitClient } from "@posthog/git/client";
 import {
+  anyBranchRefExists,
   branchExists,
   getCurrentBranch,
   getDefaultBranch,
@@ -157,6 +158,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
   private creatingWorkspaces = new Map<string, Promise<WorkspaceInfo>>();
   private branchWatcherInitialized = false;
+  /** Tasks with an in-flight staleness check, so reads don't stack git calls. */
+  private staleLinkChecks = new Set<string>();
 
   private findTaskAssociation(taskId: string): TaskAssociation | null {
     const workspace = this.workspaceRepo.findByTaskId(taskId);
@@ -384,7 +387,10 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     this.log.info("Linked branch to task", { taskId, branchName, source });
   }
 
-  public unlinkBranch(taskId: string, source?: "agent" | "user"): void {
+  public unlinkBranch(
+    taskId: string,
+    source?: "agent" | "user" | "auto",
+  ): void {
     this.workspaceRepo.updateLinkedBranch(taskId, null);
     this.emit(WorkspaceServiceEvent.LinkedBranchChanged, {
       taskId,
@@ -395,6 +401,43 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       source: source ?? "unknown",
     });
     this.log.info("Unlinked branch from task", { taskId, source });
+  }
+
+  /**
+   * Drops a linked branch whose branch no longer exists anywhere — no local
+   * branch and no remote-tracking ref (the usual end state after a PR merge
+   * plus branch deletion). Such a link can never match the working tree
+   * again, so keeping it only produces wrong-branch warnings on every send.
+   * Returns true when the link was removed.
+   */
+  private async unlinkStaleLinkedBranch(
+    taskId: string,
+    linkedBranch: string,
+    repoPath: string,
+  ): Promise<boolean> {
+    if (this.staleLinkChecks.has(taskId)) return false;
+    this.staleLinkChecks.add(taskId);
+    try {
+      if (await anyBranchRefExists(repoPath, linkedBranch)) return false;
+      // Re-read: the link may have changed while the git check ran.
+      const row = this.workspaceRepo.findByTaskId(taskId);
+      if ((row?.linkedBranch ?? null) !== linkedBranch) return false;
+      this.log.info("Linked branch has no remaining refs, unlinking", {
+        taskId,
+        linkedBranch,
+      });
+      this.unlinkBranch(taskId, "auto");
+      return true;
+    } catch (error) {
+      this.log.warn("Failed to check linked branch staleness", {
+        taskId,
+        linkedBranch,
+        error,
+      });
+      return false;
+    } finally {
+      this.staleLinkChecks.delete(taskId);
+    }
   }
 
   private getLocalWorktreePathIfExists(
@@ -1080,7 +1123,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     }
 
     const dbRow = this.workspaceRepo.findByTaskId(taskId);
-    const linkedBranch = dbRow?.linkedBranch ?? null;
+    let linkedBranch = dbRow?.linkedBranch ?? null;
 
     if (assoc.mode === "cloud") {
       return {
@@ -1114,6 +1157,21 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         await this.getLocalWorktreePathIfExists(folderPath);
       const branchPath = localWorktreePath ?? folderPath;
       branchName = await getBranchFromPath(branchPath);
+    }
+
+    // Only a mismatched link can be stale: being on the linked branch proves
+    // it exists, and without a current branch nothing warns anyway.
+    if (
+      linkedBranch &&
+      branchName &&
+      linkedBranch !== branchName &&
+      (await this.unlinkStaleLinkedBranch(
+        taskId,
+        linkedBranch,
+        worktreePath ?? folderPath,
+      ))
+    ) {
+      linkedBranch = null;
     }
 
     return {
