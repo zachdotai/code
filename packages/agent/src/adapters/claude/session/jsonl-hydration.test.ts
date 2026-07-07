@@ -1425,4 +1425,90 @@ describe("hydrateSessionJsonl", () => {
     await fs.chmod(path.dirname(file), 0o755);
     expect(await fs.readFile(file, "utf8")).toBe(before);
   });
+
+  it("seeds from the raw transcript artifact instead of ACP reconstruction", async () => {
+    const transcriptLine = JSON.stringify({
+      type: "assistant",
+      uuid: "raw-1",
+      parentUuid: null,
+      message: { role: "assistant", content: [{ type: "text", text: "raw" }] },
+    });
+    const getTaskRun = vi.fn().mockResolvedValue({
+      log_url: "s3://logs/run.jsonl",
+      artifacts: [
+        // Two entries with the same name: the manifest appends per turn-end
+        // upload, and the seed must take the most recent (last) one.
+        {
+          name: `transcript-${sessionId}.jsonl`,
+          type: "artifact",
+          storage_path: "tasks/artifacts/run/stale_transcript.jsonl",
+        },
+        {
+          name: `transcript-${sessionId}.jsonl`,
+          type: "artifact",
+          storage_path: "tasks/artifacts/run/transcript.jsonl",
+        },
+      ],
+    });
+    const downloadArtifact = vi
+      .fn()
+      .mockResolvedValue(
+        new TextEncoder().encode(`${transcriptLine}\n`).buffer,
+      );
+    const fetchTaskRunLogs = vi.fn();
+    const posthogAPI = {
+      getTaskRun,
+      downloadArtifact,
+      fetchTaskRunLogs,
+    } as unknown as PostHogAPIClient;
+    const log = { info: vi.fn(), warn: vi.fn() };
+
+    const result = await hydrateSessionJsonl({
+      sessionId,
+      cwd,
+      taskId: "warmup-task",
+      runId: "warmup-run",
+      posthogAPI,
+      log,
+    });
+
+    expect(result).toBe(true);
+    expect(downloadArtifact).toHaveBeenCalledWith(
+      "warmup-task",
+      "warmup-run",
+      "tasks/artifacts/run/transcript.jsonl",
+    );
+    // The lossy ACP reconstruction path must not run when the raw file seeds.
+    expect(fetchTaskRunLogs).not.toHaveBeenCalled();
+    const file = getSessionJsonlPath(sessionId, cwd);
+    expect(await fs.readFile(file, "utf8")).toContain('"raw"');
+  });
+
+  it("falls back past the transcript seed when the run has no such artifact", async () => {
+    const getTaskRun = vi.fn().mockResolvedValue({
+      log_url: "",
+      artifacts: [],
+    });
+    const downloadArtifact = vi.fn();
+    const posthogAPI = {
+      getTaskRun,
+      downloadArtifact,
+    } as unknown as PostHogAPIClient;
+    const log = { info: vi.fn(), warn: vi.fn() };
+
+    const result = await hydrateSessionJsonl({
+      sessionId,
+      cwd,
+      taskId: "t1",
+      runId: "r1",
+      posthogAPI,
+      log,
+    });
+
+    expect(result).toBe(false);
+    expect(downloadArtifact).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith(
+      "No log URL, skipping JSONL hydration",
+    );
+  });
 });

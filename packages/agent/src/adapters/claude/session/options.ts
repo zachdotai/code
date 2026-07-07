@@ -98,6 +98,9 @@ export function buildSystemPrompt(
     type: "preset",
     preset: "claude_code",
     append: APPENDED_INSTRUCTIONS,
+    // Keep the preset byte-stable across sessions (no cwd/git-status/date
+    // sections) so identical prompts can share Anthropic's prompt cache.
+    excludeDynamicSections: true,
   };
 
   if (!customPrompt) {
@@ -158,8 +161,11 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
   if (projectId) {
     headerLines.push(`x-posthog-property-team_id: ${projectId}`);
   }
-  // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
-  headerLines.push("x-posthog-use-bedrock-fallback: true");
+  // Route to AWS Bedrock as a fallback when Anthropic returns 5xx. Bedrock has
+  // a separate prompt-cache namespace, so cache-sensitive runs can opt out.
+  if (!process.env.POSTHOG_DISABLE_BEDROCK_FALLBACK) {
+    headerLines.push("x-posthog-use-bedrock-fallback: true");
+  }
   const customHeaders = headerLines.join("\n");
 
   // SDK 0.3.142 made MCP servers connect in the background by default. That
@@ -494,7 +500,14 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     options.model = DEFAULT_MODEL;
   }
 
-  if (!options.fallbackModel && options.model !== FALLBACK_MODEL) {
+  // The rescue silently switches the session's model mid-run, which breaks
+  // prompt-cache sharing (model is part of the cache key) and model-pinned
+  // measurement — pinned-model workloads can opt out and rely on retries.
+  if (
+    !options.fallbackModel &&
+    options.model !== FALLBACK_MODEL &&
+    !process.env.POSTHOG_DISABLE_MODEL_FALLBACK
+  ) {
     options.fallbackModel = FALLBACK_MODEL;
   }
 

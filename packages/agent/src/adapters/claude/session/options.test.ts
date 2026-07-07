@@ -4,7 +4,7 @@ import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../../utils/logger";
 import { SUBAGENT_REWRITES } from "../hooks";
-import { buildSessionOptions } from "./options";
+import { buildSessionOptions, buildSystemPrompt } from "./options";
 import { SettingsManager } from "./settings";
 
 const GIT_COMMIT_HOOK_INPUT = {
@@ -113,6 +113,16 @@ describe("buildSessionOptions", () => {
     });
 
     expect(options.fallbackModel).toBe("claude-sonnet-5");
+  });
+
+  it("omits fallbackModel when POSTHOG_DISABLE_MODEL_FALLBACK is set", () => {
+    process.env.POSTHOG_DISABLE_MODEL_FALLBACK = "1";
+    try {
+      const options = buildSessionOptions(makeParams());
+      expect(options.fallbackModel).toBeUndefined();
+    } finally {
+      delete process.env.POSTHOG_DISABLE_MODEL_FALLBACK;
+    }
   });
 
   it("threads onEnsureLocalToolsConnected into the signed-commit guard (cloud)", async () => {
@@ -253,6 +263,51 @@ describe("buildSessionOptions", () => {
         ?.ANTHROPIC_CUSTOM_HEADERS;
 
       expect(headers).toBe(expected);
+    });
+
+    it("omits the Bedrock fallback header when POSTHOG_DISABLE_BEDROCK_FALLBACK is set", () => {
+      process.env.POSTHOG_DISABLE_BEDROCK_FALLBACK = "1";
+      try {
+        const headers = buildSessionOptions(makeParams()).env
+          ?.ANTHROPIC_CUSTOM_HEADERS;
+        expect(headers).not.toContain("x-posthog-use-bedrock-fallback");
+      } finally {
+        delete process.env.POSTHOG_DISABLE_BEDROCK_FALLBACK;
+      }
+    });
+  });
+
+  describe("systemPrompt", () => {
+    // Dynamic preset sections (cwd, git status, date) vary per session and per
+    // request; excluding them keeps identical prompts byte-stable so they can
+    // share Anthropic's prompt cache across sessions.
+    it("excludes dynamic preset sections by default", () => {
+      expect(buildSystemPrompt()).toMatchObject({
+        type: "preset",
+        preset: "claude_code",
+        excludeDynamicSections: true,
+      });
+    });
+
+    it("excludes dynamic preset sections for the cloud append shape", () => {
+      const prompt = buildSystemPrompt({ append: "cloud instructions" });
+      expect(prompt).toMatchObject({
+        type: "preset",
+        preset: "claude_code",
+        excludeDynamicSections: true,
+      });
+      expect((prompt as { append: string }).append).toContain(
+        "cloud instructions",
+      );
+    });
+
+    it("applies the built prompt to session options", () => {
+      const options = buildSessionOptions(makeParams());
+      expect(options.systemPrompt).toMatchObject({
+        type: "preset",
+        preset: "claude_code",
+        excludeDynamicSections: true,
+      });
     });
   });
 });

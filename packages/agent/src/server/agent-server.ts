@@ -28,6 +28,7 @@ import {
 import {
   getSessionJsonlPath,
   hydrateSessionJsonl,
+  rawTranscriptArtifactName,
 } from "../adapters/claude/session/jsonl-hydration";
 import type { GatewayEnv } from "../adapters/claude/session/options";
 import {
@@ -676,9 +677,10 @@ export class AgentServer {
 
     const resumeRunId = this.getResumeRunId(preTaskRun);
     if (!resumeRunId) return null;
+    const resumeTaskId = this.getResumeTaskId(preTaskRun) ?? payload.task_id;
 
     if (!this.resumeState) {
-      await this.loadResumeState(payload.task_id, resumeRunId, payload.run_id);
+      await this.loadResumeState(resumeTaskId, resumeRunId, payload.run_id);
     }
 
     const priorSessionId = this.resumeState?.sessionId ?? null;
@@ -701,7 +703,7 @@ export class AgentServer {
       const hasSession = await hydrateSessionJsonl({
         sessionId: priorSessionId,
         cwd,
-        taskId: payload.task_id,
+        taskId: resumeTaskId,
         runId: resumeRunId,
         model: this.config.model,
         permissionMode,
@@ -1542,7 +1544,7 @@ export class AgentServer {
       const resumeRunId = this.getResumeRunId(taskRun);
       if (resumeRunId) {
         await this.loadResumeState(
-          payload.task_id,
+          this.getResumeTaskId(taskRun) ?? payload.task_id,
           resumeRunId,
           payload.run_id,
         );
@@ -2446,7 +2448,11 @@ export class AgentServer {
 
     const resumeRunId = process.env.POSTHOG_RESUME_RUN_ID;
     if (resumeRunId) {
-      await this.loadResumeState(taskId, resumeRunId, runId);
+      await this.loadResumeState(
+        process.env.POSTHOG_RESUME_TASK_ID || taskId,
+        resumeRunId,
+        runId,
+      );
     }
 
     // Create a synthetic payload from config (no JWT needed for auto-init)
@@ -2473,6 +2479,23 @@ export class AgentServer {
     const stateRunId = state?.resume_from_run_id;
     return typeof stateRunId === "string" && stateRunId.trim().length > 0
       ? stateRunId.trim()
+      : null;
+  }
+
+  /**
+   * The task that owns the resume run, when it is not the current task.
+   * Run lookups are routed per task, so forking another task's session
+   * (e.g. a shared warm-up run) must address that task explicitly.
+   */
+  private getResumeTaskId(taskRun: TaskRun | null): string | null {
+    const envTaskId = process.env.POSTHOG_RESUME_TASK_ID;
+    if (envTaskId) return envTaskId;
+
+    if (!taskRun) return null;
+    const state = taskRun.state as Record<string, unknown> | undefined;
+    const stateTaskId = state?.resume_from_task_id;
+    return typeof stateTaskId === "string" && stateTaskId.trim().length > 0
+      ? stateTaskId.trim()
       : null;
   }
 
@@ -2589,7 +2612,6 @@ export class AgentServer {
     slackThreadUrl?: string | null,
     inboxReportUrl?: string | null,
   ): string {
-    const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
     const isSlack = this.getCloudInteractionOrigin() === "slack";
     const identityInstructions = isSlack
@@ -2657,7 +2679,7 @@ Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to 
 commit messages. The \`git_signed_commit\` tool automatically appends the only trailers
 we want:
   Generated-By: PostHog Code
-  Task-Id: ${taskId}`;
+  Task-Id: <this task's id>`;
 
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
     const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, the contents of Slack threads (do not quote or paraphrase what was said), or unreleased roadmap details. Linking to the originating Slack thread is fine and encouraged — Slack links are auth-gated and useful as context — as are channel references like "raised in #team-foo". Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
@@ -3370,6 +3392,12 @@ ${signedCommitInstructions}
       this.logger.error("Failed to flush session logs", error);
     }
 
+    try {
+      await this.uploadRawSessionTranscript();
+    } catch (error) {
+      this.logger.error("Failed to upload raw session transcript", error);
+    }
+
     // Drain pending permissions before ACP cleanup to avoid deadlocks —
     // cleanup may await operations that are blocked on a permission response.
     for (const [, pending] of this.pendingPermissions) {
@@ -3397,6 +3425,46 @@ ${signedCommitInstructions}
     this.pendingEvents = [];
     this.lastReportedBranch = null;
     this.session = null;
+  }
+
+  /**
+   * Persist the raw Claude session JSONL as a run artifact. The S3 ACP log is
+   * a lossy reconstruction (fresh UUIDs, flattened tool results, truncation),
+   * so a byte-exact session resume/fork needs the original file. Best-effort;
+   * POSTHOG_DISABLE_TRANSCRIPT_UPLOAD opts a sandbox out.
+   */
+  private async uploadRawSessionTranscript(): Promise<void> {
+    if (!this.session || !this.posthogAPI) return;
+    if (process.env.POSTHOG_DISABLE_TRANSCRIPT_UPLOAD) return;
+    const sessionId = this.session.acpSessionId;
+    if (!sessionId) return;
+    const cwd = this.config.repositoryPath ?? "/tmp/workspace";
+    const jsonlPath = getSessionJsonlPath(sessionId, cwd);
+    let content: string;
+    try {
+      content = await readFile(jsonlPath, "utf8");
+    } catch {
+      this.logger.debug("No raw session JSONL to upload", { jsonlPath });
+      return;
+    }
+    if (!content.trim()) return;
+    const uploaded = await this.posthogAPI.uploadTaskArtifacts(
+      this.session.payload.task_id,
+      this.session.payload.run_id,
+      [
+        {
+          name: rawTranscriptArtifactName(sessionId),
+          type: "artifact",
+          content,
+          content_type: "application/x-ndjson",
+        },
+      ],
+    );
+    this.logger.debug("Uploaded raw session transcript artifact", {
+      jsonlPath,
+      bytes: content.length,
+      uploadedCount: uploaded.length,
+    });
   }
 
   private async captureCheckpointState(
@@ -3473,6 +3541,15 @@ ${signedCommitInstructions}
       timestamp: new Date().toISOString(),
       notification,
     });
+
+    if (stopReason === "end_turn") {
+      // Persist the raw transcript at every turn end: sandbox teardown on task
+      // completion does not reliably reach cleanupSession, and a follower
+      // forking this run needs the artifact the moment the last turn lands.
+      void this.uploadRawSessionTranscript().catch((error) =>
+        this.logger.debug("Turn-end transcript upload failed", { error }),
+      );
+    }
 
     this.session.logWriter.appendRawLine(
       this.session.payload.run_id,

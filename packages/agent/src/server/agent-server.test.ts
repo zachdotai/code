@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
@@ -209,6 +209,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => ({
 }));
 
 interface TestableServer {
+  getResumeTaskId(taskRun: TaskRun | null): string | null;
+  uploadRawSessionTranscript(): Promise<void>;
+  posthogAPI: unknown;
+  session: unknown;
   getInitialPromptOverride(run: TaskRun): string | null;
   getClearedPendingUserState(run: TaskRun | null): string[] | null;
   clearPendingInitialPromptState(
@@ -424,6 +428,91 @@ describe("AgentServer HTTP Mode", () => {
       TEST_PRIVATE_KEY,
     );
   };
+
+  describe("getResumeTaskId", () => {
+    afterEach(() => {
+      delete process.env.POSTHOG_RESUME_TASK_ID;
+    });
+
+    it("prefers the env var over TaskRun state", () => {
+      process.env.POSTHOG_RESUME_TASK_ID = "warmup-task";
+      const s = createServer() as unknown as TestableServer;
+      expect(s.getResumeTaskId(null)).toBe("warmup-task");
+    });
+
+    it("falls back to TaskRun state, else null", () => {
+      const s = createServer() as unknown as TestableServer;
+      expect(
+        s.getResumeTaskId({
+          state: { resume_from_task_id: "other-task" },
+        } as unknown as TaskRun),
+      ).toBe("other-task");
+      expect(s.getResumeTaskId({ state: {} } as unknown as TaskRun)).toBeNull();
+      expect(s.getResumeTaskId(null)).toBeNull();
+    });
+  });
+
+  describe("uploadRawSessionTranscript", () => {
+    let configDir: string;
+    let originalConfigDir: string | undefined;
+
+    beforeEach(async () => {
+      originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      configDir = await mkdtemp(join(tmpdir(), "transcript-upload-"));
+      process.env.CLAUDE_CONFIG_DIR = configDir;
+    });
+
+    afterEach(async () => {
+      if (originalConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+      await rm(configDir, { recursive: true, force: true });
+    });
+
+    it("uploads the raw session JSONL as a run artifact", async () => {
+      const s = createServer() as unknown as TestableServer;
+      const sessionId = "upload-sess";
+      const file = getSessionJsonlPath(sessionId, repo.path);
+      await mkdir(join(file, ".."), { recursive: true });
+      await writeFile(file, '{"type":"assistant","uuid":"u1"}\n');
+
+      const uploadTaskArtifacts = vi.fn().mockResolvedValue([
+        { name: `transcript-${sessionId}.jsonl`, type: "artifact" },
+      ]);
+      s.posthogAPI = { uploadTaskArtifacts };
+      s.session = {
+        acpSessionId: sessionId,
+        payload: { task_id: "test-task-id", run_id: "test-run-id" },
+      };
+
+      await s.uploadRawSessionTranscript();
+
+      expect(uploadTaskArtifacts).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        [
+          expect.objectContaining({
+            name: `transcript-${sessionId}.jsonl`,
+            type: "artifact",
+            content: '{"type":"assistant","uuid":"u1"}\n',
+          }),
+        ],
+      );
+    });
+
+    it("skips quietly when the session JSONL does not exist", async () => {
+      const s = createServer() as unknown as TestableServer;
+      const uploadTaskArtifacts = vi.fn();
+      s.posthogAPI = { uploadTaskArtifacts };
+      s.session = {
+        acpSessionId: "missing-sess",
+        payload: { task_id: "test-task-id", run_id: "test-run-id" },
+      };
+
+      await s.uploadRawSessionTranscript();
+
+      expect(uploadTaskArtifacts).not.toHaveBeenCalled();
+    });
+  });
 
   describe("GET /health", () => {
     it("returns ok status with active session", async () => {
@@ -1888,7 +1977,10 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).not.toContain("gh pr checkout");
       expect(prompt).not.toContain("Create a draft pull request");
       expect(prompt).toContain("Generated-By: PostHog Code");
-      expect(prompt).toContain("Task-Id: test-task-id");
+      expect(prompt).toContain("Task-Id: <this task's id>");
+      // The task id must never be interpolated into the prompt — it would make
+      // the system prompt task-unique and defeat cross-session prompt caching.
+      expect(prompt).not.toContain("test-task-id");
     });
 
     it("returns default prompt when no prUrl", () => {
@@ -1899,7 +1991,7 @@ describe("AgentServer HTTP Mode", () => {
         "Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.",
       );
       expect(prompt).toContain("Generated-By: PostHog Code");
-      expect(prompt).toContain("Task-Id: test-task-id");
+      expect(prompt).toContain("Task-Id: <this task's id>");
       expect(prompt).not.toContain("gh pr create --draft");
     });
 
@@ -1926,7 +2018,7 @@ describe("AgentServer HTTP Mode", () => {
           "gh issue list --search",
           "Closes #<n>",
           "Generated-By: PostHog Code",
-          "Task-Id: test-task-id",
+          "Task-Id: <this task's id>",
         ],
         shouldNotContain: [],
       },
@@ -1965,7 +2057,7 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("Create a draft pull request");
       expect(prompt).toContain("gh pr create --draft");
       expect(prompt).toContain("Generated-By: PostHog Code");
-      expect(prompt).toContain("Task-Id: test-task-id");
+      expect(prompt).toContain("Task-Id: <this task's id>");
       // Slack-origin PRs are attributed to PostHog, not the PostHog Code app.
       expect(prompt).toContain(
         "Created with [PostHog](https://posthog.com?ref=pr)",

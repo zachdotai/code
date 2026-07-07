@@ -5,7 +5,7 @@ import * as path from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { DEFAULT_GATEWAY_MODEL } from "../../../gateway-models";
 import type { PostHogAPIClient } from "../../../posthog-api";
-import type { StoredEntry } from "../../../types";
+import type { StoredEntry, TaskRun } from "../../../types";
 import { isEmptyContentBlock } from "../../../utils/acp-content";
 import { supports1MContext } from "./models";
 
@@ -651,6 +651,68 @@ export async function sanitizeSessionJsonl(
   }
 }
 
+export function rawTranscriptArtifactName(sessionId: string): string {
+  // Slash-free on purpose: the backend keeps only the basename of an artifact name.
+  return `transcript-${sessionId}.jsonl`;
+}
+
+async function seedFromRawTranscriptArtifact(
+  taskRun: TaskRun,
+  params: {
+    sessionId: string;
+    taskId: string;
+    runId: string;
+    posthogAPI: PostHogAPIClient;
+    log: HydrationLog;
+  },
+  jsonlPath: string,
+): Promise<boolean> {
+  const { posthogAPI, log } = params;
+  try {
+    const wanted = rawTranscriptArtifactName(params.sessionId);
+    // The manifest appends on every upload (one entry per turn-end), so the
+    // last matching entry is the most recent transcript.
+    const matches = (taskRun.artifacts ?? []).filter(
+      (a) => a.name === wanted && a.storage_path,
+    );
+    const artifact = matches[matches.length - 1];
+    if (!artifact?.storage_path) {
+      return false;
+    }
+    const content = await posthogAPI.downloadArtifact(
+      params.taskId,
+      params.runId,
+      artifact.storage_path,
+    );
+    if (!content || content.byteLength === 0) {
+      log.warn("Raw transcript artifact download returned no content", {
+        artifact: wanted,
+      });
+      return false;
+    }
+    await fs.mkdir(path.dirname(jsonlPath), { recursive: true });
+    await fs.writeFile(jsonlPath, Buffer.from(content));
+    try {
+      await sanitizeSessionJsonl(jsonlPath);
+    } catch (err) {
+      log.warn("Failed to sanitize seeded session JSONL", {
+        jsonlPath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    log.info("Seeded session JSONL from raw transcript artifact", {
+      jsonlPath,
+      bytes: content.byteLength,
+    });
+    return true;
+  } catch (error) {
+    log.warn("Raw transcript seed failed; falling back to ACP reconstruction", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
 export async function hydrateSessionJsonl(params: {
   sessionId: string;
   cwd: string;
@@ -687,6 +749,14 @@ export async function hydrateSessionJsonl(params: {
     }
 
     const taskRun = await posthogAPI.getTaskRun(params.taskId, params.runId);
+
+    // Prefer the raw session transcript uploaded at the source run's cleanup:
+    // the ACP-log reconstruction below is lossy (fresh UUIDs, flattened tool
+    // results, truncation), so a resume/fork from it is never byte-exact.
+    if (await seedFromRawTranscriptArtifact(taskRun, params, jsonlPath)) {
+      return true;
+    }
+
     if (!taskRun.log_url) {
       log.info("No log URL, skipping JSONL hydration");
       return false;
