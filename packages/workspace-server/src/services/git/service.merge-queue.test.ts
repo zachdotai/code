@@ -22,6 +22,16 @@ function checkRunsResponse(
   return JSON.stringify({ check_runs: runs });
 }
 
+function mergeQueueEntryResponse(state: string | null) {
+  return JSON.stringify({
+    data: {
+      repository: {
+        pullRequest: { mergeQueueEntry: state ? { state } : null },
+      },
+    },
+  });
+}
+
 describe("GitService.getPrMergeQueueStatus", () => {
   let git: GitService;
   beforeEach(() => {
@@ -68,13 +78,60 @@ describe("GitService.getPrMergeQueueStatus", () => {
     ]);
   });
 
-  it("returns null when there is no Trunk check run", async () => {
+  it("returns null when no queue check matches and there is no native entry", async () => {
     execGh
       .mockResolvedValueOnce(ok("abc123"))
       .mockResolvedValueOnce(
         ok(checkRunsResponse([{ name: "build", status: "completed" }])),
-      );
+      )
+      // No named queue check -> falls back to the native merge-queue query.
+      .mockResolvedValueOnce(ok(mergeQueueEntryResponse(null)));
     expect(await git.getPrMergeQueueStatus(PR_URL)).toBeNull();
+  });
+
+  it("reads GitHub's native merge queue via GraphQL when no check matches", async () => {
+    execGh
+      .mockResolvedValueOnce(ok("abc123"))
+      .mockResolvedValueOnce(
+        ok(checkRunsResponse([{ name: "build", status: "completed" }])),
+      )
+      .mockResolvedValueOnce(ok(mergeQueueEntryResponse("QUEUED")));
+
+    const result = await git.getPrMergeQueueStatus(PR_URL);
+    expect(result).toEqual({
+      status: "queued",
+      conclusion: null,
+      detailsUrl: null,
+      name: "GitHub merge queue",
+    });
+
+    // Third call is the GraphQL mergeQueueEntry lookup for the PR.
+    const graphqlArgs = execGh.mock.calls[2][0] as string[];
+    expect(graphqlArgs[0]).toBe("api");
+    expect(graphqlArgs[1]).toBe("graphql");
+    expect(graphqlArgs[3]).toContain("mergeQueueEntry");
+    expect(graphqlArgs[3]).toContain('owner: "o"');
+    expect(graphqlArgs[3]).toContain('name: "r"');
+    expect(graphqlArgs[3]).toContain("pullRequest(number: 1)");
+  });
+
+  it("matches a non-Trunk provider check (Mergify) without a native call", async () => {
+    execGh.mockResolvedValueOnce(ok("abc123")).mockResolvedValueOnce(
+      ok(
+        checkRunsResponse([
+          {
+            name: "Queue: embarked in merge train",
+            status: "in_progress",
+            conclusion: null,
+            started_at: "2026-01-01T00:00:00Z",
+          },
+        ]),
+      ),
+    );
+    const result = await git.getPrMergeQueueStatus(PR_URL);
+    expect(result?.status).toBe("in_progress");
+    // No GraphQL fallback needed once a check-run provider matches.
+    expect(execGh).toHaveBeenCalledTimes(2);
   });
 
   it("picks the most recently started Trunk run", async () => {

@@ -466,9 +466,10 @@ export {
   prMergeMethodSchema,
 } from "@posthog/shared";
 
-// Trunk merge-queue status, read from the `Trunk Merge Queue (<branch>)` GitHub
-// check run on the PR's head commit. Null when the PR has never been enqueued
-// (no such check run exists). Mirrors `prMergeQueueStatusSchema` in
+// Provider-agnostic merge-queue status for a PR, modelled on the GitHub
+// check-run shape most queues expose (Trunk, Mergify, bors, ...) and mapped
+// from GitHub's native `mergeQueueEntry` state where there is no check run.
+// Null when the PR is not in any queue. Mirrors `prMergeQueueStatusSchema` in
 // `@posthog/core/git/router-schemas`.
 export const prMergeQueueStatusSchema = z.object({
   status: z.enum(["queued", "in_progress", "completed"]),

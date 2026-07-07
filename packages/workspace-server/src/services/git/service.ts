@@ -47,6 +47,11 @@ import { parseGithubUrl } from "@posthog/git/utils";
 import { TypedEventEmitter } from "@posthog/shared";
 import { injectable } from "inversify";
 import type { SidebarPrState } from "../workspace/schemas";
+import {
+  type CheckRun,
+  mapNativeMergeQueueState,
+  resolveMergeQueueFromCheckRuns,
+} from "./merge-queue-providers";
 import type {
   ApprovePrOutput,
   ChangedFile,
@@ -91,22 +96,11 @@ import type {
   SyncOutput,
   UpdatePrByUrlOutput,
 } from "./schemas";
-import {
-  getPrInfoByUrlOutput,
-  prConversationCommentSchema,
-  prMergeQueueStatusSchema,
-} from "./schemas";
+import { getPrInfoByUrlOutput, prConversationCommentSchema } from "./schemas";
 
 const FETCH_THROTTLE_MS = 30_000;
 /** Max PRs per GraphQL request – stays well under GitHub's complexity ceiling. */
 const PR_DIFF_STATS_BATCH_CHUNK_SIZE = 25;
-
-/**
- * Name prefix of the GitHub check run Trunk posts on a PR head commit while it
- * moves through the merge queue. The full name carries the target branch
- * (`Trunk Merge Queue (main)`), so we match by prefix to stay branch-agnostic.
- */
-export const TRUNK_MERGE_CHECK_PREFIX = "Trunk Merge Queue";
 
 /**
  * Escape a string for embedding in a GraphQL double-quoted literal. GitHub
@@ -1028,10 +1022,13 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
   }
 
   /**
-   * Read the Trunk merge-queue status for a PR from the `Trunk Merge Queue`
-   * check run on its head commit. Returns null when the PR has never been
-   * enqueued (no such check run) or the lookup fails — callers treat null as
-   * "not in the queue" and fall back to the plain PR lifecycle badge.
+   * Read a PR's live merge-queue status, provider-agnostically. Most queues
+   * (Trunk, Mergify, bors, Aviator, Kodiak, Graphite, ...) post a check run on
+   * the PR head commit, matched by name in `merge-queue-providers`. GitHub's
+   * native merge queue posts no such check, so we fall back to its GraphQL
+   * `mergeQueueEntry` state. Returns null when the PR is not in any queue or the
+   * lookup fails — callers treat null as "not queued" and show the plain PR
+   * lifecycle badge.
    */
   async getPrMergeQueueStatus(
     prUrl: string,
@@ -1057,45 +1054,45 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       if (runsResult.exitCode !== 0) return null;
 
       const { check_runs: checkRuns } = JSON.parse(runsResult.stdout) as {
-        check_runs?: Array<{
-          name: string;
-          status: string;
-          conclusion: string | null;
-          details_url: string | null;
-          html_url: string | null;
-          started_at: string | null;
-        }>;
+        check_runs?: CheckRun[];
       };
-      if (!checkRuns?.length) return null;
 
-      const trunkRuns = checkRuns.filter((run) =>
-        run.name.startsWith(TRUNK_MERGE_CHECK_PREFIX),
-      );
-      if (trunkRuns.length === 0) return null;
+      const fromCheckRun = resolveMergeQueueFromCheckRuns(checkRuns ?? []);
+      if (fromCheckRun) return fromCheckRun;
 
-      // A PR can accumulate stale check runs across re-enqueues; take the most
-      // recently started one as the live status.
-      const latest = trunkRuns.reduce((a, b) =>
-        (b.started_at ?? "") > (a.started_at ?? "") ? b : a,
-      );
-
-      const status = prMergeQueueStatusSchema.shape.status.safeParse(
-        latest.status,
-      );
-      if (!status.success) return null;
-      const conclusion = prMergeQueueStatusSchema.shape.conclusion.safeParse(
-        latest.conclusion,
-      );
-
-      return {
-        status: status.data,
-        conclusion: conclusion.success ? conclusion.data : null,
-        detailsUrl: latest.details_url ?? latest.html_url ?? null,
-        name: latest.name,
-      };
+      // No named queue check — the repo may be on GitHub's native merge queue.
+      return await this.getNativeMergeQueueStatus(pr);
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Read GitHub's native merge-queue state for a PR via the GraphQL
+   * `mergeQueueEntry` field. Null when the PR has no queue entry (or the repo
+   * doesn't use the native queue). Used only as a fallback after the check-run
+   * providers miss, so repos on Trunk/Mergify/etc. never pay for this call.
+   */
+  private async getNativeMergeQueueStatus(pr: {
+    owner: string;
+    repo: string;
+    number: number;
+  }): Promise<PrMergeQueueStatus | null> {
+    const query = `query { repository(owner: "${escapeGraphqlString(pr.owner)}", name: "${escapeGraphqlString(pr.repo)}") { pullRequest(number: ${pr.number}) { mergeQueueEntry { state } } } }`;
+    const result = await execGh(["api", "graphql", "-f", `query=${query}`]);
+    if (result.exitCode !== 0) return null;
+
+    const state = (
+      JSON.parse(result.stdout) as {
+        data?: {
+          repository?: {
+            pullRequest?: { mergeQueueEntry?: { state?: string } | null };
+          };
+        };
+      }
+    ).data?.repository?.pullRequest?.mergeQueueEntry?.state;
+
+    return mapNativeMergeQueueState(state);
   }
 
   async getPrChangedFiles(prUrl: string): Promise<ChangedFile[]> {
@@ -1389,8 +1386,9 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
       return { success: false, message: "Invalid PR URL" };
     }
 
-    // Merge-queue submit/cancel are driven by Trunk's GitHub comment commands
-    // rather than a `gh pr` subcommand.
+    // Enqueue/cancel currently targets Trunk's GitHub comment commands. Status
+    // reads (getPrMergeQueueStatus) are provider-agnostic, but submitting to a
+    // queue is provider-specific; only Trunk is wired up for now.
     if (action === "merge-queue" || action === "merge-queue-cancel") {
       const body = action === "merge-queue" ? "/trunk merge" : "/trunk cancel";
       const commentResult = await execGh([

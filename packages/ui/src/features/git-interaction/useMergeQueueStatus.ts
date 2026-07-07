@@ -9,11 +9,12 @@ interface UseMergeQueueStatusOptions {
 }
 
 /**
- * Reads the PR's Trunk merge-queue status (the `Trunk Merge Queue` check run)
- * and polls every 30s while it is actively queued/testing. When the run settles
- * (completes), it invalidates the PR-details and task-PR-status caches so the
- * badge flips to Merged and the server re-emits `taskPrInfoChanged` (which the
- * workspace-events contribution turns into the "PR merged" notification).
+ * Reads the PR's merge-queue status (whichever queue the repo uses — resolved
+ * provider-agnostically server-side) and polls every 30s while it is actively
+ * queued/testing. When the run settles (completes), it invalidates the
+ * PR-details and task-PR-status caches so the badge flips to Merged and the
+ * server re-emits `taskPrInfoChanged` (which the workspace-events contribution
+ * turns into the "PR merged" notification).
  */
 export function useMergeQueueStatus(
   prUrl: string | null,
