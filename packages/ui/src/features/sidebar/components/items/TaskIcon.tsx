@@ -184,61 +184,90 @@ function CloudStatusIcon({
   );
 }
 
+type PrStateMeta = { Icon: typeof GitMerge; color: string; label: string };
+const PR_STATE_META: Record<Exclude<SidebarPrState, null>, PrStateMeta> = {
+  merged: { Icon: GitMerge, color: "var(--purple-11)", label: "PR merged" },
+  open: { Icon: GitPullRequest, color: "var(--green-11)", label: "PR open" },
+  draft: { Icon: GitPullRequest, color: "var(--gray-9)", label: "Draft PR" },
+  closed: { Icon: GitPullRequest, color: "var(--red-11)", label: "PR closed" },
+};
+const DIFF_META: PrStateMeta = {
+  Icon: GitBranch,
+  color: "var(--amber-11)",
+  label: "Has changes",
+};
+
 function PrStatusIcon({
   prState,
   hasDiff,
   size,
+  provenanceBadge,
+  threadUrl,
 }: {
   prState?: SidebarPrState;
   hasDiff?: boolean;
   size: number;
+  /** When set (cloud tasks), a small provenance glyph (cloud or origin
+   * product) is stacked on the icon's bottom-right corner so "where this ran"
+   * stays visible alongside the PR state. */
+  provenanceBadge?: OriginProductMeta;
+  /** Originating thread URL; keeps the badge state clickable like
+   * `CloudStatusIcon` does for origin-branded tasks. */
+  threadUrl?: string;
 }) {
-  if (prState === "merged") {
+  const meta = prState ? PR_STATE_META[prState] : hasDiff ? DIFF_META : null;
+  if (!meta) return null;
+
+  if (!provenanceBadge) {
     return (
-      <Tooltip content="PR merged" side="right">
+      <Tooltip content={meta.label} side="right">
         <span className="flex items-center justify-center">
-          <GitMerge size={size} weight="bold" color="var(--purple-11)" />
+          <meta.Icon size={size} weight="bold" color={meta.color} />
         </span>
       </Tooltip>
     );
   }
-  if (prState === "open") {
-    return (
-      <Tooltip content="PR open" side="right">
-        <span className="flex items-center justify-center">
-          <GitPullRequest size={size} weight="bold" color="var(--green-11)" />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (prState === "draft") {
-    return (
-      <Tooltip content="Draft PR" side="right">
-        <span className="flex items-center justify-center">
-          <GitPullRequest size={size} weight="bold" color="var(--gray-9)" />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (prState === "closed") {
-    return (
-      <Tooltip content="PR closed" side="right">
-        <span className="flex items-center justify-center">
-          <GitPullRequest size={size} weight="bold" color="var(--red-11)" />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (hasDiff) {
-    return (
-      <Tooltip content="Has changes" side="right">
-        <span className="flex items-center justify-center">
-          <GitBranch size={size} weight="bold" color="var(--amber-11)" />
-        </span>
-      </Tooltip>
-    );
-  }
-  return null;
+
+  // Stack the provenance glyph over the PR icon's bottom-right corner. A
+  // radial-gradient mask punches a hole in the PR glyph under the badge so
+  // both shapes stay legible on any row background (hover, selected, command
+  // palette highlight) without hardcoding a cutout ring color.
+  const badgeSize = Math.round(size * 0.66);
+  const overflow = 2;
+  const holeCenter = size + overflow - badgeSize / 2;
+  const holeRadius = badgeSize / 2 + 1;
+  const mask = `radial-gradient(circle at ${holeCenter}px ${holeCenter}px, transparent ${holeRadius}px, black ${holeRadius + 0.5}px)`;
+  const icon = (
+    <span
+      className="relative flex items-center justify-center"
+      style={{ width: size, height: size }}
+    >
+      <meta.Icon
+        size={size}
+        weight="bold"
+        color={meta.color}
+        style={{ maskImage: mask, WebkitMaskImage: mask }}
+      />
+      <provenanceBadge.Icon
+        size={badgeSize}
+        weight="fill"
+        color="var(--gray-10)"
+        className="absolute"
+        style={{ right: -overflow, bottom: -overflow }}
+      />
+    </span>
+  );
+  return (
+    <Tooltip content={`${meta.label} · ${provenanceBadge.label}`} side="right">
+      {renderIconSpan({
+        icon,
+        link: threadUrl,
+        ariaLabel: threadUrl
+          ? `Open ${provenanceBadge.label} thread`
+          : undefined,
+      })}
+    </Tooltip>
+  );
 }
 
 export interface TaskIconProps {
@@ -280,6 +309,8 @@ export function TaskIcon({
 }: TaskIconProps) {
   const isCloudTask = workspaceMode === "cloud";
   const isTerminalCloud = isCloudTask && isTerminalStatus(taskRunStatus);
+  const cloudRunFailed =
+    taskRunStatus === "failed" || taskRunStatus === "cancelled";
   const originProductMeta = getOriginProductMeta(originProduct);
 
   if (needsPermission) {
@@ -308,7 +339,12 @@ export function TaskIcon({
       </Tooltip>
     );
   }
-  if (isTerminalCloud) {
+  // A failed/cancelled cloud run keeps the red cloud icon — the failure is
+  // the actionable signal there. A cloud run that finished cleanly and has a
+  // PR falls through to the PR-state icon (with a provenance badge), because
+  // once the run is done the branch's lifecycle is the state worth scanning
+  // for — the same one local runs show.
+  if (isTerminalCloud && (cloudRunFailed || !prState)) {
     return (
       <CloudStatusIcon
         taskRunStatus={taskRunStatus}
@@ -328,7 +364,21 @@ export function TaskIcon({
     );
   }
   if (prState || hasDiff) {
-    return <PrStatusIcon prState={prState} hasDiff={hasDiff} size={size} />;
+    return (
+      <PrStatusIcon
+        prState={prState}
+        hasDiff={hasDiff}
+        size={size}
+        provenanceBadge={
+          isCloudTask
+            ? (originProductMeta ?? { Icon: CloudIcon, label: "Cloud" })
+            : undefined
+        }
+        threadUrl={
+          isCloudTask && originProductMeta ? slackThreadUrl : undefined
+        }
+      />
+    );
   }
   if (isPinned) {
     return <PushPin size={size} color="var(--accent-11)" />;
