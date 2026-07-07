@@ -16,6 +16,12 @@ interface SessionViewState {
    * resets to expanded on app restart.
    */
   queueCollapsedByTaskId: Record<string, boolean>;
+  /**
+   * Ephemeral per-task id of the queued message currently being edited in the
+   * composer, keyed by taskId. When set, the composer's next submit updates
+   * that message in place instead of sending a new prompt. Not persisted.
+   */
+  editingQueuedIdByTaskId: Record<string, string | undefined>;
 }
 
 interface SessionViewActions {
@@ -25,6 +31,8 @@ interface SessionViewActions {
   setGroupOverride: (id: string, expanded: boolean) => void;
   clearGroupOverrides: () => void;
   setQueueCollapsed: (taskId: string, collapsed: boolean) => void;
+  setEditingQueuedId: (taskId: string, messageId: string) => void;
+  clearEditingQueuedId: (taskId: string) => void;
 }
 
 type SessionViewStore = SessionViewState & { actions: SessionViewActions };
@@ -35,6 +43,7 @@ const useStore = create<SessionViewStore>((set) => ({
   showSearch: false,
   groupOverrides: {},
   queueCollapsedByTaskId: {},
+  editingQueuedIdByTaskId: {},
   actions: {
     setShowRawLogs: (show) => set({ showRawLogs: show }),
     setSearchQuery: (query) => set({ searchQuery: query }),
@@ -60,6 +69,20 @@ const useStore = create<SessionViewStore>((set) => ({
           [taskId]: collapsed,
         },
       })),
+    setEditingQueuedId: (taskId, messageId) =>
+      set((state) => ({
+        editingQueuedIdByTaskId: {
+          ...state.editingQueuedIdByTaskId,
+          [taskId]: messageId,
+        },
+      })),
+    clearEditingQueuedId: (taskId) =>
+      set((state) => {
+        if (state.editingQueuedIdByTaskId[taskId] === undefined) return state;
+        const next = { ...state.editingQueuedIdByTaskId };
+        delete next[taskId];
+        return { editingQueuedIdByTaskId: next };
+      }),
   },
 }));
 
@@ -69,4 +92,12 @@ export const useShowSearch = () => useStore((s) => s.showSearch);
 export const useGroupOverrides = () => useStore((s) => s.groupOverrides);
 export const useQueueCollapsed = (taskId: string) =>
   useStore((s) => s.queueCollapsedByTaskId[taskId] ?? false);
+export const useEditingQueuedId = (taskId: string) =>
+  useStore((s) => s.editingQueuedIdByTaskId[taskId]);
 export const useSessionViewActions = () => useStore((s) => s.actions);
+
+/**
+ * Imperative handle to the view store for non-React call sites (the composer
+ * submit path reads/clears the editing target here).
+ */
+export const sessionViewStore = useStore;

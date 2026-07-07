@@ -197,6 +197,54 @@ export const sessionStoreSetters = {
     });
   },
 
+  /**
+   * Move a queued message to a new position, preserving its identity. Used by
+   * the drag-to-reorder affordance: the queue drains in array order, so the
+   * order the user sees is the order the messages send.
+   */
+  moveQueuedMessage: (taskId: string, fromIndex: number, toIndex: number) => {
+    sessionStore.setState((state) => {
+      const taskRunId = state.taskIdIndex[taskId];
+      if (!taskRunId) return;
+      const session = state.sessions[taskRunId];
+      if (!session) return;
+      const queue = session.messageQueue;
+      if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= queue.length ||
+        toIndex >= queue.length ||
+        fromIndex === toIndex
+      ) {
+        return;
+      }
+      const [moved] = queue.splice(fromIndex, 1);
+      if (moved) queue.splice(toIndex, 0, moved);
+    });
+  },
+
+  /**
+   * Replace a queued message's content in place, keeping its id, position, and
+   * queue timestamp. Used by edit-in-place: the message is edited in the
+   * composer and re-serialized here without leaving the queue.
+   */
+  updateQueuedMessage: (
+    taskId: string,
+    messageId: string,
+    patch: { content: string; rawPrompt?: string | ContentBlock[] },
+  ) => {
+    sessionStore.setState((state) => {
+      const taskRunId = state.taskIdIndex[taskId];
+      if (!taskRunId) return;
+      const session = state.sessions[taskRunId];
+      if (!session) return;
+      const message = session.messageQueue.find((m) => m.id === messageId);
+      if (!message) return;
+      message.content = patch.content;
+      message.rawPrompt = patch.rawPrompt;
+    });
+  },
+
   dequeueMessagesAsText: (taskId: string): string | null => {
     // Read the queue from the frozen committed state BEFORE entering the
     // immer draft — same rationale as `dequeueMessages`: anything captured

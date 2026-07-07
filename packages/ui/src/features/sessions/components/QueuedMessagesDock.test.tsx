@@ -24,20 +24,24 @@ vi.mock("@posthog/ui/features/sessions/hooks/useMessagingMode", () => ({
   useSupportsNativeSteer: () => false,
 }));
 
-vi.mock(
-  "@posthog/ui/features/sessions/hooks/useReturnQueuedMessageToEditor",
-  () => ({
-    useReturnQueuedMessageToEditor: () => vi.fn(),
-  }),
-);
+vi.mock("@posthog/ui/features/sessions/hooks/useEditQueuedMessage", () => ({
+  useEditQueuedMessage: () => vi.fn(),
+  useCancelQueuedMessageEdit: () => vi.fn(),
+}));
 
 vi.mock("@posthog/ui/features/sessions/sessionStore", () => ({
-  sessionStoreSetters: { removeQueuedMessage: vi.fn() },
+  sessionStoreSetters: {
+    removeQueuedMessage: vi.fn(),
+    moveQueuedMessage: vi.fn(),
+  },
   useSessionIsCloud: () => false,
   useSessionSelector: <T,>(
     _taskId: string,
     select: (session: undefined) => T,
   ) => select(undefined),
+  useSessionStore: {
+    getState: () => ({ taskIdIndex: {}, sessions: {} }),
+  },
 }));
 
 vi.mock("@posthog/ui/primitives/toast", () => ({

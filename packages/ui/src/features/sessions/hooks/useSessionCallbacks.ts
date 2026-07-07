@@ -20,6 +20,7 @@ import {
   type AgentSession,
   sessionStoreSetters,
 } from "@posthog/ui/features/sessions/sessionStore";
+import { sessionViewStore } from "@posthog/ui/features/sessions/sessionViewStore";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import {
   SHELL_CLIENT,
@@ -87,6 +88,32 @@ export function useSessionCallbacks({
           );
         } catch (error) {
           log.warn("Failed to resolve local skill command", { error });
+        }
+      }
+
+      // Editing a queued message in place: update it where it sits in the
+      // queue rather than sending a new prompt. If the target already drained
+      // or was discarded, fall through and send it as a fresh message.
+      const editingId =
+        sessionViewStore.getState().editingQueuedIdByTaskId[taskId];
+      if (editingId) {
+        sessionViewStore.getState().actions.clearEditingQueuedId(taskId);
+        try {
+          const updated = await sessionService.updateQueuedMessage(
+            taskId,
+            editingId,
+            promptText ?? text,
+          );
+          if (updated) {
+            markAsViewed(taskId);
+            return;
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Failed to update message";
+          toast.error(message);
+          log.error("Failed to update queued message", error);
+          return;
         }
       }
 

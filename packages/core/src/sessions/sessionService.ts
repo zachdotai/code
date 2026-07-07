@@ -222,6 +222,11 @@ export interface ISessionStore {
     rawPrompt?: string | ContentBlock[],
   ): void;
   removeQueuedMessage(taskId: string, messageId: string): void;
+  updateQueuedMessage(
+    taskId: string,
+    messageId: string,
+    patch: { content: string; rawPrompt?: string | ContentBlock[] },
+  ): void;
   clearMessageQueue(taskId: string): void;
   dequeueMessagesAsText(taskId: string): string | null;
   dequeueMessages(taskId: string): QueuedMessage[];
@@ -2544,6 +2549,38 @@ export class SessionService {
       this.d.store.prependQueuedMessages(taskId, [message]);
       throw error;
     }
+  }
+
+  /**
+   * Update a queued message in place from an edited composer prompt, keeping it
+   * in the queue at its current position. Mirrors the enqueue normalization so
+   * the stored `content`/`rawPrompt` match what a freshly-queued prompt would
+   * hold (cloud recomputes the transport display + raw payload; local stores
+   * the serialized text). Returns false when the target is no longer queued so
+   * the caller can fall back to sending it as a new message.
+   */
+  async updateQueuedMessage(
+    taskId: string,
+    messageId: string,
+    prompt: string | ContentBlock[],
+  ): Promise<boolean> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return false;
+    if (!session.messageQueue.some((m) => m.id === messageId)) return false;
+
+    if (session.isCloud) {
+      const normalizedPrompt = await this.resolveCloudPrompt(prompt);
+      const transport = this.d.h.getCloudPromptTransport(normalizedPrompt);
+      this.d.store.updateQueuedMessage(taskId, messageId, {
+        content: transport.promptText,
+        rawPrompt: normalizedPrompt,
+      });
+    } else {
+      this.d.store.updateQueuedMessage(taskId, messageId, {
+        content: extractPromptText(prompt),
+      });
+    }
+    return true;
   }
 
   /**
