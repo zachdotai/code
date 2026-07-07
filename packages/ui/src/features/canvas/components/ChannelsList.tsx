@@ -119,7 +119,7 @@ function useChannelActions(channel: Channel): {
         ),
       ]);
 
-      await deleteChannel(channel.id);
+      await deleteChannel(channel.id, channel.name);
       removeStar();
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "delete",
@@ -452,8 +452,8 @@ function ChannelSection({ channel }: { channel: Channel }) {
                   Every canvas saved in this channel is permanently deleted.
                 </li>
                 <li>
-                  Filed tasks are removed from the channel, but the tasks
-                  themselves are not deleted.
+                  Tasks in this channel are deleted with it. Their data is
+                  retained, so they can be restored later.
                 </li>
               </ul>
             </AlertDialogDescription>

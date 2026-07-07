@@ -1,5 +1,11 @@
 import type { Schemas } from "@posthog/api-client";
+import type { TaskChannel } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import {
+  normalizeChannelName,
+  PERSONAL_CHANNEL_NAME,
+  TASK_CHANNELS_QUERY_KEY,
+} from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
@@ -99,27 +105,93 @@ export function useChannelMutations() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
       if (!client) throw new Error("Not authenticated");
+      // The task feed lives on a separate backend channel. Deleting only the
+      // folder would leave that channel live but unreachable, with its tasks
+      // orphaned under it. Instead, soft-delete the tasks and the backend
+      // channel first (both are soft deletes server-side, so nothing is
+      // lost), then remove the folder. Backend first: if it fails, nothing
+      // local has changed.
+      const normalized = normalizeChannelName(name);
+      if (normalized !== PERSONAL_CHANNEL_NAME) {
+        const backendChannels = await client.getTaskChannels();
+        const backendChannel = backendChannels.find(
+          (c) => c.channel_type === "public" && c.name === normalized,
+        );
+        if (backendChannel) {
+          const tasks = await client.getTasks({ channel: backendChannel.id });
+          // Best-effort per task — one failed soft delete shouldn't strand
+          // the rest or block the channel delete (the failed task stays
+          // attached to the soft-deleted channel, still recoverable).
+          await Promise.allSettled(
+            tasks.map((task) => client.deleteTask(task.id)),
+          );
+          await client.deleteTaskChannel(backendChannel.id);
+        }
+      }
       return client.deleteDesktopFileSystem(id);
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: TASK_CHANNELS_QUERY_KEY });
+    },
   });
 
   const renameMutation = useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+    mutationFn: async ({
+      id,
+      name,
+      oldName,
+    }: {
+      id: string;
+      name: string;
+      oldName: string;
+    }) => {
       if (!client) throw new Error("Not authenticated");
-      return client.renameDesktopFileSystemChannel(id, name);
+      // The task feed lives on a separate backend channel that is resolved by
+      // name, so it must move in lockstep with the folder — otherwise the feed
+      // would resolve to a brand-new empty channel and the existing tasks and
+      // messages would be orphaned under the old name. Rename the data-bearing
+      // backend channel first: if that fails, nothing has changed.
+      const from = normalizeChannelName(oldName);
+      const to = normalizeChannelName(name);
+      let backendChannel: TaskChannel | undefined;
+      if (from !== to && from !== PERSONAL_CHANNEL_NAME) {
+        const backendChannels = await client.getTaskChannels();
+        backendChannel = backendChannels.find(
+          (c) => c.channel_type === "public" && c.name === from,
+        );
+        if (backendChannel) {
+          await client.renameTaskChannel(backendChannel.id, to);
+        }
+      }
+      try {
+        return await client.renameDesktopFileSystemChannel(id, name);
+      } catch (error) {
+        // The folder rename failed after the backend channel moved — put the
+        // backend name back so the two sides stay in sync.
+        if (backendChannel) {
+          await client
+            .renameTaskChannel(backendChannel.id, from)
+            .catch(() => undefined);
+        }
+        throw error;
+      }
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: TASK_CHANNELS_QUERY_KEY });
+    },
   });
 
   return {
     createChannel: (name: string) =>
       createMutation.mutateAsync(name).then(toChannel),
-    deleteChannel: (id: string) => deleteMutation.mutateAsync(id),
-    renameChannel: (id: string, name: string) =>
-      renameMutation.mutateAsync({ id, name }).then(toChannel),
+    deleteChannel: (id: string, name: string) =>
+      deleteMutation.mutateAsync({ id, name }),
+    renameChannel: (id: string, name: string, oldName: string) =>
+      renameMutation.mutateAsync({ id, name, oldName }).then(toChannel),
     isCreating: createMutation.isPending,
     isDeleting: deleteMutation.isPending,
     isRenaming: renameMutation.isPending,

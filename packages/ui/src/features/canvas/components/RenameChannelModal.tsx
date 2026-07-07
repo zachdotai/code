@@ -39,7 +39,7 @@ export function RenameChannelModal({
   const submit = async () => {
     if (!trimmed || unchanged || validationError || isRenaming) return;
     try {
-      await renameChannel(channel.id, trimmed);
+      await renameChannel(channel.id, trimmed, channel.name);
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "rename",
         surface: "sidebar",

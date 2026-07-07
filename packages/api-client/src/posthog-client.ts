@@ -2294,6 +2294,50 @@ export class PostHogAPIClient {
     return (await response.json()) as TaskChannel[];
   }
 
+  // Rename a public channel by id, so its task feed follows the new name.
+  async renameTaskChannel(id: string, name: string): Promise<TaskChannel> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/${encodeURIComponent(id)}/`;
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ name }) },
+    });
+    if (!response.ok) {
+      // The backend rejects invalid/taken names with a JSON `detail` message.
+      const detail = await response
+        .json()
+        .then((body) => (body as { detail?: string }).detail)
+        .catch(() => undefined);
+      throw new Error(
+        `Failed to rename task channel: ${detail ?? response.statusText}`,
+      );
+    }
+    return (await response.json()) as TaskChannel;
+  }
+
+  // Delete a public channel by id. Soft-delete server-side, so the channel's
+  // tasks and messages are recoverable.
+  async deleteTaskChannel(id: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/${encodeURIComponent(id)}/`;
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      const detail = await response
+        .json()
+        .then((body) => (body as { detail?: string }).detail)
+        .catch(() => undefined);
+      throw new Error(
+        `Failed to delete task channel: ${detail ?? response.statusText}`,
+      );
+    }
+  }
+
   // Resolve-or-create a public channel by name (idempotent server-side).
   async resolveTaskChannel(name: string): Promise<TaskChannel> {
     const teamId = await this.getTeamId();
