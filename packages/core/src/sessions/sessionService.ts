@@ -4606,7 +4606,32 @@ export class SessionService {
    */
   public recoverAfterReconnect(): void {
     this.retryUnhealthyCloudSessions();
+    this.retryReconnectingCloudSessions();
     this.flushQueuedCloudMessagesAfterAuthRestored();
+  }
+
+  /**
+   * Backstop for the main-process watcher's own offline→online self-heal: if a
+   * cloud session is still showing the transient "reconnecting" posture when the
+   * network returns (e.g. its watcher was torn down while offline), kick a
+   * retry. Idempotent — `retryCloudTaskWatch` re-bootstraps from server truth,
+   * so racing the main-process resume just converges.
+   */
+  private retryReconnectingCloudSessions(): void {
+    const sessions = this.d.store.getSessions();
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud) continue;
+      if (!session.isReconnecting) continue;
+      this.d.log.info("Backstop retry of reconnecting cloud session", {
+        taskId: session.taskId,
+      });
+      this.retryCloudTaskWatch(session.taskId).catch((error) => {
+        this.d.log.warn("Backstop retry of reconnecting cloud session failed", {
+          taskId: session.taskId,
+          error,
+        });
+      });
+    }
   }
 
   public flushQueuedCloudMessagesAfterAuthRestored(): void {
@@ -5082,7 +5107,23 @@ export class SessionService {
           update.errorMessage ??
           "Lost connection to the cloud run. Retry to reconnect.",
         errorRetryable: update.retryable,
+        isReconnecting: false,
         isPromptPending: false,
+      });
+      return;
+    }
+
+    // Transient loss of the stream while the run keeps executing server-side
+    // (typically a local network drop). Present a quiet "reconnecting" posture,
+    // NOT the red error banner — the main-process watcher resumes on its own
+    // when the network returns.
+    if (update.kind === "reconnecting") {
+      this.d.store.updateSession(taskRunId, {
+        status: "disconnected",
+        isReconnecting: true,
+        errorTitle: undefined,
+        errorMessage: undefined,
+        errorRetryable: undefined,
       });
       return;
     }
@@ -5090,6 +5131,13 @@ export class SessionService {
     if (update.kind === "permission_request") {
       this.handleCloudPermissionRequest(taskRunId, update);
       return;
+    }
+
+    // Fresh stream data (logs/status/snapshot) means we've reconnected — drop
+    // the transient reconnecting posture.
+    const reconnectingSession = this.d.store.getSessions()[taskRunId];
+    if (reconnectingSession?.isReconnecting) {
+      this.d.store.updateSession(taskRunId, { isReconnecting: false });
     }
 
     // Append new log entries with dedup guard

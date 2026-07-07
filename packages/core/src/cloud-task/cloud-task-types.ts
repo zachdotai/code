@@ -40,6 +40,16 @@ export interface CloudTaskErrorUpdate extends CloudTaskUpdateBase {
   retryable: boolean;
 }
 
+/**
+ * Transient posture: the client lost its stream connection but the run is still
+ * executing server-side (typically a local network drop). Distinct from
+ * `error`, which is a genuine terminal failure with a Retry affordance. The
+ * watcher resumes on its own when the network returns.
+ */
+export interface CloudTaskReconnectingUpdate extends CloudTaskUpdateBase {
+  kind: "reconnecting";
+}
+
 export interface CloudPermissionOption {
   kind: string;
   optionId: string;
@@ -66,4 +76,5 @@ export type CloudTaskUpdatePayload =
   | CloudTaskStatusUpdate
   | CloudTaskSnapshotUpdate
   | CloudTaskErrorUpdate
+  | CloudTaskReconnectingUpdate
   | CloudTaskPermissionRequestUpdate;

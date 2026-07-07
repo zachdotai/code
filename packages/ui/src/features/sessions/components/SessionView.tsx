@@ -77,6 +77,8 @@ interface SessionViewProps {
   errorTitle?: string;
   errorMessage?: string;
   errorRetryable?: boolean;
+  /** Cloud only: transient stream loss; show a quiet reconnecting indicator. */
+  isReconnecting?: boolean;
   onRetry?: () => void;
   onNewSession?: () => void;
   isInitializing?: boolean;
@@ -182,6 +184,28 @@ function CloudStreamDisconnectedBanner({
   );
 }
 
+/**
+ * Quiet, non-scary indicator shown when the cloud stream dropped transiently
+ * (e.g. a local network drop) while the run keeps executing server-side. No red,
+ * no Retry — the watcher resumes on its own when the network returns.
+ */
+function CloudReconnectingBanner() {
+  return (
+    <Flex
+      align="center"
+      gap="2"
+      py="2"
+      px="3"
+      className="shrink-0 border-(--gray-4) border-b bg-(--gray-2)"
+    >
+      <Spinner size={14} className="animate-spin text-gray-9" />
+      <Text color="gray" className="truncate text-[13px]">
+        Reconnecting to cloud run…
+      </Text>
+    </Flex>
+  );
+}
+
 export function SessionView({
   events,
   taskId,
@@ -202,6 +226,7 @@ export function SessionView({
   errorTitle,
   errorMessage = DEFAULT_ERROR_MESSAGE,
   errorRetryable = false,
+  isReconnecting = false,
   onRetry,
   onNewSession,
   isInitializing = false,
@@ -562,6 +587,9 @@ export function SessionView({
                     errorMessage={errorMessage}
                     onRetry={onRetry}
                   />
+                )}
+                {isReconnecting && !showInlineBanner && (
+                  <CloudReconnectingBanner />
                 )}
                 <ThreadView
                   events={events}

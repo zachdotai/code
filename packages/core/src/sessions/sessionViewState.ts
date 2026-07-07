@@ -7,6 +7,7 @@ export interface SessionViewState {
   cloudStatus: TaskRunStatus | null;
   isRunning: boolean;
   hasError: boolean;
+  isReconnecting: boolean;
   events: AcpMessage[];
   isPromptPending: boolean;
   promptStartedAt: number | null | undefined;
@@ -30,6 +31,8 @@ export function deriveSessionViewState(
   const isCloudRunTerminal = isCloud && !isCloudRunNotTerminal;
 
   const hasError = session?.status === "error" && !session?.idleKilled;
+  // Cloud only: transient stream loss while the run keeps executing server-side.
+  const isReconnecting = isCloud && (session?.isReconnecting ?? false);
   const handoffInProgress = session?.handoffInProgress ?? false;
 
   let isRunning = false;
@@ -68,6 +71,7 @@ export function deriveSessionViewState(
     cloudStatus,
     isRunning: !!isRunning,
     hasError,
+    isReconnecting,
     events,
     isPromptPending,
     promptStartedAt,

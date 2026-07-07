@@ -28,6 +28,27 @@ const mockAuthService = {
   authenticatedFetch: vi.fn(),
 };
 
+// Controllable connectivity fake: default online, with a way to flip offline and
+// fire the offline→online edge that the watcher listens on.
+function createConnectivityMock() {
+  let online = true;
+  const handlers = new Set<() => void>();
+  return {
+    isOnline: () => online,
+    onOnline: (cb: () => void) => {
+      handlers.add(cb);
+      return () => handlers.delete(cb);
+    },
+    setOnline(next: boolean) {
+      const cameOnline = !online && next;
+      online = next;
+      if (cameOnline) {
+        for (const cb of [...handlers]) cb();
+      }
+    },
+  };
+}
+
 function createJsonResponse(
   data: unknown,
   status = 200,
@@ -68,6 +89,35 @@ function createOpenSseResponse(payload: string, status = 200): Response {
   });
 }
 
+// Open stream that errors its body when the connection's abort signal fires,
+// so the idle watchdog's controller.abort() actually rejects reader.read()
+// (a plain mock stream ignores the signal and would just hang).
+function createAbortableOpenSseResponse(
+  signal: AbortSignal | undefined,
+  initialPayload = "",
+): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (initialPayload) {
+        controller.enqueue(encoder.encode(initialPayload));
+      }
+      const fail = () =>
+        controller.error(new DOMException("Aborted", "AbortError"));
+      if (signal?.aborted) {
+        fail();
+        return;
+      }
+      signal?.addEventListener("abort", fail, { once: true });
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
 async function waitFor(
   predicate: () => boolean,
   timeoutMs = 2_000,
@@ -87,6 +137,7 @@ async function waitFor(
 
 describe("CloudTaskService", () => {
   let service: CloudTaskService;
+  let connectivity: ReturnType<typeof createConnectivityMock>;
 
   beforeEach(() => {
     const scopedLog = {
@@ -97,10 +148,12 @@ describe("CloudTaskService", () => {
     };
     const loggerMock = { ...scopedLog, scope: vi.fn(() => scopedLog) };
     const analyticsMock = { track: vi.fn() };
+    connectivity = createConnectivityMock();
     service = new CloudTaskService(
       mockAuthService as never,
       analyticsMock as never,
       loggerMock,
+      connectivity,
     );
     mockNetFetch.mockReset();
     mockStreamFetch.mockReset();
@@ -1792,6 +1845,180 @@ describe("CloudTaskService", () => {
         "Lost connection to the cloud run stream. Retry to reconnect.",
       retryable: true,
     });
+  });
+
+  it("waits for the network instead of failing while offline, then resumes", async () => {
+    vi.useFakeTimers();
+
+    const updates: { kind?: string }[] = [];
+    service.on(CloudTaskEvent.Update, (payload) =>
+      updates.push(payload as { kind?: string }),
+    );
+
+    const inProgressRun = () =>
+      createJsonResponse({
+        id: "run-1",
+        status: "in_progress",
+        stage: null,
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+
+    mockNetFetch
+      .mockResolvedValueOnce(inProgressRun()) // bootstrap: fetchTaskRun
+      .mockResolvedValueOnce(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      ) // bootstrap: fetchSessionLogs
+      .mockImplementation(() => Promise.resolve(inProgressRun()));
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(
+        createSseResponse('event: error\ndata: {"error":"boom"}\n\n'),
+      ),
+    );
+
+    // Offline before the watch: the stream error must not burn the budget.
+    connectivity.setOnline(false);
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    // Well beyond the ~60s online budget — offline must not fail the watcher.
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    const offlineKinds = updates.map((u) => u.kind);
+    expect(offlineKinds).toContain("reconnecting");
+    expect(offlineKinds).not.toContain("error");
+    // No reconnect attempts fired while offline.
+    expect(mockStreamFetch.mock.calls.length).toBe(1);
+
+    // Network returns: the watcher resumes the stream on its own.
+    connectivity.setOnline(true);
+    await waitFor(() => mockStreamFetch.mock.calls.length >= 2, 10_000);
+    expect(updates.map((u) => u.kind)).not.toContain("error");
+  });
+
+  it("re-fetches terminal status on resume for a run that finished while offline", async () => {
+    vi.useFakeTimers();
+
+    const updates: { kind?: string; status?: string }[] = [];
+    service.on(CloudTaskEvent.Update, (payload) =>
+      updates.push(payload as { kind?: string; status?: string }),
+    );
+
+    const inProgressRun = () =>
+      createJsonResponse({
+        id: "run-1",
+        status: "in_progress",
+        stage: null,
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+    const completedRun = () =>
+      createJsonResponse({
+        id: "run-1",
+        status: "completed",
+        stage: null,
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:05:00Z",
+      });
+
+    mockNetFetch
+      .mockResolvedValueOnce(inProgressRun()) // bootstrap: fetchTaskRun
+      .mockResolvedValueOnce(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      ) // bootstrap: fetchSessionLogs
+      .mockImplementation(() => Promise.resolve(inProgressRun()));
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(
+        createSseResponse('event: error\ndata: {"error":"boom"}\n\n'),
+      ),
+    );
+
+    connectivity.setOnline(false);
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const streamCallsWhileOffline = mockStreamFetch.mock.calls.length;
+
+    // The run completed during the outage.
+    mockNetFetch.mockImplementation(() => Promise.resolve(completedRun()));
+    connectivity.setOnline(true);
+
+    await waitFor(
+      () =>
+        updates.some((u) => u.kind === "status" && u.status === "completed"),
+      10_000,
+    );
+    // Terminal status finalizes without opening another stream, and never errors.
+    expect(mockStreamFetch.mock.calls.length).toBe(streamCallsWhileOffline);
+    expect(updates.map((u) => u.kind)).not.toContain("error");
+  });
+
+  it("reconnects when the stream goes idle past the keepalive deadline", async () => {
+    vi.useFakeTimers();
+
+    const inProgressRun = () =>
+      createJsonResponse({
+        id: "run-1",
+        status: "in_progress",
+        stage: null,
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+
+    mockNetFetch
+      .mockResolvedValueOnce(inProgressRun()) // bootstrap: fetchTaskRun
+      .mockResolvedValueOnce(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      ) // bootstrap: fetchSessionLogs
+      .mockImplementation(() => Promise.resolve(inProgressRun()));
+
+    // Stream stays open with only an initial keepalive, then goes silent; the
+    // body errors when the idle watchdog aborts the connection.
+    mockStreamFetch.mockImplementation((_input, init) =>
+      Promise.resolve(
+        createAbortableOpenSseResponse(
+          (init as RequestInit | undefined)?.signal ?? undefined,
+          'event: keepalive\ndata: {"type":"keepalive"}\n\n',
+        ),
+      ),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    // Before the 90s idle deadline: the connection is considered alive.
+    await vi.advanceTimersByTimeAsync(80_000);
+    expect(mockStreamFetch.mock.calls.length).toBe(1);
+
+    // Past the deadline: watchdog aborts the dead socket and reconnects.
+    await vi.advanceTimersByTimeAsync(20_000);
+    await waitFor(() => mockStreamFetch.mock.calls.length >= 2, 10_000);
   });
 
   it("clears the backend-error budget after a healthy long-lived cut", async () => {

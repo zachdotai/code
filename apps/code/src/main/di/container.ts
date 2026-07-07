@@ -22,6 +22,7 @@ import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
+  CLOUD_TASK_CONNECTIVITY,
   CLOUD_TASK_SERVICE,
 } from "@posthog/core/cloud-task/identifiers";
 import { contextMenuCoreModule } from "@posthog/core/context-menu/context-menu.module";
@@ -219,6 +220,7 @@ import { workspaceModule } from "@posthog/workspace-server/services/workspace/wo
 import { workspaceMetadataModule } from "@posthog/workspace-server/services/workspace-metadata/workspace-metadata.module";
 import ExternalAppsStoreImpl from "electron-store";
 import type { FileWatcherBridge } from "../index";
+import { CloudTaskConnectivityPortAdapter } from "../platform-adapters/cloud-task-connectivity";
 import { ElectronAppLifecycle } from "../platform-adapters/electron-app-lifecycle";
 import { ElectronAppMeta } from "../platform-adapters/electron-app-meta";
 import { ElectronAppMetrics } from "../platform-adapters/electron-app-metrics";
@@ -420,6 +422,10 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
       .get<AuthService>(MAIN_AUTH_SERVICE)
       .authenticatedFetch(fetch, url, init),
 }));
+container
+  .bind(CLOUD_TASK_CONNECTIVITY)
+  .to(CloudTaskConnectivityPortAdapter)
+  .inSingletonScope();
 container.bind(MAIN_CLOUD_TASK_SERVICE).toService(CLOUD_TASK_SERVICE);
 container.load(contextMenuCoreModule);
 container

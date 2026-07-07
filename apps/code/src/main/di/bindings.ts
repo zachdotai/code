@@ -10,7 +10,9 @@ import type {
 } from "@posthog/core/auth/identifiers";
 import type {
   CLOUD_TASK_AUTH,
+  CLOUD_TASK_CONNECTIVITY,
   ICloudTaskAuth,
+  ICloudTaskConnectivity,
 } from "@posthog/core/cloud-task/identifiers";
 import type {
   CONTEXT_MENU_EXTERNAL_APPS_SERVICE,
@@ -368,6 +370,7 @@ export interface MainBindings {
   // Lifecycle / cloud task / context menu / deep link
   [MAIN_APP_LIFECYCLE_SERVICE]: AppLifecycleService;
   [CLOUD_TASK_AUTH]: ICloudTaskAuth;
+  [CLOUD_TASK_CONNECTIVITY]: ICloudTaskConnectivity;
   [MAIN_CLOUD_TASK_SERVICE]: unknown;
   [CONTEXT_MENU_EXTERNAL_APPS_SERVICE]: IContextMenuExternalApps;
   [MAIN_CONTEXT_MENU_SERVICE]: unknown;

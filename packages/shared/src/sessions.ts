@@ -57,6 +57,13 @@ export interface AgentSession {
   errorTitle?: string;
   errorMessage?: string;
   errorRetryable?: boolean;
+  /**
+   * Cloud only: the stream connection dropped transiently (e.g. a local network
+   * drop) but the run is still executing server-side. Drives a quiet
+   * "reconnecting" indicator instead of the red error banner; the watcher
+   * resumes on its own when the network returns. Cleared on fresh stream data.
+   */
+  isReconnecting?: boolean;
   isPromptPending: boolean;
   isCompacting: boolean;
   promptStartedAt: number | null;

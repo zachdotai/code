@@ -12,7 +12,12 @@ import { serializeError, TypedEventEmitter } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { inject, injectable, preDestroy } from "inversify";
 import type { CloudTaskPermissionRequestUpdate } from "./cloud-task-types";
-import { CLOUD_TASK_AUTH, type ICloudTaskAuth } from "./identifiers";
+import {
+  CLOUD_TASK_AUTH,
+  CLOUD_TASK_CONNECTIVITY,
+  type ICloudTaskAuth,
+  type ICloudTaskConnectivity,
+} from "./identifiers";
 import {
   CloudTaskEvent,
   type CloudTaskEvents,
@@ -32,9 +37,17 @@ const SSE_RECONNECT_BASE_DELAY_MS = 500;
 const SSE_RECONNECT_FLAT_ATTEMPTS = 3;
 const SSE_RECONNECT_MAX_DELAY_MS = 30_000;
 const SSE_HEALTHY_CONNECTION_MS = 60_000;
+// No bytes for this long means the socket is dead (e.g. a wifi drop leaving a
+// half-open TCP connection that never errors). The server emits keepalives well
+// under this, so a healthy-but-idle run never trips it. Reset on every read.
+const SSE_IDLE_TIMEOUT_MS = 90_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
+
+// Abort reason for the idle watchdog, distinguishing a dead-socket abort from an
+// intentional user stop so the read loop reconnects instead of ending cleanly.
+const IDLE_ABORT = Symbol("cloud-task-sse-idle");
 
 // Authoritative end-of-stream sentinel, matched on the SSE event name (event.event, not data.type).
 // The client stops on it without consulting run status.
@@ -142,6 +155,11 @@ interface WatcherState {
   // set; with no re-subscribe it holds the run's emitted entries until the watch ends.
   emittedLogEntries: StoredLogEntry[];
   failed: boolean;
+  // Paused mid-outage: no reconnect timer is armed and the run is left "reconnecting"
+  // (not failed) until connectivity returns. Cleared by clearWaitingForNetwork.
+  waitingForNetwork: boolean;
+  // Unsubscribe for the offline→online listener registered while waitingForNetwork.
+  onlineUnsubscribe: (() => void) | null;
   needsPostBootstrapReconnect: boolean;
   needsStopAfterBootstrap: boolean;
   streamEnded: boolean;
@@ -342,6 +360,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     private readonly analytics: IAnalytics,
     @inject(ROOT_LOGGER)
     logger: RootLogger,
+    @inject(CLOUD_TASK_CONNECTIVITY)
+    private readonly connectivity: ICloudTaskConnectivity,
   ) {
     super();
     this.log = logger.scope("cloud-task");
@@ -413,6 +433,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
   // Resets a watcher to its pre-bootstrap state so bootstrapWatcher can rebuild it from server truth.
   private resetWatcherForRebootstrap(watcher: WatcherState): void {
+    if (watcher.onlineUnsubscribe) {
+      watcher.onlineUnsubscribe();
+      watcher.onlineUnsubscribe = null;
+    }
+    watcher.waitingForNetwork = false;
     watcher.reconnectAttempts = 0;
     watcher.streamErrorAttempts = 0;
     watcher.cumulativeReconnectAttempts = 0;
@@ -564,6 +589,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       bufferedLogBatches: [],
       emittedLogEntries: [],
       failed: false,
+      waitingForNetwork: false,
+      onlineUnsubscribe: null,
       needsPostBootstrapReconnect: false,
       needsStopAfterBootstrap: false,
       streamEnded: false,
@@ -584,6 +611,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     if (!watcher) return;
 
     watcher.sseAbortController?.abort();
+
+    if (watcher.onlineUnsubscribe) {
+      watcher.onlineUnsubscribe();
+      watcher.onlineUnsubscribe = null;
+    }
+    watcher.waitingForNetwork = false;
 
     if (watcher.reconnectTimeoutId) {
       clearTimeout(watcher.reconnectTimeoutId);
@@ -914,25 +947,51 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
       const reader = response.body.getReader();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
+      // Reset-on-byte watchdog: a wifi drop can leave the socket half-open so
+      // reader.read() never resolves or rejects. If no bytes arrive within the
+      // idle window, abort with IDLE_ABORT so the read loop unwinds into the
+      // catch below and reconnects (server keepalives keep a live stream well
+      // under the deadline).
+      let idleTimerId: ReturnType<typeof setTimeout> | null = null;
+      const armIdleWatchdog = () => {
+        if (idleTimerId) {
+          clearTimeout(idleTimerId);
         }
+        idleTimerId = setTimeout(() => {
+          controller.abort(IDLE_ABORT);
+        }, SSE_IDLE_TIMEOUT_MS);
+      };
 
-        if (!value) {
-          continue;
-        }
+      try {
+        armIdleWatchdog();
 
-        bytesReceived += value.byteLength;
-        const chunk = decoder.decode(value, { stream: true });
-        const events = parser.parse(chunk);
-        for (const event of events) {
-          eventsReceived += 1;
-          const backendError = this.handleSseEvent(key, event);
-          if (backendError) {
-            throw backendError;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
           }
+
+          armIdleWatchdog();
+
+          if (!value) {
+            continue;
+          }
+
+          bytesReceived += value.byteLength;
+          const chunk = decoder.decode(value, { stream: true });
+          const events = parser.parse(chunk);
+          for (const event of events) {
+            eventsReceived += 1;
+            const backendError = this.handleSseEvent(key, event);
+            if (backendError) {
+              throw backendError;
+            }
+          }
+        }
+      } finally {
+        if (idleTimerId) {
+          clearTimeout(idleTimerId);
+          idleTimerId = null;
         }
       }
 
@@ -946,7 +1005,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
       this.flushLogBatch(key);
 
-      if (controller.signal.aborted) {
+      // An idle-watchdog abort is a dead socket, not a user stop: fall through
+      // to reconnect. Any other abort (stopWatcher/failWatcher/retry) is terminal.
+      if (
+        controller.signal.aborted &&
+        controller.signal.reason !== IDLE_ABORT
+      ) {
         return;
       }
 
@@ -975,7 +1039,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     } catch (error) {
       this.flushLogBatch(key);
 
-      if (controller.signal.aborted) {
+      // A user/terminal abort ends here; an idle-watchdog abort falls through to
+      // reconnect (the socket was dead, the run is still executing server-side).
+      if (
+        controller.signal.aborted &&
+        controller.signal.reason !== IDLE_ABORT
+      ) {
         return;
       }
 
@@ -1350,6 +1419,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.pendingLogEntries = [];
     watcher.bufferedLogBatches = [];
 
+    if (watcher.onlineUnsubscribe) {
+      watcher.onlineUnsubscribe();
+      watcher.onlineUnsubscribe = null;
+    }
+    watcher.waitingForNetwork = false;
+
     if (watcher.reconnectTimeoutId) {
       clearTimeout(watcher.reconnectTimeoutId);
       watcher.reconnectTimeoutId = null;
@@ -1381,6 +1456,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const watcher = this.watchers.get(key);
     // Status-unaware: the loop only stops on the stream-end sentinel or budget exhaustion below.
     if (!watcher || watcher.failed) {
+      return;
+    }
+
+    // Offline: don't burn the reconnect budget or fail — the run is still
+    // executing server-side. Pause and resume when the network returns.
+    if (!this.connectivity.isOnline()) {
+      this.enterWaitingForNetwork(key);
       return;
     }
 
@@ -1460,6 +1542,106 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           currentWatcher.isBootstrapping || currentWatcher.hasEmittedSnapshot,
       });
     }, delay);
+  }
+
+  /**
+   * Pauses reconnection while the machine is offline. The run keeps executing in
+   * the cloud, so instead of exhausting the budget and failing, present a quiet
+   * "reconnecting" posture and resume on the offline→online edge. A slow backstop
+   * timer covers a missed connectivity signal.
+   */
+  private enterWaitingForNetwork(key: string): void {
+    const watcher = this.watchers.get(key);
+    if (!watcher || watcher.failed) return;
+
+    if (watcher.reconnectTimeoutId) {
+      clearTimeout(watcher.reconnectTimeoutId);
+      watcher.reconnectTimeoutId = null;
+    }
+
+    const firstEntry = !watcher.waitingForNetwork;
+    watcher.waitingForNetwork = true;
+
+    if (firstEntry) {
+      this.log.info("Cloud task stream paused, waiting for network", { key });
+      this.emit(CloudTaskEvent.Update, {
+        taskId: watcher.taskId,
+        runId: watcher.runId,
+        kind: "reconnecting",
+      });
+    }
+
+    if (!watcher.onlineUnsubscribe) {
+      watcher.onlineUnsubscribe = this.connectivity.onOnline(() => {
+        this.handleNetworkOnline(key);
+      });
+    }
+
+    // Backstop: if the connectivity signal is missed, re-check at the cap and
+    // either resume (if online) or keep waiting.
+    watcher.reconnectTimeoutId = setTimeout(() => {
+      const current = this.watchers.get(key);
+      if (!current) return;
+      current.reconnectTimeoutId = null;
+      if (this.connectivity.isOnline()) {
+        this.handleNetworkOnline(key);
+      } else {
+        this.enterWaitingForNetwork(key);
+      }
+    }, SSE_RECONNECT_MAX_DELAY_MS);
+  }
+
+  private handleNetworkOnline(key: string): void {
+    const watcher = this.watchers.get(key);
+    if (!watcher || watcher.failed) return;
+    if (!watcher.waitingForNetwork) return;
+
+    this.clearWaitingForNetwork(watcher);
+    // The offline stretch shouldn't count against the transport budget.
+    watcher.reconnectAttempts = 0;
+    watcher.streamErrorAttempts = 0;
+    watcher.cumulativeReconnectAttempts = 0;
+    this.log.info("Network back online, resuming cloud task stream", { key });
+    void this.resumeAfterNetworkReturn(key);
+  }
+
+  private clearWaitingForNetwork(watcher: WatcherState): void {
+    watcher.waitingForNetwork = false;
+    if (watcher.onlineUnsubscribe) {
+      watcher.onlineUnsubscribe();
+      watcher.onlineUnsubscribe = null;
+    }
+    if (watcher.reconnectTimeoutId) {
+      clearTimeout(watcher.reconnectTimeoutId);
+      watcher.reconnectTimeoutId = null;
+    }
+  }
+
+  /**
+   * Re-establishes the stream after a network outage. Re-fetches server truth
+   * first: a run that completed while offline must show terminal, not hang in
+   * the reconnecting posture. Only re-opens SSE for a still-active run.
+   */
+  private async resumeAfterNetworkReturn(key: string): Promise<void> {
+    const watcher = this.watchers.get(key);
+    if (!watcher || watcher.failed) return;
+
+    const run = await this.fetchTaskRun(watcher);
+    const currentWatcher = this.watchers.get(key);
+    if (!currentWatcher || currentWatcher !== watcher || watcher.failed) return;
+
+    if (run) {
+      this.applyTaskRunState(watcher, run);
+      if (isTerminalStatus(watcher.lastStatus)) {
+        await this.finalizeWatcherStop(key);
+        return;
+      }
+      this.emitStatusUpdate(watcher);
+    }
+
+    void this.connectSse(key, {
+      startLatest: watcher.isBootstrapping || watcher.hasEmittedSnapshot,
+    });
   }
 
   private async handleStreamCompletion(

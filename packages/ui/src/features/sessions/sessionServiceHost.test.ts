@@ -1147,6 +1147,42 @@ describe("SessionService", () => {
       expect(onStatusChange).toHaveBeenCalledTimes(1);
     });
 
+    it("maps a reconnecting update to a quiet disconnected+reconnecting state", () => {
+      const service = getSessionService();
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+      );
+
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as {
+        onData: (update: {
+          kind: string;
+          taskId: string;
+          runId: string;
+        }) => void;
+      };
+      subscribeOptions.onData({
+        kind: "reconnecting",
+        taskId: "task-123",
+        runId: "run-123",
+      });
+
+      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+        "run-123",
+        {
+          status: "disconnected",
+          isReconnecting: true,
+          errorTitle: undefined,
+          errorMessage: undefined,
+          errorRetryable: undefined,
+        },
+      );
+    });
+
     it("hydrates a fresh cloud session from persisted logs before replay arrives", async () => {
       const service = getSessionService();
       const hydratedSession = createMockSession({
