@@ -558,6 +558,13 @@ export function BrowserTabStrip() {
         case "command-center":
           navigate({ to: "/command-center", state });
           break;
+        default: {
+          // Exhaustiveness guard: a new AppView value fails to compile here
+          // until its canonical route is wired above — so the tab-target set
+          // (union + APP_VIEW_META) and this navigation can't drift apart.
+          const _exhaustive: never = tab.appView;
+          return _exhaustive;
+        }
       }
     } else {
       // Blank / landing tab: park on the space's home — the channels index, or
