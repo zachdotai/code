@@ -167,9 +167,12 @@ function formatDelta(
   );
 }
 
-function deltaColor(delta: number | null, run: AutoresearchRun): string {
+function deltaColor(
+  delta: number | null,
+  direction: AutoresearchRun["config"]["direction"],
+): string {
   if (delta === null || delta === 0) return COLOR.muted;
-  return isImprovement(delta, 0, run.config.direction) ? COLOR.good : COLOR.bad;
+  return isImprovement(delta, 0, direction) ? COLOR.good : COLOR.bad;
 }
 
 function buildIterationsTable(run: AutoresearchRun): string {
@@ -187,7 +190,7 @@ function buildIterationsTable(run: AutoresearchRun): string {
         "<tr>" +
         `<td>${iteration.index}</td>` +
         `<td class="num">${escapeHtml(withMetricUnit(numberFormat.format(iteration.value), unit))}${bestTag}</td>` +
-        `<td class="num" style="color:${deltaColor(iteration.delta, run)}">${escapeHtml(formatDelta(iteration, unit))}</td>` +
+        `<td class="num" style="color:${deltaColor(iteration.delta, run.config.direction)}">${escapeHtml(formatDelta(iteration, unit))}</td>` +
         `<td>${iteration.summary ? escapeHtml(iteration.summary) : "—"}</td>` +
         `<td class="muted">${escapeHtml(dateTimeFormat.format(iteration.at))}</td>` +
         "</tr>"
@@ -341,7 +344,10 @@ function loadImage(url: string): Promise<HTMLImageElement> {
  * height, serialize it into an SVG `foreignObject`, and draw that onto a
  * canvas at 2x. Self-contained markup keeps the canvas untainted.
  */
-async function renderReportPng(run: AutoresearchRun): Promise<Blob> {
+async function renderReportPng(
+  run: AutoresearchRun,
+  exportedAt: Date,
+): Promise<Blob> {
   const host = document.createElement("div");
   host.style.position = "fixed";
   host.style.left = "-100000px";
@@ -349,7 +355,7 @@ async function renderReportPng(run: AutoresearchRun): Promise<Blob> {
   host.style.width = `${REPORT_WIDTH}px`;
   // The extra wrapper is what gets serialized, so the host's offscreen
   // positioning never leaks into the image.
-  host.innerHTML = `<div><style>${REPORT_STYLES}</style>${buildReportBody(run, new Date())}</div>`;
+  host.innerHTML = `<div><style>${REPORT_STYLES}</style>${buildReportBody(run, exportedAt)}</div>`;
   document.body.appendChild(host);
 
   let width: number;
@@ -403,6 +409,7 @@ export function exportRunAsHtml(run: AutoresearchRun): void {
 }
 
 export async function exportRunAsPng(run: AutoresearchRun): Promise<void> {
-  const blob = await renderReportPng(run);
+  const exportedAt = new Date();
+  const blob = await renderReportPng(run, exportedAt);
   downloadBlob(blob, reportFileName(run, "png"));
 }

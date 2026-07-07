@@ -277,15 +277,24 @@ function RunHeader({
         <Flex align="center" gap="2" className="shrink-0">
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
-              <Button size="1" variant="soft" color="gray">
+              <Button
+                size="1"
+                variant="soft"
+                color="gray"
+                data-attr="autoresearch-export-trigger"
+              >
                 <Export size={12} /> Export
               </Button>
             </DropdownMenu.Trigger>
             <DropdownMenu.Content size="1">
-              <DropdownMenu.Item onSelect={() => exportRunAsHtml(run)}>
+              <DropdownMenu.Item
+                data-attr="autoresearch-export-html"
+                onSelect={() => exportRunAsHtml(run)}
+              >
                 HTML file
               </DropdownMenu.Item>
               <DropdownMenu.Item
+                data-attr="autoresearch-export-png"
                 onSelect={() => {
                   void exportRunAsPng(run).catch(() =>
                     toast.error("Couldn't render the report image"),
