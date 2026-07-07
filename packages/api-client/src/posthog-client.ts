@@ -479,6 +479,7 @@ interface CloudRunOptions {
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
+  autoPublish?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: PermissionMode;
@@ -551,6 +552,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.prAuthorshipMode) {
     body.pr_authorship_mode = options.prAuthorshipMode;
+  }
+  if (options?.autoPublish) {
+    body.auto_publish = options.autoPublish;
   }
   if (options?.runSource) {
     body.run_source = options.runSource;
@@ -2221,6 +2225,7 @@ export class PostHogAPIClient {
         channel?: string | null;
         pending_user_message?: string;
         pending_user_artifact_ids?: string[];
+        auto_publish?: boolean;
       },
   ) {
     const teamId = await this.getTeamId();

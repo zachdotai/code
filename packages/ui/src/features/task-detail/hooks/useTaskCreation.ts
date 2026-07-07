@@ -300,6 +300,7 @@ export function useTaskCreation({
           }
         }
 
+        const settings = useSettingsStore.getState();
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -322,7 +323,8 @@ export function useTaskCreation({
           channelContext,
           channelName,
           channelId,
-          customInstructions: useSettingsStore.getState().customInstructions,
+          customInstructions: settings.customInstructions,
+          autoPublishCloudRuns: settings.autoPublishCloudRuns,
           allowNoRepo,
         });
 

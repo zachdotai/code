@@ -401,6 +401,7 @@ export class TaskCreationSaga extends Saga<
             reasoningLevel: input.reasoningLevel,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
             prAuthorshipMode,
+            autoPublish: input.cloudAutoPublish,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,
@@ -766,6 +767,12 @@ export class TaskCreationSaga extends Saga<
           channel: input.channelId ?? undefined,
           pending_user_message: warmPayload?.pendingUserMessage,
           pending_user_artifact_ids: warmPayload?.pendingUserArtifactIds,
+          // If creation activates a pre-warmed run, this is the only request
+          // that can carry the choice — the saga skips run creation entirely.
+          auto_publish:
+            input.workspaceMode === "cloud" && input.cloudAutoPublish
+              ? true
+              : undefined,
         });
         return result as unknown as Task;
       },

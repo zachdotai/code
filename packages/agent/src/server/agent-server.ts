@@ -316,6 +316,11 @@ export class AgentServer {
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
   private nativeResume: { sessionId: string; warm: boolean } | null = null;
+  // Prewarmed runs boot before the user's first message exists, so the boot-time
+  // --autoPublish flag can't carry the user's choice; it is resolved from run
+  // state when the first message arrives (see resolveWarmAutoPublishUpgrade).
+  private prewarmedRun = false;
+  private warmAutoPublishResolved = false;
   private installedSkillBundles = new Set<string>();
   private installedSkillBundleInfo = new Map<string, InstalledSkillBundle>();
   private installingSkillBundles = new Map<string, Promise<void>>();
@@ -893,12 +898,19 @@ export class AgentServer {
 
         this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
 
+        // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
+        // also flips the detected-PR context to its push variant.
+        const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
+        const hostContext = [
+          ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
+          ...(this.detectedPrUrl
+            ? [this.buildDetectedPrContext(this.detectedPrUrl)]
+            : []),
+        ];
         const promptMeta: Record<string, unknown> = {
           ...(builtPrompt.meta ?? {}),
-          ...(this.detectedPrUrl
-            ? {
-                prContext: this.buildDetectedPrContext(this.detectedPrUrl),
-              }
+          ...(hostContext.length > 0
+            ? { prContext: hostContext.join("\n\n") }
             : {}),
         };
 
@@ -1116,6 +1128,8 @@ export class AgentServer {
 
     this.resumeState = null;
     this.nativeResume = null;
+    this.prewarmedRun = false;
+    this.warmAutoPublishResolved = false;
 
     this.logger.debug("Initializing session", {
       runId: payload.run_id,
@@ -1146,6 +1160,10 @@ export class AgentServer {
         return null;
       }),
     ]);
+
+    this.prewarmedRun =
+      (preTaskRun?.state as Record<string, unknown> | undefined)?.prewarmed ===
+      true;
 
     const gatewayEnv = this.configureEnvironment({
       isInternal: preTask?.internal === true,
@@ -2586,12 +2604,66 @@ export class AgentServer {
   }
 
   /**
-   * Automated-origin cloud runs auto-publish by default. Every other origin is
-   * review-first unless the user explicitly asks, and createPr=false always
-   * disables publishing.
+   * Automated-origin cloud runs auto-publish by default, and manual runs
+   * auto-publish when the user opted in (Settings → Advanced, sent as
+   * autoPublish). Every other run is review-first unless the user explicitly
+   * asks, and createPr=false always disables publishing.
    */
   private shouldAutoPublishCloudChanges(): boolean {
-    return this.isAutomatedOrigin() && this.config.createPr !== false;
+    return (
+      (this.isAutomatedOrigin() || this.config.autoPublish === true) &&
+      this.config.createPr !== false
+    );
+  }
+
+  /**
+   * A prewarmed run boots before the user's first message exists, so the
+   * --autoPublish flag can't carry the user's choice; the backend persists it
+   * into the run's state at warm activation instead. Nothing has been sent to
+   * the agent until that first message arrives, so resolving it here still
+   * governs the whole conversation: flip the config (so later consumers like
+   * buildDetectedPrContext see it) and return the auto-publish cloud
+   * instructions to inject into the first prompt as an override.
+   */
+  private async resolveWarmAutoPublishUpgrade(): Promise<string | null> {
+    if (!this.prewarmedRun || this.warmAutoPublishResolved || !this.session) {
+      return null;
+    }
+    if (
+      this.config.autoPublish === true ||
+      this.config.createPr === false ||
+      this.isAutomatedOrigin()
+    ) {
+      // The boot decision already publishes (or never may) — nothing to upgrade.
+      this.warmAutoPublishResolved = true;
+      return null;
+    }
+    let state: Record<string, unknown> | undefined;
+    try {
+      const run = await this.posthogAPI.getTaskRun(
+        this.session.payload.task_id,
+        this.session.payload.run_id,
+      );
+      state = run?.state as Record<string, unknown> | undefined;
+    } catch (error) {
+      // Leave unresolved so the next message retries; stay review-first for now.
+      this.logger.debug("Failed to fetch run state for auto-publish upgrade", {
+        error,
+      });
+      return null;
+    }
+    this.warmAutoPublishResolved = true;
+    if (state?.auto_publish !== true) {
+      return null;
+    }
+    this.config.autoPublish = true;
+    this.logger.debug("Warm run upgraded to auto-publish from run state");
+    return [
+      "IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.",
+      "The user has auto-publish enabled for this run. The review-first cloud task instructions in your system prompt are replaced by the following:",
+      "",
+      this.buildCloudSystemPrompt(this.detectedPrUrl),
+    ].join("\n");
   }
 
   private buildDetectedPrContext(prUrl: string): string {
@@ -2760,7 +2832,18 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 When the user asks for code changes:
 - You may clone a repository and make local edits in that clone
 - Do NOT create branches, commits, push changes, or open pull requests in this run`
-          : `
+          : shouldAutoCreatePr
+            ? `
+When the user asks to clone or work in a GitHub repository:
+- Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
+- Work from inside that cloned repository for follow-up code changes
+- After completing code changes in a cloned repository, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone without waiting to be asked. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
+- Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
+${whyContextInstruction.trimStart()}
+${publicRepoSafetyInstruction.trimStart()}
+- End the PR description with a horizontal rule followed by this footer line: ${prFooter}
+- Always create the PR as a draft. Do not ask for confirmation before publishing completed code changes`
+            : `
 When the user explicitly asks to clone or work in a GitHub repository:
 - Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
 - Work from inside that cloned repository for follow-up code changes
