@@ -10,6 +10,14 @@ const log = logger.scope("freeform-edit-store");
 // versions fall off past this cap.
 const MAX_VERSIONS = 50;
 
+// Thread retention: each thread holds up to MAX_VERSIONS whole-document copies,
+// and threads for every canvas ever visited would otherwise stay resident for
+// the app's lifetime (browser tabs make visiting many canvases cheap). Keep the
+// most recently used few; an evicted thread reseeds from the saved record on
+// the next visit — the working copy autosaves on every committed edit, so only
+// an in-progress version *browse* position is lost.
+const MAX_THREADS = 8;
+
 // Working copy of a freeform canvas's source + edit history. Generation no
 // longer streams in-process — it runs as a dedicated task that publishes the
 // result into the canvas's saved record (see useGenerateFreeformCanvas). This
@@ -90,16 +98,42 @@ function dashboardIdOf(threadId: string): string {
 }
 
 export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
+  // MRU access order for eviction. Every patch refreshes a thread's recency;
+  // eviction runs only from the mount-time seeding paths (ensureCode /
+  // syncFromRecord) so an edit mid-session never drops another thread out from
+  // under a mounted view racing a save.
+  let threadOrder: string[] = [];
+
+  const touch = (threadId: string) => {
+    threadOrder = threadOrder.filter((id) => id !== threadId);
+    threadOrder.push(threadId);
+  };
+
+  const evictExcessThreads = () => {
+    while (threadOrder.length > MAX_THREADS) {
+      const oldest = threadOrder[0];
+      // Never drop state with a save in flight; retry on the next seed.
+      if (get().threads[oldest]?.isSaving) return;
+      threadOrder.shift();
+      set((s) => {
+        const { [oldest]: _evicted, ...rest } = s.threads;
+        return { threads: rest };
+      });
+    }
+  };
+
   const patch = (
     threadId: string,
     fn: (prev: FreeformThreadState) => FreeformThreadState,
-  ) =>
+  ) => {
+    touch(threadId);
     set((s) => ({
       threads: {
         ...s.threads,
         [threadId]: fn(s.threads[threadId] ?? EMPTY_FREEFORM_THREAD),
       },
     }));
+  };
 
   // Autosave the current code + history to the backend, toggling isSaving so the
   // toolbar can show a spinner. Never throws.
@@ -137,6 +171,8 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
     threads: {},
 
     ensureCode: (threadId, record) => {
+      touch(threadId);
+      evictExcessThreads();
       const cur = get().threads[threadId];
       // Once the thread has code, only refresh cheap metadata (templateId /
       // context) — never clobber the working copy. syncFromRecord handles
@@ -158,6 +194,8 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
     },
 
     syncFromRecord: (threadId, record) => {
+      touch(threadId);
+      evictExcessThreads();
       const cur = get().threads[threadId];
       // Empty working copy → just seed.
       if (!cur || (!cur.code && cur.versions.length === 0)) {
