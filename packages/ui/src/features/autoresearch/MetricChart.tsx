@@ -4,7 +4,8 @@ import type {
 } from "@posthog/core/autoresearch/schemas";
 import { Text } from "@radix-ui/themes";
 import { useMemo } from "react";
-import { withMetricUnit } from "./metricFormat";
+import { computeChartLayout } from "./chartLayout";
+import { formatChartValue, withMetricUnit } from "./metricFormat";
 
 const WIDTH = 640;
 const HEIGHT = 220;
@@ -18,19 +19,6 @@ interface MetricChartProps {
   unit: string | null;
 }
 
-const wholeNumberFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 0,
-});
-const fractionalNumberFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 2,
-});
-
-function formatValue(value: number): string {
-  return (
-    Math.abs(value) >= 1000 ? wholeNumberFormat : fractionalNumberFormat
-  ).format(value);
-}
-
 /**
  * Metric value per iteration (solid, with dots) plus the best-so-far
  * frontier (dashed) and the optional target line.
@@ -42,51 +30,15 @@ export function MetricChart({
   metricName,
   unit,
 }: MetricChartProps) {
-  const chart = useMemo(() => {
-    if (iterations.length === 0) return null;
-
-    const values = iterations.map((iteration) => iteration.value);
-    const bests = iterations.map((iteration) => iteration.bestValue);
-    const all = [...values, ...bests];
-    if (targetValue !== null) all.push(targetValue);
-
-    let min = Math.min(...all);
-    let max = Math.max(...all);
-    if (min === max) {
-      min -= 1;
-      max += 1;
-    }
-    const span = max - min;
-    min -= span * 0.05;
-    max += span * 0.05;
-
-    const innerWidth = WIDTH - PADDING.left - PADDING.right;
-    const innerHeight = HEIGHT - PADDING.top - PADDING.bottom;
-    const x = (index: number) =>
-      PADDING.left +
-      (iterations.length === 1
-        ? innerWidth / 2
-        : (index / (iterations.length - 1)) * innerWidth);
-    const y = (value: number) =>
-      PADDING.top + ((max - value) / (max - min)) * innerHeight;
-
-    const valuePoints = iterations.map(
-      (iteration, i) => `${x(i)},${y(iteration.value)}`,
-    );
-    const bestPoints = iterations.map(
-      (iteration, i) => `${x(i)},${y(iteration.bestValue)}`,
-    );
-
-    return {
-      x,
-      y,
-      min,
-      max,
-      valuePath: valuePoints.join(" "),
-      bestPath: bestPoints.join(" "),
-      targetY: targetValue === null ? null : y(targetValue),
-    };
-  }, [iterations, targetValue]);
+  const chart = useMemo(
+    () =>
+      computeChartLayout(iterations, targetValue, {
+        width: WIDTH,
+        height: HEIGHT,
+        padding: PADDING,
+      }),
+    [iterations, targetValue],
+  );
 
   if (!chart) {
     return (
@@ -113,7 +65,7 @@ export function MetricChart({
           textAnchor="end"
           className="fill-(--gray-10) text-[10px]"
         >
-          {withMetricUnit(formatValue(chart.max), unit)}
+          {withMetricUnit(formatChartValue(chart.max), unit)}
         </text>
         <text
           x={PADDING.left - 6}
@@ -121,7 +73,7 @@ export function MetricChart({
           textAnchor="end"
           className="fill-(--gray-10) text-[10px]"
         >
-          {withMetricUnit(formatValue(chart.min), unit)}
+          {withMetricUnit(formatChartValue(chart.min), unit)}
         </text>
         <line
           x1={PADDING.left}
@@ -154,7 +106,7 @@ export function MetricChart({
               textAnchor="end"
               className="fill-(--green-11) text-[10px]"
             >
-              target {withMetricUnit(formatValue(targetValue ?? 0), unit)}
+              target {withMetricUnit(formatChartValue(targetValue ?? 0), unit)}
             </text>
           </g>
         )}
@@ -181,7 +133,7 @@ export function MetricChart({
             className="fill-(--accent-9)"
           >
             <title>
-              {`Iteration ${iteration.index}: ${withMetricUnit(formatValue(iteration.value), unit)}${iteration.summary ? ` — ${iteration.summary}` : ""}`}
+              {`Iteration ${iteration.index}: ${withMetricUnit(formatChartValue(iteration.value), unit)}${iteration.summary ? ` — ${iteration.summary}` : ""}`}
             </title>
           </circle>
         ))}

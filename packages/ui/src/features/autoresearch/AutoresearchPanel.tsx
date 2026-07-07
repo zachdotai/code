@@ -40,7 +40,7 @@ import { usePendingPermissionsForTask } from "../sessions/useSession";
 import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
-import { withMetricUnit } from "./metricFormat";
+import { metricNumberFormat, withMetricUnit } from "./metricFormat";
 import { exportRunAsHtml, exportRunAsPng } from "./reportExport";
 import {
   type AutoresearchModelOption,
@@ -78,10 +78,6 @@ const INTERRUPTION_LABEL: Record<string, string> = {
   "send-failed": "Couldn't reach the agent",
   "app-restart": "App restarted mid-run",
 };
-
-const numberFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 4,
-});
 
 interface AutoresearchPanelProps {
   taskId: string;
@@ -436,7 +432,10 @@ function RunStats({ run }: { run: AutoresearchRun }) {
         value={
           summary.best ? (
             <>
-              {withMetricUnit(numberFormat.format(summary.best.value), unit)}
+              {withMetricUnit(
+                metricNumberFormat.format(summary.best.value),
+                unit,
+              )}
               <Text size="1" color="gray">
                 {" "}
                 (iter {summary.best.index})
@@ -451,7 +450,10 @@ function RunStats({ run }: { run: AutoresearchRun }) {
         label="Last"
         value={
           summary.last
-            ? withMetricUnit(numberFormat.format(summary.last.value), unit)
+            ? withMetricUnit(
+                metricNumberFormat.format(summary.last.value),
+                unit,
+              )
             : "—"
         }
       />
@@ -464,7 +466,10 @@ function RunStats({ run }: { run: AutoresearchRun }) {
         value={
           run.config.targetValue === null
             ? "—"
-            : withMetricUnit(numberFormat.format(run.config.targetValue), unit)
+            : withMetricUnit(
+                metricNumberFormat.format(run.config.targetValue),
+                unit,
+              )
         }
       />
     </div>

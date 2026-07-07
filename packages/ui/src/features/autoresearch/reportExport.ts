@@ -6,16 +6,19 @@
  * `foreignObject` drawn onto a canvas — never taints the canvas.
  */
 import type {
-  AutoresearchIteration,
   AutoresearchRun,
   AutoresearchRunStatus,
 } from "@posthog/core/autoresearch/schemas";
+import { computeBest, summarizeRun } from "@posthog/core/autoresearch/stats";
+import { computeChartLayout } from "./chartLayout";
 import {
-  computeBest,
-  isImprovement,
-  summarizeRun,
-} from "@posthog/core/autoresearch/stats";
-import { withMetricUnit } from "./metricFormat";
+  type DeltaTone,
+  deltaTone,
+  formatChartValue,
+  formatMetricDelta,
+  metricNumberFormat,
+  withMetricUnit,
+} from "./metricFormat";
 
 export const REPORT_WIDTH = 760;
 
@@ -49,15 +52,6 @@ const STATUS_LABEL: Record<AutoresearchRunStatus, string> = {
   failed: "Failed",
 };
 
-const numberFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 4,
-});
-const wholeNumberFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 0,
-});
-const fractionalNumberFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 2,
-});
 const dateTimeFormat = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "short",
@@ -75,51 +69,21 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function formatAxisValue(value: number): string {
-  return (
-    Math.abs(value) >= 1000 ? wholeNumberFormat : fractionalNumberFormat
-  ).format(value);
-}
-
-/** Same layout math as `MetricChart`, emitted as a standalone SVG string. */
+/**
+ * The metric chart as a standalone SVG string, sharing `computeChartLayout`
+ * with the live `MetricChart` so the two can't drift apart.
+ */
 function buildChartSvg(run: AutoresearchRun): string {
   const { iterations } = run;
-  if (iterations.length === 0) return "";
-  const unit = run.metricUnit;
   const targetValue = run.config.targetValue;
-
-  const all = iterations.flatMap((iteration) => [
-    iteration.value,
-    iteration.bestValue,
-  ]);
-  if (targetValue !== null) all.push(targetValue);
-
-  let min = Math.min(...all);
-  let max = Math.max(...all);
-  if (min === max) {
-    min -= 1;
-    max += 1;
-  }
-  const span = max - min;
-  min -= span * 0.05;
-  max += span * 0.05;
-
-  const innerWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
-  const innerHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const x = (index: number) =>
-    CHART_PADDING.left +
-    (iterations.length === 1
-      ? innerWidth / 2
-      : (index / (iterations.length - 1)) * innerWidth);
-  const y = (value: number) =>
-    CHART_PADDING.top + ((max - value) / (max - min)) * innerHeight;
-
-  const valuePath = iterations
-    .map((iteration, i) => `${x(i)},${y(iteration.value)}`)
-    .join(" ");
-  const bestPath = iterations
-    .map((iteration, i) => `${x(i)},${y(iteration.bestValue)}`)
-    .join(" ");
+  const layout = computeChartLayout(iterations, targetValue, {
+    width: CHART_WIDTH,
+    height: CHART_HEIGHT,
+    padding: CHART_PADDING,
+  });
+  if (!layout) return "";
+  const unit = run.metricUnit;
+  const { x, y, min, max, valuePath, bestPath, targetY } = layout;
 
   const dots = iterations
     .map(
@@ -129,10 +93,10 @@ function buildChartSvg(run: AutoresearchRun): string {
     .join("");
 
   const target =
-    targetValue === null
+    targetY === null
       ? ""
-      : `<line x1="${CHART_PADDING.left}" y1="${y(targetValue)}" x2="${CHART_WIDTH - CHART_PADDING.right}" y2="${y(targetValue)}" stroke="${COLOR.target}" stroke-dasharray="2 4"/>` +
-        `<text x="${CHART_WIDTH - CHART_PADDING.right}" y="${y(targetValue) - 4}" text-anchor="end" fill="${COLOR.targetText}" font-size="10">target ${escapeHtml(withMetricUnit(formatAxisValue(targetValue), unit))}</text>`;
+      : `<line x1="${CHART_PADDING.left}" y1="${targetY}" x2="${CHART_WIDTH - CHART_PADDING.right}" y2="${targetY}" stroke="${COLOR.target}" stroke-dasharray="2 4"/>` +
+        `<text x="${CHART_WIDTH - CHART_PADDING.right}" y="${targetY - 4}" text-anchor="end" fill="${COLOR.targetText}" font-size="10">target ${escapeHtml(withMetricUnit(formatChartValue(targetValue ?? 0), unit))}</text>`;
 
   const lastIndex =
     iterations.length > 1
@@ -142,8 +106,8 @@ function buildChartSvg(run: AutoresearchRun): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CHART_WIDTH} ${CHART_HEIGHT}" width="${CHART_WIDTH}" height="${CHART_HEIGHT}" role="img">` +
     `<rect x="0.5" y="0.5" width="${CHART_WIDTH - 1}" height="${CHART_HEIGHT - 1}" rx="6" fill="${COLOR.surface}" stroke="${COLOR.border}"/>` +
-    `<text x="${CHART_PADDING.left - 6}" y="${y(max) + 10}" text-anchor="end" fill="${COLOR.faint}" font-size="10">${escapeHtml(withMetricUnit(formatAxisValue(max), unit))}</text>` +
-    `<text x="${CHART_PADDING.left - 6}" y="${y(min)}" text-anchor="end" fill="${COLOR.faint}" font-size="10">${escapeHtml(withMetricUnit(formatAxisValue(min), unit))}</text>` +
+    `<text x="${CHART_PADDING.left - 6}" y="${y(max) + 10}" text-anchor="end" fill="${COLOR.faint}" font-size="10">${escapeHtml(withMetricUnit(formatChartValue(max), unit))}</text>` +
+    `<text x="${CHART_PADDING.left - 6}" y="${y(min)}" text-anchor="end" fill="${COLOR.faint}" font-size="10">${escapeHtml(withMetricUnit(formatChartValue(min), unit))}</text>` +
     `<line x1="${CHART_PADDING.left}" y1="${CHART_PADDING.top}" x2="${CHART_PADDING.left}" y2="${CHART_HEIGHT - CHART_PADDING.bottom}" stroke="${COLOR.axis}"/>` +
     `<line x1="${CHART_PADDING.left}" y1="${CHART_HEIGHT - CHART_PADDING.bottom}" x2="${CHART_WIDTH - CHART_PADDING.right}" y2="${CHART_HEIGHT - CHART_PADDING.bottom}" stroke="${COLOR.axis}"/>` +
     target +
@@ -156,24 +120,11 @@ function buildChartSvg(run: AutoresearchRun): string {
   );
 }
 
-function formatDelta(
-  iteration: AutoresearchIteration,
-  unit: string | null,
-): string {
-  if (iteration.delta === null) return "—";
-  return withMetricUnit(
-    `${iteration.delta > 0 ? "+" : ""}${numberFormat.format(iteration.delta)}`,
-    unit,
-  );
-}
-
-function deltaColor(
-  delta: number | null,
-  direction: AutoresearchRun["config"]["direction"],
-): string {
-  if (delta === null || delta === 0) return COLOR.muted;
-  return isImprovement(delta, 0, direction) ? COLOR.good : COLOR.bad;
-}
+const DELTA_TONE_COLOR: Record<DeltaTone, string> = {
+  improved: COLOR.good,
+  worsened: COLOR.bad,
+  neutral: COLOR.muted,
+};
 
 function buildIterationsTable(run: AutoresearchRun): string {
   if (run.iterations.length === 0) {
@@ -189,8 +140,8 @@ function buildIterationsTable(run: AutoresearchRun): string {
       return (
         "<tr>" +
         `<td>${iteration.index}</td>` +
-        `<td class="num">${escapeHtml(withMetricUnit(numberFormat.format(iteration.value), unit))}${bestTag}</td>` +
-        `<td class="num" style="color:${deltaColor(iteration.delta, run.config.direction)}">${escapeHtml(formatDelta(iteration, unit))}</td>` +
+        `<td class="num">${escapeHtml(withMetricUnit(metricNumberFormat.format(iteration.value), unit))}${bestTag}</td>` +
+        `<td class="num" style="color:${DELTA_TONE_COLOR[deltaTone(iteration.delta, run.config.direction)]}">${escapeHtml(formatMetricDelta(iteration.delta, unit))}</td>` +
         `<td>${iteration.summary ? escapeHtml(iteration.summary) : "—"}</td>` +
         `<td class="muted">${escapeHtml(dateTimeFormat.format(iteration.at))}</td>` +
         "</tr>"
@@ -253,13 +204,13 @@ export function buildReportBody(
     statCard(
       "Best",
       summary.best
-        ? `${withMetricUnit(numberFormat.format(summary.best.value), unit)} (iter ${summary.best.index})`
+        ? `${withMetricUnit(metricNumberFormat.format(summary.best.value), unit)} (iter ${summary.best.index})`
         : "—",
     ),
     statCard(
       "Last",
       summary.last
-        ? withMetricUnit(numberFormat.format(summary.last.value), unit)
+        ? withMetricUnit(metricNumberFormat.format(summary.last.value), unit)
         : "—",
     ),
     statCard(
@@ -270,7 +221,10 @@ export function buildReportBody(
       "Target",
       run.config.targetValue === null
         ? "—"
-        : withMetricUnit(numberFormat.format(run.config.targetValue), unit),
+        : withMetricUnit(
+            metricNumberFormat.format(run.config.targetValue),
+            unit,
+          ),
     ),
   ].join("");
 
