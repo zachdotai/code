@@ -125,6 +125,7 @@ function createHarness() {
   let onUpdate: ((update: CloudTaskUpdatePayload) => void) | undefined;
   const notifyPromptComplete = vi.fn();
   const notifyPermissionRequest = vi.fn();
+  const enqueueSpeech = vi.fn();
   const markActivity = vi.fn();
   const noopLog = {
     info: vi.fn(),
@@ -138,6 +139,7 @@ function createHarness() {
     log: noopLog,
     notifyPromptComplete,
     notifyPermissionRequest,
+    enqueueSpeech,
     taskViewedApi: { markActivity },
     getPersistedConfigOptions: () => undefined,
     setPersistedConfigOptions: vi.fn(),

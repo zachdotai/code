@@ -76,6 +76,18 @@ describe("composeUtterance", () => {
     ).toBe("PostHog Code task 'x' — already prefixed");
   });
 
+  it("does not double-prefix even when addressing by name", () => {
+    expect(
+      composeUtterance({
+        text: "PostHog Code task 'x' — already prefixed",
+        taskTitle: "y",
+        needsUser: true,
+        addressByName: true,
+        firstName: "Jon",
+      }),
+    ).toBe("PostHog Code task 'x' — already prefixed");
+  });
+
   it("truncates a long task title", () => {
     const long = "a".repeat(60);
     const out = composeUtterance({ text: "hi", taskTitle: long });

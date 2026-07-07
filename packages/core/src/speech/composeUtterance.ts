@@ -39,14 +39,17 @@ export function composeUtterance({
 }: ComposeInput): string {
   let body = text.trim();
 
+  // Agent already prefixed with a task reference — return it verbatim. Checked
+  // before any greeting logic so the guard stays order-independent: injecting
+  // "Hey <name>," first would push the prefix past the start of the string and
+  // defeat this test, producing a double prefix.
+  if (/^\s*posthog code task/i.test(body)) return body;
+
   if (needsUser && addressByName && firstName) {
     // Normalize any leading greeting the agent added, then address by real name.
     body = body.replace(/^\s*hey\b[\s,]*/i, "").trimStart();
     body = `Hey ${firstName}, ${body}`;
   }
-
-  // Agent already prefixed with a task reference — don't double it.
-  if (/^\s*posthog code task/i.test(body)) return body;
 
   const title = taskTitle.trim();
   if (!title) return body;

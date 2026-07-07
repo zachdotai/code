@@ -603,9 +603,12 @@ export class SessionService {
   // accumulate their latest args; enqueue once the call reaches a terminal
   // status (full text), then delete the entry — which also dedupes re-fires.
   // A `null` value means "identified as speak, args not streamed in yet".
+  // Keyed by taskRunId first so a session teardown can drop any of its
+  // still-streaming speak calls (see unsubscribeFromChannel); the inner map is
+  // keyed by toolCallId.
   private speakCalls = new Map<
     string,
-    { text: string; kind: SpeechKind } | null
+    Map<string, { text: string; kind: SpeechKind } | null>
   >();
   // When the agent last narrated `done`/`needs_input` per task run (event ts).
   // The deterministic completion/needs-input backstops compare this against the
@@ -1727,6 +1730,9 @@ export class SessionService {
     this.subscriptions.delete(taskRunId);
     this.liveTurnContent.delete(taskRunId);
     this.agentSpokeAt.delete(taskRunId);
+    // Drop any speak calls still mid-stream for this run (never reached a
+    // terminal status, so they were never enqueued or deleted above).
+    this.speakCalls.delete(taskRunId);
   }
 
   /**
@@ -2111,17 +2117,21 @@ export class SessionService {
         };
         const id = update.toolCallId;
         if (id) {
+          const speakCalls = this.speakCalls.get(taskRunId);
           // Only the top-level agent narrates. A `speak` from a sub-agent
           // (spawned via the Task tool) carries a parentToolCallId; ignoring
           // those prevents several sub-agents talking over each other.
           if (
             update._meta?.claudeCode?.toolName === SPEAK_TOOL_QUALIFIED_NAME &&
             !update._meta.claudeCode.parentToolCallId &&
-            !this.speakCalls.has(id)
+            !speakCalls?.has(id)
           ) {
-            this.speakCalls.set(id, null);
+            const calls = speakCalls ?? new Map();
+            calls.set(id, null);
+            this.speakCalls.set(taskRunId, calls);
           }
-          if (this.speakCalls.has(id)) {
+          const calls = this.speakCalls.get(taskRunId);
+          if (calls?.has(id)) {
             // Accumulate the latest args — text grows across streamed updates.
             const text = update.rawInput?.text;
             if (typeof text === "string" && text.trim().length > 0) {
@@ -2132,13 +2142,14 @@ export class SessionService {
                 rawKind === "progress"
                   ? rawKind
                   : "progress";
-              this.speakCalls.set(id, { text, kind });
+              calls.set(id, { text, kind });
             }
             // Speak only once the call is complete (full text). Deleting the
             // entry both frees it and dedupes any later terminal event.
-            const pending = this.speakCalls.get(id);
+            const pending = calls.get(id);
             if (isTerminalStatus(update.status) && pending) {
-              this.speakCalls.delete(id);
+              calls.delete(id);
+              if (calls.size === 0) this.speakCalls.delete(taskRunId);
               if (pending.kind !== "progress") {
                 const spoke = this.agentSpokeAt.get(taskRunId) ?? {
                   needs_input: 0,
