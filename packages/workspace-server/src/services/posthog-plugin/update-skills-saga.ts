@@ -42,6 +42,14 @@ export interface UpdateSkillsInput {
   runtimeSkillsDir: string;
   runtimePluginDir: string;
   tempDir: string;
+  /**
+   * Stable, per-instance token used to isolate this run's staging directories
+   * (`<skills>.new-<runId>` / `<skills>.old-<runId>`) from other running
+   * workspace-server instances. A second instance (another window/project)
+   * staging into a shared path could otherwise `rm`/`rename` it out from under
+   * this run, making the validate/swap steps throw a spurious ENOENT.
+   */
+  runId: string;
   skillsZipUrl: string;
   contextMillZipUrl: string;
   downloadFile: (url: string, destPath: string) => Promise<void>;
@@ -60,7 +68,7 @@ export class UpdateSkillsSaga extends Saga<
   protected async execute(
     input: UpdateSkillsInput,
   ): Promise<UpdateSkillsOutput> {
-    const newSkillsDir = `${input.runtimeSkillsDir}.new`;
+    const newSkillsDir = `${input.runtimeSkillsDir}.new-${input.runId}`;
 
     // Step 1: create staging dir
     await this.step({
@@ -108,16 +116,18 @@ export class UpdateSkillsSaga extends Saga<
       }
     });
 
-    // Step 3: validate skills. An empty staging dir means both downloads
-    // produced nothing this cycle (e.g. a transient network failure — the
-    // download steps above are intentionally non-fatal). The existing skills
-    // cache and the bundled skills remain in place, so this is a no-op cycle,
-    // not a failure: skip the swap and try again on the next interval rather
-    // than throwing, which would surface a misleading "no skills" exception.
+    // Step 3: validate skills. An empty (or missing) staging dir means both
+    // downloads produced nothing this cycle (e.g. a transient network failure —
+    // the download steps above are intentionally non-fatal — or the staging dir
+    // was cleaned up by a concurrent instance). The existing skills cache and
+    // the bundled skills remain in place, so this is a no-op cycle, not a
+    // failure: skip the swap and try again on the next interval rather than
+    // throwing, which would surface a misleading "no skills" exception. Reading
+    // a missing dir is treated as empty rather than an ENOENT throw.
     const stagedSkillCount = await this.readOnlyStep(
       "validate-skills",
       async () => {
-        const entries = await readdir(newSkillsDir);
+        const entries = await this.safeReaddir(newSkillsDir);
         return entries.length;
       },
     );
@@ -129,8 +139,7 @@ export class UpdateSkillsSaga extends Saga<
       await rm(newSkillsDir, { recursive: true, force: true });
 
       const hasCachedSkills =
-        existsSync(input.runtimeSkillsDir) &&
-        (await readdir(input.runtimeSkillsDir)).length > 0;
+        (await this.safeReaddir(input.runtimeSkillsDir)).length > 0;
 
       if (hasCachedSkills) {
         // A transient blip (e.g. network failure — the download steps above
@@ -157,8 +166,19 @@ export class UpdateSkillsSaga extends Saga<
       );
     }
 
+    // The staging dir is validated as non-empty above, but a concurrent
+    // instance (or an interrupted prior run) could still have removed it in the
+    // meantime. Guard the swap so a missing staging dir is a no-op cycle rather
+    // than an ENOENT thrown from `rename`.
+    if (!existsSync(newSkillsDir)) {
+      this.log.warn(
+        "Staging skills dir disappeared before swap; skipping this cycle",
+      );
+      return { updated: false };
+    }
+
     // Step 4: atomic swap
-    const oldSkillsDir = `${input.runtimeSkillsDir}.old`;
+    const oldSkillsDir = `${input.runtimeSkillsDir}.old-${input.runId}`;
     await this.step({
       name: "swap-skills-cache",
       execute: async () => {
@@ -200,6 +220,23 @@ export class UpdateSkillsSaga extends Saga<
     });
 
     return { updated: true };
+  }
+
+  /**
+   * Reads a directory's entries, treating a missing directory as empty rather
+   * than throwing ENOENT. The staging dir can be removed out from under a run by
+   * a concurrent workspace-server instance or the atomic swap; a vanished dir
+   * should be handled as a no-op cycle, not surfaced as an error.
+   */
+  private async safeReaddir(dir: string): Promise<string[]> {
+    try {
+      return await readdir(dir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
+      }
+      throw err;
+    }
   }
 
   /**

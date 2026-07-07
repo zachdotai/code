@@ -486,6 +486,57 @@ describe("PosthogPluginService", () => {
       expect(vol.existsSync(`${RUNTIME_SKILLS_DIR}.new`)).toBe(false);
     });
 
+    it("treats a staging dir removed mid-run as a no-op, not an ENOENT error", async () => {
+      // A previously-downloaded cache exists, so a lost staging dir is benign.
+      vol.mkdirSync(`${RUNTIME_SKILLS_DIR}/cached-skill`, { recursive: true });
+      vol.writeFileSync(
+        `${RUNTIME_SKILLS_DIR}/cached-skill/SKILL.md`,
+        "# Cached",
+      );
+
+      // Simulate a concurrent workspace-server instance (another window/project)
+      // removing this run's staging dir out from under it — the original crash
+      // where the unguarded readdir threw `ENOENT ... scandir '.../skills.new'`.
+      const stagingDir = `${RUNTIME_SKILLS_DIR}.new-${process.pid}`;
+      mockExtractZip.mockImplementation(async () => {
+        if (vol.existsSync(stagingDir)) {
+          vol.rmSync(stagingDir, { recursive: true, force: true });
+        }
+      });
+
+      const handler = vi.fn();
+      service.on("skillsUpdated", handler);
+      await service.updateSkills();
+
+      // No ENOENT surfaced to error tracking, existing cache preserved, and no
+      // false "updated" signal — the cycle is a silent no-op.
+      expect(mockAnalytics.captureException).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+      expect(
+        vol.readFileSync(
+          `${RUNTIME_SKILLS_DIR}/cached-skill/SKILL.md`,
+          "utf-8",
+        ),
+      ).toBe("# Cached");
+    });
+
+    it("isolates the staging dir per instance so it never uses the shared path", async () => {
+      setupBundledPlugin();
+      simulateExtractZip();
+
+      await service.updateSkills();
+
+      // The shared `.new` path must never be created; staging is per-process.
+      expect(vol.existsSync(`${RUNTIME_SKILLS_DIR}.new`)).toBe(false);
+      // And this run's isolated staging/backup dirs are cleaned up on success.
+      expect(vol.existsSync(`${RUNTIME_SKILLS_DIR}.new-${process.pid}`)).toBe(
+        false,
+      );
+      expect(vol.existsSync(`${RUNTIME_SKILLS_DIR}.old-${process.pid}`)).toBe(
+        false,
+      );
+    });
+
     it("cleans up temp dir even on error", async () => {
       mockExtractZip.mockRejectedValue(new Error("extraction failed"));
 

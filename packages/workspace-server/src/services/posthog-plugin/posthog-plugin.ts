@@ -205,6 +205,12 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
         runtimeSkillsDir: this.runtimeSkillsDir,
         runtimePluginDir: this.runtimePluginDir,
         tempDir,
+        // Isolate this instance's staging dirs from any other running
+        // workspace-server instance (another window/project) so a shared
+        // `<skills>.new` path can't be clobbered mid-run. The pid is stable
+        // across this process's update cycles, so the `create-staging-dir` step
+        // self-heals any leftover staging dir from an interrupted prior run.
+        runId: String(process.pid),
         skillsZipUrl: SKILLS_ZIP_URL,
         contextMillZipUrl: CONTEXT_MILL_ZIP_URL,
         downloadFile: (url, destPath) => this.downloadFile(url, destPath),
