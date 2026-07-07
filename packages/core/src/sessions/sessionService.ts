@@ -40,7 +40,12 @@ import {
   isTerminalStatus,
   type Task,
 } from "@posthog/shared/domain-types";
-import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
+import type { SpeechKind } from "../speech/identifiers";
+import {
+  isNotification,
+  POSTHOG_NOTIFICATIONS,
+  SPEAK_TOOL_QUALIFIED_NAME,
+} from "./acpNotifications";
 import { createAppendOnlyTracker } from "./appendOnlyTracker";
 import type {
   CloudArtifactClient,
@@ -279,6 +284,13 @@ export interface SessionServiceDeps {
   buildPermissionToolMetadata: (...args: any[]) => any;
   notifyPermissionRequest: (...args: any[]) => any;
   notifyPromptComplete: (...args: any[]) => any;
+  enqueueSpeech: (request: {
+    text: string;
+    taskTitle: string;
+    taskId?: string;
+    kind: SpeechKind;
+    addressByName?: boolean;
+  }) => void;
   getIsOnline: () => boolean;
   fetchAuthState: () => Promise<any>;
   getAuthenticatedClient: () => Promise<any>;
@@ -585,6 +597,23 @@ export class SessionService {
   private cloudRunIdleTracker: CloudRunIdleTracker;
   private nextCloudTaskWatchToken = 0;
   private supersededRunIds = new Set<string>();
+  // Spoken narration: the `speak` tool's { text, kind } args stream in across
+  // multiple tool_call_updates (partial input_json_delta), so early events carry
+  // a truncated text like "The quick b". Track speak tool calls by id and
+  // accumulate their latest args; enqueue once the call reaches a terminal
+  // status (full text), then delete the entry — which also dedupes re-fires.
+  // A `null` value means "identified as speak, args not streamed in yet".
+  private speakCalls = new Map<
+    string,
+    { text: string; kind: SpeechKind } | null
+  >();
+  // When the agent last narrated `done`/`needs_input` per task run (event ts).
+  // The deterministic completion/needs-input backstops compare this against the
+  // turn's start so they don't double up on a moment the agent already voiced.
+  private agentSpokeAt = new Map<
+    string,
+    { needs_input: number; done: number }
+  >();
   private subscriptions = new Map<
     string,
     {
@@ -1697,6 +1726,7 @@ export class SessionService {
     subscription?.permission?.unsubscribe();
     this.subscriptions.delete(taskRunId);
     this.liveTurnContent.delete(taskRunId);
+    this.agentSpokeAt.delete(taskRunId);
   }
 
   /**
@@ -1736,6 +1766,8 @@ export class SessionService {
     this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
+    this.speakCalls.clear();
+    this.agentSpokeAt.clear();
     this.cloudLogGapReconciler.clear();
     this.dispatchingCloudQueues.clear();
     this.scheduledCloudQueueFlushes.clear();
@@ -1875,6 +1907,7 @@ export class SessionService {
                 session.taskId,
                 turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
               );
+              this.speakDeterministic(taskRunId, session, "done");
             }
             this.d.taskViewedApi.markActivity(session.taskId);
             this.finalizeTurnContent(taskRunId, "turn_complete", acpMsg.ts);
@@ -1943,6 +1976,35 @@ export class SessionService {
     }
   }
 
+  /**
+   * Deterministic backstop for the two moments the user must not miss. Fired
+   * from the turn-complete and permission events (which happen every time),
+   * unless the agent already narrated that same moment this turn via the speak
+   * tool — in which case its expressive line stands. Routes through the same
+   * speech channel (focus + settings gating + serialized queue).
+   */
+  private speakDeterministic(
+    taskRunId: string,
+    session: {
+      taskTitle: string;
+      taskId: string;
+      promptStartedAt: number | null;
+    },
+    kind: "done" | "needs_input",
+  ): void {
+    const turnStart = session.promptStartedAt ?? 0;
+    const spokeAt = this.agentSpokeAt.get(taskRunId)?.[kind] ?? 0;
+    if (turnStart > 0 && spokeAt >= turnStart) return; // agent already voiced it
+    // Deterministic backstop stays plain — no "Hey <name>," greeting.
+    this.d.enqueueSpeech({
+      text: kind === "done" ? "finished" : "needs your input",
+      taskTitle: session.taskTitle,
+      taskId: session.taskId,
+      kind,
+      addressByName: false,
+    });
+  }
+
   private handleSessionEvent(taskRunId: string, acpMsg: AcpMessage): void {
     const session = this.d.store.getSessions()[taskRunId];
     if (!session) return;
@@ -2000,6 +2062,9 @@ export class SessionService {
           session.taskId,
           turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
         );
+        if (stopReason === "end_turn") {
+          this.speakDeterministic(taskRunId, session, "done");
+        }
       }
 
       this.d.taskViewedApi.markActivity(session.taskId);
@@ -2025,6 +2090,74 @@ export class SessionService {
         // Persist the updated config options
         this.d.setPersistedConfigOptions(taskRunId, configOptions);
         this.d.log.info("Session config options updated", { taskRunId });
+      }
+
+      // Spoken narration: the agent's `speak` tool call surfaces here. The
+      // initial tool_call names the tool but arrives with empty args; the
+      // assembled { text, kind } stream in on later tool_call_updates with the
+      // same toolCallId. So we remember speak toolCallIds, accumulate the latest
+      // args, and enqueue once the call completes (with the full text).
+      if (
+        params?.update?.sessionUpdate === "tool_call" ||
+        params?.update?.sessionUpdate === "tool_call_update"
+      ) {
+        const update = params.update as {
+          toolCallId?: string;
+          status?: string;
+          _meta?: {
+            claudeCode?: { toolName?: string; parentToolCallId?: string };
+          };
+          rawInput?: { text?: unknown; kind?: unknown };
+        };
+        const id = update.toolCallId;
+        if (id) {
+          // Only the top-level agent narrates. A `speak` from a sub-agent
+          // (spawned via the Task tool) carries a parentToolCallId; ignoring
+          // those prevents several sub-agents talking over each other.
+          if (
+            update._meta?.claudeCode?.toolName === SPEAK_TOOL_QUALIFIED_NAME &&
+            !update._meta.claudeCode.parentToolCallId &&
+            !this.speakCalls.has(id)
+          ) {
+            this.speakCalls.set(id, null);
+          }
+          if (this.speakCalls.has(id)) {
+            // Accumulate the latest args — text grows across streamed updates.
+            const text = update.rawInput?.text;
+            if (typeof text === "string" && text.trim().length > 0) {
+              const rawKind = update.rawInput?.kind;
+              const kind: SpeechKind =
+                rawKind === "needs_input" ||
+                rawKind === "done" ||
+                rawKind === "progress"
+                  ? rawKind
+                  : "progress";
+              this.speakCalls.set(id, { text, kind });
+            }
+            // Speak only once the call is complete (full text). Deleting the
+            // entry both frees it and dedupes any later terminal event.
+            const pending = this.speakCalls.get(id);
+            if (isTerminalStatus(update.status) && pending) {
+              this.speakCalls.delete(id);
+              if (pending.kind !== "progress") {
+                const spoke = this.agentSpokeAt.get(taskRunId) ?? {
+                  needs_input: 0,
+                  done: 0,
+                };
+                spoke[pending.kind] = acpMsg.ts;
+                this.agentSpokeAt.set(taskRunId, spoke);
+              }
+              this.d.enqueueSpeech({
+                text: pending.text,
+                taskTitle: session.taskTitle,
+                taskId: session.taskId,
+                kind: pending.kind,
+                // Agent-authored line: allowed to address the user by name.
+                addressByName: true,
+              });
+            }
+          }
+        }
       }
 
       // Handle context usage updates
@@ -2146,6 +2279,7 @@ export class SessionService {
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
     this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+    this.speakDeterministic(taskRunId, session, "needs_input");
   }
 
   private handleCloudPermissionRequest(
@@ -2194,6 +2328,7 @@ export class SessionService {
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
     this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+    this.speakDeterministic(taskRunId, session, "needs_input");
   }
 
   private surfacePersistedPendingPermissions(
