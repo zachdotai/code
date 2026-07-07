@@ -75,12 +75,12 @@ export const CHANNEL_TASK_SUGGESTIONS: SuggestedPrompt[] = [
   },
   {
     label: "Optimize your AI usage",
-    description: "Cut token spend with skills & memory tuning",
+    description: "Turn repeated work into skills, scouts & savings",
     icon: Gauge,
     color: "cyan",
     mode: "auto",
     prompt:
-      "Review my recent agent and task usage to find ways to work more efficiently. Look for repeated work a reusable skill would capture, memory files that could be tightened or split, and prompt patterns that burn tokens. Recommend concrete improvements — new skills, memory edits, or best practices — to reduce token cost.\n\n\nUser input:\n- Time period to review (optional):\n- What to prioritize (cost, speed, accuracy — optional):",
+      "Audit how I've been using PostHog Code and find ways to get better results for fewer tokens. Review my recent tasks and sessions for: repeated workflows worth capturing as a reusable skill, recurring questions better served by a scheduled scout or AI report, memory files that are bloated, stale, or missing context I keep re-explaining, and prompts that ran long or retried because they were under-specified. Deliver a short report of findings ranked by impact — each with the evidence behind it and the estimated saving — then offer to implement the top quick wins.\n\n\nUser input:\n- Time period to review (optional):\n- What to prioritize (token cost, speed, quality — optional):",
   },
   {
     label: "Fix a bug",
