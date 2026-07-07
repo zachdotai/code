@@ -14,8 +14,9 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
+import { MetricCard, useChartTheme } from "@posthog/quill-charts";
 import { Badge, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getConfigOptionByCategory,
   useSessionStore,
@@ -24,7 +25,7 @@ import { usePendingPermissionsForTask } from "../sessions/useSession";
 import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
-import { withMetricUnit } from "./metricFormat";
+import { metricNumberFormat, withMetricUnit } from "./metricFormat";
 import {
   type AutoresearchModelOption,
   stageValueLabel,
@@ -61,10 +62,6 @@ const INTERRUPTION_LABEL: Record<string, string> = {
   "send-failed": "Couldn't reach the agent",
   "app-restart": "App restarted mid-run",
 };
-
-const numberFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 4,
-});
 
 interface AutoresearchPanelProps {
   taskId: string;
@@ -378,61 +375,65 @@ function PendingPermissionNotice({
   );
 }
 
-function RunStats({ run }: { run: AutoresearchRun }) {
+export function RunStats({ run }: { run: AutoresearchRun }) {
   const summary = useMemo(() => summarizeRun(run), [run]);
+  const theme = useChartTheme();
   const unit = run.metricUnit;
+  const iterations = run.iterations;
+  const labels = useMemo(
+    () => iterations.map((iteration) => `iter ${iteration.index}`),
+    [iterations],
+  );
+  const formatMetricValue = (value: number) =>
+    Number.isNaN(value)
+      ? "—"
+      : withMetricUnit(metricNumberFormat.format(value), unit);
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      <StatCard
-        label="Best"
-        value={
-          summary.best ? (
-            <>
-              {withMetricUnit(numberFormat.format(summary.best.value), unit)}
-              <Text size="1" color="gray">
-                {" "}
-                (iter {summary.best.index})
-              </Text>
-            </>
-          ) : (
-            "—"
-          )
+      <MetricCard
+        title="Best"
+        value={summary.best?.value ?? Number.NaN}
+        data={
+          iterations.length > 0
+            ? iterations.map((iteration) => iteration.bestValue)
+            : undefined
         }
+        labels={labels}
+        theme={theme}
+        formatValue={formatMetricValue}
+        change={null}
+        subtitle={summary.best ? `iter ${summary.best.index}` : undefined}
+        dataAttr="autoresearch-stat-best"
       />
-      <StatCard
-        label="Last"
-        value={
-          summary.last
-            ? withMetricUnit(numberFormat.format(summary.last.value), unit)
-            : "—"
+      <MetricCard
+        title="Last"
+        value={summary.last?.value ?? Number.NaN}
+        data={
+          iterations.length > 0
+            ? iterations.map((iteration) => iteration.value)
+            : undefined
         }
+        labels={labels}
+        theme={theme}
+        formatValue={formatMetricValue}
+        change={null}
+        dataAttr="autoresearch-stat-last"
       />
-      <StatCard
-        label="Iterations"
-        value={`${summary.iterationCount} / ${run.config.maxIterations}`}
+      <MetricCard
+        title="Iterations"
+        value={summary.iterationCount}
+        formatValue={(value) => `${value} / ${run.config.maxIterations}`}
+        change={null}
+        dataAttr="autoresearch-stat-iterations"
       />
-      <StatCard
-        label="Target"
-        value={
-          run.config.targetValue === null
-            ? "—"
-            : withMetricUnit(numberFormat.format(run.config.targetValue), unit)
-        }
+      <MetricCard
+        title="Target"
+        value={run.config.targetValue ?? Number.NaN}
+        formatValue={formatMetricValue}
+        change={null}
+        dataAttr="autoresearch-stat-target"
       />
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="rounded-md border border-(--gray-5) bg-(--gray-2) px-3 py-2">
-      <Text as="div" size="1" color="gray">
-        {label}
-      </Text>
-      <Text as="div" size="2" weight="medium" className="tabular-nums">
-        {value}
-      </Text>
     </div>
   );
 }
