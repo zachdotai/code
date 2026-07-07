@@ -554,6 +554,7 @@ export class SessionService {
   private scheduledCloudQueueFlushes = new Set<string>();
   private cloudRunIdleTracker: CloudRunIdleTracker;
   private nextCloudTaskWatchToken = 0;
+  private hydratingCloudSessions = new Set<string>();
   private supersededRunIds = new Set<string>();
   private subscriptions = new Map<
     string,
@@ -3700,6 +3701,24 @@ export class SessionService {
       if (onStatusChange) {
         existingWatcher.onStatusChange = onStatusChange;
       }
+      if (isTerminalStatus(runStatus)) {
+        const existing = this.d.store.getSessionByTaskId(taskId);
+        if (existing?.taskRunId === taskRunId) {
+          this.hydrateCloudTaskSessionFromLogs(
+            taskId,
+            taskRunId,
+            logUrl,
+            taskDescription,
+            runStatus,
+            runState,
+          );
+        }
+        this.finalizeTerminalCloudTask(taskId, taskRunId, {
+          status: runStatus,
+        });
+        this.stopCloudTaskWatch(taskId);
+        return () => {};
+      }
       // Ensure configOptions is populated on revisit
       const existing = this.d.store.getSessionByTaskId(taskId);
       if (existing) {
@@ -3817,7 +3836,7 @@ export class SessionService {
       initialReasoningEffort,
     );
 
-    if (shouldHydrateSession) {
+    if (shouldHydrateSession || isTerminalStatus(runStatus)) {
       this.hydrateCloudTaskSessionFromLogs(
         taskId,
         taskRunId,
@@ -3828,18 +3847,30 @@ export class SessionService {
       );
     }
 
+    if (isTerminalStatus(runStatus)) {
+      this.finalizeTerminalCloudTask(taskId, taskRunId, {
+        status: runStatus,
+      });
+      return () => {};
+    }
+
     // Subscribe before starting the main-process watcher so the first replayed
     // SSE/log burst cannot race ahead of the renderer subscription.
     const subscription = this.d.trpc.cloudTask.onUpdate.subscribe(
       { taskId, runId },
       {
         onData: (update: CloudTaskUpdatePayload) => {
+          const isStaleNonTerminalStatus = this.isStaleNonTerminalCloudUpdate(
+            taskRunId,
+            update,
+          );
           this.handleCloudTaskUpdate(taskRunId, update);
           const watcher = this.cloudTaskWatchers.get(taskId);
           if (
             (update.kind === "status" ||
               update.kind === "snapshot" ||
               update.kind === "error") &&
+            !isStaleNonTerminalStatus &&
             watcher?.onStatusChange
           ) {
             watcher.onStatusChange();
@@ -3912,11 +3943,23 @@ export class SessionService {
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
   ): void {
+    const isTerminalRun = isTerminalStatus(runStatus);
+    const isResumeRun = Boolean(runState?.resume_from_run_id);
+    const hydrationMode = isTerminalRun
+      ? "terminal-chain"
+      : isResumeRun
+        ? "resume-chain"
+        : "single";
+    const hydrationKey = `${taskId}:${taskRunId}:${hydrationMode}`;
+    if (this.hydratingCloudSessions.has(hydrationKey)) {
+      return;
+    }
+    this.hydratingCloudSessions.add(hydrationKey);
+
     void (async () => {
       let rawEntries: StoredLogEntry[];
       let totalLineCount: number;
-      const isResumeRun = Boolean(runState?.resume_from_run_id);
-      if (isTerminalStatus(runStatus) || isResumeRun) {
+      if (isTerminalRun || isResumeRun) {
         // Resume chains need the full history even while the leaf run is still
         // active; otherwise a renderer restart hydrates only the final run.
         // Non-resume in-progress runs keep using the single-run log so hydrate
@@ -3940,6 +3983,13 @@ export class SessionService {
           return;
         }
         totalLineCount = rawEntries.length;
+        if (rawEntries.length === 0 && logUrl) {
+          const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+          if (parsed.rawEntries.length > 0) {
+            rawEntries = parsed.rawEntries;
+            totalLineCount = parsed.totalLineCount;
+          }
+        }
       } else {
         const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
         rawEntries = parsed.rawEntries;
@@ -3948,6 +3998,24 @@ export class SessionService {
 
       const session = this.d.store.getSessionByTaskId(taskId);
       if (!session || session.taskRunId !== taskRunId) {
+        return;
+      }
+
+      if (rawEntries.length === 0) {
+        if (isTerminalRun) {
+          this.initialCloudOptimisticPrompt.delete(taskId);
+          this.d.store.clearTailOptimisticItems(taskRunId);
+        } else {
+          const seedContent =
+            this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
+          if (seedContent?.trim()) {
+            this.d.store.appendOptimisticItem(taskRunId, {
+              type: "user_message",
+              content: seedContent,
+              timestamp: Date.now(),
+            });
+          }
+        }
         return;
       }
 
@@ -3965,7 +4033,7 @@ export class SessionService {
       // its chip renders right away) over the bare task description.
       const seedContent =
         this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
-      if (!hasUserPrompt && seedContent?.trim()) {
+      if (!isTerminalRun && !hasUserPrompt && seedContent?.trim()) {
         this.d.store.appendOptimisticItem(taskRunId, {
           type: "user_message",
           content: seedContent,
@@ -3977,14 +4045,21 @@ export class SessionService {
         this.initialCloudOptimisticPrompt.delete(taskId);
         this.d.store.clearTailOptimisticItems(taskRunId);
       }
-
-      if (rawEntries.length === 0) {
-        return;
+      if (isTerminalRun) {
+        this.initialCloudOptimisticPrompt.delete(taskId);
+        this.d.store.clearTailOptimisticItems(taskRunId);
       }
 
       // If live updates already populated a processed count, don't overwrite
       // that newer state with the persisted baseline fetched during startup.
-      if (
+      // Terminal hydration is different: it is the final transcript, so apply
+      // it when the persisted chain has more lines than the local stream.
+      const effectiveLineCount = Math.max(totalLineCount, rawEntries.length);
+      if (isTerminalRun) {
+        if ((session.processedLineCount ?? 0) >= effectiveLineCount) {
+          return;
+        }
+      } else if (
         session.processedLineCount !== undefined &&
         session.processedLineCount > 0
       ) {
@@ -3995,18 +4070,58 @@ export class SessionService {
         events,
         isCloud: true,
         logUrl: logUrl ?? session.logUrl,
-        processedLineCount: totalLineCount,
+        processedLineCount: effectiveLineCount,
       });
       // Without this the "Galumphing…" indicator stays hidden when the hydrated
       // baseline already contains an in-flight session/prompt — the live delta
       // path otherwise sees delta <= 0 and never re-evaluates the tail.
       this.updatePromptStateFromEvents(taskRunId, events);
-    })().catch((err: unknown) => {
-      this.d.log.warn("Failed to hydrate cloud task session from logs", {
-        taskId,
-        taskRunId,
-        err,
+      if (isTerminalRun) {
+        this.clearTerminalCloudPromptState(taskId, taskRunId);
+      }
+    })()
+      .catch((err: unknown) => {
+        this.d.log.warn("Failed to hydrate cloud task session from logs", {
+          taskId,
+          taskRunId,
+          err,
+        });
+      })
+      .finally(() => {
+        this.hydratingCloudSessions.delete(hydrationKey);
       });
+  }
+
+  private finalizeTerminalCloudTask(
+    taskId: string,
+    taskRunId: string,
+    fields: {
+      status?: TaskRunStatus;
+      stage?: string | null;
+      output?: Record<string, unknown> | null;
+      errorMessage?: string | null;
+      branch?: string | null;
+    },
+  ): void {
+    this.d.store.updateCloudStatus(taskRunId, fields);
+    this.clearTerminalCloudPromptState(taskId, taskRunId);
+  }
+
+  private clearTerminalCloudPromptState(
+    taskId: string,
+    taskRunId: string,
+  ): void {
+    const session = this.d.store.getSessions()[taskRunId];
+    if (
+      !session ||
+      (!session.isPromptPending && session.messageQueue.length === 0)
+    ) {
+      return;
+    }
+
+    this.d.store.clearMessageQueue(taskId);
+    this.d.store.updateSession(taskRunId, {
+      isPromptPending: false,
     });
   }
 
@@ -4927,7 +5042,9 @@ export class SessionService {
     }
 
     if (update.kind === "snapshot" && !isTerminalStatus(update.status)) {
-      this.surfacePersistedPendingPermissions(taskRunId, update.newEntries);
+      if (!this.isStaleNonTerminalCloudUpdate(taskRunId, update)) {
+        this.surfacePersistedPendingPermissions(taskRunId, update.newEntries);
+      }
     }
 
     // NOTE: Don't auto-flush on `!isPromptPending && queue.length > 0` here.
@@ -4940,18 +5057,20 @@ export class SessionService {
 
     // Update cloud status fields if present
     if (update.kind === "status" || update.kind === "snapshot") {
-      this.d.store.updateCloudStatus(taskRunId, {
-        status: update.status,
-        stage: update.stage,
-        output: update.output,
-        errorMessage: update.errorMessage,
-        branch: update.branch,
-      });
-
-      if (update.status === "in_progress") {
-        this.tryRecoverIdleCloudQueue(taskRunId, {
-          serverSandboxAlive: update.sandboxAlive,
+      if (!this.isStaleNonTerminalCloudUpdate(taskRunId, update)) {
+        this.d.store.updateCloudStatus(taskRunId, {
+          status: update.status,
+          stage: update.stage,
+          output: update.output,
+          errorMessage: update.errorMessage,
+          branch: update.branch,
         });
+
+        if (update.status === "in_progress") {
+          this.tryRecoverIdleCloudQueue(taskRunId, {
+            serverSandboxAlive: update.sandboxAlive,
+          });
+        }
       }
 
       if (isTerminalStatus(update.status)) {
@@ -4972,6 +5091,23 @@ export class SessionService {
   }
 
   // --- Helper Methods ---
+
+  private isStaleNonTerminalCloudUpdate(
+    taskRunId: string,
+    update: CloudTaskUpdatePayload,
+  ): boolean {
+    if (update.kind !== "status" && update.kind !== "snapshot") {
+      return false;
+    }
+    if (update.status === undefined) {
+      return false;
+    }
+    const currentCloudStatus =
+      this.d.store.getSessions()[taskRunId]?.cloudStatus;
+    return (
+      isTerminalStatus(currentCloudStatus) && !isTerminalStatus(update.status)
+    );
+  }
 
   private async resolveCloudPrompt(
     prompt: string | ContentBlock[],

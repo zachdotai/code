@@ -7,6 +7,7 @@ import type {
   QueuedMessage,
   TaskRunStatus,
 } from "@posthog/shared";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { setAutoFreeze } from "immer";
 import { immer } from "zustand/middleware/immer";
 import { createStore } from "zustand/vanilla";
@@ -130,7 +131,16 @@ export const sessionStoreSetters = {
     sessionStore.setState((state) => {
       const session = state.sessions[taskRunId];
       if (!session) return;
-      if (fields.status !== undefined) session.cloudStatus = fields.status;
+      if (fields.status !== undefined) {
+        const currentStatus = session.cloudStatus;
+        if (
+          isTerminalStatus(currentStatus) &&
+          !isTerminalStatus(fields.status)
+        ) {
+          return;
+        }
+        session.cloudStatus = fields.status;
+      }
       if (fields.stage !== undefined) session.cloudStage = fields.stage;
       if (fields.output !== undefined) session.cloudOutput = fields.output;
       if (fields.errorMessage !== undefined)

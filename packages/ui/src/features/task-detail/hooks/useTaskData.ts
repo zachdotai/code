@@ -9,6 +9,7 @@ import { useWorkspaceTRPC } from "@posthog/workspace-client/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { cloneStore } from "../../clone/cloneStore";
+import { pickFreshestTask } from "../../tasks/taskFreshness";
 import { useTasks } from "../../tasks/useTasks";
 import { useWorkspace } from "../../workspace/useWorkspace";
 
@@ -22,8 +23,12 @@ export function useTaskData({ taskId, initialTask }: UseTaskDataParams) {
   const { data: tasks = [] } = useTasks();
 
   const task = useMemo(
-    () => tasks.find((t) => t.id === taskId) || initialTask,
-    [tasks, taskId, initialTask],
+    () =>
+      pickFreshestTask(
+        initialTask,
+        tasks.find((t) => t.id === taskId),
+      ) ?? initialTask,
+    [initialTask, taskId, tasks],
   );
 
   const workspace = useWorkspace(taskId);

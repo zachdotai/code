@@ -87,6 +87,7 @@ const sharedOptions = {
     "@posthog/shared",
     "@posthog/git",
     "@posthog/enricher",
+    /^@opentelemetry\//,
     "fflate",
   ],
   external: [
