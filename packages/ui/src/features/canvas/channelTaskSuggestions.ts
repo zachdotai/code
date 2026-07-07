@@ -6,6 +6,7 @@ import {
   Cube,
   CurrencyDollar,
   Flask,
+  Gauge,
   Wrench,
 } from "@phosphor-icons/react";
 import type { SuggestedPrompt } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
@@ -71,6 +72,15 @@ export const CHANNEL_TASK_SUGGESTIONS: SuggestedPrompt[] = [
     mode: "auto",
     prompt:
       "Interpret the results of an experiment — explain what the metrics show, whether it's significant, and what to do next.\n\n\nUser input:\n- Experiment name or key:\n- What decision are you trying to make (optional):",
+  },
+  {
+    label: "Optimize your AI usage",
+    description: "Cut token spend with skills & memory tuning",
+    icon: Gauge,
+    color: "cyan",
+    mode: "auto",
+    prompt:
+      "Review my recent agent and task usage to find ways to work more efficiently. Look for repeated work a reusable skill would capture, memory files that could be tightened or split, and prompt patterns that burn tokens. Recommend concrete improvements — new skills, memory edits, or best practices — to reduce token cost.\n\n\nUser input:\n- Time period to review (optional):\n- What to prioritize (cost, speed, accuracy — optional):",
   },
   {
     label: "Fix a bug",
