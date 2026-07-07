@@ -1,9 +1,19 @@
-import { HashIcon } from "@phosphor-icons/react";
+import {
+  BrainIcon,
+  HashIcon,
+  HouseIcon,
+  PlugsConnectedIcon,
+  RobotIcon,
+  SquaresFourIcon,
+  TrayIcon,
+} from "@phosphor-icons/react";
 import { browserTabsStore } from "@posthog/core/browser-tabs/browserTabsStore";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
   decideTabNavigation,
   setTabOrder,
+  setTabTarget as setTabTargetLocal,
+  setWindowActiveTab,
   type TabsSnapshot,
 } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
@@ -13,8 +23,12 @@ import {
   useDashboard,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
+import { getLeafPanel } from "@posthog/ui/features/panels/panelStoreHelpers";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { useAppView } from "@posthog/ui/router/useAppView";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   useNavigate,
@@ -22,7 +36,8 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import {
   frontOfUnpinnedOrder,
   partitionPinnedFirst,
@@ -67,13 +82,59 @@ function primaryWindow(snapshot: TabsSnapshot) {
   return snapshot.windows.find((w) => w.isPrimary) ?? snapshot.windows[0];
 }
 
+// True when the open task's focused editor panel has a closeable active tab.
+// Cmd+W is inner-first: it closes that editor tab (handled by
+// usePanelKeyboardShortcuts) before it closes the browser tab.
+function taskHasCloseableEditorTab(taskId: string | undefined): boolean {
+  if (!taskId) return false;
+  const layout = usePanelLayoutStore.getState().getLayout(taskId);
+  const panelId = layout?.focusedPanelId;
+  if (!panelId || !layout?.panelTree) return false;
+  const panel = getLeafPanel(layout.panelTree, panelId);
+  const activeTab = panel?.content.tabs.find(
+    (t) => t.id === panel.content.activeTabId,
+  );
+  return !!activeTab && activeTab.closeable !== false;
+}
+
 type TabRef = {
   id: string;
   dashboardId: string | null;
   taskId: string | null;
   channelId: string | null;
   channelSection: string | null;
+  appView: string | null;
 };
+
+// The top-level app pages that can be a tab. Keyed by useAppView's view.type;
+// each maps to its canonical route (a task/canvas/channel tab has its own
+// route, these don't) plus the strip's label + icon.
+type AppView =
+  | "home"
+  | "inbox"
+  | "agents"
+  | "skills"
+  | "mcp-servers"
+  | "command-center";
+
+const APP_VIEW_META: Record<AppView, { label: string; icon: ReactNode }> = {
+  home: { label: "Home", icon: <HouseIcon size={14} /> },
+  inbox: { label: "Inbox", icon: <TrayIcon size={14} /> },
+  agents: { label: "Agents", icon: <RobotIcon size={14} /> },
+  skills: { label: "Skills", icon: <BrainIcon size={14} /> },
+  "mcp-servers": {
+    label: "MCP servers",
+    icon: <PlugsConnectedIcon size={14} />,
+  },
+  "command-center": {
+    label: "Command center",
+    icon: <SquaresFourIcon size={14} />,
+  },
+};
+
+function isAppView(value: string): value is AppView {
+  return value in APP_VIEW_META;
+}
 
 export function BrowserTabStrip() {
   const snapshot = useTabsSnapshot();
@@ -89,6 +150,15 @@ export function BrowserTabStrip() {
     select: (s) => s.location.state.tabId,
   });
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // Tabs work in both spaces: channel-scoped tabs live under /website, while a
+  // plain task tab (no channel) belongs to the Code experience. The space
+  // decides where a task/blank tab navigates.
+  const inChannels = pathname.startsWith("/website");
+  // Top-level app pages (Inbox, Agents, Skills, MCP servers, Command Center,
+  // Home) are tab targets too. useAppView normalizes both the /code routes and
+  // their /website mirrors to the same view.type, so a tab survives either space.
+  const view = useAppView();
+  const routeAppView: AppView | null = isAppView(view.type) ? view.type : null;
 
   const { channels } = useChannels();
 
@@ -101,21 +171,43 @@ export function BrowserTabStrip() {
     return channelSectionFor(seg)?.key ?? null;
   }, [pathname, params.channelId]);
 
-  const openOrFocus = useMutation(
-    trpc.browserTabs.openOrFocus.mutationOptions(),
-  );
-  const newBlankTab = useMutation(
-    trpc.browserTabs.newBlankTab.mutationOptions(),
-  );
-  const setTabTarget = useMutation(
-    trpc.browserTabs.setTabTarget.mutationOptions(),
-  );
-  const close = useMutation(trpc.browserTabs.close.mutationOptions());
-  const closeMany = useMutation(trpc.browserTabs.closeMany.mutationOptions());
-  const setOrder = useMutation(trpc.browserTabs.setOrder.mutationOptions());
-  const setActiveTab = useMutation(
-    trpc.browserTabs.setActiveTab.mutationOptions(),
-  );
+  // Every tab mutation returns the fresh authoritative snapshot. Apply it to
+  // the renderer mirror synchronously: the snapshot-change subscription also
+  // delivers it, but only after an IPC round-trip, and the navigation effect
+  // below makes *persistent writes* (setTabTarget/openOrFocus) from the mirror.
+  // A stale mirror mis-targets those writes — the classic symptom is a
+  // navigation replacing some other tab's contents, or opening a duplicate tab
+  // because the mirror still says "no active tab".
+  const applySnapshot = (next: TabsSnapshot) =>
+    browserTabsStore.getState().setSnapshot(next);
+  const openOrFocus = useMutation({
+    ...trpc.browserTabs.openOrFocus.mutationOptions(),
+    onSuccess: applySnapshot,
+  });
+  const newBlankTab = useMutation({
+    ...trpc.browserTabs.newBlankTab.mutationOptions(),
+    onSuccess: applySnapshot,
+  });
+  const setTabTarget = useMutation({
+    ...trpc.browserTabs.setTabTarget.mutationOptions(),
+    onSuccess: applySnapshot,
+  });
+  const close = useMutation({
+    ...trpc.browserTabs.close.mutationOptions(),
+    onSuccess: applySnapshot,
+  });
+  const closeMany = useMutation({
+    ...trpc.browserTabs.closeMany.mutationOptions(),
+    onSuccess: applySnapshot,
+  });
+  const setOrder = useMutation({
+    ...trpc.browserTabs.setOrder.mutationOptions(),
+    onSuccess: applySnapshot,
+  });
+  const setActiveTab = useMutation({
+    ...trpc.browserTabs.setActiveTab.mutationOptions(),
+    onSuccess: applySnapshot,
+  });
 
   const pinnedTabIds = usePinnedTabsStore((s) => s.pinnedTabIds);
   const togglePinned = usePinnedTabsStore((s) => s.togglePinned);
@@ -180,12 +272,22 @@ export function BrowserTabStrip() {
     if (!windowId) return;
     const stamp = (tabId: string) => {
       const loc = router.history.location;
+      // Already tagged — skip the replace. The effect re-runs on every
+      // snapshot broadcast, so an unguarded replace would churn history (and
+      // retrigger router subscribers) once per broadcast.
+      if ((loc.state as { tabId?: string }).tabId === tabId) return;
       // Use the full href (always a string); reconstructing from pathname +
       // search crashes because search is parsed to an object at runtime.
       router.history.replace(loc.href, { ...(loc.state as object), tabId });
     };
     const decision = decideTabNavigation({
       historyTabId: historyTabId ?? null,
+      // Validates history tags: back/forward can replay an entry tagged with a
+      // closed tab; activating that dead id would persist a dangling
+      // activeTabId, after which every nav "opens" (no active tab found).
+      windowTabIds: snapshot.tabs
+        .filter((t) => t.windowId === windowId)
+        .map((t) => t.id),
       serverActiveTabId: win?.activeTabId ?? null,
       activeTab: activeTab
         ? {
@@ -194,27 +296,46 @@ export function BrowserTabStrip() {
             taskId: activeTab.taskId,
             channelId: activeTab.channelId,
             channelSection: activeTab.channelSection,
+            appView: activeTab.appView,
           }
         : null,
       routeDashboardId: params.dashboardId ?? null,
       routeTaskId: params.taskId ?? null,
       routeChannelId: params.channelId ?? null,
       routeChannelSection,
+      routeAppView,
     });
     switch (decision.type) {
       case "activate":
+        // Optimistically focus in the mirror before the round-trip: an
+        // untagged navigation racing this window would otherwise decide
+        // against the PREVIOUS active tab and replace its contents.
+        browserTabsStore
+          .getState()
+          .setSnapshot(setWindowActiveTab(snapshot, windowId, decision.tabId));
         setActiveTab.mutate({ windowId, tabId: decision.tabId });
         break;
-      case "replace":
-        setTabTarget.mutate({
+      case "replace": {
+        const target = {
           tabId: decision.tabId,
           dashboardId: decision.dashboardId,
           taskId: decision.taskId,
           channelId: decision.channelId,
           channelSection: decision.channelSection,
-        });
+          appView: decision.appView,
+        };
+        // Same optimistic apply: keep the mirror consistent with the write so
+        // re-entrant runs (and the /website index redirect guard) never see
+        // the pre-navigation target.
+        browserTabsStore
+          .getState()
+          .setSnapshot(
+            setTabTargetLocal(snapshot, { ...target, now: Date.now }),
+          );
+        setTabTarget.mutate(target);
         if (decision.stampTabId) stamp(decision.stampTabId);
         break;
+      }
       case "open":
         openOrFocus.mutate({
           windowId,
@@ -222,6 +343,7 @@ export function BrowserTabStrip() {
           taskId: decision.taskId,
           channelId: decision.channelId,
           channelSection: decision.channelSection,
+          appView: decision.appView,
         });
         if (decision.stampTabId) stamp(decision.stampTabId);
         break;
@@ -237,7 +359,11 @@ export function BrowserTabStrip() {
     params.dashboardId,
     params.taskId,
     routeChannelSection,
+    routeAppView,
     activeTab,
+    // The tab LIST feeds windowTabIds (dead-tag validation); activeTab alone
+    // doesn't change when an inactive tab closes in another window.
+    snapshot,
     openOrFocus.mutate,
     setTabTarget.mutate,
     setActiveTab.mutate,
@@ -295,6 +421,7 @@ export function BrowserTabStrip() {
         const dashId = isActive ? (params.dashboardId ?? null) : t.dashboardId;
         const channelId = isActive ? (params.channelId ?? null) : t.channelId;
         const section = isActive ? routeChannelSection : t.channelSection;
+        const appView = isActive ? routeAppView : t.appView;
         const channel = channelName(channelId);
         if (taskId) {
           const task = findTask(taskId);
@@ -333,6 +460,16 @@ export function BrowserTabStrip() {
             pinned,
           };
         }
+        // A top-level app page (Inbox, Agents, Skills, …).
+        if (appView && isAppView(appView)) {
+          return {
+            id: t.id,
+            label: APP_VIEW_META[appView].label,
+            icon: APP_VIEW_META[appView].icon,
+            channelName: null,
+            pinned,
+          };
+        }
         return { id: t.id, label: "New tab", channelName: null, pinned };
       });
   }, [
@@ -350,6 +487,7 @@ export function BrowserTabStrip() {
     params.dashboardId,
     params.taskId,
     routeChannelSection,
+    routeAppView,
   ]);
 
   // Navigate to a tab, tagging the history entry with its id so the switch is
@@ -361,6 +499,13 @@ export function BrowserTabStrip() {
       navigate({
         to: "/website/$channelId/tasks/$taskId",
         params: { channelId: tab.channelId, taskId: tab.taskId },
+        state,
+      });
+    } else if (tab.taskId) {
+      // A channel-less task tab — the Code task detail route.
+      navigate({
+        to: "/code/tasks/$taskId",
+        params: { taskId: tab.taskId },
         state,
       });
     } else if (tab.dashboardId && tab.channelId) {
@@ -383,8 +528,33 @@ export function BrowserTabStrip() {
       } else {
         navigate({ to: "/website/$channelId", params, state });
       }
+    } else if (tab.appView && isAppView(tab.appView)) {
+      // A top-level app page — back to its canonical route (literal `to` per
+      // case so the router types stay checked).
+      switch (tab.appView) {
+        case "home":
+          navigate({ to: "/code/home", state });
+          break;
+        case "inbox":
+          navigate({ to: "/code/inbox", state });
+          break;
+        case "agents":
+          navigate({ to: "/code/agents", state });
+          break;
+        case "skills":
+          navigate({ to: "/skills", state });
+          break;
+        case "mcp-servers":
+          navigate({ to: "/mcp-servers", state });
+          break;
+        case "command-center":
+          navigate({ to: "/command-center", state });
+          break;
+      }
     } else {
-      navigate({ to: "/website", state });
+      // Blank / landing tab: park on the space's home — the channels index, or
+      // the Code new-task screen.
+      navigate({ to: inChannels ? "/website" : "/code", state });
     }
   };
 
@@ -396,18 +566,17 @@ export function BrowserTabStrip() {
     goToTab(tab);
   };
 
-  // Apply a post-close snapshot to the store synchronously before navigating.
-  // The store otherwise lags a subscription round-trip, so the /website index
-  // would render against the still-has-tabs snapshot and redirect to the first
-  // channel (re-opening a tab) before the empty strip arrives.
+  // Navigate to the close's survivor. The mutation-level onSuccess has already
+  // applied `next` to the mirror (mutation callbacks run after option-level
+  // ones), so the /website index renders against the post-close snapshot and
+  // can't redirect to the first channel (re-opening a tab) mid-flight.
   const applyCloseResult = (next: TabsSnapshot) => {
-    browserTabsStore.getState().setSnapshot(next);
     const w = primaryWindow(next);
     const active = w?.activeTabId
       ? next.tabs.find((t) => t.id === w.activeTabId)
       : null;
     if (active) goToTab(active);
-    else navigate({ to: "/website" });
+    else navigate({ to: inChannels ? "/website" : "/code" });
   };
 
   const handleClose = (tabId: string) => {
@@ -425,10 +594,7 @@ export function BrowserTabStrip() {
     browserTabsStore
       .getState()
       .setSnapshot(setTabOrder(snapshot, windowId, order));
-    setOrder.mutate(
-      { windowId, tabIds: order },
-      { onSuccess: (next) => browserTabsStore.getState().setSnapshot(next) },
-    );
+    setOrder.mutate({ windowId, tabIds: order });
   };
 
   // Bulk closes operate on the strip's *displayed* order (pinned-first) and
@@ -473,6 +639,52 @@ export function BrowserTabStrip() {
     );
   };
 
+  const handleNewTab = () => {
+    if (!windowId) return;
+    newBlankTab.mutate(
+      { windowId },
+      {
+        onSuccess: (next) => {
+          const w = primaryWindow(next);
+          if (w?.activeTabId) {
+            goToTab({
+              id: w.activeTabId,
+              dashboardId: null,
+              taskId: null,
+              channelId: null,
+              channelSection: null,
+              appView: null,
+            });
+          }
+        },
+      },
+    );
+  };
+
+  // Cmd/Ctrl+T opens a new browser tab. Bound here (not globally) so it only
+  // fires where the strip is mounted; the new-task shortcut owns Cmd/Ctrl+N.
+  useHotkeys(
+    SHORTCUTS.NEW_TAB,
+    (e) => {
+      e.preventDefault();
+      handleNewTab();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+  );
+
+  // Cmd/Ctrl+W closes the active browser tab. Always preventDefault so Electron
+  // doesn't close the window, but defer to the task's editor panel when it has a
+  // closeable tab (inner-first) — that handler closes the editor tab instead.
+  useHotkeys(
+    SHORTCUTS.CLOSE_TAB,
+    (e) => {
+      e.preventDefault();
+      if (taskHasCloseableEditorTab(params.taskId)) return;
+      if (activeTabId) handleClose(activeTabId);
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+  );
+
   return (
     <TabStrip
       tabs={tabs}
@@ -483,26 +695,7 @@ export function BrowserTabStrip() {
       onCloseOthers={handleCloseOthers}
       onCloseToRight={handleCloseToRight}
       onCloseToLeft={handleCloseToLeft}
-      onNewTab={() => {
-        if (!windowId) return;
-        newBlankTab.mutate(
-          { windowId },
-          {
-            onSuccess: (next) => {
-              const w = primaryWindow(next);
-              if (w?.activeTabId) {
-                goToTab({
-                  id: w.activeTabId,
-                  dashboardId: null,
-                  taskId: null,
-                  channelId: null,
-                  channelSection: null,
-                });
-              }
-            },
-          },
-        );
-      }}
+      onNewTab={handleNewTab}
     />
   );
 }

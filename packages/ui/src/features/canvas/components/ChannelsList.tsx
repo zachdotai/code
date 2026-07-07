@@ -32,7 +32,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   MenuLabel,
-  Separator,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -562,11 +561,7 @@ export function ChannelsList() {
     // One shared provider groups every row tooltip so that once one shows,
     // moving to the next row reveals its tooltip instantly (no re-delay).
     <TooltipProvider delay={600}>
-      <Flex direction="column" gap="px" className="px-2 pb-2">
-        <Box className="py-1.5">
-          <Separator className="bg-border" />
-        </Box>
-
+      <Flex direction="column" gap="px" className="px-2 pt-2 pb-2">
         <PersonalChannelRow />
 
         {starred.length > 0 && (

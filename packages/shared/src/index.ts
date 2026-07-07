@@ -30,6 +30,7 @@ export {
   primaryWindowHasNoTabs,
   setTabOrder,
   setTabTarget,
+  setWindowActiveTab,
   type TabNavDecision,
   type TabTarget,
 } from "./browser-tabs";

@@ -6,6 +6,7 @@ import {
   openOrFocusTab,
   setTabOrder,
   setTabTarget,
+  setWindowActiveTab,
   type TabsSnapshot,
   type TabTarget,
   TypedEventEmitter,
@@ -26,6 +27,7 @@ export interface IBrowserTabsService {
       windowId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
     },
   ): TabsSnapshot;
   newBlankTab(input: { windowId: string }): TabsSnapshot;
@@ -34,6 +36,7 @@ export interface IBrowserTabsService {
       tabId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
     },
   ): TabsSnapshot;
   close(tabId: string): TabsSnapshot;
@@ -99,6 +102,7 @@ export class BrowserTabsService
       windowId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
     },
   ): TabsSnapshot {
     const { snapshot } = openOrFocusTab(this.snapshot, {
@@ -123,6 +127,7 @@ export class BrowserTabsService
       tabId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
     },
   ): TabsSnapshot {
     return this.commit(setTabTarget(this.snapshot, { ...input, now }));
@@ -147,12 +152,12 @@ export class BrowserTabsService
     windowId: string;
     tabId: string | null;
   }): TabsSnapshot {
-    const next: TabsSnapshot = {
-      ...this.snapshot,
-      windows: this.snapshot.windows.map((w) =>
-        w.id === input.windowId ? { ...w, activeTabId: input.tabId } : w,
-      ),
-    };
+    // Validated: a tabId that doesn't exist in the window (a stale history tag
+    // replayed after the tab closed) is ignored rather than persisted as a
+    // dangling activeTabId — that dangle makes every later navigation look like
+    // "no active tab" and silently open new tabs.
+    const next = setWindowActiveTab(this.snapshot, input.windowId, input.tabId);
+    if (next === this.snapshot) return this.snapshot;
     return this.commit(next);
   }
 

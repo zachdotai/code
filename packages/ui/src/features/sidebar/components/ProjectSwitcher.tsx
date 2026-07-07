@@ -195,7 +195,7 @@ export function ProjectSwitcher({
               size="xs"
               className="border-border hover:bg-fill-hover aria-expanded:bg-fill-active"
             >
-              <ItemContent className="select-none">
+              <ItemContent className="select-none gap-0">
                 <ItemTitle>
                   {currentProject?.name ?? "No project selected"}
                 </ItemTitle>
@@ -214,21 +214,14 @@ export function ProjectSwitcher({
       <DropdownMenuContent
         align="start"
         side="bottom"
-        className={
-          // The `button` trigger spans the full sidebar width, so binding the
-          // menu to `--anchor-width` would stretch it and break the layout. Pin
-          // a fixed width there; the `item` trigger matches its anchor.
-          triggerVariant === "button"
-            ? "w-64 min-w-64 pt-0"
-            : "w-(--anchor-width) max-w-(--anchor-width) pt-0"
-        }
+        className="w-(--anchor-width) max-w-(--anchor-width) pt-0"
         sideOffset={4}
       >
         <Box>
           <Box className="-mx-1 mb-1 border-border border-b">
             {currentUser ? (
               <Item className="p-2">
-                <ItemContent>
+                <ItemContent className="gap-0">
                   <ItemTitle>
                     {currentUser.first_name && (
                       <span>
@@ -543,10 +536,10 @@ function SearchableFlyout({
             fits below either trigger row, so the popup itself never grows
             a second scrollbar. */}
         <AutocompleteList
-          className={`${items.length > 5 ? "h-40" : "max-h-40"} pt-1`}
+          className={`${items.length > 5 ? "h-40" : "max-h-40"} p-0 pb-0`}
         >
           {(section: FlyoutSection) => (
-            <AutocompleteGroup items={section.items}>
+            <AutocompleteGroup items={section.items} className="p-0">
               <AutocompleteCollection>
                 {(item: FlyoutItem) => (
                   <AutocompleteItem

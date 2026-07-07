@@ -1,3 +1,7 @@
+import { HashIcon } from "@phosphor-icons/react";
+import { Badge, Switch } from "@posthog/quill";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -6,6 +10,7 @@ import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import {
+  navigateToActivity,
   navigateToAgents,
   navigateToCommandCenter,
   navigateToHome,
@@ -20,9 +25,11 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
+import { ActivityItem } from "./items/ActivityItem";
 import { AgentsItem } from "./items/AgentsItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { HomeItem } from "./items/HomeItem";
@@ -57,6 +64,15 @@ export function SidebarNavSection({
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
   const usageEnabled = useSpendAnalysisEnabled();
+  // Channels stay behind project-bluebird: the "Enable channels" nav row (and
+  // the Canvas row it reveals) only appear where the canvas backend is wired.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled =
+    useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
+  const setChannelsEnabled = useSidebarStore((s) => s.setChannelsEnabled);
 
   // When this section renders inside the Channels space, the destinations that
   // have a /website mirror stay in that space; everything else (and the whole
@@ -81,6 +97,7 @@ export function SidebarNavSection({
   const isHomeActive =
     view.type === "task-input" || view.type === "task-pending";
   const isHomeViewActive = view.type === "home";
+  const isActivityActive = view.type === "activity";
   const isInboxActive = view.type === "inbox";
   const isAgentsActive = view.type === "agents";
   const isCommandCenterActive = view.type === "command-center";
@@ -133,6 +150,18 @@ export function SidebarNavSection({
         </Box>
       )}
 
+      {/* Activity (the mentions feed) is a /website surface, so it only appears
+          where the canvas backend is wired — same gate as the Channels toggle
+          below. */}
+      {bluebirdEnabled && (
+        <Box>
+          <ActivityItem
+            isActive={isActivityActive}
+            onClick={navigateToActivity}
+          />
+        </Box>
+      )}
+
       <Box>
         <SearchItem onClick={openCommandMenu} />
       </Box>
@@ -157,7 +186,7 @@ export function SidebarNavSection({
         <McpServersItem isActive={isMcpServersActive} onClick={goMcpServers} />
       </Box>
 
-      <Box mb={usageEnabled ? undefined : "2"}>
+      <Box mb={usageEnabled || bluebirdEnabled ? undefined : "2"}>
         <CommandCenterItem
           isActive={isCommandCenterActive}
           onClick={goCommandCenter}
@@ -169,6 +198,37 @@ export function SidebarNavSection({
         <Box mb="2">
           <UsageItem isActive={isUsageActive} onClick={navigateToUsage} />
         </Box>
+      )}
+
+      {/* "Channels" is a toggle laid out as a nav row: the # label and Alpha
+          badge on the left, a Switch on the right. It flips the channels
+          feature rather than routing — enabling it reveals the Canvas row
+          below and swaps the sidebar body to the channel tree. A <label> (not a
+          nav Button) so the Switch can live inside it without nesting buttons. */}
+      {bluebirdEnabled && (
+        <label
+          htmlFor="channels-toggle"
+          className="group flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-[13px] leading-snug transition-colors hover:bg-fill-secondary"
+        >
+          <span className="flex shrink-0 items-center opacity-80">
+            <HashIcon size={16} />
+          </span>
+          <span className="min-w-0 truncate font-medium">Channels</span>
+          <Badge variant="info">Alpha</Badge>
+          <Switch
+            id="channels-toggle"
+            size="sm"
+            className="ml-auto"
+            checked={channelsEnabled}
+            onCheckedChange={(checked) => {
+              setChannelsEnabled(checked);
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: "toggle_channels",
+                surface: "nav",
+              });
+            }}
+          />
+        </label>
       )}
     </Flex>
   );

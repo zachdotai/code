@@ -20,6 +20,7 @@ export interface BrowserTabsClient {
     taskId: string | null;
     channelId: string | null;
     channelSection?: string | null;
+    appView?: string | null;
   }): Promise<TabsSnapshot>;
   newBlankTab(input: { windowId: string }): Promise<TabsSnapshot>;
   setTabTarget(input: {
@@ -28,6 +29,7 @@ export interface BrowserTabsClient {
     taskId: string | null;
     channelId: string | null;
     channelSection?: string | null;
+    appView?: string | null;
   }): Promise<TabsSnapshot>;
   close(tabId: string): Promise<TabsSnapshot>;
   setActiveTab(input: {
