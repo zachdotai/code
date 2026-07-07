@@ -241,7 +241,7 @@ export function buildReportBody(
 ): string {
   const unit = run.metricUnit;
   const summary = summarizeRun(run);
-  const title = run.metricName ?? "Autoresearch";
+  const title = reportTitle(run);
 
   const metaParts = [
     `Started ${dateTimeFormat.format(run.startedAt)}`,
@@ -297,7 +297,7 @@ export function buildReportHtml(
   run: AutoresearchRun,
   exportedAt: Date,
 ): string {
-  const title = run.metricName ?? "Autoresearch";
+  const title = reportTitle(run);
   return (
     "<!doctype html>" +
     `<html lang="en"><head><meta charset="utf-8"/>` +
@@ -306,6 +306,10 @@ export function buildReportHtml(
     `<style>body { margin: 0; display: flex; justify-content: center; background: ${COLOR.surface}; }${REPORT_STYLES}</style>` +
     `</head><body>${buildReportBody(run, exportedAt)}</body></html>`
   );
+}
+
+function reportTitle(run: AutoresearchRun): string {
+  return run.metricName ?? "Autoresearch";
 }
 
 export function reportFileName(
@@ -358,11 +362,10 @@ async function renderReportPng(
   host.innerHTML = `<div><style>${REPORT_STYLES}</style>${buildReportBody(run, exportedAt)}</div>`;
   document.body.appendChild(host);
 
-  let width: number;
+  const width = REPORT_WIDTH;
   let height: number;
   let serialized: string;
   try {
-    width = REPORT_WIDTH;
     height = Math.ceil(host.getBoundingClientRect().height);
     const wrapper = host.firstElementChild;
     if (!wrapper) throw new Error("Report markup failed to parse");
