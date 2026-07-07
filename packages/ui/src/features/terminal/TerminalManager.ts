@@ -164,9 +164,22 @@ function isMissingShellSessionError(
   );
 }
 
+/**
+ * How many detached (parked) terminals to keep alive for instant reattach.
+ * Beyond this the least-recently-parked instance is destroyed: its scrollback
+ * was serialized to the terminal store on detach and the shell session keeps
+ * running server-side, so a revisit recreates the xterm from that snapshot and
+ * reattaches by session id. Unbounded parking retains every visited task's
+ * xterm (buffers, DOM subtree, addons — megabytes each) for the app's
+ * lifetime, which is exactly the kind of heap growth tabs make easy to hit.
+ */
+const MAX_PARKED_TERMINALS = 4;
+
 class TerminalManagerImpl {
   private instances = new Map<string, TerminalInstance>();
   private listeners = new Map<EventType, Set<Listener<EventType>>>();
+  /** Detached instances, oldest park first. Attached instances are never here. */
+  private parkedOrder: string[] = [];
   private isDarkMode = true;
   private fontFamily: string = DEFAULT_TERMINAL_FONT_FAMILY;
   private useWebgl = true;
@@ -475,6 +488,7 @@ class TerminalManagerImpl {
 
     this.disconnectResizeObserver(instance);
 
+    this.parkedOrder = this.parkedOrder.filter((id) => id !== sessionId);
     instance.attachedElement = element;
 
     if (!instance.hasOpened) {
@@ -549,17 +563,38 @@ class TerminalManagerImpl {
     }
 
     instance.attachedElement = null;
+
+    this.parkedOrder = this.parkedOrder.filter((id) => id !== sessionId);
+    this.parkedOrder.push(sessionId);
+    this.evictExcessParked();
+  }
+
+  /** Destroy least-recently-parked instances past the cap. Safe: their state
+   * was just serialized on detach, and a parked terminal receives no live
+   * output anyway (the data subscription lives in the mounted component). */
+  private evictExcessParked(): void {
+    while (this.parkedOrder.length > MAX_PARKED_TERMINALS) {
+      const oldest = this.parkedOrder[0];
+      log.info("Evicting parked terminal", { sessionId: oldest });
+      this.destroy(oldest);
+    }
   }
 
   destroy(sessionId: string): void {
     const instance = this.instances.get(sessionId);
     if (!instance) {
+      // Still drop any parked entry so the eviction loop can't spin on a
+      // stale id.
+      this.parkedOrder = this.parkedOrder.filter((id) => id !== sessionId);
       return;
     }
 
     if (instance.attachedElement) {
       this.detach(sessionId);
     }
+    // After detach (which re-parks), so the destroyed id never lingers in the
+    // parked order.
+    this.parkedOrder = this.parkedOrder.filter((id) => id !== sessionId);
 
     if (instance.saveTimeout) {
       clearTimeout(instance.saveTimeout);

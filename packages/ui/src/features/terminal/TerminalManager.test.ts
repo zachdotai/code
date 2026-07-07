@@ -246,6 +246,76 @@ describe("TerminalManager.destroyForTask", () => {
     expect(terminalManager.getSessionsByPrefix("sess-")).toEqual(["sess-e"]);
   });
 
+  it("caps parked terminals and evicts the least-recently-parked", () => {
+    const hosts: HTMLElement[] = [];
+    for (let i = 0; i < 6; i++) {
+      const sessionId = `sess-lru-${i}`;
+      terminalManager.create({
+        sessionId,
+        persistenceKey: `task-lru-${i}`,
+        taskId: `task-lru-${i}`,
+      });
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      hosts.push(host);
+      terminalManager.attach(sessionId, host);
+      terminalManager.detach(sessionId);
+    }
+
+    // 6 parked, cap 4: the two oldest parks are destroyed.
+    expect(terminalManager.has("sess-lru-0")).toBe(false);
+    expect(terminalManager.has("sess-lru-1")).toBe(false);
+    expect(terminalManager.getSessionsByPrefix("sess-lru-")).toEqual([
+      "sess-lru-2",
+      "sess-lru-3",
+      "sess-lru-4",
+      "sess-lru-5",
+    ]);
+    expect(mocks.terminalInstances[0].dispose).toHaveBeenCalled();
+    expect(mocks.terminalInstances[1].dispose).toHaveBeenCalled();
+    expect(mocks.terminalInstances[2].dispose).not.toHaveBeenCalled();
+    for (const host of hosts) host.remove();
+  });
+
+  it("reattaching refreshes a terminal's position in the parked order", () => {
+    const hosts = new Map<string, HTMLElement>();
+    const park = (sessionId: string) => {
+      let host = hosts.get(sessionId);
+      if (!host) {
+        host = document.createElement("div");
+        document.body.appendChild(host);
+        hosts.set(sessionId, host);
+      }
+      terminalManager.attach(sessionId, host);
+      terminalManager.detach(sessionId);
+    };
+    for (let i = 0; i < 4; i++) {
+      terminalManager.create({
+        sessionId: `sess-mru-${i}`,
+        persistenceKey: `task-mru-${i}`,
+        taskId: `task-mru-${i}`,
+      });
+      park(`sess-mru-${i}`);
+    }
+
+    // Revisit the oldest, then park two more: the revisit made sess-mru-0 the
+    // most recent, so sess-mru-1 and sess-mru-2 are the ones evicted.
+    park("sess-mru-0");
+    for (const i of [4, 5]) {
+      terminalManager.create({
+        sessionId: `sess-mru-${i}`,
+        persistenceKey: `task-mru-${i}`,
+        taskId: `task-mru-${i}`,
+      });
+      park(`sess-mru-${i}`);
+    }
+
+    expect(terminalManager.has("sess-mru-0")).toBe(true);
+    expect(terminalManager.has("sess-mru-1")).toBe(false);
+    expect(terminalManager.has("sess-mru-2")).toBe(false);
+    for (const host of hosts.values()) host.remove();
+  });
+
   it("removes the parked terminal element from the DOM on destroy", () => {
     terminalManager.create({
       sessionId: "sess-parked",
