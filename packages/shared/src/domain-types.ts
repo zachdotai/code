@@ -131,6 +131,12 @@ export interface TaskRun {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  // The user who initiated *this run*, which can differ from the owning Task's
+  // `created_by` when someone else starts a follow-up job on a shared (e.g.
+  // Slack-threaded) task. Absent on older backends; when present it lets the
+  // sandbox attribute the run — and decide whether to inherit the prior run's
+  // PR/resume state — to the real initiator rather than the task's owner.
+  created_by?: UserBasic | null;
 }
 
 export type NetworkAccessLevel = "trusted" | "full" | "custom";

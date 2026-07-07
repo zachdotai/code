@@ -278,6 +278,42 @@ function getTaskRunStateString(
   return typeof value === "string" ? value : null;
 }
 
+interface RunAttribution {
+  /** User to attribute this run to (analytics + gateway headers). */
+  taskUserId: number | null;
+  /**
+   * True when *this run* was started by someone other than the task's owner —
+   * e.g. a second person kicking off a follow-up job on a shared, Slack-threaded
+   * task. When true the run must not inherit the prior run's PR or conversation,
+   * both of which belong to the original owner.
+   */
+  isForeignFollowUp: boolean;
+}
+
+/**
+ * Resolve who a cloud run belongs to. A Slack-originated Task is a persistent
+ * entity and every job is a fresh TaskRun on it, so a follow-up started by a
+ * different person carries its own `created_by` on the run even though the Task's
+ * `created_by` still points at the original owner. Prefer the JWT user, then the
+ * run's own initiator, then the task owner — so attribution follows the person
+ * who actually started the run instead of defaulting to the task creator.
+ */
+export function resolveRunAttribution(
+  preTaskRun: TaskRun | null,
+  preTask: Task | null,
+  payloadUserId: number,
+): RunAttribution {
+  const runInitiatorId = preTaskRun?.created_by?.id ?? null;
+  const taskCreatorId = preTask?.created_by?.id ?? null;
+  return {
+    taskUserId: payloadUserId || runInitiatorId || taskCreatorId || null,
+    isForeignFollowUp:
+      runInitiatorId !== null &&
+      taskCreatorId !== null &&
+      runInitiatorId !== taskCreatorId,
+  };
+}
+
 // Prompt block we hand the agent when the user attached files but we could not
 // load any of them into the session (missing from the run manifest, no storage
 // path, etc.). Without this the caller falls back to the bare task description —
@@ -308,6 +344,11 @@ export class AgentServer {
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
+  // True when *this run* was initiated by someone other than the owning Task's
+  // creator (a second person starting a follow-up job on a shared, e.g.
+  // Slack-threaded, task). In that case we must not inherit the prior run's PR
+  // or conversation, since they belong to the original owner. Set per session.
+  private isForeignFollowUp = false;
   // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
   // attributions so the most recently created PR in a run wins.
   private readonly evaluatedPrUrls = new Set<string>();
@@ -1115,6 +1156,7 @@ export class AgentServer {
 
     this.resumeState = null;
     this.nativeResume = null;
+    this.isForeignFollowUp = false;
 
     this.logger.debug("Initializing session", {
       runId: payload.run_id,
@@ -1146,6 +1188,28 @@ export class AgentServer {
       }),
     ]);
 
+    // Attribute the run to whoever actually started it. On a shared (e.g.
+    // Slack-threaded) task a follow-up job can be launched by someone other than
+    // the task owner; `isForeignFollowUp` then guards against inheriting the
+    // prior owner's PR and conversation below.
+    const { taskUserId, isForeignFollowUp } = resolveRunAttribution(
+      preTaskRun,
+      preTask,
+      payload.user_id,
+    );
+    this.isForeignFollowUp = isForeignFollowUp;
+    if (isForeignFollowUp) {
+      this.logger.debug(
+        "Run initiated by a different user than the task owner; not inheriting prior run PR/resume state",
+        {
+          runId: payload.run_id,
+          taskId: payload.task_id,
+          runInitiatorId: preTaskRun?.created_by?.id ?? null,
+          taskCreatorId: preTask?.created_by?.id ?? null,
+        },
+      );
+    }
+
     const gatewayEnv = this.configureEnvironment({
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
@@ -1153,7 +1217,7 @@ export class AgentServer {
       aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
       taskId: payload.task_id,
       taskRunId: payload.run_id,
-      taskUserId: payload.user_id || preTask?.created_by?.id || null,
+      taskUserId,
       taskTitle: preTask?.title,
     });
 
@@ -1163,7 +1227,12 @@ export class AgentServer {
       }).catch(() => {});
     }
 
-    const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
+    // Never seed the prior run's PR onto a foreign follow-up: that PR belongs to
+    // the original owner, and seeding it makes the agent reuse the stale PR
+    // instead of opening its own.
+    const prUrl = this.isForeignFollowUp
+      ? null
+      : getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
 
     // Unconditional so a re-init on the same instance drops a stale PR URL.
     this.detectedPrUrl = prUrl;
@@ -2491,6 +2560,12 @@ export class AgentServer {
     // Env var takes precedence (set by backend infra)
     const envRunId = process.env.POSTHOG_RESUME_RUN_ID;
     if (envRunId) return envRunId;
+
+    // A foreign follow-up must not silently resume the previous owner's run: the
+    // `resume_from_run_id` bled into this run's state points at their failed run.
+    // (An explicit POSTHOG_RESUME_RUN_ID above is honored — that's deliberate
+    // backend infra intent, e.g. a snapshot restart of this same run.)
+    if (this.isForeignFollowUp) return null;
 
     // Fallback: read from TaskRun state (set by API when creating the run)
     if (!taskRun) return null;

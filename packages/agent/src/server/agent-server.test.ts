@@ -27,10 +27,11 @@ import {
   type TestRepo,
 } from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
-import type { StoredEntry, TaskRun } from "../types";
+import type { StoredEntry, Task, TaskRun } from "../types";
 import {
   AgentServer,
   isTurnCompleteNotification,
+  resolveRunAttribution,
   SSE_KEEPALIVE_INTERVAL_MS,
 } from "./agent-server";
 import { type JwtPayload, SANDBOX_CONNECTION_AUDIENCE } from "./jwt";
@@ -2622,5 +2623,106 @@ describe("AgentServer pending user attachments", () => {
       ([message]) => message === "Pending artifact missing from run manifest",
     );
     expect(manifestWarnings).toHaveLength(1);
+  });
+});
+
+describe("resolveRunAttribution", () => {
+  const userRun = (id: number | null) =>
+    createTaskRun(
+      id === null
+        ? {}
+        : { created_by: { id } as unknown as TaskRun["created_by"] },
+    );
+  const task = (id: number | null) =>
+    (id === null
+      ? { title: "t", description: "d" }
+      : {
+          title: "t",
+          description: "d",
+          created_by: { id },
+        }) as unknown as Task;
+
+  it("prefers the JWT user when present", () => {
+    // A desktop client connects with a real signed user id; that always wins.
+    expect(resolveRunAttribution(userRun(2), task(9), 5)).toEqual({
+      taskUserId: 5,
+      isForeignFollowUp: true,
+    });
+  });
+
+  it("falls back to the run initiator when the JWT user is system (0)", () => {
+    // Auto-init synthesizes user_id: 0; attribution should follow the run's
+    // own initiator, not the task owner.
+    expect(resolveRunAttribution(userRun(7), task(9), 0)).toEqual({
+      taskUserId: 7,
+      isForeignFollowUp: true,
+    });
+  });
+
+  it("falls back to the task owner when the run has no initiator (legacy)", () => {
+    // Older backends don't stamp created_by on the run — behave as before.
+    expect(resolveRunAttribution(userRun(null), task(9), 0)).toEqual({
+      taskUserId: 9,
+      isForeignFollowUp: false,
+    });
+  });
+
+  it("is not a foreign follow-up when initiator matches the task owner", () => {
+    expect(resolveRunAttribution(userRun(9), task(9), 0)).toEqual({
+      taskUserId: 9,
+      isForeignFollowUp: false,
+    });
+  });
+
+  it("returns null attribution when nothing identifies a user", () => {
+    expect(resolveRunAttribution(userRun(null), task(null), 0)).toEqual({
+      taskUserId: null,
+      isForeignFollowUp: false,
+    });
+  });
+});
+
+describe("getResumeRunId foreign follow-up gating", () => {
+  interface ResumeTestServer {
+    isForeignFollowUp: boolean;
+    getResumeRunId(taskRun: TaskRun | null): string | null;
+  }
+
+  const build = () =>
+    new AgentServer({
+      port: 0,
+      jwtPublicKey: "test-key",
+      apiUrl: "https://us.posthog.com",
+      apiKey: "test-api-key",
+      projectId: 1,
+      mode: "background",
+      taskId: "test-task-id",
+      runId: "test-run-id",
+    }) as unknown as ResumeTestServer;
+
+  const runWithResume = () =>
+    createTaskRun({ state: { resume_from_run_id: "previous-run" } });
+
+  afterEach(() => {
+    delete process.env.POSTHOG_RESUME_RUN_ID;
+  });
+
+  it("resumes from run state for a same-owner continuation", () => {
+    const s = build();
+    s.isForeignFollowUp = false;
+    expect(s.getResumeRunId(runWithResume())).toBe("previous-run");
+  });
+
+  it("ignores the bled-in resume_from_run_id for a foreign follow-up", () => {
+    const s = build();
+    s.isForeignFollowUp = true;
+    expect(s.getResumeRunId(runWithResume())).toBeNull();
+  });
+
+  it("still honors an explicit POSTHOG_RESUME_RUN_ID even when foreign", () => {
+    process.env.POSTHOG_RESUME_RUN_ID = "infra-run";
+    const s = build();
+    s.isForeignFollowUp = true;
+    expect(s.getResumeRunId(runWithResume())).toBe("infra-run");
   });
 });
