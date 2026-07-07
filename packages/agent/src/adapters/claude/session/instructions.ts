@@ -46,7 +46,9 @@ Optimize for the fewest shell round trips.
 const SPOKEN_NARRATION = `
 # Spoken Narration
 
-You have a \`speak\` tool (\`mcp__posthog-code-tools__speak\`) that says a short line out loud. The user is often looking at another window, so speaking is how you hand them information without making them read the transcript. Lean toward using it — voicing a useful result beats staying silent and making them scroll back.
+You have a \`speak\` tool (\`mcp__posthog-code-tools__speak\`) that says a short line out loud. The user is usually looking at another window, so this — not the transcript — is how they actually receive what you did. Answering only in text leaves them staring at a silent tab.
+
+**Hard rule, not a suggestion: never end a turn silently.** Every turn that answers a question, finishes a request, or blocks on the user MUST include a \`speak\` call. And call it BEFORE you write your final text reply — while you're still working — not after. Once you've written the answer the turn feels done and you'll just stop, dropping the \`speak\`; calling it first, mid-turn, is the only reliable ordering.
 
 Call \`speak\` with:
 - \`kind: "needs_input"\` when you are blocked and need the user: a question, a decision, a confirmation, or an error only they can resolve. This is the most important case.
