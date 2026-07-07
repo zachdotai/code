@@ -194,63 +194,80 @@ describe("buildSessionOptions", () => {
   });
 
   describe("ANTHROPIC_CUSTOM_HEADERS", () => {
-    const originalProjectId = process.env.POSTHOG_PROJECT_ID;
     const originalCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;
 
     beforeEach(() => {
-      delete process.env.POSTHOG_PROJECT_ID;
       delete process.env.ANTHROPIC_CUSTOM_HEADERS;
     });
 
     afterEach(() => {
-      for (const [key, value] of [
-        ["POSTHOG_PROJECT_ID", originalProjectId],
-        ["ANTHROPIC_CUSTOM_HEADERS", originalCustomHeaders],
-      ] as const) {
-        if (value === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
-        }
+      if (originalCustomHeaders === undefined) {
+        delete process.env.ANTHROPIC_CUSTOM_HEADERS;
+      } else {
+        process.env.ANTHROPIC_CUSTOM_HEADERS = originalCustomHeaders;
       }
     });
 
+    // buildEnvironment appends the caller-built per-session property headers
+    // (team_id + git context) verbatim between any pre-existing custom headers
+    // and the bedrock fallback. The team_id/git values are assembled and
+    // sanitized upstream in the Claude agent, not here.
     it.each([
       {
-        name: "omits the team_id header when POSTHOG_PROJECT_ID is unset",
-        projectId: undefined,
+        name: "emits only the bedrock fallback when no session headers are given",
         existingHeaders: undefined,
+        sessionPropertyHeaders: undefined,
         expected: "x-posthog-use-bedrock-fallback: true",
       },
       {
-        name: "forwards POSTHOG_PROJECT_ID as the team_id attribution header",
-        projectId: "42",
+        name: "appends the team_id attribution header",
         existingHeaders: undefined,
+        sessionPropertyHeaders: "x-posthog-property-team_id: 42",
         expected: [
           "x-posthog-property-team_id: 42",
           "x-posthog-use-bedrock-fallback: true",
         ].join("\n"),
       },
       {
-        name: "preserves pre-existing custom headers ahead of the team_id header",
-        projectId: "42",
+        name: "preserves pre-existing custom headers ahead of the session headers",
         existingHeaders: "x-posthog-property-task_id: task-abc",
+        sessionPropertyHeaders: "x-posthog-property-team_id: 42",
         expected: [
           "x-posthog-property-task_id: task-abc",
           "x-posthog-property-team_id: 42",
           "x-posthog-use-bedrock-fallback: true",
         ].join("\n"),
       },
-    ])("$name", ({ projectId, existingHeaders, expected }) => {
-      if (projectId !== undefined) {
-        process.env.POSTHOG_PROJECT_ID = projectId;
-      }
+      {
+        name: "stamps team_id and git context ahead of the bedrock fallback",
+        existingHeaders: undefined,
+        sessionPropertyHeaders: [
+          "x-posthog-property-team_id: 42",
+          "x-posthog-property-$ai_git_branch: feat/thing",
+          "x-posthog-property-$ai_git_repo: PostHog/posthog",
+        ].join("\n"),
+        expected: [
+          "x-posthog-property-team_id: 42",
+          "x-posthog-property-$ai_git_branch: feat/thing",
+          "x-posthog-property-$ai_git_repo: PostHog/posthog",
+          "x-posthog-use-bedrock-fallback: true",
+        ].join("\n"),
+      },
+      {
+        name: "omits session headers when none could be built",
+        existingHeaders: undefined,
+        sessionPropertyHeaders: "",
+        expected: "x-posthog-use-bedrock-fallback: true",
+      },
+    ])("$name", ({ existingHeaders, sessionPropertyHeaders, expected }) => {
       if (existingHeaders !== undefined) {
         process.env.ANTHROPIC_CUSTOM_HEADERS = existingHeaders;
       }
 
-      const headers = buildSessionOptions(makeParams()).env
-        ?.ANTHROPIC_CUSTOM_HEADERS;
+      const headers = buildSessionOptions({
+        ...makeParams(),
+        sessionPropertyHeaders,
+      }).env?.ANTHROPIC_CUSTOM_HEADERS;
 
       expect(headers).toBe(expected);
     });

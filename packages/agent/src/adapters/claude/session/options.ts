@@ -89,6 +89,14 @@ export interface BuildOptionsParams {
   onTaskStateChange?: () => Promise<void>;
   /** Explicit gateway config — prevents global process.env mutation. */
   gatewayEnv?: GatewayEnv;
+  /**
+   * Per-session `x-posthog-property-*` header lines (newline-delimited): team
+   * attribution (`team_id`) plus git context (`$ai_git_branch`/`$ai_git_repo`).
+   * Built by the caller through the shared property-header builder and appended
+   * verbatim here. Computed per session build (not per run) so the branch stays
+   * current when the agent switches branches mid-run.
+   */
+  sessionPropertyHeaders?: string;
 }
 
 export function buildSystemPrompt(
@@ -135,7 +143,10 @@ function buildMcpServers(
   };
 }
 
-function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
+function buildEnvironment(
+  gateway?: GatewayEnv,
+  sessionPropertyHeaders?: string,
+): Record<string, string> {
   // Custom HTTP headers reach the model only through the Claude CLI subprocess,
   // which reads them from this env var (newline-delimited `name: value` lines)
   // — the SDK has no direct header option. We finalize them here, the single
@@ -148,15 +159,13 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
   if (existingCustomHeaders) {
     headerLines.push(existingCustomHeaders);
   }
-  // Attribute every captured $ai_generation event to the customer's team. The
-  // gateway authenticates with a shared key, so without this the spend lands on
-  // the key owner's team. The gateway lifts `x-posthog-property-*` headers onto
-  // the event; both entrypoints export POSTHOG_PROJECT_ID before this runs
-  // (workspace-server auth-adapter.ts, server/agent-server.ts). Mirrors django's
-  // get_llm_client(team_id=...).
-  const projectId = gateway?.posthogProjectId ?? process.env.POSTHOG_PROJECT_ID;
-  if (projectId) {
-    headerLines.push(`x-posthog-property-team_id: ${projectId}`);
+  // Per-session PostHog property headers built by the caller: team attribution
+  // (`team_id`, mirroring django's get_llm_client(team_id=...)) plus git context
+  // (`$ai_git_branch`/`$ai_git_repo`) so engineering analytics can roll
+  // $ai_generation token cost up to the branch/PR it happened on. The gateway
+  // lifts every `x-posthog-property-*` header onto the captured event.
+  if (sessionPropertyHeaders) {
+    headerLines.push(sessionPropertyHeaders);
   }
   // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
   headerLines.push("x-posthog-use-bedrock-fallback: true");
@@ -449,7 +458,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.mcpServers,
       loadUserClaudeJsonMcpServers(params.cwd, params.logger),
     ),
-    env: buildEnvironment(params.gatewayEnv),
+    env: buildEnvironment(params.gatewayEnv, params.sessionPropertyHeaders),
     hooks: buildHooks(
       params.userProvidedOptions?.hooks,
       params.onModeChange,

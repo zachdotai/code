@@ -62,6 +62,18 @@ describe("buildPosthogPropertyHeaderRecord", () => {
       "x-posthog-property-task_title": "café",
     });
   });
+
+  it("preserves a $-prefixed property name (valid HTTP token char)", () => {
+    expect(
+      buildPosthogPropertyHeaderRecord({
+        $ai_git_branch: "feat/thing",
+        $ai_git_repo: "PostHog/posthog",
+      }),
+    ).toEqual({
+      "x-posthog-property-$ai_git_branch": "feat/thing",
+      "x-posthog-property-$ai_git_repo": "PostHog/posthog",
+    });
+  });
 });
 
 describe("buildPosthogPropertyHeaderLines", () => {

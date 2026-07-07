@@ -42,6 +42,8 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
+import { getCurrentBranch, getRemoteUrl } from "@posthog/git/queries";
+import { parseRepoSlug } from "@posthog/git/repo-slug";
 import { serializeError } from "@posthog/shared";
 import { v7 as uuidv7 } from "uuid";
 import packageJson from "../../../package.json" with { type: "json" };
@@ -68,6 +70,7 @@ import {
   withAbort,
   withTimeout,
 } from "../../utils/common";
+import { buildGatewayPropertyHeaders } from "../../utils/gateway";
 import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
@@ -253,6 +256,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   private options?: ClaudeAcpAgentOptions;
   private enrichment?: Enrichment;
   private enrichedReadCache: EnrichedReadCache = new Map();
+  // Origin remote per cwd. The remote almost never changes within an agent's
+  // lifetime, so cache it; the branch is re-read every session build (see
+  // buildSessionPropertyHeaders) to stay fresh across a mid-run switch.
+  private remoteUrlCache = new Map<string, string | null>();
 
   constructor(client: AgentSideConnection, options?: ClaudeAcpAgentOptions) {
     super(client);
@@ -1624,6 +1631,58 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
   }
 
+  /** Origin remote for `cwd`, cached — it rarely changes within a session. */
+  private async readRemoteUrlCached(cwd: string): Promise<string | null> {
+    const cached = this.remoteUrlCache.get(cwd);
+    if (cached !== undefined) return cached;
+    const url = await getRemoteUrl(cwd);
+    this.remoteUrlCache.set(cwd, url);
+    return url;
+  }
+
+  /**
+   * Build the per-session `x-posthog-property-*` header lines the gateway lifts
+   * onto each $ai_generation event: `team_id` (team attribution) plus
+   * `$ai_git_branch`/`$ai_git_repo` (LLM-spend-to-PR rollup). One builder call
+   * so team_id shares the shared value sanitization. The branch is read fresh
+   * from `cwd` so it reflects a mid-run switch; the remote is cached. Best-effort
+   * per header: a failing branch or remote read omits only its own value rather
+   * than discarding the other.
+   */
+  private async buildSessionPropertyHeaders(cwd: string): Promise<string> {
+    const projectId =
+      this.options?.gatewayEnv?.posthogProjectId ??
+      process.env.POSTHOG_PROJECT_ID;
+
+    const [branchResult, remoteResult] = await Promise.allSettled([
+      getCurrentBranch(cwd),
+      this.readRemoteUrlCached(cwd),
+    ]);
+    if (branchResult.status === "rejected") {
+      this.logger.debug("Failed to read git branch for headers", {
+        cwd,
+        error: branchResult.reason,
+      });
+    }
+    if (remoteResult.status === "rejected") {
+      this.logger.debug("Failed to read git remote for headers", {
+        cwd,
+        error: remoteResult.reason,
+      });
+    }
+
+    const branch =
+      branchResult.status === "fulfilled" ? branchResult.value : null;
+    const remoteUrl =
+      remoteResult.status === "fulfilled" ? remoteResult.value : null;
+
+    return buildGatewayPropertyHeaders({
+      team_id: projectId,
+      $ai_git_branch: branch,
+      $ai_git_repo: parseRepoSlug(remoteUrl),
+    });
+  }
+
   private async createSession(
     params: {
       cwd: string;
@@ -1733,6 +1792,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         : "default";
 
     const taskState: TaskState = new Map();
+    const sessionPropertyHeaders = await this.buildSessionPropertyHeaders(cwd);
     const options = buildSessionOptions({
       cwd,
       mcpServers,
@@ -1766,6 +1826,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.ensureLocalToolsConnected("guard-hook"),
       taskState,
       gatewayEnv: this.options?.gatewayEnv,
+      sessionPropertyHeaders,
       onTaskStateChange: async () => {
         await this.client.sessionUpdate({
           sessionId,
