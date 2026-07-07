@@ -179,6 +179,7 @@ function createHarness() {
     sendUpdate: (update: CloudTaskUpdatePayload) => onUpdate?.(update),
     notifyPromptComplete,
     notifyPermissionRequest,
+    enqueueSpeech,
     markActivity,
   };
 }
@@ -255,6 +256,9 @@ describe("cloud task update notifications", () => {
       TASK_ID,
       45_000,
     );
+    expect(harness.enqueueSpeech).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "done", source: "backstop" }),
+    );
     expect(harness.markActivity).toHaveBeenCalledTimes(1);
   });
 
@@ -271,6 +275,9 @@ describe("cloud task update notifications", () => {
 
     snapshot();
     expect(harness.notifyPermissionRequest).toHaveBeenCalledTimes(1);
+    expect(harness.enqueueSpeech).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "needs_input", source: "backstop" }),
+    );
 
     snapshot();
     snapshot();

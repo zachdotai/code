@@ -40,7 +40,7 @@ import {
   isTerminalStatus,
   type Task,
 } from "@posthog/shared/domain-types";
-import type { SpeechKind } from "../speech/identifiers";
+import type { SpeechKind, SpeechSource } from "../speech/identifiers";
 import {
   isNotification,
   POSTHOG_NOTIFICATIONS,
@@ -289,6 +289,7 @@ export interface SessionServiceDeps {
     taskTitle: string;
     taskId?: string;
     kind: SpeechKind;
+    source: SpeechSource;
     addressByName?: boolean;
   }) => void;
   getIsOnline: () => boolean;
@@ -2007,6 +2008,7 @@ export class SessionService {
       taskTitle: session.taskTitle,
       taskId: session.taskId,
       kind,
+      source: "backstop",
       addressByName: false,
     });
   }
@@ -2163,6 +2165,7 @@ export class SessionService {
                 taskTitle: session.taskTitle,
                 taskId: session.taskId,
                 kind: pending.kind,
+                source: "agent",
                 // Agent-authored line: allowed to address the user by name.
                 addressByName: true,
               });

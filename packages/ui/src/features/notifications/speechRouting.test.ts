@@ -3,6 +3,7 @@ import type { NotificationChannel } from "./routeNotification";
 import {
   type SpeechGateSettings,
   type SpeechKind,
+  type SpeechSource,
   shouldSpeak,
 } from "./speechRouting";
 
@@ -17,7 +18,10 @@ const base: SpeechGateSettings = {
 describe("shouldSpeak", () => {
   it("is silent when the feature is disabled", () => {
     expect(
-      shouldSpeak("needs_input", "native", { ...base, enabled: false }),
+      shouldSpeak("needs_input", "agent", "native", {
+        ...base,
+        enabled: false,
+      }),
     ).toBe(false);
   });
 
@@ -26,13 +30,15 @@ describe("shouldSpeak", () => {
     ["done", "completion"],
     ["progress", "progress"],
   ])("respects the per-kind toggle for %s", (kind, key) => {
-    expect(shouldSpeak(kind, "native", { ...base, [key]: false })).toBe(false);
+    expect(
+      shouldSpeak(kind, "agent", "native", { ...base, [key]: false }),
+    ).toBe(false);
   });
 
-  it("always speaks needs-input regardless of focus", () => {
+  it("always speaks agent needs-input regardless of focus", () => {
     for (const channel of ["suppress", "toast", "native"] as const) {
       expect(
-        shouldSpeak("needs_input", channel, {
+        shouldSpeak("needs_input", "agent", channel, {
           ...base,
           focusMode: "app_unfocused",
         }),
@@ -44,11 +50,45 @@ describe("shouldSpeak", () => {
     ["suppress", false],
     ["toast", true],
     ["native", true],
-  ])("unviewed_task: channel %s -> %s", (channel, expected) => {
+  ])(
+    "backstop needs-input is silent only over the viewed task: channel %s -> %s",
+    (channel, expected) => {
+      expect(
+        shouldSpeak("needs_input", "backstop", channel, {
+          ...base,
+          focusMode: "app_unfocused",
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it("backstop done never plays over the viewed task, even in always mode", () => {
     expect(
-      shouldSpeak("done", channel, { ...base, focusMode: "unviewed_task" }),
-    ).toBe(expected);
+      shouldSpeak("done", "backstop", "suppress", {
+        ...base,
+        focusMode: "always",
+      }),
+    ).toBe(false);
   });
+
+  it.each<[SpeechSource, NotificationChannel, boolean]>([
+    ["agent", "suppress", false],
+    ["agent", "toast", true],
+    ["agent", "native", true],
+    ["backstop", "suppress", false],
+    ["backstop", "toast", true],
+    ["backstop", "native", true],
+  ])(
+    "unviewed_task: %s done on channel %s -> %s",
+    (source, channel, expected) => {
+      expect(
+        shouldSpeak("done", source, channel, {
+          ...base,
+          focusMode: "unviewed_task",
+        }),
+      ).toBe(expected);
+    },
+  );
 
   it.each<[NotificationChannel, boolean]>([
     ["suppress", false],
@@ -56,14 +96,17 @@ describe("shouldSpeak", () => {
     ["native", true],
   ])("app_unfocused: channel %s -> %s", (channel, expected) => {
     expect(
-      shouldSpeak("done", channel, { ...base, focusMode: "app_unfocused" }),
+      shouldSpeak("done", "agent", channel, {
+        ...base,
+        focusMode: "app_unfocused",
+      }),
     ).toBe(expected);
   });
 
-  it("always mode speaks on every channel", () => {
+  it("always mode speaks agent lines on every channel", () => {
     for (const channel of ["suppress", "toast", "native"] as const) {
       expect(
-        shouldSpeak("done", channel, { ...base, focusMode: "always" }),
+        shouldSpeak("done", "agent", channel, { ...base, focusMode: "always" }),
       ).toBe(true);
     }
   });

@@ -11,11 +11,17 @@ import {
   SPEECH_NOTIFY_SETTINGS,
 } from "./identifiers";
 import { routeNotification } from "./routeNotification";
-import { type SpeechKind, shouldSpeak } from "./speechRouting";
+import {
+  type SpeechKind,
+  type SpeechSource,
+  shouldSpeak,
+} from "./speechRouting";
 
 export interface SpeakRequest {
   text: string;
   kind: SpeechKind;
+  /** Agent `speak` tool call, or the deterministic turn/permission backstop. */
+  source: SpeechSource;
   taskTitle: string;
   taskId?: string;
   /** Address the user by name ("Hey <name>,") — agent lines only, not backstop. */
@@ -49,7 +55,10 @@ export class SpeechNotifier {
       notificationTarget: target,
     });
 
-    if (!shouldSpeak(request.kind, channel, this.settings.get())) return;
+    if (
+      !shouldSpeak(request.kind, request.source, channel, this.settings.get())
+    )
+      return;
 
     this.queue.enqueue({
       text: request.text,

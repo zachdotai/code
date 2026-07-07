@@ -1,6 +1,13 @@
 /** Why the agent is speaking; drives priority, greeting, and per-kind gating. */
 export type SpeechKind = "needs_input" | "done" | "progress";
 
+/**
+ * Who authored the line: the agent's intentional `speak` tool call, or the
+ * deterministic backstop fired by turn-complete / permission events. Backstop
+ * lines are suppressed while the user is viewing the task; agent lines are not.
+ */
+export type SpeechSource = "agent" | "backstop";
+
 /** A narration request as it arrives from the agent's `speak` tool call. */
 export interface SpeechRequest {
   /** The message body the agent produced (no task prefix, no user name). */
