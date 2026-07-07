@@ -26,7 +26,9 @@ import {
   type OptimisticItem,
   type PermissionRequest,
   type QueuedMessage,
+  resolveBypassRevertMode,
   type StoredLogEntry,
+  sessionSupportsNativeSteer,
   type TaskRunStatus,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -63,6 +65,7 @@ import {
   routeLocalConnect,
 } from "./connectRouting";
 import {
+  formatPermissionAnswerPrompt,
   type PermissionSelectionPlan,
   planPermissionResponse,
 } from "./permissionResponse";
@@ -441,12 +444,57 @@ type DerivedPermissionRequest = Pick<
   "requestId" | "toolCall" | "options"
 >;
 
+function getEntryTaskRunMarker(entry: StoredLogEntry): string | undefined {
+  const method = entry.notification?.method;
+  if (!method) return undefined;
+
+  const params = (entry.notification?.params ?? {}) as {
+    runId?: unknown;
+    taskRunId?: unknown;
+  };
+
+  if (
+    isNotification(method, POSTHOG_NOTIFICATIONS.SDK_SESSION) &&
+    typeof params.taskRunId === "string"
+  ) {
+    return params.taskRunId;
+  }
+
+  if (
+    isNotification(method, POSTHOG_NOTIFICATIONS.RUN_STARTED) &&
+    typeof params.runId === "string"
+  ) {
+    return params.runId;
+  }
+
+  return undefined;
+}
+
+function entriesScopedToTaskRun(
+  entries: StoredLogEntry[],
+  taskRunId: string | undefined,
+): StoredLogEntry[] {
+  if (!taskRunId || !entries.some((entry) => getEntryTaskRunMarker(entry))) {
+    return entries;
+  }
+
+  let currentTaskRunId: string | undefined;
+  return entries.filter((entry) => {
+    const marker = getEntryTaskRunMarker(entry);
+    if (marker) {
+      currentTaskRunId = marker;
+    }
+    return currentTaskRunId === taskRunId;
+  });
+}
+
 export function derivePendingPermissionRequests(
   entries: StoredLogEntry[],
+  options?: { taskRunId?: string },
 ): DerivedPermissionRequest[] {
   const requests = new Map<string, DerivedPermissionRequest>();
   const resolved = new Set<string>();
-  for (const entry of entries) {
+  for (const entry of entriesScopedToTaskRun(entries, options?.taskRunId)) {
     const method = entry.notification?.method;
     if (!method) continue;
     const params = (entry.notification?.params ?? {}) as {
@@ -487,6 +535,11 @@ export function isPermissionRequestAlreadySurfaced(
     trackedRequestId === update.requestId &&
     pendingPermissions.has(update.toolCall.toolCallId)
   );
+}
+
+/** The steering capability on a loosely-typed agent start/reconnect result. */
+function readSteering(result: unknown): string | undefined {
+  return (result as { steering?: string } | undefined)?.steering;
 }
 
 function classifyTurnEventKind(
@@ -558,6 +611,7 @@ export class SessionService {
     string,
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
   >();
+  private pendingPermissionHydratedRuns = new Set<string>();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -994,6 +1048,7 @@ export class SessionService {
         this.d.store.updateSession(taskRunId, {
           status: "connected",
           configOptions,
+          steering: readSteering(result),
         });
 
         // Persist the merged config options
@@ -1331,13 +1386,14 @@ export class SessionService {
       | SessionConfigOption[]
       | undefined;
     session.configOptions = configOptions;
+    session.steering = readSteering(result);
 
     // Persist the config options
     if (configOptions) {
       this.d.setPersistedConfigOptions(taskRun.id, configOptions);
     }
 
-    // Persist the adapter
+    // Persist the adapter so reconnects resume with the same one.
     if (adapter) {
       this.d.adapterStore.setAdapter(taskRun.id, adapter);
     }
@@ -1802,6 +1858,9 @@ export class SessionService {
         // above. Cloud sessions never see that response.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
+          const turnStartedAtTs =
+            this.liveTurnContent.get(taskRunId)?.startedAtTs ??
+            session.promptStartedAt;
           this.d.store.updateSession(taskRunId, {
             isPromptPending: false,
             promptStartedAt: null,
@@ -1814,9 +1873,7 @@ export class SessionService {
                 session.taskTitle,
                 "end_turn",
                 session.taskId,
-                session.promptStartedAt
-                  ? acpMsg.ts - session.promptStartedAt
-                  : undefined,
+                turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
               );
             }
             this.d.taskViewedApi.markActivity(session.taskId);
@@ -1907,6 +1964,9 @@ export class SessionService {
     } else {
       this.d.store.appendEvents(taskRunId, [acpMsg]);
     }
+    const turnStartedAtTs =
+      this.liveTurnContent.get(taskRunId)?.startedAtTs ??
+      session.promptStartedAt;
     this.updatePromptStateFromEvents(taskRunId, [acpMsg], { isLive: true });
 
     const msg = acpMsg.message;
@@ -1938,9 +1998,7 @@ export class SessionService {
           session.taskTitle,
           stopReason,
           session.taskId,
-          session.promptStartedAt
-            ? acpMsg.ts - session.promptStartedAt
-            : undefined,
+          turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
         );
       }
 
@@ -2142,7 +2200,9 @@ export class SessionService {
     taskRunId: string,
     entries: StoredLogEntry[],
   ): void {
-    for (const request of derivePendingPermissionRequests(entries)) {
+    for (const request of derivePendingPermissionRequests(entries, {
+      taskRunId,
+    })) {
       this.handleCloudPermissionRequest(taskRunId, request);
     }
   }
@@ -2177,22 +2237,18 @@ export class SessionService {
     }
 
     // Steer: the user sent a message mid-turn and asked to fold it into the
-    // running turn rather than queue it. Native (Claude, local) injects at the
-    // next tool boundary; local Codex interrupts the turn and resends below as
-    // a fresh prompt.
-    //
-    // Cloud has no real mid-turn steer: the backend only delivers user messages
-    // between turns, so a cloud "steer" would cancel the running turn for no
-    // gain (the message lands next turn either way) while surfacing a jarring
-    // interruption. Until the backend supports true steering, cloud steer falls
-    // through to the queue like a normal message. Compaction also falls through.
+    // running turn rather than queue it. Adapters that negotiated
+    // `steering: "native"` (Claude, codex) inject at the next tool boundary;
+    // unknown adapters cancel and resend. Cloud has no real mid-turn steer
+    // (the backend only delivers messages between turns), so it falls through
+    // to the queue; compaction too.
     if (
       options?.steer &&
       !session.isCloud &&
       session.isPromptPending &&
       !session.isCompacting
     ) {
-      if (session.adapter === "claude") {
+      if (sessionSupportsNativeSteer(session)) {
         return this.sendSteerPrompt(session, prompt);
       }
       await this.cancelPrompt(taskId);
@@ -3088,6 +3144,72 @@ export class SessionService {
     });
   }
 
+  private async refreshCloudRunStatus(
+    session: AgentSession,
+  ): Promise<TaskRunStatus | null> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") {
+      return null;
+    }
+
+    try {
+      const run = await authStatus.auth.client.getTaskRun(
+        session.taskId,
+        session.taskRunId,
+      );
+      this.d.store.updateSession(session.taskRunId, {
+        cloudStatus: run.status,
+        cloudStage: run.stage ?? null,
+        cloudOutput: run.output ?? null,
+        cloudErrorMessage: run.error_message,
+        logUrl: run.log_url ?? session.logUrl,
+      });
+      return run.status;
+    } catch (error) {
+      this.d.log.warn("Failed to refresh cloud run status", {
+        taskId: session.taskId,
+        taskRunId: session.taskRunId,
+        error: String(error),
+      });
+      return null;
+    }
+  }
+
+  private async resumeTerminalCloudPermissionResponse(
+    session: AgentSession,
+    permission: PermissionRequest | undefined,
+    toolCallId: string,
+    optionId: string,
+    customInput?: string,
+    answers?: Record<string, string>,
+    cloudStatus?: TaskRunStatus | null,
+  ): Promise<void> {
+    this.cloudPermissionRequestIds.delete(toolCallId);
+    const answerPrompt = formatPermissionAnswerPrompt(
+      permission,
+      optionId,
+      customInput,
+      answers,
+    );
+    if (!answerPrompt) {
+      this.d.log.info("Dropped permission response for terminal cloud run", {
+        taskId: session.taskId,
+        toolCallId,
+        optionId,
+      });
+      return;
+    }
+    await this.sendCloudPrompt(
+      { ...session, cloudStatus: cloudStatus ?? session.cloudStatus },
+      answerPrompt,
+    );
+    this.d.log.info("Permission answer resumed terminal cloud run", {
+      taskId: session.taskId,
+      toolCallId,
+      optionId,
+    });
+  }
+
   // --- Permissions ---
 
   private resolvePermission(session: AgentSession, toolCallId: string): void {
@@ -3131,14 +3253,54 @@ export class SessionService {
     this.resolvePermission(session, toolCallId);
 
     try {
-      if (session.isCloud && cloudRequestId) {
-        this.cloudPermissionRequestIds.delete(toolCallId);
-        await this.sendCloudCommand(session, "permission_response", {
-          requestId: cloudRequestId,
+      const refreshedCloudStatus =
+        session.isCloud && !isTerminalStatus(session.cloudStatus)
+          ? await this.refreshCloudRunStatus(session)
+          : null;
+      const terminalCloudStatus = isTerminalStatus(session.cloudStatus)
+        ? session.cloudStatus
+        : refreshedCloudStatus;
+
+      if (session.isCloud && isTerminalStatus(terminalCloudStatus)) {
+        // The run is over: complete_task drained the sandbox's pending
+        // permission promise, and permission_response only proxies to an active
+        // sandbox. Carry the selected answer forward as a user message instead.
+        await this.resumeTerminalCloudPermissionResponse(
+          session,
+          permission,
+          toolCallId,
           optionId,
           customInput,
           answers,
-        });
+          terminalCloudStatus,
+        );
+        return;
+      }
+      if (session.isCloud && cloudRequestId) {
+        this.cloudPermissionRequestIds.delete(toolCallId);
+        try {
+          await this.sendCloudCommand(session, "permission_response", {
+            requestId: cloudRequestId,
+            optionId,
+            customInput,
+            answers,
+          });
+        } catch (error) {
+          const latestCloudStatus = await this.refreshCloudRunStatus(session);
+          if (isTerminalStatus(latestCloudStatus)) {
+            await this.resumeTerminalCloudPermissionResponse(
+              session,
+              permission,
+              toolCallId,
+              optionId,
+              customInput,
+              answers,
+              latestCloudStatus,
+            );
+            return;
+          }
+          throw error;
+        }
       } else {
         await this.d.trpc.agent.respondToPermission.mutate({
           taskRunId: session.taskRunId,
@@ -3188,6 +3350,12 @@ export class SessionService {
     this.resolvePermission(session, toolCallId);
 
     try {
+      if (session.isCloud && isTerminalStatus(session.cloudStatus)) {
+        // The run is over — the card was resolved locally above and there is no
+        // live permission promise left to reject.
+        this.cloudPermissionRequestIds.delete(toolCallId);
+        return;
+      }
       if (session.isCloud && cloudRequestId) {
         this.cloudPermissionRequestIds.delete(toolCallId);
         await this.sendCloudCommand(session, "permission_response", {
@@ -3661,11 +3829,25 @@ export class SessionService {
     // the stop-and-restart below.
     if (!existingWatcher) {
       const hydrated = this.d.store.getSessionByTaskId(taskId);
+      const needsPersistedPermissionHydration =
+        hydrated?.taskRunId === taskRunId &&
+        hydrated.pendingPermissions.size === 0 &&
+        !this.pendingPermissionHydratedRuns.has(taskRunId);
       if (
         hydrated?.taskRunId === taskRunId &&
         isTerminalStatus(hydrated.cloudStatus) &&
         hydrated.processedLineCount !== undefined
       ) {
+        if (needsPersistedPermissionHydration) {
+          this.hydrateCloudTaskSessionFromLogs(
+            taskId,
+            taskRunId,
+            logUrl,
+            taskDescription,
+            runStatus,
+            runState,
+          );
+        }
         return () => {};
       }
     }
@@ -3686,11 +3868,19 @@ export class SessionService {
       existing?.taskRunId === taskRunId &&
       existing.events.length > 0 &&
       existing.processedLineCount === undefined;
+    const shouldHydratePersistedPermissions =
+      existing?.taskRunId === taskRunId &&
+      existing.pendingPermissions.size === 0 &&
+      existing.processedLineCount !== undefined &&
+      !this.pendingPermissionHydratedRuns.has(taskRunId) &&
+      (isTerminalStatus(existing.cloudStatus) ||
+        (runStatus !== undefined && isTerminalStatus(runStatus)));
     const shouldHydrateSession =
       !existing ||
       existing.taskRunId !== taskRunId ||
       shouldResetExistingSession ||
-      existing.events.length === 0;
+      existing.events.length === 0 ||
+      shouldHydratePersistedPermissions;
 
     if (
       !existing ||
@@ -3903,6 +4093,7 @@ export class SessionService {
       }
 
       if (rawEntries.length === 0) {
+        this.pendingPermissionHydratedRuns.add(taskRunId);
         return;
       }
 
@@ -3912,6 +4103,8 @@ export class SessionService {
         session.processedLineCount !== undefined &&
         session.processedLineCount > 0
       ) {
+        this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+        this.pendingPermissionHydratedRuns.add(taskRunId);
         return;
       }
 
@@ -3921,6 +4114,8 @@ export class SessionService {
         logUrl: logUrl ?? session.logUrl,
         processedLineCount: totalLineCount,
       });
+      this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+      this.pendingPermissionHydratedRuns.add(taskRunId);
       // Without this the "Galumphing…" indicator stays hidden when the hydrated
       // baseline already contains an in-flight session/prompt — the live delta
       // path otherwise sees delta <= 0 and never re-evaluates the tail.
@@ -4634,6 +4829,7 @@ export class SessionService {
       isCloud: boolean;
       allowBypassPermissions: boolean;
       currentModeId: string | boolean | undefined;
+      modeOption: SessionConfigOption | undefined;
     },
   ): void {
     if (options.allowBypassPermissions) return;
@@ -4642,7 +4838,9 @@ export class SessionService {
       options.currentModeId === "bypassPermissions" ||
       options.currentModeId === "full-access";
     if (!isBypass || !taskId) return;
-    this.setSessionConfigOptionByCategory(taskId, "mode", "default");
+    const target = resolveBypassRevertMode(options.modeOption);
+    if (!target) return;
+    this.setSessionConfigOptionByCategory(taskId, "mode", target);
   }
 
   /**
