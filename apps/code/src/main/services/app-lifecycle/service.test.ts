@@ -15,6 +15,7 @@ const {
   mockProcessExit,
   mockGetFullScreenState,
   mockSetRestoreFullScreenOnNextLaunch,
+  mockBrowserWindow,
 } = vi.hoisted(() => {
   const mockDatabaseService = {
     close: vi.fn(),
@@ -53,6 +54,13 @@ const {
     mockProcessExit: vi.fn() as unknown as (code?: number) => never,
     mockGetFullScreenState: vi.fn(() => false),
     mockSetRestoreFullScreenOnNextLaunch: vi.fn(),
+    mockBrowserWindow: {
+      isDestroyed: vi.fn(() => false),
+      isFullScreen: vi.fn(() => false),
+      setFullScreen: vi.fn(),
+      once: vi.fn(),
+      off: vi.fn(),
+    },
   };
 });
 
@@ -98,6 +106,8 @@ describe("AppLifecycleService", () => {
     vi.useFakeTimers();
     process.exit = mockProcessExit;
     mockWorkspaceService.pendingCreationCount = 0;
+    mockBrowserWindow.isDestroyed.mockReturnValue(false);
+    mockBrowserWindow.isFullScreen.mockReturnValue(false);
     service = new AppLifecycleService(
       mockAppLifecycle as unknown as IAppLifecycle,
       mockDatabaseService as never,
@@ -105,6 +115,7 @@ describe("AppLifecycleService", () => {
       mockWatcherRegistry as never,
       mockProcessTracking as never,
       mockWorkspaceService as never,
+      { getBrowserWindow: () => mockBrowserWindow } as never,
     );
   });
 
@@ -282,6 +293,43 @@ describe("AppLifecycleService", () => {
       await promise;
 
       expect(mockProcessTracking.getSnapshot).toHaveBeenCalled();
+    });
+
+    it("leaves fullscreen and waits for the transition before finishing", async () => {
+      mockBrowserWindow.isFullScreen.mockReturnValue(true);
+      mockBrowserWindow.setFullScreen.mockImplementationOnce(() => {
+        const [event, listener] = mockBrowserWindow.once.mock.calls[0] ?? [];
+        expect(event).toBe("leave-full-screen");
+        (listener as () => void)();
+      });
+
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockBrowserWindow.setFullScreen).toHaveBeenCalledWith(false);
+    });
+
+    it("does not touch fullscreen when the window is not fullscreen", async () => {
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockBrowserWindow.setFullScreen).not.toHaveBeenCalled();
+    });
+
+    it("proceeds when the fullscreen transition never completes", async () => {
+      mockBrowserWindow.isFullScreen.mockReturnValue(true);
+
+      const promise = service.shutdownWithoutContainer();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockBrowserWindow.setFullScreen).toHaveBeenCalledWith(false);
+      expect(mockBrowserWindow.off).toHaveBeenCalledWith(
+        "leave-full-screen",
+        expect.any(Function),
+      );
     });
   });
 
