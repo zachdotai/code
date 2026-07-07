@@ -3784,12 +3784,37 @@ describe("SessionService", () => {
   });
 
   describe("sendPrompt", () => {
-    it("throws when offline", async () => {
+    it("throws when offline for an idle local session", async () => {
       mockGetIsOnline.mockReturnValue(false);
+      // A connected, non-busy local session can't run offline.
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({ status: "connected", isPromptPending: false }),
+      );
       const service = getSessionService();
 
       await expect(service.sendPrompt("task-123", "Hello")).rejects.toThrow(
         "No internet connection",
+      );
+    });
+
+    it("queues (does not throw) an offline follow-up to a cloud run", async () => {
+      mockGetIsOnline.mockReturnValue(false);
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "connected",
+        }),
+      );
+      const service = getSessionService();
+
+      const result = await service.sendPrompt("task-123", "Hello later");
+
+      expect(result).toEqual({ stopReason: "queued" });
+      expect(mockSessionStoreSetters.enqueueMessage).toHaveBeenCalledWith(
+        "task-123",
+        "Hello later",
+        expect.anything(),
       );
     });
 

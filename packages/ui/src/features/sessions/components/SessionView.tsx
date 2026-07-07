@@ -312,13 +312,16 @@ export function SessionView({
 
   const handleBeforeSubmit = useCallback(
     (text: string, clearEditor: () => void): boolean => {
-      if (!isOnline) {
+      // Cloud runs execute server-side, so an offline follow-up is queued (and
+      // persisted) rather than dropped — don't block it. Local sessions can't
+      // proceed offline.
+      if (!isOnline && !isCloud) {
         showOfflineToast();
         return false;
       }
       return onBeforeSubmit ? onBeforeSubmit(text, clearEditor) : true;
     },
-    [isOnline, onBeforeSubmit],
+    [isOnline, isCloud, onBeforeSubmit],
   );
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -657,10 +660,14 @@ export function SessionView({
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
-                            handoffInProgress || !isOnline
+                            handoffInProgress || (!isOnline && !isCloud)
                           }
                           submitTooltipOverride={
-                            !isOnline ? "No internet connection" : undefined
+                            !isOnline
+                              ? isCloud
+                                ? "Offline — your message will be queued and sent when you reconnect"
+                                : "No internet connection"
+                              : undefined
                           }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}

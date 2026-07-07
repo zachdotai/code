@@ -23,6 +23,11 @@ import { fetchAuthState } from "@posthog/ui/features/auth/authQueries";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { useAddDirectoryDialogStore } from "@posthog/ui/features/folder-picker/addDirectoryDialogStore";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
+import {
+  resetQueuedMessagePersistenceTracking,
+  startQueuedMessagePersistence,
+} from "@posthog/ui/features/sessions/queuedMessagePersistence";
+import { queuedMessageStoreApi } from "@posthog/ui/features/sessions/queuedMessageStore";
 import { useSessionAdapterStore } from "@posthog/ui/features/sessions/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
@@ -155,6 +160,9 @@ let serviceInstance: SessionService | null = null;
 
 export function getSessionService(): SessionService {
   if (!serviceInstance) {
+    // Mirror the in-memory queue to durable storage so follow-ups survive a
+    // restart. Idempotent; the subscription lives for the process lifetime.
+    startQueuedMessagePersistence();
     serviceInstance = new SessionService(buildSessionServiceDeps());
   }
   return serviceInstance;
@@ -167,6 +175,12 @@ export function resetSessionService(): void {
   }
 
   sessionStoreSetters.clearAll();
+  // clearAll wipes the sessions map wholesale (no per-session mutation the
+  // persistence subscription would mirror), so explicitly wipe the durable
+  // queue and its tracking to avoid leaking queued follow-ups across accounts
+  // / projects.
+  queuedMessageStoreApi.clearAll();
+  resetQueuedMessagePersistenceTracking();
 
   hostClient()
     .agent.resetAll.mutate()

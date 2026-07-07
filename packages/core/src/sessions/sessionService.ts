@@ -2235,14 +2235,24 @@ export class SessionService {
     prompt: string | ContentBlock[],
     options?: { steer?: boolean },
   ): Promise<{ stopReason: string }> {
-    if (!this.d.getIsOnline()) {
-      throw new Error(
-        "No internet connection. Please check your connection and try again.",
-      );
-    }
-
     let session = this.d.store.getSessionByTaskId(taskId);
     if (!session) throw new Error("No active session for task");
+
+    if (!this.d.getIsOnline()) {
+      // Cloud follow-ups queue (and persist) so an unstable connection can't
+      // drop them — the queue flushes when the stream reconnects. Local busy
+      // sessions fall through to the normal queue path below. Anything else
+      // genuinely can't proceed offline, so surface a clear error.
+      const canQueueOffline =
+        session.isCloud ||
+        (session.status === "connected" &&
+          (session.isPromptPending || session.isCompacting));
+      if (!canQueueOffline) {
+        throw new Error(
+          "No internet connection. Please check your connection and try again.",
+        );
+      }
+    }
 
     // The /add-dir dialog mutates the per-task additional-directories list and
     // we re-read it during respawn below. Sending while it's open would race
@@ -2390,22 +2400,26 @@ export class SessionService {
   /**
    * Send all queued messages as a single prompt.
    * Called internally when a turn completes and there are queued messages.
-   * Queue is cleared atomically before sending - if sending fails, messages are lost
-   * (this is acceptable since the user can re-type; avoiding complex retry logic).
+   * The queue is drained before sending, but rolled back via
+   * `prependQueuedMessages` if the send fails — so a transient failure doesn't
+   * silently drop the follow-ups (mirrors the cloud queue's rollback, and keeps
+   * the durable mirror in sync).
    */
   private async sendQueuedMessages(
     taskId: string,
   ): Promise<{ stopReason: string }> {
-    const combinedText = this.d.store.dequeueMessagesAsText(taskId);
-    if (!combinedText) {
+    const drained = this.d.store.dequeueMessages(taskId);
+    if (drained.length === 0) {
       return { stopReason: "skipped" };
     }
+    const combinedText = drained.map((message) => message.content).join("\n\n");
 
     const session = this.d.store.getSessionByTaskId(taskId);
     if (!session) {
-      this.d.log.warn("No session found for queued messages, messages lost", {
+      this.d.store.prependQueuedMessages(taskId, drained);
+      this.d.log.warn("No session found for queued messages, re-queued", {
         taskId,
-        lostMessageLength: combinedText.length,
+        queued: drained.length,
       });
       return { stopReason: "no_session" };
     }
@@ -2433,10 +2447,12 @@ export class SessionService {
     try {
       return await this.sendLocalPrompt(session, blocks, combinedText);
     } catch (error) {
-      // Log that queued messages were lost due to send failure
-      this.d.log.error("Failed to send queued messages, messages lost", {
+      // Roll the drain back so a transient send failure doesn't drop the
+      // follow-ups; the durable mirror re-syncs off the restored queue.
+      this.d.store.prependQueuedMessages(taskId, drained);
+      this.d.log.error("Failed to send queued messages, re-queued", {
         taskId,
-        lostMessageLength: combinedText.length,
+        queued: drained.length,
         error,
       });
       throw error;
@@ -2619,6 +2635,23 @@ export class SessionService {
       transport.skillBundles.length === 0
     ) {
       return { stopReason: "empty" };
+    }
+
+    // Offline: the run keeps executing in the cloud, so queue (and persist via
+    // the durable mirror) instead of attempting a doomed network send. The
+    // queue flushes when the main-process watcher resumes the stream and the
+    // agent is next idle. Don't retry the watch here — it would fail offline.
+    if (!this.d.getIsOnline()) {
+      this.d.store.enqueueMessage(
+        session.taskId,
+        transport.promptText,
+        normalizedPrompt,
+      );
+      this.d.log.info("Cloud message queued (offline)", {
+        taskId: session.taskId,
+        cloudStatus: session.cloudStatus,
+      });
+      return { stopReason: "queued" };
     }
 
     if (isTerminalStatus(session.cloudStatus)) {
