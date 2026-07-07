@@ -1,4 +1,5 @@
 import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
+import type { SpendAnalysisResponse } from "@posthog/core/billing/spendAnalysisTypes";
 import type {
   DiscoveryFailureReason,
   DiscoverySignalSource,
@@ -153,6 +154,15 @@ export class SetupRunServiceImpl implements ISetupRunService {
     return this.hostClient().enrichment.findStaleFlagSuggestions.query({
       repoPath,
     });
+  }
+
+  // Uses a fresh authenticated client rather than `this.client`: the enricher
+  // path runs before (and independently of) getDiscoveryContext().
+  async getSpendAnalysis(): Promise<SpendAnalysisResponse | null> {
+    const authState = await fetchAuthState();
+    const client = createAuthenticatedClient(authState);
+    if (!client) return null;
+    return client.getPersonalSpendAnalysis();
   }
 
   includeExperiments(): boolean {

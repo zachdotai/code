@@ -6,6 +6,7 @@ import {
   Flag,
   Flask,
   Funnel,
+  Gauge,
   Lightning,
   Lock,
   Sparkle,
@@ -39,6 +40,7 @@ export const CATEGORY_CONFIG: Record<
   funnel: { icon: Funnel, color: "violet", label: "Funnel" },
   posthog_setup: { icon: Sparkle, color: "violet", label: "PostHog setup" },
   experiment: { icon: Flask, color: "purple", label: "Experiment" },
+  ai_usage: { icon: Gauge, color: "cyan", label: "AI usage" },
 };
 
 // Fallback when a `DiscoveredTask.category` somehow doesn't match the map

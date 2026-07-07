@@ -10,6 +10,7 @@ import {
   nextActivityId,
 } from "@posthog/core/setup/sessionUpdate";
 import {
+  buildAiUsageSuggestion,
   buildPosthogSetupSuggestion,
   buildSdkHealthSuggestion,
   buildStaleFlagSuggestion,
@@ -117,6 +118,7 @@ export class SetupRunService {
           repoPath: directory,
         });
       }
+      await this.injectAiUsageSuggestion(directory);
       this.store.completeEnrichment(directory);
     } catch (err) {
       this.logger.warn("Enricher run failed", { error: err });
@@ -137,6 +139,23 @@ export class SetupRunService {
       }
     } catch (err) {
       this.logger.warn("Failed to find stale flag suggestions", { error: err });
+    }
+  }
+
+  // Independent of the repo's PostHog install state — the user's own spend is
+  // what makes the suggestion relevant, so it runs on every enricher pass.
+  private async injectAiUsageSuggestion(directory: string): Promise<void> {
+    try {
+      const spend = await this.port.getSpendAnalysis();
+      if (!spend) return;
+      const suggestion = buildAiUsageSuggestion(spend);
+      if (!suggestion) return;
+      this.store.addEnricherSuggestionIfMissing({
+        ...suggestion,
+        repoPath: directory,
+      });
+    } catch (err) {
+      this.logger.warn("Failed to build AI usage suggestion", { error: err });
     }
   }
 

@@ -1,3 +1,9 @@
+import {
+  formatTokens,
+  formatUsd,
+  formatWindow,
+} from "@posthog/core/billing/spendAnalysisFormat";
+import type { SpendAnalysisResponse } from "@posthog/core/billing/spendAnalysisTypes";
 import type { DiscoveredTask } from "@posthog/core/setup/types";
 
 export interface StaleFlagPayload {
@@ -29,6 +35,44 @@ export function buildStaleFlagSuggestion(
     file: first?.file,
     lineHint: first?.line,
     prompt: `/cleaning-up-stale-feature-flags Clean up stale flag "${flag.flagKey}"\n\n${recommendation}`,
+  };
+}
+
+// Below this much PostHog Code spend in the analysis window there's nothing
+// meaningful to optimize, so the suggestion stays hidden rather than nagging
+// light users.
+export const AI_USAGE_MIN_SPEND_USD = 5;
+
+// Share of scoped spend a single tool must reach before it's called out as a
+// hotspot in the suggestion description.
+const AI_USAGE_HOTSPOT_SHARE = 0.35;
+
+export function buildAiUsageSuggestion(
+  data: SpendAnalysisResponse,
+): DiscoveredTask | null {
+  const { summary } = data;
+  if (summary.scoped_cost_usd < AI_USAGE_MIN_SPEND_USD) return null;
+
+  const window = formatWindow(summary.date_from, summary.date_to);
+  const topTool = data.by_tool.items[0];
+  const hotspot =
+    topTool?.tool && topTool.share_of_scoped >= AI_USAGE_HOTSPOT_SHARE
+      ? ` ${topTool.tool} alone drives ${Math.round(topTool.share_of_scoped * 100)}% of that, averaging ${formatTokens(topTool.avg_input_tokens)} input tokens per call.`
+      : "";
+
+  return {
+    // Stable id so dismissal sticks across re-runs.
+    id: "ai-usage-optimization",
+    source: "enricher",
+    category: "ai_usage",
+    title: "Optimize your AI usage",
+    description: `You've spent ${formatUsd(summary.scoped_cost_usd)} on PostHog Code in the last ${window}.${hotspot} Repeated workflows, re-explained context, and recurring one-off analyses usually hide easy savings.`,
+    impact:
+      "Token spend compounds quietly: the same context re-sent every session, the same analysis re-run every week. Capturing repeated work as skills and scheduled reports cuts cost — and gets you answers without having to ask.",
+    recommendation:
+      'Click "Implement as new task" — the agent audits your recent sessions and memory files, then proposes concrete changes ranked by impact: new skills for repeated workflows, memory-file edits, and scheduled reports for recurring questions.',
+    prompt:
+      "Audit how I've been using PostHog Code and find ways to get better results for fewer tokens. Review my recent sessions for: repeated workflows worth capturing as a reusable skill, recurring questions better served by a scheduled scout or AI report, memory files (CLAUDE.md, AGENTS.md) that are bloated, stale, or missing context I keep re-explaining, and prompts that ran long or retried because they were under-specified. Deliver a short report of findings ranked by impact — each with the evidence behind it and the estimated saving — then offer to implement the top quick wins.",
   };
 }
 

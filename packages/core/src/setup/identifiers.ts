@@ -1,3 +1,4 @@
+import type { SpendAnalysisResponse } from "@posthog/core/billing/spendAnalysisTypes";
 import type { ActivityEntry } from "@posthog/core/setup/setupState";
 import type { StaleFlagPayload } from "@posthog/core/setup/suggestions";
 import type { DiscoveredTask } from "@posthog/core/setup/types";
@@ -61,6 +62,8 @@ export interface ISetupRunService {
     repoPath: string,
   ): Promise<"initialized" | "not_installed" | "installed_no_init">;
   findStaleFlagSuggestions(repoPath: string): Promise<StaleFlagPayload[]>;
+  /** The user's recent personal LLM spend (default window). Null when unauthenticated or the endpoint is unavailable. */
+  getSpendAnalysis(): Promise<SpendAnalysisResponse | null>;
 
   /** Whether experiment-tier suggestions are enabled (feature flag or dev build). */
   includeExperiments(): boolean;

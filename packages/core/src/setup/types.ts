@@ -16,7 +16,8 @@ export interface DiscoveredTask {
     | "event_tracking"
     | "funnel"
     | "posthog_setup"
-    | "experiment";
+    | "experiment"
+    | "ai_usage";
   source: DiscoveredTaskSource;
   file?: string;
   lineHint?: number;

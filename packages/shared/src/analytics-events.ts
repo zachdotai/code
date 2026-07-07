@@ -482,7 +482,8 @@ type SetupDiscoveredTaskCategory =
   | "event_tracking"
   | "funnel"
   | "posthog_setup"
-  | "experiment";
+  | "experiment"
+  | "ai_usage";
 
 export interface SetupDiscoveryStartedProperties {
   discovery_task_id: string;

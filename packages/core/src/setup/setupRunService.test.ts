@@ -91,6 +91,7 @@ function makePort(overrides: Partial<ISetupRunService> = {}): ISetupRunService {
     subscribeSessionEvents: vi.fn(() => ({ unsubscribe: () => {} })),
     detectPosthogInstallState: vi.fn(async () => "not_installed" as const),
     findStaleFlagSuggestions: vi.fn(async () => []),
+    getSpendAnalysis: vi.fn(async () => null),
     includeExperiments: vi.fn(() => false),
     trackDiscoveryStarted: vi.fn(),
     trackDiscoveryCompleted: vi.fn(),
@@ -141,6 +142,49 @@ describe("SetupRunService enricher", () => {
     const ids = store.discoveredTasks.map((t) => t.id);
     expect(ids).toContain("posthog-setup");
     expect(port.findStaleFlagSuggestions).not.toHaveBeenCalled();
+    expect(store.getEnricherStatus(REPO)).toBe("done");
+  });
+
+  it("adds the ai-usage suggestion when spend is above threshold, regardless of install state", async () => {
+    const port = makePort({
+      getSpendAnalysis: vi.fn(async () => ({
+        summary: {
+          date_from: "2026-06-07T00:00:00Z",
+          date_to: "2026-07-07T00:00:00Z",
+          product: null,
+          total_cost_usd: 50,
+          event_count: 100,
+          scoped_cost_usd: 40,
+          scoped_event_count: 80,
+        },
+        by_product: { items: [], truncated: false },
+        by_tool: { items: [], truncated: false },
+        by_model: { items: [], truncated: false },
+      })),
+    });
+    const service = new SetupRunService(port, store, noopLogger);
+
+    service.startEnricherForRepo(REPO);
+    await flush();
+
+    const ids = store.discoveredTasks.map((t) => t.id);
+    expect(ids).toContain("ai-usage-optimization");
+    expect(store.getEnricherStatus(REPO)).toBe("done");
+  });
+
+  it("still completes enrichment when spend analysis fails", async () => {
+    const port = makePort({
+      getSpendAnalysis: vi.fn(async () => {
+        throw new Error("spend endpoint unavailable");
+      }),
+    });
+    const service = new SetupRunService(port, store, noopLogger);
+
+    service.startEnricherForRepo(REPO);
+    await flush();
+
+    const ids = store.discoveredTasks.map((t) => t.id);
+    expect(ids).not.toContain("ai-usage-optimization");
     expect(store.getEnricherStatus(REPO)).toBe("done");
   });
 

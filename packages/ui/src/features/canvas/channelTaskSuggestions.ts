@@ -6,7 +6,6 @@ import {
   Cube,
   CurrencyDollar,
   Flask,
-  Gauge,
   Wrench,
 } from "@phosphor-icons/react";
 import type { SuggestedPrompt } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
@@ -72,15 +71,6 @@ export const CHANNEL_TASK_SUGGESTIONS: SuggestedPrompt[] = [
     mode: "auto",
     prompt:
       "Interpret the results of an experiment — explain what the metrics show, whether it's significant, and what to do next.\n\n\nUser input:\n- Experiment name or key:\n- What decision are you trying to make (optional):",
-  },
-  {
-    label: "Optimize your AI usage",
-    description: "Turn repeated work into skills, scouts & savings",
-    icon: Gauge,
-    color: "cyan",
-    mode: "auto",
-    prompt:
-      "Audit how I've been using PostHog Code and find ways to get better results for fewer tokens. Review my recent tasks and sessions for: repeated workflows worth capturing as a reusable skill, recurring questions better served by a scheduled scout or AI report, memory files that are bloated, stale, or missing context I keep re-explaining, and prompts that ran long or retried because they were under-specified. Deliver a short report of findings ranked by impact — each with the evidence behind it and the estimated saving — then offer to implement the top quick wins.\n\n\nUser input:\n- Time period to review (optional):\n- What to prioritize (token cost, speed, quality — optional):",
   },
   {
     label: "Fix a bug",
