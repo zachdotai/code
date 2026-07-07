@@ -226,6 +226,13 @@ export function SidebarNavSection({
                 action_type: "toggle_channels",
                 surface: "nav",
               });
+              // The unified sidebar removed the Code↔Channels space boundary;
+              // this toggle is its successor. Keep firing the legacy
+              // enter/leave events so space-adoption dashboards stay continuous.
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: checked ? "enter_space" : "leave_space",
+                surface: "nav",
+              });
             }}
           />
         </label>

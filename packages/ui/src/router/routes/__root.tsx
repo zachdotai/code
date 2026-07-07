@@ -99,6 +99,12 @@ function RootLayout() {
   // Width of the Channels sidebar below — used to right-align the back/forward
   // buttons in the title bar with the sidebar's (and project switcher's) right edge.
   const channelsSidebarWidth = useChannelsSidebarStore((state) => state.width);
+  // Suppress the title-bar width transition during a live drag so it tracks
+  // the sidebar frame-for-frame; when the sidebar toggles open/closed, both
+  // animate with the same curve (see ResizableSidebar).
+  const sidebarIsResizing = useChannelsSidebarStore(
+    (state) => state.isResizing,
+  );
   // Forward availability isn't exposed by the router (and history.length counts
   // pre-app entries, so it can't be compared to __TSR_index). Track the newest
   // index we've reached: only a PUSH wipes the forward stack, so it resets the
@@ -331,7 +337,10 @@ function RootLayout() {
             justify="between"
             gap="3"
             className="shrink-0 pr-2 pl-[78px]"
-            style={{ width: sidebarOpen ? channelsSidebarWidth : undefined }}
+            style={{
+              width: sidebarOpen ? channelsSidebarWidth : undefined,
+              transition: sidebarIsResizing ? "none" : "width 0.2s ease-in-out",
+            }}
           >
             <Flex align="center" gap="2" className="no-drag">
               <Box className="h-[14px] w-[30px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">

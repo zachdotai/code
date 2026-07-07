@@ -1,14 +1,13 @@
 import { WebsiteChannelArtifacts } from "@posthog/ui/features/canvas/components/WebsiteChannelArtifacts";
-import { ChannelSkeleton } from "@posthog/ui/router/routeSkeletons";
-import { yieldToPaint } from "@posthog/ui/router/yieldToPaint";
+import {
+  ChannelSkeleton,
+  withRouteSkeleton,
+} from "@posthog/ui/router/routeSkeletons";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/website/$channelId/artifacts")({
   component: ChannelArtifactsRoute,
-  pendingComponent: ChannelSkeleton,
-  // Single-frame yield so the skeleton paints before the heavy mount (see
-  // yieldToPaint).
-  loader: yieldToPaint,
+  ...withRouteSkeleton(ChannelSkeleton),
 });
 
 function ChannelArtifactsRoute() {

@@ -11,6 +11,7 @@ import { browserTabsStore } from "@posthog/core/browser-tabs/browserTabsStore";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
   decideTabNavigation,
+  primaryWindow,
   setTabOrder,
   setTabTarget as setTabTargetLocal,
   setWindowActiveTab,
@@ -76,10 +77,6 @@ function remember<V>(map: Map<string, V>, key: string, value: V): void {
     const oldest = map.keys().next().value;
     if (oldest !== undefined) map.delete(oldest);
   }
-}
-
-function primaryWindow(snapshot: TabsSnapshot) {
-  return snapshot.windows.find((w) => w.isPrimary) ?? snapshot.windows[0];
 }
 
 // True when the open task's focused editor panel has a closeable active tab.
@@ -229,8 +226,14 @@ export function BrowserTabStrip() {
     : undefined;
   // The history state flips the instant you navigate, while the server snapshot
   // round-trips — so prefer it for "which tab is active" to avoid a one-step lag
-  // in the highlight and the name.
-  const activeTabId = historyTabId ?? win?.activeTabId ?? null;
+  // in the highlight and the name. Validate it against the live tab list first:
+  // back/forward can replay an entry tagged with a since-closed tab, and a dead
+  // id here would blank the strip highlight and point Cmd+W at a tab that no
+  // longer exists (the navigation effect heals the tag, but asynchronously).
+  const historyTabIsLive =
+    !!historyTabId && snapshot.tabs.some((t) => t.id === historyTabId);
+  const activeTabId =
+    (historyTabIsLive ? historyTabId : null) ?? win?.activeTabId ?? null;
 
   // Names feed the tab labels. The channel canvas list + all-tasks list cover
   // most tabs; a direct fetch of the *current route's* canvas/task (warm cache
@@ -306,15 +309,21 @@ export function BrowserTabStrip() {
       routeAppView,
     });
     switch (decision.type) {
-      case "activate":
+      case "activate": {
         // Optimistically focus in the mirror before the round-trip: an
         // untagged navigation racing this window would otherwise decide
-        // against the PREVIOUS active tab and replace its contents.
-        browserTabsStore
-          .getState()
-          .setSnapshot(setWindowActiveTab(snapshot, windowId, decision.tabId));
+        // against the PREVIOUS active tab and replace its contents. Derive
+        // from the store's CURRENT snapshot, not the effect closure's — a
+        // mutation onSuccess may have applied a newer one since this render,
+        // and writing a stale-derived snapshot would regress the mirror
+        // (e.g. transiently resurrect a just-closed tab).
+        const store = browserTabsStore.getState();
+        store.setSnapshot(
+          setWindowActiveTab(store.snapshot, windowId, decision.tabId),
+        );
         setActiveTab.mutate({ windowId, tabId: decision.tabId });
         break;
+      }
       case "replace": {
         const target = {
           tabId: decision.tabId,
@@ -326,12 +335,11 @@ export function BrowserTabStrip() {
         };
         // Same optimistic apply: keep the mirror consistent with the write so
         // re-entrant runs (and the /website index redirect guard) never see
-        // the pre-navigation target.
-        browserTabsStore
-          .getState()
-          .setSnapshot(
-            setTabTargetLocal(snapshot, { ...target, now: Date.now }),
-          );
+        // the pre-navigation target. Same current-snapshot rule as "activate".
+        const store = browserTabsStore.getState();
+        store.setSnapshot(
+          setTabTargetLocal(store.snapshot, { ...target, now: Date.now }),
+        );
         setTabTarget.mutate(target);
         if (decision.stampTabId) stamp(decision.stampTabId);
         break;

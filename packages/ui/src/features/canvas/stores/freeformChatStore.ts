@@ -53,6 +53,9 @@ export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
 
 interface FreeformChatStore {
   threads: Record<string, FreeformThreadState>;
+  /** MRU access order for eviction, oldest first. Store state (not a module
+   * closure) so devtools/tests see it and HMR can't desync it from `threads`. */
+  threadOrder: string[];
 
   /** Seed a thread from a saved record (only if the thread is still empty).
    * The templateId is recorded regardless so a generation gets the right prompt. */
@@ -98,26 +101,31 @@ function dashboardIdOf(threadId: string): string {
 }
 
 export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
-  // MRU access order for eviction. Every patch refreshes a thread's recency;
-  // eviction runs only from the mount-time seeding paths (ensureCode /
-  // syncFromRecord) so an edit mid-session never drops another thread out from
-  // under a mounted view racing a save.
-  let threadOrder: string[] = [];
-
+  // Every patch refreshes a thread's recency; eviction runs only from the
+  // mount-time seeding paths (ensureCode / syncFromRecord) so an edit
+  // mid-session never drops another thread out from under a mounted view
+  // racing a save.
   const touch = (threadId: string) => {
-    threadOrder = threadOrder.filter((id) => id !== threadId);
-    threadOrder.push(threadId);
+    set((s) => ({
+      threadOrder: [...s.threadOrder.filter((id) => id !== threadId), threadId],
+    }));
   };
 
   const evictExcessThreads = () => {
-    while (threadOrder.length > MAX_THREADS) {
-      const oldest = threadOrder[0];
-      // Never drop state with a save in flight; retry on the next seed.
-      if (get().threads[oldest]?.isSaving) return;
-      threadOrder.shift();
+    // Walk oldest-first, skipping (not aborting on) threads with a save in
+    // flight — an abort would let one slow autosave at the front block the
+    // cap for every thread behind it.
+    let excess = get().threadOrder.length - MAX_THREADS;
+    for (const oldest of [...get().threadOrder]) {
+      if (excess <= 0) break;
+      if (get().threads[oldest]?.isSaving) continue;
+      excess--;
       set((s) => {
         const { [oldest]: _evicted, ...rest } = s.threads;
-        return { threads: rest };
+        return {
+          threads: rest,
+          threadOrder: s.threadOrder.filter((id) => id !== oldest),
+        };
       });
     }
   };
@@ -169,6 +177,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
 
   return {
     threads: {},
+    threadOrder: [],
 
     ensureCode: (threadId, record) => {
       touch(threadId);
@@ -297,6 +306,10 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
     },
 
     revert: (threadId) => {
+      // Guard against an evicted/never-seeded thread: patch() would otherwise
+      // materialize EMPTY_FREEFORM_THREAD and persist() would then save
+      // code:"" over the real record — a data-loss path.
+      if (!get().threads[threadId]) return;
       // Adopt the version being viewed: drop everything after it so it becomes
       // the head, then autosave.
       patch(threadId, (prev) => {
