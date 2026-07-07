@@ -21,15 +21,16 @@ function getParkingContainer(): HTMLElement {
   if (!parkingContainer) {
     parkingContainer = document.createElement("div");
     parkingContainer.id = "terminal-parking";
-    // Parked terminals keep live WebGL canvases; ph-no-capture stops PostHog
-    // session replay snapshotting every one of them at canvasFps forever.
+    // ph-no-capture stops PostHog session replay snapshotting parked terminals.
     parkingContainer.className = "ph-no-capture";
-    parkingContainer.style.position = "absolute";
-    parkingContainer.style.visibility = "hidden";
-    parkingContainer.style.pointerEvents = "none";
-    parkingContainer.style.width = "0";
-    parkingContainer.style.height = "0";
-    parkingContainer.style.overflow = "hidden";
+    // display:none, not visibility:hidden — a visibility:hidden subtree still
+    // participates in layout, so xterm's renderRows reading offsetWidth per row
+    // during addon/term dispose forced a full-document reflow (seconds of jank
+    // on tab switch when a parked terminal is torn down). A display:none
+    // subtree has no layout box: offsetWidth is 0 with zero reflow. Parked
+    // terminals render nothing and refit on re-attach, so losing the layout box
+    // while parked is harmless.
+    parkingContainer.style.display = "none";
     document.body.appendChild(parkingContainer);
   }
   return parkingContainer;
