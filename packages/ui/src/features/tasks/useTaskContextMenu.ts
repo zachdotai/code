@@ -8,6 +8,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
+import { useFileTaskToChannelFeed } from "@posthog/ui/features/canvas/hooks/useFileTaskToChannelFeed";
 import { useExternalAppAction } from "@posthog/ui/features/external-apps/useExternalAppAction";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useRestoreTask } from "@posthog/ui/features/suspension/useRestoreTask";
@@ -35,6 +36,7 @@ export function useTaskContextMenu() {
   );
   const { channels } = useChannels({ enabled: bluebirdEnabled });
   const { fileTask } = useChannelTaskMutations();
+  const { fileTaskToChannelFeed } = useFileTaskToChannelFeed();
 
   const showContextMenu = useCallback(
     async (
@@ -120,9 +122,19 @@ export function useTaskContextMenu() {
           case "add-to-command-center":
             onAddToCommandCenter?.();
             break;
-          case "file-to-channel":
+          case "file-to-channel": {
+            // Two sides make a task "belong" to a channel: the desktop
+            // file-system row (Artifacts / Recents tabs) and the backend
+            // channel feed (the Slack-style thread items). File to both so the
+            // task actually appears in the channel, not just its file browser.
+            const channelName = channels.find(
+              (c) => c.id === intent.channelId,
+            )?.name;
             try {
               await fileTask(intent.channelId, task.id, task.title);
+              if (channelName) {
+                await fileTaskToChannelFeed(channelName, task.id);
+              }
             } catch (error) {
               toast.error("Couldn't file task to channel", {
                 description:
@@ -130,6 +142,7 @@ export function useTaskContextMenu() {
               });
             }
             break;
+          }
           case "external-app": {
             const effectivePath = resolveExternalAppPath(
               worktreePath,
@@ -155,6 +168,7 @@ export function useTaskContextMenu() {
       channels,
       deleteWithConfirm,
       fileTask,
+      fileTaskToChannelFeed,
       restoreTask,
       suspendTask,
       hostClient,
