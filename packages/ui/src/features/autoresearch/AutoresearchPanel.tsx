@@ -1,11 +1,4 @@
-import {
-  ChartLineUp,
-  Export,
-  Pause,
-  Play,
-  Plus,
-  Stop,
-} from "@phosphor-icons/react";
+import { ChartLineUp, Pause, Play, Plus, Stop } from "@phosphor-icons/react";
 import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
 import type {
@@ -21,17 +14,9 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { toast } from "@posthog/ui/primitives/toast";
-import {
-  Badge,
-  Button,
-  Callout,
-  DropdownMenu,
-  Flex,
-  Select,
-  Text,
-} from "@radix-ui/themes";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { MetricCard, useChartTheme } from "@posthog/quill-charts";
+import { Badge, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
+import { useEffect, useMemo, useState } from "react";
 import {
   getConfigOptionByCategory,
   useSessionStore,
@@ -41,7 +26,6 @@ import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
 import { metricNumberFormat, withMetricUnit } from "./metricFormat";
-import { exportRunAsHtml, exportRunAsPng } from "./reportExport";
 import {
   type AutoresearchModelOption,
   stageValueLabel,
@@ -271,36 +255,6 @@ function RunHeader({
           </Badge>
         </Flex>
         <Flex align="center" gap="2" className="shrink-0">
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
-              <Button
-                size="1"
-                variant="soft"
-                color="gray"
-                data-attr="autoresearch-export-trigger"
-              >
-                <Export size={12} /> Export
-              </Button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content size="1">
-              <DropdownMenu.Item
-                data-attr="autoresearch-export-html"
-                onSelect={() => exportRunAsHtml(run)}
-              >
-                HTML file
-              </DropdownMenu.Item>
-              <DropdownMenu.Item
-                data-attr="autoresearch-export-png"
-                onSelect={() => {
-                  void exportRunAsPng(run).catch(() =>
-                    toast.error("Couldn't render the report image"),
-                  );
-                }}
-              >
-                PNG image
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
           {runs.length > 1 && (
             <Select.Root value={run.id} onValueChange={onSelectRun} size="1">
               <Select.Trigger variant="soft" />
@@ -421,70 +375,65 @@ function PendingPermissionNotice({
   );
 }
 
-function RunStats({ run }: { run: AutoresearchRun }) {
+export function RunStats({ run }: { run: AutoresearchRun }) {
   const summary = useMemo(() => summarizeRun(run), [run]);
+  const theme = useChartTheme();
   const unit = run.metricUnit;
+  const iterations = run.iterations;
+  const labels = useMemo(
+    () => iterations.map((iteration) => `iter ${iteration.index}`),
+    [iterations],
+  );
+  const formatMetricValue = (value: number) =>
+    Number.isNaN(value)
+      ? "—"
+      : withMetricUnit(metricNumberFormat.format(value), unit);
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      <StatCard
-        label="Best"
-        value={
-          summary.best ? (
-            <>
-              {withMetricUnit(
-                metricNumberFormat.format(summary.best.value),
-                unit,
-              )}
-              <Text size="1" color="gray">
-                {" "}
-                (iter {summary.best.index})
-              </Text>
-            </>
-          ) : (
-            "—"
-          )
+      <MetricCard
+        title="Best"
+        value={summary.best?.value ?? Number.NaN}
+        data={
+          iterations.length > 0
+            ? iterations.map((iteration) => iteration.bestValue)
+            : undefined
         }
+        labels={labels}
+        theme={theme}
+        formatValue={formatMetricValue}
+        change={null}
+        subtitle={summary.best ? `iter ${summary.best.index}` : undefined}
+        dataAttr="autoresearch-stat-best"
       />
-      <StatCard
-        label="Last"
-        value={
-          summary.last
-            ? withMetricUnit(
-                metricNumberFormat.format(summary.last.value),
-                unit,
-              )
-            : "—"
+      <MetricCard
+        title="Last"
+        value={summary.last?.value ?? Number.NaN}
+        data={
+          iterations.length > 0
+            ? iterations.map((iteration) => iteration.value)
+            : undefined
         }
+        labels={labels}
+        theme={theme}
+        formatValue={formatMetricValue}
+        change={null}
+        dataAttr="autoresearch-stat-last"
       />
-      <StatCard
-        label="Iterations"
-        value={`${summary.iterationCount} / ${run.config.maxIterations}`}
+      <MetricCard
+        title="Iterations"
+        value={summary.iterationCount}
+        formatValue={(value) => `${value} / ${run.config.maxIterations}`}
+        change={null}
+        dataAttr="autoresearch-stat-iterations"
       />
-      <StatCard
-        label="Target"
-        value={
-          run.config.targetValue === null
-            ? "—"
-            : withMetricUnit(
-                metricNumberFormat.format(run.config.targetValue),
-                unit,
-              )
-        }
+      <MetricCard
+        title="Target"
+        value={run.config.targetValue ?? Number.NaN}
+        formatValue={formatMetricValue}
+        change={null}
+        dataAttr="autoresearch-stat-target"
       />
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="rounded-md border border-(--gray-5) bg-(--gray-2) px-3 py-2">
-      <Text as="div" size="1" color="gray">
-        {label}
-      </Text>
-      <Text as="div" size="2" weight="medium" className="tabular-nums">
-        {value}
-      </Text>
     </div>
   );
 }
