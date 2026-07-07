@@ -1,4 +1,11 @@
-import { ChartLineUp, Pause, Play, Plus, Stop } from "@phosphor-icons/react";
+import {
+  ChartLineUp,
+  Export,
+  Pause,
+  Play,
+  Plus,
+  Stop,
+} from "@phosphor-icons/react";
 import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
 import type {
@@ -14,7 +21,16 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { Badge, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
+import { toast } from "@posthog/ui/primitives/toast";
+import {
+  Badge,
+  Button,
+  Callout,
+  DropdownMenu,
+  Flex,
+  Select,
+  Text,
+} from "@radix-ui/themes";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   getConfigOptionByCategory,
@@ -25,6 +41,7 @@ import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
 import { withMetricUnit } from "./metricFormat";
+import { exportRunAsHtml, exportRunAsPng } from "./reportExport";
 import {
   type AutoresearchModelOption,
   stageValueLabel,
@@ -258,6 +275,27 @@ function RunHeader({
           </Badge>
         </Flex>
         <Flex align="center" gap="2" className="shrink-0">
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              <Button size="1" variant="soft" color="gray">
+                <Export size={12} /> Export
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content size="1">
+              <DropdownMenu.Item onSelect={() => exportRunAsHtml(run)}>
+                HTML file
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                onSelect={() => {
+                  void exportRunAsPng(run).catch(() =>
+                    toast.error("Couldn't render the report image"),
+                  );
+                }}
+              >
+                PNG image
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
           {runs.length > 1 && (
             <Select.Root value={run.id} onValueChange={onSelectRun} size="1">
               <Select.Trigger variant="soft" />
