@@ -11,6 +11,7 @@ function makeDir(
   kind:
     | "symlink-shim"
     | "wrapper-shim"
+    | "real-node-wrapper-shim"
     | "foreign-wrapper"
     | "other-symlink"
     | "real-node"
@@ -21,6 +22,8 @@ function makeDir(
   if (kind === "symlink-shim") symlinkSync(EXEC_PATH, node);
   if (kind === "wrapper-shim")
     writeFileSync(node, buildNodeShimScript(EXEC_PATH));
+  if (kind === "real-node-wrapper-shim")
+    writeFileSync(node, buildNodeShimScript(EXEC_PATH, "/usr/local/bin/node"));
   if (kind === "foreign-wrapper")
     writeFileSync(node, buildNodeShimScript("/some/other/app"));
   if (kind === "other-symlink") symlinkSync("/usr/bin/true", node);
@@ -32,13 +35,20 @@ describe("stripElectronNodeShimFromPath", () => {
   it("removes only dirs whose node aliases the executable", () => {
     const symlinkShim = makeDir("symlink-shim");
     const wrapperShim = makeDir("wrapper-shim");
+    const realNodeWrapperShim = makeDir("real-node-wrapper-shim");
     const foreign = makeDir("foreign-wrapper");
     const other = makeDir("other-symlink");
     const real = makeDir("real-node");
     const empty = makeDir("empty");
-    const input = [symlinkShim, wrapperShim, foreign, other, real, empty].join(
-      delimiter,
-    );
+    const input = [
+      symlinkShim,
+      wrapperShim,
+      realNodeWrapperShim,
+      foreign,
+      other,
+      real,
+      empty,
+    ].join(delimiter);
     expect(stripElectronNodeShimFromPath(input, EXEC_PATH)).toBe(
       [foreign, other, real, empty].join(delimiter),
     );

@@ -104,6 +104,14 @@ const mockNodeShim = vi.hoisted(() => ({
 
 vi.mock("./node-shim", () => mockNodeShim);
 
+const mockRealNode = vi.hoisted(() => ({
+  findRealNode: vi.fn(
+    async (): Promise<{ path: string; version: string } | null> => null,
+  ),
+}));
+
+vi.mock("./real-node", () => mockRealNode);
+
 // --- Import after mocks ---
 import type { RegisteredFolder } from "../folders/schemas";
 import { AgentService, buildAutoApproveOutcome } from "./agent";
@@ -374,6 +382,21 @@ describe("AgentService", () => {
       });
 
       expect(mockNodeShim.ensureNodeShim).toHaveBeenCalledTimes(2);
+    });
+
+    it("passes the detected real node through to the shim writer", async () => {
+      mockRealNode.findRealNode.mockResolvedValueOnce({
+        path: "/usr/local/bin/node",
+        version: "v22.1.0",
+      });
+
+      await service.startSession({ ...baseSessionParams, adapter: "codex" });
+
+      expect(mockNodeShim.ensureNodeShim).toHaveBeenCalledWith(
+        expect.any(String),
+        process.execPath,
+        { realNodePath: "/usr/local/bin/node" },
+      );
     });
   });
 

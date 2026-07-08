@@ -100,6 +100,7 @@ import type {
   AgentScopedLogger,
   AgentSleepCoordinator,
 } from "./ports";
+import { findRealNode } from "./real-node";
 import {
   AgentServiceEvent,
   type AgentServiceEvents,
@@ -370,6 +371,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
   private mockNodeReady = false;
+  private nodeShimSetup: Promise<void> | null = null;
   private idleTimeouts = new Map<
     string,
     { handle: ReturnType<typeof setTimeout>; deadline: number }
@@ -761,7 +763,7 @@ If a repository IS genuinely required, attach one in this priority order:
     }
 
     const channel = `agent-event:${taskRunId}`;
-    const mockNodeDir = this.setupMockNodeEnvironment();
+    const mockNodeDir = await this.setupMockNodeEnvironment();
     const proxyUrl = await this.agentAuthAdapter.ensureGatewayProxy(
       credentials.apiHost,
     );
@@ -1596,17 +1598,40 @@ For git operations while detached:
     this.log.info("All agent sessions cleaned up");
   }
 
-  private setupMockNodeEnvironment(): string {
+  private async setupMockNodeEnvironment(): Promise<string> {
     const mockNodeDir = getMockNodeDir();
     if (!this.mockNodeReady) {
-      try {
-        ensureNodeShim(mockNodeDir, process.execPath);
-        this.mockNodeReady = true;
-      } catch (err) {
-        this.log.warn("Failed to setup mock node environment", err);
-      }
+      // Concurrent session starts share one setup; a failed run clears the
+      // memo so the next session retries.
+      this.nodeShimSetup ??= this.runNodeShimSetup(mockNodeDir);
+      await this.nodeShimSetup;
+      this.nodeShimSetup = null;
     }
     return mockNodeDir;
+  }
+
+  private async runNodeShimSetup(mockNodeDir: string): Promise<void> {
+    // findRealNode absorbs its own failures (null → Electron fallback), so
+    // only the shim write can throw, leaving mockNodeReady false to retry.
+    const realNode = await findRealNode({
+      warn: (message, data) => this.log.warn(message, data),
+    });
+    try {
+      ensureNodeShim(mockNodeDir, process.execPath, {
+        realNodePath: realNode?.path,
+      });
+      this.mockNodeReady = true;
+      if (realNode) {
+        this.log.info("node shim prefers detected real node", {
+          path: realNode.path,
+          version: realNode.version,
+        });
+      } else {
+        this.log.info("node shim using Electron run-as-node fallback");
+      }
+    } catch (err) {
+      this.log.warn("Failed to setup mock node environment", err);
+    }
   }
 
   private cancelInFlightMcpToolCalls(session: ManagedSession): void {
