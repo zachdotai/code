@@ -1,3 +1,4 @@
+import type { Adapter } from "@posthog/shared";
 import type { AgentMode } from "../types";
 import type { RemoteMcpServer } from "./schemas";
 
@@ -25,12 +26,15 @@ export interface AgentServerConfig {
   taskId: string;
   runId: string;
   createPr?: boolean;
+  // User-opted auto-publish: push and open a draft PR on completion even for
+  // manual (non-automated-origin) cloud runs. createPr=false still wins.
+  autoPublish?: boolean;
   version?: string;
   mcpServers?: RemoteMcpServer[];
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];
-  runtimeAdapter?: "claude" | "codex";
+  runtimeAdapter?: Adapter;
   model?: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
 }

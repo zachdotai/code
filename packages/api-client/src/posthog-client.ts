@@ -2,6 +2,7 @@ import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type { PermissionMode } from "@posthog/agent/execution-mode";
 import type {
+  Adapter,
   CloudRunSource,
   PrAuthorshipMode,
   SeatData,
@@ -49,6 +50,7 @@ import type {
   DismissalArtefact,
   LineReferenceArtefact,
   NoteArtefact,
+  OrganizationMemberBasic,
   PriorityJudgmentArtefact,
   RepoSelectionArtefact,
   SafetyJudgmentArtefact,
@@ -71,8 +73,11 @@ import type {
   SuggestedReviewersArtefact,
   SuggestedReviewerWriteEntry,
   Task,
+  TaskChannel,
+  TaskMention,
   TaskRun,
   TaskRunArtefact,
+  TaskThreadMessage,
   UserBasic,
 } from "@posthog/shared/domain-types";
 import {
@@ -121,6 +126,8 @@ export type UsageLimitType = "burst" | "sustained" | null;
 
 // Stable message so callers recognize this after a saga reduces the error to a string.
 export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
+
+export const SESSION_LOGS_MAX_PAGE_SIZE = 5000;
 
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
@@ -466,14 +473,13 @@ export interface FinalizedTaskArtifactUpload {
   uploaded_at?: string;
 }
 
-type CloudRuntimeAdapter = "claude" | "codex";
-
 interface CloudRunOptions {
-  adapter?: CloudRuntimeAdapter;
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
+  autoPublish?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: PermissionMode;
@@ -546,6 +552,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.prAuthorshipMode) {
     body.pr_authorship_mode = options.prAuthorshipMode;
+  }
+  if (options?.autoPublish) {
+    body.auto_publish = options.autoPublish;
   }
   if (options?.runSource) {
     body.run_source = options.runSource;
@@ -2118,6 +2127,7 @@ export class PostHogAPIClient {
     createdBy?: number;
     originProduct?: string;
     internal?: boolean;
+    channel?: string;
   }) {
     const teamId = await this.getTeamId();
     const params: Record<string, string | number | boolean> = {
@@ -2138,6 +2148,10 @@ export class PostHogAPIClient {
 
     if (options?.internal) {
       params.internal = true;
+    }
+
+    if (options?.channel) {
+      params.channel = options.channel;
     }
 
     const data = await this.api.get(`/api/projects/{project_id}/tasks/`, {
@@ -2208,6 +2222,10 @@ export class PostHogAPIClient {
         runtime_adapter?: string | null;
         model?: string | null;
         reasoning_effort?: string | null;
+        channel?: string | null;
+        pending_user_message?: string;
+        pending_user_artifact_ids?: string[];
+        auto_publish?: boolean;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -2255,6 +2273,174 @@ export class PostHogAPIClient {
       github_integration: task.github_integration,
       github_user_integration: task.github_user_integration,
     });
+  }
+
+  // Task channels + threads. Not in the generated OpenAPI client yet, so these
+  // go through the raw fetcher like the desktop file-system endpoints above.
+
+  // List backend task channels: all public channels plus the requester's
+  // personal "#me" channel (provisioned lazily server-side on first list).
+  async getTaskChannels(): Promise<TaskChannel[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task channels: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskChannel[];
+  }
+
+  // Resolve-or-create a public channel by name (idempotent server-side).
+  async resolveTaskChannel(name: string): Promise<TaskChannel> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ name }) },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to resolve task channel: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskChannel;
+  }
+
+  // Mentions of the current user across task threads, newest first.
+  async getTaskMentions(options?: { since?: string }): Promise<TaskMention[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_mentions/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options?.since) {
+      url.searchParams.set("since", options.since);
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task mentions: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskMention[];
+  }
+
+  async getTaskThreadMessages(taskId: string): Promise<TaskThreadMessage[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch thread messages: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as TaskThreadMessage[];
+  }
+
+  async createTaskThreadMessage(
+    taskId: string,
+    content: string,
+  ): Promise<TaskThreadMessage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ content }) },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to post thread message: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskThreadMessage;
+  }
+
+  async deleteTaskThreadMessage(
+    taskId: string,
+    messageId: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/${encodeURIComponent(messageId)}/`;
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete thread message: ${response.statusText}`,
+      );
+    }
+  }
+
+  // Forward a thread message into the task's live run. Task author only; the
+  // backend rejects with 400/403 otherwise (surfaced via the error body detail).
+  async sendTaskThreadMessageToAgent(
+    taskId: string,
+    messageId: string,
+  ): Promise<TaskThreadMessage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/${encodeURIComponent(messageId)}/send_to_agent/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({}) },
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      let message = `Failed to send message to agent: ${response.statusText}`;
+      try {
+        const parsed = JSON.parse(errorText) as { detail?: string };
+        if (parsed.detail) message = parsed.detail;
+      } catch {
+        if (errorText) message = errorText;
+      }
+      throw new Error(message);
+    }
+    return (await response.json()) as TaskThreadMessage;
+  }
+
+  // Everyone in the current organization — the pool of taggable teammates for
+  // thread @-mentions. Membership churn is slow, so callers cache aggressively.
+  async listOrganizationMembers(): Promise<OrganizationMemberBasic[]> {
+    const ORG_MEMBERS_MAX_PAGES = 20;
+    const ORG_MEMBERS_PAGE_SIZE = 200;
+    const all: OrganizationMemberBasic[] = [];
+    let urlPath = `/api/organizations/@current/members/?limit=${ORG_MEMBERS_PAGE_SIZE}`;
+    for (let i = 0; i < ORG_MEMBERS_MAX_PAGES; i++) {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url: new URL(`${this.api.baseUrl}${urlPath}`),
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch organization members: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as {
+        results: OrganizationMemberBasic[];
+        next: string | null;
+      };
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `listOrganizationMembers hit MAX_PAGES (${ORG_MEMBERS_MAX_PAGES}); returning partial results`,
+      { returned: all.length },
+    );
+    return all;
   }
 
   async sendRunCommand(
@@ -2699,32 +2885,51 @@ export class PostHogAPIClient {
     runId: string,
     options?: { limit?: number; after?: string },
   ): Promise<StoredLogEntry[]> {
+    const maxEntries = options?.limit ?? SESSION_LOGS_MAX_PAGE_SIZE;
+    const entries: StoredLogEntry[] = [];
     try {
       const teamId = await this.getTeamId();
-      const url = new URL(
-        `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`,
-      );
-      url.searchParams.set("limit", String(options?.limit ?? 5000));
-      if (options?.after) {
-        url.searchParams.set("after", options.after);
-      }
-      const response = await this.api.fetcher.fetch({
-        method: "get",
-        url,
-        path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`,
-      });
-
-      if (!response.ok) {
-        log.warn(
-          `Failed to fetch session logs: ${response.status} ${response.statusText}`,
+      const path = `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`;
+      let offset = 0;
+      while (entries.length < maxEntries) {
+        const url = new URL(`${this.api.baseUrl}${path}`);
+        url.searchParams.set(
+          "limit",
+          String(
+            Math.min(SESSION_LOGS_MAX_PAGE_SIZE, maxEntries - entries.length),
+          ),
         );
-        return [];
-      }
+        if (offset > 0) {
+          url.searchParams.set("offset", String(offset));
+        }
+        if (options?.after) {
+          url.searchParams.set("after", options.after);
+        }
+        const response = await this.api.fetcher.fetch({
+          method: "get",
+          url,
+          path,
+        });
 
-      return (await response.json()) as StoredLogEntry[];
+        if (!response.ok) {
+          log.warn(
+            `Failed to fetch session logs page at offset ${offset}: ${response.status} ${response.statusText}`,
+          );
+          break;
+        }
+
+        const page = (await response.json()) as StoredLogEntry[];
+        entries.push(...page);
+        const hasMore = response.headers.get("X-Has-More") === "true";
+        if (!hasMore || page.length === 0) {
+          break;
+        }
+        offset += page.length;
+      }
+      return entries;
     } catch (err) {
       log.warn("Failed to fetch task run session logs", err);
-      return [];
+      return entries;
     }
   }
 
@@ -4784,6 +4989,60 @@ export class PostHogAPIClient {
       method: "post",
       url,
       path,
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /**
+   * Write a single bundle file on a draft revision. The server accepts
+   * `agent.md` and `skills/<id>/SKILL.md` paths only — tool source / schema
+   * stay read-only this round. Ready / live / archived revisions return 409.
+   */
+  async updateAgentDraftBundleFile(
+    idOrSlug: string,
+    revisionId: string,
+    filePath: string,
+    content: string,
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/file/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({ path: filePath, content }),
+      },
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /**
+   * Bulk-import a set of `.md` files into a draft revision's bundle — the
+   * migration hatch for porting an existing multi-file agent in one paste.
+   * Sets `agent_md` if present and merges `skills[]` by id (adds new ids,
+   * overwrites bodies for existing ids; skills not mentioned are left alone).
+   * Draft-only; ready / live / archived return 409.
+   */
+  async importAgentDraftBundle(
+    idOrSlug: string,
+    revisionId: string,
+    body: {
+      agent_md?: string;
+      skills?: { id: string; description?: string; body: string }[];
+    },
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/import/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify(body),
+      },
     });
     return (await response.json()) as AgentRevision;
   }

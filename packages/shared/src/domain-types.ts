@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Adapter } from "./adapter";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
 
@@ -36,6 +37,12 @@ export interface UserBasic {
   is_email_verified?: boolean | null;
 }
 
+/** One row from the org members list; trimmed to what mention pickers need. */
+export interface OrganizationMemberBasic {
+  id: string;
+  user: UserBasic;
+}
+
 export interface Task {
   id: string;
   task_number: number | null;
@@ -53,7 +60,53 @@ export interface Task {
   json_schema?: Record<string, unknown> | null;
   signal_report?: string | null;
   internal?: boolean;
+  /** Backend channel (tasks product Channel UUID) this task is owned by. */
+  channel?: string | null;
   latest_run?: TaskRun;
+}
+
+/**
+ * A backend task channel — the shared feed a task is kicked off in. Distinct
+ * from the desktop file-system "channel" folders: those carry CONTEXT.md and
+ * artifacts, while this owns the task feed and threads. `personal` is the
+ * user's private "#me" channel.
+ */
+export interface TaskChannel {
+  id: string;
+  name: string;
+  channel_type: "public" | "personal";
+  created_at: string;
+  created_by?: UserBasic | null;
+}
+
+/**
+ * One human message in a task's thread. Thread messages never reach the agent
+ * unless the task author forwards one, which stamps the forwarded_* fields.
+ */
+export interface TaskThreadMessage {
+  id: string;
+  task: string;
+  content: string;
+  created_at: string;
+  author?: UserBasic | null;
+  forwarded_to_agent_at?: string | null;
+  forwarded_by?: UserBasic | null;
+}
+
+/**
+ * One @-mention of the current user in a task's thread, from the backend
+ * mentions index (`/task_mentions/`). Mirrors `TaskMentionDTO`.
+ */
+export interface TaskMention {
+  id: string;
+  message_id: string;
+  task_id: string;
+  task_title: string;
+  channel_id?: string | null;
+  channel_name?: string | null;
+  author?: UserBasic | null;
+  content: string;
+  created_at: string;
 }
 
 export type TaskRunStatus =
@@ -88,7 +141,7 @@ export interface TaskRun {
   task: string; // Task ID
   team: number;
   branch: string | null;
-  runtime_adapter?: "claude" | "codex" | null;
+  runtime_adapter?: Adapter | null;
   model?: string | null;
   reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
   stage?: string | null; // Current stage (e.g., 'research', 'plan', 'build')

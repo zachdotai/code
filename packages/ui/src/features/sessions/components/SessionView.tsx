@@ -92,6 +92,54 @@ interface SessionViewProps {
 const DEFAULT_ERROR_MESSAGE =
   "Failed to resume this session. The working directory may have been deleted. Please start a new session.";
 
+function ConnectingToAgent() {
+  return (
+    <>
+      <Spinner size={28} className="animate-spin text-gray-9" />
+      <Text color="gray" className="text-base">
+        Connecting to agent...
+      </Text>
+    </>
+  );
+}
+
+/** Centers composer-slot content at the chat width (or compact padding). */
+function ComposerWidth({
+  compact,
+  children,
+}: {
+  compact: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Box
+      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
+      style={compact ? undefined : { maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+/**
+ * Input region replacing the composer: `shrink-0` keeps it from being
+ * compressed by the scroller above, and `min-h-0 overflow-y-auto` lets tall
+ * content scroll inside itself.
+ */
+function ComposerSlot({
+  compact,
+  children,
+}: {
+  compact: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Box className="min-h-0 shrink-0 overflow-y-auto">
+      <ComposerWidth compact={compact}>{children}</ComposerWidth>
+    </Box>
+  );
+}
+
 interface CloudStreamDisconnectedBannerProps {
   errorTitle?: string;
   errorMessage?: string;
@@ -192,8 +240,16 @@ export function SessionView({
       isCloud,
       allowBypassPermissions,
       currentModeId,
+      modeOption,
     });
-  }, [allowBypassPermissions, currentModeId, taskId, isCloud, sessionService]);
+  }, [
+    allowBypassPermissions,
+    currentModeId,
+    taskId,
+    isCloud,
+    sessionService,
+    modeOption,
+  ]);
 
   const handleModeChange = useCallback(
     (nextMode: string) => {
@@ -567,28 +623,16 @@ export function SessionView({
                     </Flex>
                   </Flex>
                 ) : hideInput ? null : firstPendingPermission ? (
-                  // This box replaces the composer while a permission is pending, so it's an input
-                  // region: `shrink-0` keeps it from being compressed by the scroller above, and
-                  // `min-h-0 overflow-y-auto` lets a tall permission prompt scroll inside itself.
-                  <Box className="min-h-0 shrink-0 overflow-y-auto">
-                    <Box
-                      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
-                      style={
-                        compact
-                          ? undefined
-                          : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
-                      }
-                    >
-                      <PermissionSelector
-                        toolCall={firstPendingPermission.toolCall}
-                        options={firstPendingPermission.options}
-                        onSelect={handlePermissionSelect}
-                        onCancel={handlePermissionCancel}
-                      />
-                    </Box>
-                  </Box>
+                  <ComposerSlot compact={compact}>
+                    <PermissionSelector
+                      toolCall={firstPendingPermission.toolCall}
+                      options={firstPendingPermission.options}
+                      onSelect={handlePermissionSelect}
+                      onCancel={handlePermissionCancel}
+                    />
+                  </ComposerSlot>
                 ) : (
-                  <Box className="relative">
+                  <Box className="relative shrink-0">
                     <Box
                       className={`absolute inset-0 flex min-h-[66px] items-center justify-center gap-2 transition-opacity duration-200 ${
                         isRunning
@@ -596,10 +640,7 @@ export function SessionView({
                           : "opacity-100"
                       }`}
                     >
-                      <Spinner size={28} className="animate-spin text-gray-9" />
-                      <Text color="gray" className="text-base">
-                        Connecting to agent...
-                      </Text>
+                      <ConnectingToAgent />
                     </Box>
                     <Box
                       className={`transition-all duration-300 ease-out ${
@@ -608,14 +649,7 @@ export function SessionView({
                           : "pointer-events-none translate-y-4 opacity-0"
                       }`}
                     >
-                      <Box
-                        className={compact ? "p-1" : "mx-auto px-2 pb-3"}
-                        style={
-                          compact
-                            ? undefined
-                            : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
-                        }
-                      >
+                      <ComposerWidth compact={compact}>
                         {taskId && <QueuedMessagesDock taskId={taskId} />}
                         <PromptInput
                           ref={editorRef}
@@ -667,7 +701,7 @@ export function SessionView({
                           onBashCommand={onBashCommand}
                           onCancel={onCancelPrompt}
                         />
-                      </Box>
+                      </ComposerWidth>
                     </Box>
                   </Box>
                 )}

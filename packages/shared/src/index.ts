@@ -1,3 +1,4 @@
+export * from "./adapter";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
@@ -75,11 +76,16 @@ export {
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransientUpstreamError,
   NotAuthenticatedError,
   type SerializedError,
   serializeError,
 } from "./errors";
 export type { ExecutionMode } from "./exec-types";
+export {
+  CODEX_MODE_PRESETS,
+  type CodexModePreset,
+} from "./execution-modes";
 export * from "./flags";
 export * from "./git-domain";
 export type {
@@ -116,6 +122,12 @@ export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
 export {
+  formatMention,
+  type MentionSegment,
+  mentionsToPlainText,
+  splitMentionSegments,
+} from "./mentions";
+export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
   OAUTH_SCOPES,
@@ -134,6 +146,13 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
+export {
+  buildPrOutput,
+  mergePrUrls,
+  promotePrUrl,
+  readPrSummaries,
+  readPrUrls,
+} from "./pr-urls";
 export {
   type CloudRegion,
   formatRegionBadge,
@@ -174,7 +193,6 @@ export {
   type UserShellExecuteResult,
 } from "./session-events";
 export {
-  type Adapter,
   type AgentSession,
   cycleModeOption,
   flattenSelectOptions,
@@ -185,7 +203,9 @@ export {
   type OptimisticItem,
   type PermissionRequest,
   type QueuedMessage,
+  resolveBypassRevertMode,
   type SessionStatus,
+  sessionSupportsNativeSteer,
 } from "./sessions";
 export type {
   SignalReportOrderingField,
@@ -218,6 +238,15 @@ export {
   formatRelativeTimeShort,
   getRelativeDateGroup,
 } from "./time";
+export {
+  mcpToolKey,
+  type PosthogToolMeta,
+  parseMcpToolName,
+  posthogToolMeta,
+  readAgentToolName,
+  readMcpToolDescriptor,
+  readMcpToolName,
+} from "./tool-meta";
 export { TypedEventEmitter } from "./typed-event-emitter";
 export { isSafeExternalUrl } from "./url";
 export { getCloudUrlFromRegion } from "./urls";

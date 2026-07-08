@@ -10,11 +10,16 @@ import {
   type TaskService,
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
-import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
+import {
+  type Adapter,
+  ANALYTICS_EVENTS,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
@@ -59,7 +64,7 @@ export interface InboxCloudTaskInputContext {
   cloudRepository: string | null;
   /** Null alongside a null `cloudRepository` (repo-less run). */
   githubUserIntegrationId: string | null;
-  adapter: "claude" | "codex";
+  adapter: Adapter;
   model: string;
   reasoningLevel?: string;
 }
@@ -258,7 +263,7 @@ export function useInboxCloudTaskRunner({
         toast.dismiss(toastId);
         // Usage-limit blocks already show the upgrade modal; don't double-toast.
         if (!isUsageLimitResult(result)) {
-          toast.error(copy.errorTitle, { description: result.error });
+          toastError(copy.errorTitle, result.error);
           log.error("Cloud-task creation failed", {
             failedStep: result.failedStep,
             error: result.error,
@@ -269,9 +274,7 @@ export function useInboxCloudTaskRunner({
       }
     } catch (error) {
       toast.dismiss(toastId);
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error(copy.errorTitle, { description });
+      toastError(copy.errorTitle, error);
       log.error("Unexpected error during cloud-task creation", {
         error,
         reportId,

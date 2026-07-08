@@ -1,5 +1,5 @@
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
-import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
+import type { Adapter, ExecutionMode, WorkspaceMode } from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
   type CollapseMode,
@@ -12,7 +12,7 @@ import { persist } from "zustand/middleware";
 
 export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
-export type AgentAdapter = "claude" | "codex";
+export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
 export type DefaultReasoningEffort =
@@ -150,9 +150,13 @@ interface SettingsStore {
   allowBypassPermissions: boolean;
   preventSleepWhileRunning: boolean;
   debugLogsCloudRuns: boolean;
+  // When on, cloud runs push their work and open a draft PR on completion
+  // without waiting for an explicit ask.
+  autoPublishCloudRuns: boolean;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
+  setAutoPublishCloudRuns: (enabled: boolean) => void;
 
   // Terminal
   terminalFont: TerminalFont;
@@ -172,6 +176,7 @@ interface SettingsStore {
   brainrotMode: boolean;
   mcpAppsDisabledServers: string[];
   downloadUpdatesAutomatically: boolean;
+  dismissibleUpdateBanners: boolean;
   lastSeenChangelogVersion: string | null;
   // Renders the conversation with the new ChatX (quill) primitives instead of
   // the virtualized ConversationView. Local A/B toggle while the rebuild bakes.
@@ -182,6 +187,7 @@ interface SettingsStore {
   setBrainrotMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
   setDownloadUpdatesAutomatically: (enabled: boolean) => void;
+  setDismissibleUpdateBanners: (enabled: boolean) => void;
   setLastSeenChangelogVersion: (version: string | null) => void;
 
   // Onboarding hints
@@ -317,11 +323,14 @@ export const useSettingsStore = create<SettingsStore>()(
       allowBypassPermissions: false,
       preventSleepWhileRunning: false,
       debugLogsCloudRuns: false,
+      autoPublishCloudRuns: true,
       setAllowBypassPermissions: (enabled) =>
         set({ allowBypassPermissions: enabled }),
       setPreventSleepWhileRunning: (enabled) =>
         set({ preventSleepWhileRunning: enabled }),
       setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
+      setAutoPublishCloudRuns: (enabled) =>
+        set({ autoPublishCloudRuns: enabled }),
 
       // Terminal
       terminalFont: "berkeley-mono",
@@ -344,6 +353,7 @@ export const useSettingsStore = create<SettingsStore>()(
       brainrotMode: false,
       mcpAppsDisabledServers: [],
       downloadUpdatesAutomatically: true,
+      dismissibleUpdateBanners: false,
       lastSeenChangelogVersion: null,
       useNewChatThread: false,
       setUseNewChatThread: (enabled) => set({ useNewChatThread: enabled }),
@@ -352,6 +362,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setBrainrotMode: (enabled) => set({ brainrotMode: enabled }),
       setDownloadUpdatesAutomatically: (enabled) =>
         set({ downloadUpdatesAutomatically: enabled }),
+      setDismissibleUpdateBanners: (enabled) =>
+        set({ dismissibleUpdateBanners: enabled }),
       setLastSeenChangelogVersion: (version) =>
         set({ lastSeenChangelogVersion: version }),
       setMcpAppsDisabledServers: (servers) =>
@@ -431,6 +443,7 @@ export const useSettingsStore = create<SettingsStore>()(
         allowBypassPermissions: state.allowBypassPermissions,
         preventSleepWhileRunning: state.preventSleepWhileRunning,
         debugLogsCloudRuns: state.debugLogsCloudRuns,
+        autoPublishCloudRuns: state.autoPublishCloudRuns,
 
         // Terminal
         terminalFont: state.terminalFont,
@@ -446,6 +459,7 @@ export const useSettingsStore = create<SettingsStore>()(
         brainrotMode: state.brainrotMode,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
         downloadUpdatesAutomatically: state.downloadUpdatesAutomatically,
+        dismissibleUpdateBanners: state.dismissibleUpdateBanners,
         lastSeenChangelogVersion: state.lastSeenChangelogVersion,
         useNewChatThread: state.useNewChatThread,
 

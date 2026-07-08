@@ -1,3 +1,4 @@
+import type { Adapter } from "./adapter";
 import type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 import type { Task } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
@@ -29,13 +30,18 @@ export interface TaskCreationInput {
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string;
   sandboxEnvironmentId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
+  /**
+   * When true, the cloud run agent pushes its work and opens a draft PR on
+   * completion without waiting for an explicit ask (Settings → Advanced).
+   */
+  cloudAutoPublish?: boolean;
   signalReportId?: string;
   additionalDirectories?: string[];
   /**
@@ -46,6 +52,8 @@ export interface TaskCreationInput {
   channelContext?: string;
   /** Display name of that channel, embedded in the context block for the UI. */
   channelName?: string;
+  /** Backend channel UUID the created task is owned by (its feed home). */
+  channelId?: string;
   /**
    * The user's saved personalization (Settings → Personalization custom
    * instructions). Cloud-only: local tasks already receive these through the

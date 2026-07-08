@@ -398,6 +398,18 @@ body:has(.rt-DialogOverlay[data-state="open"]) [data-quill-portal] {
   animation: ph-pulse 1s ease-in-out infinite;
 }
 
+/* Freeze CSS keyframe animations while the app window is unfocused or hidden.
+   Perpetual indicators (spinners, pulses, floats) otherwise keep the compositor
+   and GPU busy in the background for animations nobody is looking at — and some,
+   like ph-pulse's color shift, force main-thread repaints every frame. The class
+   is toggled from the renderer focus store (see GlobalEventHandlers). Transitions
+   are unaffected, and animations resume where they left off on refocus. */
+body.ph-window-blurred *,
+body.ph-window-blurred *::before,
+body.ph-window-blurred *::after {
+  animation-play-state: paused !important;
+}
+
 .radix-themes {
   --cursor-button: pointer;
   --cursor-checkbox: pointer;
@@ -853,6 +865,25 @@ body {
   }
 }
 
+/* Resting opacity is 1, so a dropped/stalled animation can never leave the app invisible. */
+.app-fade-in {
+  animation: appFadeIn 0.5s ease-out forwards;
+}
+
+/* The window-blur freeze above pauses every keyframe animation; let this one-shot entrance finish anyway, or a blur mid-fade would strand the app invisible. */
+body.ph-window-blurred .app-fade-in {
+  animation-play-state: running !important;
+}
+
+@keyframes appFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .tree-item-hover:hover {
   background-color: var(--gray-3);
 }
@@ -1237,6 +1268,23 @@ button,
 
 ::highlight(search-match-active) {
   background-color: var(--orange-a8);
+}
+
+/*
+ * @posthog/quill toast — the description carries error summaries which can be
+ * long, unbroken JSON strings (e.g. `{"type":"validation_error",...}`) with no
+ * spaces to wrap at. Quill's `.quill-toast-card__description` sets no
+ * overflow-wrap, so such a token blows past the fixed 360px card. Break
+ * anywhere and clamp to a few lines — the toast is only a summary; the full
+ * payload lives behind the "Details" action.
+ */
+.quill-toast-card__description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /*

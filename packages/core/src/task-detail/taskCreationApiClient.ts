@@ -1,15 +1,20 @@
-import type { CloudRunSource, PrAuthorshipMode } from "@posthog/shared";
+import type {
+  Adapter,
+  CloudRunSource,
+  PrAuthorshipMode,
+} from "@posthog/shared";
 import type { Task, TaskRun } from "@posthog/shared/domain-types";
 
 export interface CreateTaskRunClientOptions {
   environment?: "local" | "cloud";
   mode?: "interactive" | "background";
   branch?: string | null;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
+  autoPublish?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: string;

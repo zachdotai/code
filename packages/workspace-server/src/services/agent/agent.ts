@@ -1,4 +1,4 @@
-import fs, { mkdirSync, symlinkSync } from "node:fs";
+import fs from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
@@ -38,7 +38,11 @@ import {
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
-import { findPrUrl, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
+import {
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
@@ -61,6 +65,7 @@ import {
 } from "@posthog/platform/workspace-settings";
 import {
   type AcpMessage,
+  type Adapter,
   isAuthError,
   serializeError,
   TypedEventEmitter,
@@ -87,6 +92,7 @@ import {
   AGENT_REPO_FILES,
   AGENT_SLEEP_COORDINATOR,
 } from "./identifiers";
+import { ensureNodeShim } from "./node-shim";
 import type {
   AgentLogger,
   AgentMcpApps,
@@ -261,7 +267,7 @@ interface SessionConfig {
   logUrl?: string;
   /** The agent's session ID (for resume - SDK session ID for Claude, Codex's session ID for Codex) */
   sessionId?: string;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   /** Permission mode to use for the session */
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
@@ -284,6 +290,16 @@ interface SessionConfig {
   importedSessionId?: string;
 }
 
+/** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
+function extractSteeringCapability(init: unknown): string | undefined {
+  const steering = (
+    init as {
+      agentCapabilities?: { _meta?: { posthog?: { steering?: unknown } } };
+    }
+  )?.agentCapabilities?._meta?.posthog?.steering;
+  return typeof steering === "string" ? steering : undefined;
+}
+
 interface ManagedSession {
   taskRunId: string;
   taskId: string;
@@ -298,15 +314,19 @@ interface ManagedSession {
   promptPending: boolean;
   pendingContext?: string;
   configOptions?: SessionConfigOption[];
+  /** Adapter's negotiated steering capability from initialize (`_meta.posthog.steering`). */
+  steering?: string;
   /** Tracks in-flight MCP tool calls (toolCallId → toolKey) for cancellation */
   inFlightMcpToolCalls: Map<string, string>;
   /** MCP tool approval states fetched at session start */
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
-  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
-  prAttributed: boolean;
+  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL;
+  // `prAttachChain` serializes attach writes so concurrent fetch-merge-patch
+  // cycles can't drop each other's URLs from the accumulated list.
   evaluatedPrUrls: Set<string>;
+  prAttachChain: Promise<void>;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -340,7 +360,12 @@ interface PendingPermission {
 
 @injectable()
 export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
-  private static readonly IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+  // POSTHOG_CODE_AGENT_IDLE_TIMEOUT_MS overrides for dev/test only — the
+  // memory bench shrinks it to verify idle reclaim in minutes.
+  private static readonly IDLE_TIMEOUT_MS =
+    Number(process.env.POSTHOG_CODE_AGENT_IDLE_TIMEOUT_MS) > 0
+      ? Number(process.env.POSTHOG_CODE_AGENT_IDLE_TIMEOUT_MS)
+      : 15 * 60 * 1000;
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
@@ -409,7 +434,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   }
 
   private getCodexBinaryPath(): string {
-    const binary = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
+    const binary = process.platform === "win32" ? "codex.exe" : "codex";
     return this.bundledResources.resolve(`.vite/build/codex-acp/${binary}`);
   }
 
@@ -586,7 +611,16 @@ When creating pull requests, add the following footer at the end of the PR descr
 \`\`\`
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
-\`\`\``;
+\`\`\`
+
+When you mention a pull request in any reply or summary, always hyperlink it to its full URL (e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain text, so readers can open it directly.
+
+## Shell efficiency
+Optimize for the fewest shell round trips.
+- Batch related commands into one Bash invocation using \`&&\` (e.g. \`npm run typecheck && npm run lint && npm test\`).
+- Emit all independent tool calls in the same response.
+- Read multiple files at once.
+- Never rerun a command solely to reproduce output you already have.`;
 
     if (channelMode) {
       const localFolders = (knownLocalFolders ?? []).filter(
@@ -839,7 +873,7 @@ If a repository IS genuinely required, attach one in this priority order:
         clientStreams,
       );
 
-      await connection.initialize({
+      const initResult = await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: {
           fs: {
@@ -849,6 +883,11 @@ If a repository IS genuinely required, attach one in this priority order:
           terminal: true,
         },
       });
+      // The adapter advertises whether mid-turn steering folds natively into the
+      // running turn (`steering: "native"`) vs needs cancel+resend. Surface it so
+      // the host gates steer-vs-resend on the negotiated capability, not on a
+      // hardcoded adapter name (codex-acp advertises "interrupt-resend").
+      const steering = extractSteeringCapability(initResult);
 
       const {
         servers: mcpServers,
@@ -1054,11 +1093,12 @@ If a repository IS genuinely required, attach one in this priority order:
         config,
         promptPending: false,
         configOptions,
+        steering,
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
-        prAttributed: false,
         evaluatedPrUrls: new Set(),
+        prAttachChain: Promise.resolve(),
       };
 
       this.sessions.set(taskRunId, session);
@@ -1560,19 +1600,7 @@ For git operations while detached:
     const mockNodeDir = getMockNodeDir();
     if (!this.mockNodeReady) {
       try {
-        mkdirSync(mockNodeDir, { recursive: true });
-        const nodeSymlinkPath = join(mockNodeDir, "node");
-        try {
-          symlinkSync(process.execPath, nodeSymlinkPath);
-        } catch (err) {
-          if (
-            !(err instanceof Error) ||
-            !("code" in err) ||
-            err.code !== "EEXIST"
-          ) {
-            throw err;
-          }
-        }
+        ensureNodeShim(mockNodeDir, process.execPath);
         this.mockNodeReady = true;
       } catch (err) {
         this.log.warn("Failed to setup mock node environment", err);
@@ -1859,7 +1887,7 @@ For git operations while detached:
           } = params as {
             taskRunId: string;
             sessionId: string;
-            adapter: "claude" | "codex";
+            adapter: Adapter;
           };
           const session = this.sessions.get(notifTaskRunId);
           if (session) {
@@ -1967,6 +1995,7 @@ For git operations while detached:
       sessionId: session.taskRunId,
       channel: session.channel,
       configOptions: session.configOptions,
+      steering: session.steering,
     };
   }
 
@@ -2018,11 +2047,14 @@ For git operations while detached:
     session: ManagedSession | undefined,
     update: unknown,
   ): void {
-    if (!session || session.prAttributed) return;
-    const prUrl = findPrUrl(JSON.stringify(update));
-    if (!prUrl || session.evaluatedPrUrls.has(prUrl)) return;
-    session.evaluatedPrUrls.add(prUrl);
-    void this.attachPrIfCreatedThisRun(taskRunId, session, prUrl);
+    if (!session) return;
+    for (const prUrl of findPrUrls(JSON.stringify(update))) {
+      if (session.evaluatedPrUrls.has(prUrl)) continue;
+      session.evaluatedPrUrls.add(prUrl);
+      session.prAttachChain = session.prAttachChain
+        .catch(() => {})
+        .then(() => this.attachPrIfCreatedThisRun(taskRunId, session, prUrl));
+    }
   }
 
   private async attachPrIfCreatedThisRun(
@@ -2030,33 +2062,30 @@ For git operations while detached:
     session: ManagedSession,
     prUrl: string,
   ): Promise<void> {
-    if (session.prAttributed) return;
+    const [attribution, ghLogin] = await Promise.all([
+      this.fetchPrAttribution(session.repoPath, prUrl),
+      this.fetchGhLogin(session.repoPath),
+    ]);
+    if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
+    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
 
-    const createdAt = await this.fetchPrCreatedAt(session.repoPath, prUrl);
-    if (!wasCreatedRecently(createdAt, Date.now())) return;
-    // Re-check after the await: another URL may have attributed while we waited.
-    if (session.prAttributed) return;
-
-    session.prAttributed = true;
     this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
 
-    session.agent
-      .attachPullRequestToTask(session.taskId, prUrl)
-      .then(() => {
-        this.log.info("PR URL attached to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-        });
-      })
-      .catch((err) => {
-        this.log.error("Failed to attach PR URL to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-          error: err,
-        });
+    try {
+      await session.agent.attachPullRequestToTask(session.taskId, prUrl);
+      this.log.info("PR URL attached to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
       });
+    } catch (err) {
+      this.log.error("Failed to attach PR URL to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
+        error: err,
+      });
+    }
 
     // The user-initiated PR-creation flow links the current branch to the
     // workspace atomically (see GitService.createPr). PRs created via bash —
@@ -2071,24 +2100,51 @@ For git operations while detached:
     });
   }
 
-  /** PR `createdAt` (ISO) via the GitHub CLI, or null if it can't be resolved. */
-  private async fetchPrCreatedAt(
+  /** PR `createdAt` (ISO) and author login via the GitHub CLI; nulls if unresolvable. */
+  private async fetchPrAttribution(
     cwd: string,
     prUrl: string,
-  ): Promise<string | null> {
+  ): Promise<{ createdAt: string | null; author: string | null }> {
     try {
-      const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
-        cwd,
-        timeoutMs: 10_000,
-      });
-      if (res.exitCode !== 0) return null;
-      return (
-        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      const res = await execGh(
+        ["pr", "view", prUrl, "--json", "createdAt,author"],
+        {
+          cwd,
+          timeoutMs: 10_000,
+        },
       );
+      if (res.exitCode !== 0) return { createdAt: null, author: null };
+      const data = JSON.parse(res.stdout) as {
+        createdAt?: string;
+        author?: { login?: string };
+      };
+      return {
+        createdAt: data.createdAt ?? null,
+        author: data.author?.login ?? null,
+      };
     } catch (err) {
-      this.log.debug("Failed to resolve PR createdAt", { prUrl, error: err });
-      return null;
+      this.log.debug("Failed to resolve PR attribution", { prUrl, error: err });
+      return { createdAt: null, author: null };
     }
+  }
+
+  private ghLoginPromise: Promise<string | null> | null = null;
+
+  private fetchGhLogin(cwd: string): Promise<string | null> {
+    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
+      cwd,
+      timeoutMs: 10_000,
+    })
+      .then((res) => {
+        const login = res.exitCode === 0 ? res.stdout.trim() : "";
+        if (!login) this.ghLoginPromise = null;
+        return login || null;
+      })
+      .catch(() => {
+        this.ghLoginPromise = null;
+        return null;
+      });
+    return this.ghLoginPromise;
   }
 
   /**
@@ -2172,7 +2228,7 @@ For git operations while detached:
 
   async getPreviewConfigOptions(
     apiHost: string,
-    adapter: "claude" | "codex" = "claude",
+    adapter: Adapter = "claude",
   ): Promise<SessionConfigOption[]> {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
     const gatewayModels = await fetchGatewayModels({ gatewayUrl });
