@@ -196,6 +196,7 @@ const DIFF_META: PrStateMeta = {
   color: "var(--amber-11)",
   label: "Has changes",
 };
+const CLOUD_BADGE_META: OriginProductMeta = { Icon: CloudIcon, label: "Cloud" };
 
 function PrStatusIcon({
   prState,
@@ -363,9 +364,7 @@ export function TaskIcon({
         hasDiff={hasDiff}
         size={size}
         provenanceBadge={
-          isCloudTask
-            ? (originProductMeta ?? { Icon: CloudIcon, label: "Cloud" })
-            : undefined
+          isCloudTask ? (originProductMeta ?? CLOUD_BADGE_META) : undefined
         }
         threadUrl={
           isCloudTask && originProductMeta ? slackThreadUrl : undefined
