@@ -253,7 +253,15 @@ function PrStatusIcon({
         weight="fill"
         color="var(--gray-10)"
         className="absolute"
-        style={{ right: -overflow, bottom: -overflow }}
+        style={{
+          // quill's `.quill-button svg:not([class*=size-])` rule forces
+          // descendant svgs to the button's icon size, overriding phosphor's
+          // width/height attributes — inline dimensions keep the badge small.
+          width: badgeSize,
+          height: badgeSize,
+          right: -overflow,
+          bottom: -overflow,
+        }}
       />
     </span>
   );
