@@ -15,6 +15,10 @@
       "types": "./dist/session.d.ts",
       "import": "./dist/session.js"
     },
+    "./acp": {
+      "types": "./dist/acp.d.ts",
+      "import": "./dist/acp.js"
+    },
     "./spawn": {
       "types": "./dist/spawn.d.ts",
       "import": "./dist/spawn.js"

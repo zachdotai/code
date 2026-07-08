@@ -18,6 +18,9 @@ export function getReasoningEffortOptions(
   adapter: Adapter,
   modelId: string,
 ): ReasoningEffortOption[] | null {
+  // The hog/pi adapter doesn't expose a reasoning-effort/thinking-level configOption yet.
+  if (adapter === "hog") return null;
+
   const options =
     adapter === "codex"
       ? getCodexReasoningEffortOptions(modelId)

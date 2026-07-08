@@ -20,7 +20,7 @@ import {
  * invariants + the on-disk edit, never model prose. Opt-in: each arm self-skips
  * unless `POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY` is set (codex also needs the native binary).
  */
-const ADAPTERS: Adapter[] = ["claude", "codex"];
+const ADAPTERS: Adapter[] = ["claude", "codex", "hog"];
 
 const EDIT_PROMPT =
   "Do exactly these steps and nothing else: 1) Read the file target.txt. " +
@@ -31,8 +31,10 @@ const EDIT_PROMPT =
 for (const adapter of ADAPTERS) {
   const skip = E2E.skipReason(adapter);
   const title = `session lifecycle (${adapter})${skip ? ` — SKIPPED (${skip})` : ""}`;
-  // Codex-only; skipped on the claude arm so the gap is visible.
+  // Adapter-specific coverage where the other harnesses do not implement the feature.
   const itCodex = adapter === "codex" ? it : it.skip;
+  const itWithModes = adapter !== "hog" ? it : it.skip;
+  const itNativeSteer = adapter === "codex" || adapter === "hog" ? it : it.skip;
   // Read-only profile only tightens per-turn on macOS + non-cloud (elsewhere the
   // spawn is danger-full-access / no profile), so gate to where it actually applies.
   const itCodexSandbox =
@@ -46,6 +48,7 @@ for (const adapter of ADAPTERS) {
     let repo: string;
     const codexOptions = () =>
       adapter === "codex" ? E2E.codexOptions(repo) : undefined;
+    const hogGateway = () => (adapter === "hog" ? E2E.hogGateway() : undefined);
     const meta = (extra: Record<string, unknown> = {}) => ({
       systemPrompt: "You are a coding assistant in a tiny test repo.",
       model: E2E.model(adapter),
@@ -69,6 +72,7 @@ for (const adapter of ADAPTERS) {
         adapter,
         cwd: repo,
         codexOptions: codexOptions(),
+        hogGateway: hogGateway(),
         meta: meta(),
       });
       sessionId = s.sessionId;
@@ -153,6 +157,7 @@ for (const adapter of ADAPTERS) {
         adapter,
         cwd: repo,
         codexOptions: codexOptions(),
+        hogGateway: hogGateway(),
         meta: meta(),
       });
       try {
@@ -190,37 +195,42 @@ for (const adapter of ADAPTERS) {
       }
     }, 90_000);
 
-    // Cloud host switches mode only via setSessionConfigOption(configId:"mode"), so exercise both arms.
-    it("emits current_mode_update when the mode is switched via setSessionConfigOption", async () => {
-      const s = await openSession({
-        adapter,
-        cwd: repo,
-        codexOptions: codexOptions(),
-        meta: meta(),
-      });
-      try {
-        // codex synthesizes modes; claude exposes a "mode" configOption — pick an alternate value.
-        let value = "read-only";
-        if (adapter === "claude") {
-          const modeOpt = (s.newSession.configOptions ?? []).find(
-            (o) => o.id === "mode",
-          );
-          value =
-            (modeOpt?.options?.find((v) => v.value !== modeOpt.currentValue)
-              ?.value as string) ?? "plan";
-        }
-        await s.conn.setSessionConfigOption({
-          sessionId: s.sessionId,
-          configId: "mode",
-          value,
+    // Cloud host switches mode only via setSessionConfigOption(configId:"mode"), so exercise every harness that exposes a mode picker.
+    itWithModes(
+      "emits current_mode_update when the mode is switched via setSessionConfigOption",
+      async () => {
+        const s = await openSession({
+          adapter,
+          cwd: repo,
+          codexOptions: codexOptions(),
+          hogGateway: hogGateway(),
+          meta: meta(),
         });
-        expect(s.capture.updates("current_mode_update").length).toBeGreaterThan(
-          0,
-        );
-      } finally {
-        await s.cleanup();
-      }
-    }, 60_000);
+        try {
+          // codex synthesizes modes; claude exposes a "mode" configOption — pick an alternate value.
+          let value = "read-only";
+          if (adapter === "claude") {
+            const modeOpt = (s.newSession.configOptions ?? []).find(
+              (o) => o.id === "mode",
+            );
+            value =
+              (modeOpt?.options?.find((v) => v.value !== modeOpt.currentValue)
+                ?.value as string) ?? "plan";
+          }
+          await s.conn.setSessionConfigOption({
+            sessionId: s.sessionId,
+            configId: "mode",
+            value,
+          });
+          expect(
+            s.capture.updates("current_mode_update").length,
+          ).toBeGreaterThan(0);
+        } finally {
+          await s.cleanup();
+        }
+      },
+      60_000,
+    );
 
     // Proves the mode picker isn't cosmetic: read-only maps to an OS-level
     // :read-only profile that blocks the write even though the host auto-approves.
@@ -322,6 +332,7 @@ for (const adapter of ADAPTERS) {
         adapter,
         cwd: repo,
         codexOptions: codexOptions(),
+        hogGateway: hogGateway(),
         meta: meta(),
       });
       try {
@@ -351,6 +362,7 @@ for (const adapter of ADAPTERS) {
         adapter,
         cwd: repo,
         codexOptions: codexOptions(),
+        hogGateway: hogGateway(),
         meta: meta(),
       });
       try {
@@ -377,7 +389,7 @@ for (const adapter of ADAPTERS) {
       }
     }, 120_000);
 
-    itCodex(
+    itNativeSteer(
       "folds a mid-turn prompt into the running turn via steering",
       async () => {
         const s = await openSession({
@@ -431,13 +443,14 @@ for (const adapter of ADAPTERS) {
       120_000,
     );
 
-    itCodex(
+    itNativeSteer(
       "lists the session and forks it",
       async () => {
         const b = openConnection({
           adapter,
           cwd: repo,
           codexOptions: codexOptions(),
+          hogGateway: hogGateway(),
         });
         try {
           await b.conn.initialize(INIT_PARAMS);
@@ -468,6 +481,7 @@ for (const adapter of ADAPTERS) {
         adapter,
         cwd: repo,
         codexOptions: codexOptions(),
+        hogGateway: hogGateway(),
         meta: meta(),
       });
       try {
@@ -509,6 +523,7 @@ for (const adapter of ADAPTERS) {
         adapter,
         cwd: repo,
         codexOptions: codexOptions(),
+        hogGateway: hogGateway(),
       });
       try {
         await b.conn.initialize(INIT_PARAMS);
@@ -530,6 +545,7 @@ for (const adapter of ADAPTERS) {
         adapter,
         cwd: repo,
         codexOptions: codexOptions(),
+        hogGateway: hogGateway(),
       });
       try {
         await b.conn.initialize(INIT_PARAMS);

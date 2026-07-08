@@ -14,6 +14,7 @@ import {
   type SagaLogger,
   type TaskCreationInput,
   type TaskCreationOutput,
+  toCloudAdapter,
   type Workspace,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -391,7 +392,9 @@ export class TaskCreationSaga extends Saga<
           // A cloud run always needs an explicit runtime adapter — the API rejects
           // `initial_permission_mode` unless `runtime_adapter` is set. Callers that don't pick one
           // (e.g. canvas generation) default to claude, matching the local-connect default below.
-          const cloudAdapter = input.adapter ?? "claude";
+          // "hog" (pi) is local-only — the cloud sandbox has no runtime for it, so a
+          // cloud run silently falls back to claude instead of rejecting.
+          const cloudAdapter = toCloudAdapter(input.adapter ?? "claude");
           const taskRun = await this.deps.posthogClient.createTaskRun(task.id, {
             environment: "cloud",
             mode: "interactive",
@@ -674,7 +677,7 @@ export class TaskCreationSaga extends Saga<
       ? this.deps.host.takeWarmTaskLease({
           repository: input.repository,
           branch: input.branch ?? null,
-          runtimeAdapter: input.adapter ?? null,
+          runtimeAdapter: input.adapter ? toCloudAdapter(input.adapter) : null,
           model: input.model ?? null,
           reasoningEffort: input.reasoningLevel ?? null,
         })
@@ -755,7 +758,9 @@ export class TaskCreationSaga extends Saga<
               : undefined,
           runtime_adapter:
             input.workspaceMode === "cloud"
-              ? (input.adapter ?? null)
+              ? input.adapter
+                ? toCloudAdapter(input.adapter)
+                : null
               : undefined,
           model:
             input.workspaceMode === "cloud" ? (input.model ?? null) : undefined,

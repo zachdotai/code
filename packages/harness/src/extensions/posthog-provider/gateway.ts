@@ -16,6 +16,13 @@ export function getLlmGatewayUrl(region: CloudRegion): string {
   return `${getGatewayBaseUrl(region)}/${GATEWAY_PRODUCT}`;
 }
 
+/** Resolves the gateway URL, honoring an explicit override (e.g. for tests or non-standard gateway targets). */
+export function resolveGatewayUrl(
+  options: { region?: CloudRegion; gatewayUrl?: string } = {},
+): string {
+  return options.gatewayUrl ?? getLlmGatewayUrl(resolveRegion(options.region));
+}
+
 /**
  * Returns the region only when one was actually configured (an explicit
  * option or a valid `POSTHOG_REGION`), or `undefined` when the caller should

@@ -55,6 +55,9 @@ export const E2E = {
     if (adapter === "claude") {
       return process.env.POSTHOG_CODE_E2E_CLAUDE_MODEL || "claude-haiku-4-5";
     }
+    if (adapter === "hog") {
+      return process.env.POSTHOG_CODE_E2E_HOG_MODEL || "claude-haiku-4-5";
+    }
     // gpt-5-mini is on the product block list, but that gate is only enforced in
     // Agent.run — the e2e drives createAcpConnection directly, so it's accepted.
     return process.env.POSTHOG_CODE_E2E_CODEX_MODEL || "gpt-5-mini";
@@ -71,6 +74,11 @@ export const E2E = {
         process.env.POSTHOG_CODE_E2E_CLAUDE_STRONG_MODEL || "claude-sonnet-4-5"
       );
     }
+    if (adapter === "hog") {
+      return (
+        process.env.POSTHOG_CODE_E2E_HOG_STRONG_MODEL || "claude-sonnet-4-5"
+      );
+    }
     return process.env.POSTHOG_CODE_E2E_CODEX_STRONG_MODEL || "gpt-5.5";
   },
 
@@ -85,13 +93,21 @@ export const E2E = {
 
   /** Point the adapter at the gateway as the host's `configureEnvironment` does. */
   configureEnv(adapter: Adapter): void {
-    if (adapter === "claude") {
+    if (adapter === "claude" || adapter === "hog") {
       process.env.ANTHROPIC_BASE_URL = GATEWAY_URL;
       process.env.ANTHROPIC_AUTH_TOKEN = TOKEN;
       return;
     }
     process.env.OPENAI_BASE_URL = openAiBase();
     process.env.OPENAI_API_KEY = TOKEN;
+  },
+
+  /** The hogGateway config the hog arm passes through `createAcpConnection`. */
+  hogGateway(): { gatewayUrl: string; apiKey: string } {
+    return {
+      gatewayUrl: GATEWAY_URL,
+      apiKey: TOKEN,
+    };
   },
 
   /** The codexOptions the codex arm passes through `createAcpConnection`. */

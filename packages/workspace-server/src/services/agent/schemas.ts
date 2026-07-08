@@ -2,6 +2,7 @@ import type {
   RequestPermissionRequest,
   PermissionOption as SdkPermissionOption,
 } from "@agentclientprotocol/sdk";
+import { ADAPTER_VALUES } from "@posthog/shared";
 import { effortLevelSchema } from "@posthog/shared/domain-types";
 import { z } from "zod";
 
@@ -25,7 +26,7 @@ export const sessionConfigSchema = z.object({
   logUrl: z.string().optional(),
   /** The agent's session ID (for resume - SDK session ID for Claude, Codex's session ID for Codex) */
   sessionId: z.string().optional(),
-  adapter: z.enum(["claude", "codex"]).optional(),
+  adapter: z.enum(ADAPTER_VALUES).optional(),
   /** Additional directories Claude can access beyond cwd (for worktree support) */
   additionalDirectories: z.array(z.string()).optional(),
   /** Permission mode to use for the session (e.g. "default", "acceptEdits", "plan", "bypassPermissions") */
@@ -51,7 +52,7 @@ export const startSessionInput = z.object({
   permissionMode: z.string().optional(),
   autoProgress: z.boolean().optional(),
   runMode: z.enum(["local", "cloud"]).optional(),
-  adapter: z.enum(["claude", "codex"]).optional(),
+  adapter: z.enum(ADAPTER_VALUES).optional(),
   additionalDirectories: z.array(z.string()).optional(),
   customInstructions: z.string().max(2000).optional(),
   /**
@@ -198,7 +199,7 @@ export const reconnectSessionInput = z.object({
   projectId: z.number(),
   logUrl: z.string().optional(),
   sessionId: z.string().optional(),
-  adapter: z.enum(["claude", "codex"]).optional(),
+  adapter: z.enum(ADAPTER_VALUES).optional(),
   /** Additional directories Claude can access beyond cwd (for worktree support) */
   additionalDirectories: z.array(z.string()).optional(),
   permissionMode: z.string().optional(),
@@ -328,7 +329,7 @@ export const getGatewayModelsOutput = z.array(modelOptionSchema);
 
 export const getPreviewConfigOptionsInput = z.object({
   apiHost: z.string(),
-  adapter: z.enum(["claude", "codex"]),
+  adapter: z.enum(ADAPTER_VALUES),
 });
 
 export const getPreviewConfigOptionsOutput = z.array(sessionConfigOptionSchema);

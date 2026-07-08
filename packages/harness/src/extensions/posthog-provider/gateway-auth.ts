@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getLlmGatewayUrl, resolveRegion } from "./gateway";
+import { resolveGatewayUrl } from "./gateway";
 import { POSTHOG_PROVIDER_NAME, type PosthogProviderOptions } from "./provider";
 
 export interface GatewayAuth {
@@ -24,8 +24,7 @@ export async function resolveGatewayAuth(
   options: PosthogProviderOptions,
   ctx: ExtensionContext,
 ): Promise<GatewayAuth> {
-  const region = resolveRegion(options.region);
-  const baseUrl = getLlmGatewayUrl(region);
+  const baseUrl = resolveGatewayUrl(options);
 
   const apiKey =
     options.apiKey ??

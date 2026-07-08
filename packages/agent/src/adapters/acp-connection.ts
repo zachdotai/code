@@ -13,6 +13,12 @@ import type { GatewayEnv } from "./claude/session/options";
 import { nativeCodexBinaryPath } from "./codex-app-server/binary-path";
 import { CodexAppServerAgent } from "./codex-app-server/codex-app-server-agent";
 import type { CodexOptions } from "./codex-app-server/spawn";
+import { HarnessAcpAgent } from "./harness/harness-agent";
+
+export interface HogGatewayOptions {
+  gatewayUrl?: string;
+  apiKey?: string;
+}
 
 export type AcpConnectionConfig = {
   adapter?: Adapter;
@@ -33,6 +39,8 @@ export type AcpConnectionConfig = {
   enricherEnabled?: boolean;
   /** Explicit gateway config for the Claude adapter — prevents global process.env mutation. */
   claudeGatewayEnv?: GatewayEnv;
+  /** Explicit gateway config for the hog adapter. */
+  hogGateway?: HogGatewayOptions;
 };
 
 export type AcpConnection = {
@@ -58,6 +66,10 @@ export function createAcpConnection(
     return createCodexConnection(config);
   }
 
+  if (adapterType === "hog") {
+    return createHogConnection(config);
+  }
+
   return createClaudeConnection(config);
 }
 
@@ -66,6 +78,86 @@ function resolveEnricherApiConfig(
 ): PostHogAPIConfig | undefined {
   const enabled = !!config.posthogApiConfig && config.enricherEnabled !== false;
   return enabled ? config.posthogApiConfig : undefined;
+}
+
+function createHogConnection(config: AcpConnectionConfig): AcpConnection {
+  const logger =
+    config.logger?.child("HogConnection") ??
+    new Logger({ debug: true, prefix: "[HogConnection]" });
+  const streams = createBidirectionalStreams();
+
+  const { logWriter } = config;
+
+  let agentWritable = streams.agent.writable;
+  let clientWritable = streams.client.writable;
+
+  if (config.taskRunId && logWriter) {
+    if (!logWriter.isRegistered(config.taskRunId)) {
+      logWriter.register(config.taskRunId, {
+        taskId: config.taskId ?? config.taskRunId,
+        runId: config.taskRunId,
+        deviceType: config.deviceType,
+      });
+    }
+
+    const taskRunId = config.taskRunId;
+    agentWritable = createTappedWritableStream(streams.agent.writable, {
+      onMessage: (line) => {
+        logWriter.appendRawLine(taskRunId, line);
+      },
+      logger,
+    });
+
+    clientWritable = createTappedWritableStream(streams.client.writable, {
+      onMessage: (line) => {
+        logWriter.appendRawLine(taskRunId, line);
+      },
+      logger,
+    });
+  } else {
+    logger.info("Tapped streams NOT enabled for Hog", {
+      hasTaskRunId: !!config.taskRunId,
+      hasLogWriter: !!logWriter,
+    });
+  }
+
+  const agentStream = ndJsonStream(agentWritable, streams.agent.readable);
+
+  let agent: HarnessAcpAgent | null = null;
+  const agentConnection = new AgentSideConnection((client) => {
+    agent = new HarnessAcpAgent(client, {
+      allowedModelIds: config.allowedModelIds,
+      gatewayUrl: config.hogGateway?.gatewayUrl,
+      apiKey: config.hogGateway?.apiKey,
+    });
+    return agent;
+  }, agentStream);
+
+  return {
+    agentConnection,
+    clientStreams: {
+      readable: streams.client.readable,
+      writable: clientWritable,
+    },
+    cleanup: async () => {
+      logger.info("Cleaning up Hog connection");
+
+      if (agent) {
+        await agent.closeSession();
+      }
+
+      try {
+        await streams.client.writable.close();
+      } catch {
+        // Stream may already be closed
+      }
+      try {
+        await streams.agent.writable.close();
+      } catch {
+        // Stream may already be closed
+      }
+    },
+  };
 }
 
 function createClaudeConnection(config: AcpConnectionConfig): AcpConnection {

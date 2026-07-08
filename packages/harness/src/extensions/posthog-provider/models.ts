@@ -35,14 +35,21 @@ function detectFamily(model: GatewayModel): ModelFamily {
  * product root.
  */
 export function gatewayBaseUrlForApi(api: string, region: CloudRegion): string {
-  return api === "openai-responses"
-    ? `${getLlmGatewayUrl(region)}/v1`
-    : getLlmGatewayUrl(region);
+  return gatewayBaseUrlForApiWithGatewayUrl(api, getLlmGatewayUrl(region));
+}
+
+export function gatewayBaseUrlForApiWithGatewayUrl(
+  api: string,
+  gatewayUrl: string,
+): string {
+  const normalized = gatewayUrl.replace(/\/+$/, "");
+  return api === "openai-responses" ? `${normalized}/v1` : normalized;
 }
 
 function toModelConfig(
   model: GatewayModel,
   region: CloudRegion,
+  gatewayUrl?: string,
 ): ProviderModelConfig {
   const family = detectFamily(model);
   const name = model.display_name ?? model.id;
@@ -56,7 +63,9 @@ function toModelConfig(
       id: model.id,
       name,
       api: "openai-responses",
-      baseUrl: gatewayBaseUrlForApi("openai-responses", region),
+      baseUrl: gatewayUrl
+        ? gatewayBaseUrlForApiWithGatewayUrl("openai-responses", gatewayUrl)
+        : gatewayBaseUrlForApi("openai-responses", region),
       reasoning: true,
       input,
       cost: ZERO_COST,
@@ -157,18 +166,23 @@ const FALLBACK_GATEWAY_MODELS: GatewayModel[] = [
 
 export function fallbackModelConfigs(
   region: CloudRegion,
+  gatewayUrl?: string,
 ): ProviderModelConfig[] {
-  return FALLBACK_GATEWAY_MODELS.map((model) => toModelConfig(model, region));
+  return FALLBACK_GATEWAY_MODELS.map((model) =>
+    toModelConfig(model, region, gatewayUrl),
+  );
 }
 
 async function fetchGatewayModels(
   region: CloudRegion,
+  gatewayUrl?: string,
 ): Promise<GatewayModel[]> {
   if (process.env.PI_OFFLINE || process.env.HARNESS_STATIC_MODELS) {
     return [];
   }
   try {
-    const response = await fetch(`${getLlmGatewayUrl(region)}/v1/models`, {
+    const baseUrl = gatewayUrl?.replace(/\/+$/, "") ?? getLlmGatewayUrl(region);
+    const response = await fetch(`${baseUrl}/v1/models`, {
       signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -183,12 +197,13 @@ async function fetchGatewayModels(
 
 export async function resolveModelConfigs(
   region: CloudRegion,
+  gatewayUrl?: string,
 ): Promise<ProviderModelConfig[]> {
-  const live = await fetchGatewayModels(region);
+  const live = await fetchGatewayModels(region, gatewayUrl);
   if (live.length === 0) {
-    return fallbackModelConfigs(region);
+    return fallbackModelConfigs(region, gatewayUrl);
   }
   return live
     .filter((model) => Boolean(model.id))
-    .map((model) => toModelConfig(model, region));
+    .map((model) => toModelConfig(model, region, gatewayUrl));
 }

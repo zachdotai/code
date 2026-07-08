@@ -9,7 +9,7 @@ import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
-import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { ANALYTICS_EVENTS, toCloudAdapter } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
@@ -649,7 +649,9 @@ export function TaskInput({
     githubIntegrationId: orgGithubIntegrationId,
     branch: workspaceMode === "cloud" ? selectedBranch : null,
     editorIsEmpty,
-    runtimeAdapter: adapter ?? null,
+    // Warm-task pre-provisioning always targets the cloud sandbox; "hog" (pi)
+    // is local-only, so it falls back to claude like other cloud call sites.
+    runtimeAdapter: adapter ? toCloudAdapter(adapter) : null,
     model: effectiveModel,
     reasoningEffort: effectiveReasoningLevel,
   });

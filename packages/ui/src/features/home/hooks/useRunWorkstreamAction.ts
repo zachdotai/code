@@ -11,6 +11,7 @@ import {
   ANALYTICS_EVENTS,
   getCloudUrlFromRegion,
   type TaskCreationInput,
+  toCloudAdapter,
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { homeKeys } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
@@ -102,7 +103,8 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
           // then the adapter's server default. The preferred candidate is only
           // honoured if the gateway still offers it (the resolver validates it),
           // so a stale persisted/pinned id can't reach the run and 403.
-          const adapter = action.adapter ?? lastUsedAdapter;
+          // Workstream quick actions run in the cloud only — "hog" (pi) is local-only.
+          const adapter = toCloudAdapter(action.adapter ?? lastUsedAdapter);
           const preferredModel = action.model ?? lastUsedModel ?? undefined;
           let model = preferredModel;
           if (cloudRegion) {

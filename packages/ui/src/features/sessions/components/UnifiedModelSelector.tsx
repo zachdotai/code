@@ -6,6 +6,7 @@ import {
   ArrowsClockwise,
   CaretDown,
   Cpu,
+  Flask,
   Robot,
   Spinner,
 } from "@phosphor-icons/react";
@@ -28,15 +29,20 @@ import { Fragment, useMemo, useRef, useState } from "react";
 const ADAPTER_ICONS: Record<AgentAdapter, React.ReactNode> = {
   claude: <Robot size={14} weight="regular" />,
   codex: <Cpu size={14} weight="regular" />,
+  hog: <Flask size={14} weight="regular" />,
 };
 
 const ADAPTER_LABELS: Record<AgentAdapter, string> = {
   claude: "Claude Code",
   codex: "Codex",
+  hog: "Hog",
 };
 
+const ADAPTER_CYCLE: AgentAdapter[] = ["claude", "codex", "hog"];
+
 function getOtherAdapter(adapter: AgentAdapter): AgentAdapter {
-  return adapter === "claude" ? "codex" : "claude";
+  const index = ADAPTER_CYCLE.indexOf(adapter);
+  return ADAPTER_CYCLE[(index + 1) % ADAPTER_CYCLE.length];
 }
 
 interface UnifiedModelSelectorProps {

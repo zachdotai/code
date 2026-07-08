@@ -950,9 +950,10 @@ If a repository IS genuinely required, attach one in this priority order:
 
       // Imported Claude Code CLI session: the transcript JSONL was copied
       // into CLAUDE_CONFIG_DIR at import time, so load it directly and let
-      // the adapter replay its history to the client. On failure, fall
+      // the adapter replay its history to the client. Claude-only (Codex and
+      // the hog/pi adapter have their own session stores). On failure, fall
       // through to a fresh session so the task still starts.
-      if (!isReconnect && config.importedSessionId && adapter !== "codex") {
+      if (!isReconnect && config.importedSessionId && adapter === "claude") {
         const importedSessionId = config.importedSessionId;
         try {
           const loadResponse = await connection.loadSession({
@@ -998,7 +999,8 @@ If a repository IS genuinely required, attach one in this priority order:
       if (isReconnect && config.sessionId) {
         const existingSessionId = config.sessionId;
 
-        if (adapter !== "codex") {
+        // Claude-only: hydrates the Claude SDK's own JSONL session store.
+        if (adapter === "claude") {
           const posthogAPI = agent.getPosthogAPI();
           if (posthogAPI) {
             const hasSession = await hydrateSessionJsonl({
@@ -2235,12 +2237,18 @@ For git operations while detached:
 
     // The Claude adapter can also drive Cloudflare `@cf/` models the gateway serves over its
     // Anthropic-Messages surface, so the preview/default-model path must offer them too — otherwise an
-    // advertised `@cf/*` model is dropped here and the pre-session run falls back to Opus.
+    // advertised `@cf/*` model is dropped here and the pre-session run falls back to Opus. The hog/pi
+    // adapter routes both Anthropic and OpenAI models through the gateway, so it offers the full catalogue.
     const modelFilter =
       adapter === "codex"
         ? isOpenAIModel
-        : (model: GatewayModel) =>
-            isAnthropicModel(model) || isCloudflareModel(model);
+        : adapter === "hog"
+          ? (model: GatewayModel) =>
+              isAnthropicModel(model) ||
+              isCloudflareModel(model) ||
+              isOpenAIModel(model)
+          : (model: GatewayModel) =>
+              isAnthropicModel(model) || isCloudflareModel(model);
 
     const modelOptions = gatewayModels
       .filter((model) => modelFilter(model))
@@ -2250,10 +2258,10 @@ For git operations while detached:
         description: `Context: ${model.context_window.toLocaleString()} tokens`,
       }));
 
-    // The gateway returns models in an arbitrary order. Sort Claude models
-    // oldest-to-newest so the picker is deterministic and the newest model
-    // lands at the end of the list, closest to the trigger.
-    if (adapter === "claude") {
+    // The gateway returns models in an arbitrary order. Sort Claude and hog
+    // models oldest-to-newest so the picker is deterministic and the newest
+    // model lands at the end of the list, closest to the trigger.
+    if (adapter !== "codex") {
       modelOptions.sort(
         (a, b) =>
           getClaudeModelRecency(a.value) - getClaudeModelRecency(b.value),
@@ -2279,17 +2287,20 @@ For git operations while detached:
       });
     }
 
-    const modes =
-      adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
-    const modeOptions = modes.map((mode) => ({
-      value: mode.id,
-      name: mode.name,
-      description: mode.description ?? undefined,
-    }));
-    const defaultMode = adapter === "codex" ? "auto" : "plan";
+    const configOptions: SessionConfigOption[] = [];
 
-    const configOptions: SessionConfigOption[] = [
-      {
+    // The hog/pi adapter has no execution-mode picker yet — only the model
+    // picker. The UI hides unset option categories gracefully.
+    if (adapter !== "hog") {
+      const modes =
+        adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
+      const modeOptions = modes.map((mode) => ({
+        value: mode.id,
+        name: mode.name,
+        description: mode.description ?? undefined,
+      }));
+      const defaultMode = adapter === "codex" ? "auto" : "plan";
+      configOptions.push({
         id: "mode",
         name: "Approval Preset",
         type: "select",
@@ -2298,17 +2309,18 @@ For git operations while detached:
         category: "mode",
         description:
           "Choose an approval and sandboxing preset for your session",
-      },
-      {
-        id: "model",
-        name: "Model",
-        type: "select",
-        currentValue: resolvedModelId,
-        options: modelOptions,
-        category: "model",
-        description: "Choose which model Claude should use",
-      },
-    ];
+      });
+    }
+
+    configOptions.push({
+      id: "model",
+      name: "Model",
+      type: "select",
+      currentValue: resolvedModelId,
+      options: modelOptions,
+      category: "model",
+      description: "Choose which model the agent should use",
+    });
 
     const effortOpts = getReasoningEffortOptions(adapter, resolvedModelId);
     if (effortOpts) {

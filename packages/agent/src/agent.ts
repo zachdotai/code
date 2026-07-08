@@ -106,13 +106,30 @@ export class Agent {
           ? DEFAULT_CODEX_MODEL
           : codexModelIds[0];
       }
+    } else if (options.adapter === "hog" && gatewayConfig) {
+      const models = await fetchModelsList({
+        gatewayUrl: gatewayConfig.gatewayUrl,
+      });
+      const hogModelIds = models
+        .filter((model) => !isBlockedModelId(model.id))
+        .map((model) => model.id);
+
+      if (hogModelIds.length > 0) {
+        allowedModelIds = new Set(hogModelIds);
+      }
+
+      if (!sanitizedModel || !allowedModelIds?.has(sanitizedModel)) {
+        sanitizedModel = hogModelIds.includes(DEFAULT_GATEWAY_MODEL)
+          ? DEFAULT_GATEWAY_MODEL
+          : hogModelIds[0];
+      }
     }
     if (!sanitizedModel && options.adapter !== "codex") {
       sanitizedModel = DEFAULT_GATEWAY_MODEL;
     }
 
     const claudeGatewayEnv: GatewayEnv | undefined =
-      options.adapter !== "codex" && gatewayConfig
+      options.adapter === "claude" && gatewayConfig
         ? {
             anthropicBaseUrl: gatewayConfig.gatewayUrl,
             anthropicAuthToken: gatewayConfig.apiKey,
@@ -146,6 +163,13 @@ export class Agent {
               reasoningEffort: options.reasoningEffort,
               developerInstructions: options.developerInstructions,
               additionalDirectories: options.additionalDirectories,
+            }
+          : undefined,
+      hogGateway:
+        options.adapter === "hog" && gatewayConfig
+          ? {
+              gatewayUrl: gatewayConfig.gatewayUrl,
+              apiKey: gatewayConfig.apiKey,
             }
           : undefined,
     });

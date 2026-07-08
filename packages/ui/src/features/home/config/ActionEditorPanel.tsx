@@ -5,6 +5,7 @@ import {
   type WorkflowAction,
 } from "@posthog/core/workflow/schemas";
 import { Button } from "@posthog/quill";
+import { toCloudAdapter } from "@posthog/shared";
 import { useSkillsForPicker } from "@posthog/ui/features/home/hooks/useSkillsForPicker";
 import { useWorkflowEditorStore } from "@posthog/ui/features/home/stores/workflowEditorStore";
 import { UnifiedModelSelector } from "@posthog/ui/features/sessions/components/UnifiedModelSelector";
@@ -49,7 +50,8 @@ export function ActionEditorPanel({
   const selectedSkill = skills.find((s) => s.name === action.skillId) ?? null;
 
   const lastUsedAdapter = useSettingsStore((s) => s.lastUsedAdapter);
-  const adapterForModel = action.adapter ?? lastUsedAdapter;
+  // Home quick actions run in the cloud only — "hog" (pi) is local-only.
+  const adapterForModel = toCloudAdapter(action.adapter ?? lastUsedAdapter);
   const { modelOption, isLoading: modelLoading } =
     usePreviewConfig(adapterForModel);
   // Show the action's pinned model in the picker, else the adapter's default.
@@ -176,7 +178,9 @@ export function ActionEditorPanel({
               <UnifiedModelSelector
                 modelOption={effectiveModelOption}
                 adapter={adapterForModel}
-                onAdapterChange={(a) => patch({ adapter: a, model: undefined })}
+                onAdapterChange={(a) =>
+                  patch({ adapter: toCloudAdapter(a), model: undefined })
+                }
                 onModelChange={(m) =>
                   patch({ model: m, adapter: adapterForModel })
                 }

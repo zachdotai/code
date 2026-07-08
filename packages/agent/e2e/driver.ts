@@ -86,6 +86,7 @@ export function openConnection(opts: {
   adapter: Adapter;
   cwd: string;
   codexOptions?: Record<string, unknown>;
+  hogGateway?: { gatewayUrl: string; apiKey: string };
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
 }): E2EConnection {
   const { adapter, cwd } = opts;
@@ -142,6 +143,7 @@ export function openConnection(opts: {
   const acp = createAcpConnection({
     adapter,
     codexOptions: opts.codexOptions as any,
+    hogGateway: opts.hogGateway,
     onStructuredOutput: opts.onStructuredOutput,
     logger,
   });
@@ -196,6 +198,7 @@ export async function openSession(opts: {
   adapter: Adapter;
   cwd: string;
   codexOptions?: Record<string, unknown>;
+  hogGateway?: { gatewayUrl: string; apiKey: string };
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   meta: Record<string, unknown>;
 }): Promise<OpenSession> {

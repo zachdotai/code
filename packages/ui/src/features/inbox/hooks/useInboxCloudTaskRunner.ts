@@ -14,6 +14,7 @@ import {
   type Adapter,
   ANALYTICS_EVENTS,
   getCloudUrlFromRegion,
+  toCloudAdapter,
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
@@ -163,7 +164,8 @@ export function useInboxCloudTaskRunner({
     const toastId = toast.loading(copy.loadingTitle, reportTitle ?? undefined);
 
     const settings = useSettingsStore.getState();
-    const adapter = settings.lastUsedAdapter ?? "claude";
+    // Inbox report agents run in the cloud only — "hog" (pi) is local-only.
+    const adapter = toCloudAdapter(settings.lastUsedAdapter ?? "claude");
     const apiHost = getCloudUrlFromRegion(cloudRegion);
 
     // Pass the persisted model as a *preference*, not a hard selection: the

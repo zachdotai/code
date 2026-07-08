@@ -5,6 +5,7 @@ export default defineConfig({
   entry: [
     "src/cli.ts",
     "src/session.ts",
+    "src/acp.ts",
     "src/spawn.ts",
     "src/extensions/registry.ts",
     "src/extensions/hog-branding/extension.ts",

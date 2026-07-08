@@ -11,7 +11,11 @@ import {
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
-import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
+import {
+  ANALYTICS_EVENTS,
+  getCloudUrlFromRegion,
+  toCloudAdapter,
+} from "@posthog/shared";
 import { SELF_DRIVING_SETUP_TASK_FLAG } from "@posthog/shared/constants";
 import { useTrackAgentsViewed } from "@posthog/ui/features/agents/hooks/useTrackAgentsViewed";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -300,7 +304,8 @@ function SetupTaskSection() {
 
     try {
       const settings = useSettingsStore.getState();
-      const adapter = settings.lastUsedAdapter ?? "claude";
+      // Self-driving setup runs in the cloud only — "hog" (pi) is local-only.
+      const adapter = toCloudAdapter(settings.lastUsedAdapter ?? "claude");
       const apiHost = getCloudUrlFromRegion(cloudRegion);
       const resolvedModel = await resolveDefaultModel(
         queryClient,

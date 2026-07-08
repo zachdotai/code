@@ -1,5 +1,10 @@
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
-import type { Adapter, ExecutionMode, WorkspaceMode } from "@posthog/shared";
+import {
+  ADAPTER_VALUES,
+  type Adapter,
+  type ExecutionMode,
+  type WorkspaceMode,
+} from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
   type CollapseMode,
@@ -486,6 +491,13 @@ export const useSettingsStore = create<SettingsStore>()(
           (!merged.customSounds || merged.customSounds.length === 0)
         ) {
           (merged as Record<string, unknown>).completionSound = "none";
+        }
+        // A dev build persisted the pre-rename "harness" adapter id (now "hog") or
+        // some other stale value — fall back rather than shipping an invalid
+        // adapter to the workspace-server (which rejects anything outside
+        // ADAPTER_VALUES).
+        if (!ADAPTER_VALUES.includes(merged.lastUsedAdapter as Adapter)) {
+          merged.lastUsedAdapter = "claude";
         }
         return merged;
       },

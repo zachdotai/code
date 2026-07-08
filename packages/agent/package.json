@@ -146,6 +146,7 @@
     "jsonwebtoken": "^9.0.2",
     "minimatch": "^10.0.3",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@posthog/harness": "workspace:*",
     "tar": "^7.5.0",
     "uuid": "13.0.0",
     "yoga-wasm-web": "^0.3.3",

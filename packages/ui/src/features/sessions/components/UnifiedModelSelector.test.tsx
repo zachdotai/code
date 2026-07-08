@@ -112,17 +112,30 @@ describe("UnifiedModelSelector", () => {
     );
   });
 
-  it("switches adapter via the 'Switch to Claude' item", async () => {
+  it("switches adapter via the 'Switch to Hog' item (codex -> hog in the 3-way cycle)", async () => {
     const user = userEvent.setup();
     const onAdapterChange = vi.fn();
     renderSelector({ onAdapterChange });
 
     await user.click(screen.getByRole("button", { name: "Model" }));
     await user.click(
-      await screen.findByRole("menuitem", { name: /switch to claude/i }),
+      await screen.findByRole("menuitem", { name: /switch to hog/i }),
     );
 
-    expect(onAdapterChange).toHaveBeenCalledExactlyOnceWith("claude");
+    expect(onAdapterChange).toHaveBeenCalledExactlyOnceWith("hog");
+  });
+
+  it("cycles claude -> codex -> hog -> claude", async () => {
+    const user = userEvent.setup();
+    const onAdapterChange = vi.fn();
+    renderSelector({ adapter: "claude", onAdapterChange });
+
+    await user.click(screen.getByRole("button", { name: "Model" }));
+    await user.click(
+      await screen.findByRole("menuitem", { name: /switch to codex/i }),
+    );
+
+    expect(onAdapterChange).toHaveBeenCalledExactlyOnceWith("codex");
   });
 
   it("renders a disabled loading button with no menu while connecting", () => {

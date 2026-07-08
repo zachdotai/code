@@ -136,12 +136,24 @@ export class AuthProxyService {
       "anthropic-auth-token",
       "proxy-authorization",
     ]);
+    // Framing headers describe the incoming request's body, which we
+    // discard and re-buffer ourselves below (`Buffer.concat(chunks)`).
+    // Forwarding a stale `content-length` (e.g. a client that computed it
+    // from a JS string's UTF-16 length instead of its UTF-8 byte length)
+    // makes undici reject the re-sent request with
+    // "invalid content-length header". Let fetch compute framing headers
+    // fresh from the buffer we actually send.
+    const strippedFramingHeaders = new Set([
+      "content-length",
+      "transfer-encoding",
+    ]);
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(req.headers)) {
       if (
         key === "host" ||
         key === "connection" ||
-        strippedAuthHeaders.has(key)
+        strippedAuthHeaders.has(key) ||
+        strippedFramingHeaders.has(key)
       ) {
         continue;
       }
