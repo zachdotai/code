@@ -1686,6 +1686,8 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
       if (this.session) {
@@ -1837,6 +1839,8 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
       if (this.session) {
@@ -2895,6 +2899,25 @@ ${signedCommitInstructions}
     }
   }
 
+  /**
+   * Ends the run's telemetry (root span + final flush) at the in-sandbox
+   * terminal point of a background run. Sandbox teardown cannot be relied on
+   * for this: agent-server is an exec'd process inside the sandbox, so
+   * `docker stop` signals only the container's PID 1 and Modal terminate is
+   * immediate — the SIGTERM handler (and thus cleanupSession) never runs, and
+   * an unended root span would never export. Once the background prompt
+   * settles the run is over in-sandbox; the workflow marks the terminal
+   * status and destroys the sandbox right after.
+   */
+  private async finalizeRunTelemetry(payload: JwtPayload): Promise<void> {
+    if (this.getEffectiveMode(payload) !== "background") return;
+    try {
+      await this.session?.telemetry?.shutdown();
+    } catch (error) {
+      this.logger.debug("Failed to finalize run telemetry", error);
+    }
+  }
+
   private async signalTaskComplete(
     payload: JwtPayload,
     stopReason: string,
@@ -2939,9 +2962,11 @@ ${signedCommitInstructions}
       this.logger.error("Failed to signal task completion", error);
     } finally {
       await this.eventStreamSender?.stop();
-      // The sandbox can be torn down right after the failed status lands;
-      // don't leave the terminal record sitting in the OTel batch queue.
-      await this.session?.telemetry?.flush().catch(() => {});
+      // The run is terminal and the sandbox is torn down right after — and
+      // teardown kills this exec'd process without SIGTERM, so this is the
+      // last chance to end the root span and drain the OTel queues. The
+      // error mirror was appended above, so the root span exports as ERROR.
+      await this.session?.telemetry?.shutdown().catch(() => {});
     }
   }
 
