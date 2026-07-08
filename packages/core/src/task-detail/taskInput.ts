@@ -1,5 +1,9 @@
 import { buildCloudTaskDescription } from "@posthog/core/editor/cloud-prompt";
-import type { TaskCreationInput, WorkspaceMode } from "@posthog/shared";
+import type {
+  Adapter,
+  TaskCreationInput,
+  WorkspaceMode,
+} from "@posthog/shared";
 import type { ExecutionMode } from "@posthog/shared/domain-types";
 
 export interface PrepareTaskInputOptions {
@@ -12,7 +16,7 @@ export interface PrepareTaskInputOptions {
   allowRemoteBranchCheckout?: boolean;
   reuseExistingWorktree?: boolean;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
@@ -23,6 +27,7 @@ export interface PrepareTaskInputOptions {
   channelName?: string;
   channelId?: string;
   customInstructions?: string;
+  autoPublishCloudRuns?: boolean;
   allowNoRepo?: boolean;
 }
 
@@ -56,6 +61,7 @@ export function prepareTaskInput(
       options.signalReportId && isCloud ? "user" : undefined,
     cloudRunSource:
       options.signalReportId && isCloud ? "signal_report" : undefined,
+    cloudAutoPublish: isCloud ? options.autoPublishCloudRuns : undefined,
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,

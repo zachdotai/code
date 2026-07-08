@@ -17,10 +17,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  InputGroup,
   InputGroupAddon,
   InputGroupButton,
-  InputGroupTextarea,
   Spinner,
   ThreadItem,
   ThreadItemAction,
@@ -34,12 +32,20 @@ import {
   ThreadItemTimestamp,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
-import type { Task, TaskThreadMessage } from "@posthog/shared/domain-types";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import type {
+  Task,
+  TaskThreadMessage,
+  UserBasic,
+} from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
+import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
+import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
+import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
   useTaskThread,
   useTaskThreadMutations,
@@ -57,14 +63,16 @@ import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSess
 import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 function ThreadMessageRow({
   message,
   isTaskAuthor,
   isOwnMessage,
+  currentUserEmail,
   canForward,
   onSendToAgent,
   onDelete,
@@ -73,6 +81,7 @@ function ThreadMessageRow({
   /** Whether the current user authored the task (may forward to the agent). */
   isTaskAuthor: boolean;
   isOwnMessage: boolean;
+  currentUserEmail?: string | null;
   canForward: boolean;
   onSendToAgent: () => void;
   onDelete: () => void;
@@ -94,7 +103,12 @@ function ThreadMessageRow({
             {formatRelativeTimeShort(message.created_at)}
           </ThreadItemTimestamp>
         </ThreadItemHeader>
-        <ThreadItemBody>{message.content}</ThreadItemBody>
+        <ThreadItemBody>
+          <MentionText
+            content={message.content}
+            currentUserEmail={currentUserEmail}
+          />
+        </ThreadItemBody>
         {forwarded && (
           <Badge variant="info" className="w-fit">
             <RobotIcon size={10} />
@@ -357,6 +371,7 @@ function ThreadConversation({
     isPosting,
     isSendingToAgent,
   } = useTaskThreadMutations(taskId);
+  const { members } = useOrgMembers();
 
   // Live agent session — keep it connected while the panel is open so the
   // agent's status streams in alongside the human thread.
@@ -446,6 +461,18 @@ function ThreadConversation({
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleMentionInsert = useCallback(
+    (member: UserBasic) => {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "mention_member",
+        surface: "thread_panel",
+        task_id: taskId,
+        mentioned_user_id: member.uuid,
+      });
+    },
+    [taskId],
+  );
 
   // Keep the newest content in view, Slack-style.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new content
@@ -566,6 +593,7 @@ function ThreadConversation({
                   !!currentUser?.uuid &&
                   currentUser.uuid === entry.message.author?.uuid
                 }
+                currentUserEmail={currentUser?.email}
                 canForward={canForward}
                 onSendToAgent={() => handleSendToAgent(entry.message.id)}
                 onDelete={() => handleDelete(entry.message.id)}
@@ -585,20 +613,16 @@ function ThreadConversation({
       </div>
 
       <div className="border-border border-t p-2">
-        <InputGroup className="h-auto cursor-text bg-card">
-          <InputGroupTextarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder="Reply in thread…"
-            rows={2}
-            className="max-h-40 text-[13px]"
-          />
+        <MentionComposer
+          value={draft}
+          onValueChange={setDraft}
+          onSubmit={submit}
+          members={members}
+          onMentionInsert={handleMentionInsert}
+          placeholder="Reply in thread… @ to tag a teammate"
+          rows={2}
+          textareaClassName="max-h-40 text-[13px]"
+        >
           <InputGroupAddon align="block-end" className="p-1">
             <span className="ml-auto flex items-center gap-1">
               <InputGroupButton
@@ -612,7 +636,7 @@ function ThreadConversation({
               </InputGroupButton>
             </span>
           </InputGroupAddon>
-        </InputGroup>
+        </MentionComposer>
       </div>
     </div>
   );

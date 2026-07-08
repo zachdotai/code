@@ -16,6 +16,12 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
+import {
+  type Adapter,
+  buildPrOutput,
+  mergePrUrls,
+  readPrUrls,
+} from "@posthog/shared";
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -44,7 +50,11 @@ import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
-import { findPrUrl, wasCreatedRecently } from "../pr-url-detector";
+import {
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "../pr-url-detector";
 import {
   formatConversationForResume,
   type ResumeState,
@@ -315,6 +325,11 @@ export class AgentServer {
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
   private nativeResume: { sessionId: string; warm: boolean } | null = null;
+  // Prewarmed runs boot before the user's first message exists, so the boot-time
+  // --autoPublish flag can't carry the user's choice; it is resolved from run
+  // state when the first message arrives (see resolveWarmAutoPublishUpgrade).
+  private prewarmedRun = false;
+  private warmAutoPublishResolved = false;
   private installedSkillBundles = new Set<string>();
   private installedSkillBundleInfo = new Map<string, InstalledSkillBundle>();
   private installingSkillBundles = new Map<string, Promise<void>>();
@@ -396,7 +411,7 @@ export class AgentServer {
     this.app = this.createApp();
   }
 
-  private getRuntimeAdapter(): "claude" | "codex" {
+  private getRuntimeAdapter(): Adapter {
     return this.config.runtimeAdapter ?? "claude";
   }
 
@@ -669,7 +684,7 @@ export class AgentServer {
     payload: JwtPayload,
     posthogAPI: PostHogAPIClient,
     preTaskRun: TaskRun | null,
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: Adapter,
     cwd: string,
     permissionMode: PermissionMode,
   ): Promise<{ sessionId: string; warm: boolean } | null> {
@@ -892,12 +907,19 @@ export class AgentServer {
 
         this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
 
+        // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
+        // also flips the detected-PR context to its push variant.
+        const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
+        const hostContext = [
+          ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
+          ...(this.detectedPrUrl
+            ? [this.buildDetectedPrContext(this.detectedPrUrl)]
+            : []),
+        ];
         const promptMeta: Record<string, unknown> = {
           ...(builtPrompt.meta ?? {}),
-          ...(this.detectedPrUrl
-            ? {
-                prContext: this.buildDetectedPrContext(this.detectedPrUrl),
-              }
+          ...(hostContext.length > 0
+            ? { prContext: hostContext.join("\n\n") }
             : {}),
         };
 
@@ -1115,6 +1137,8 @@ export class AgentServer {
 
     this.resumeState = null;
     this.nativeResume = null;
+    this.prewarmedRun = false;
+    this.warmAutoPublishResolved = false;
 
     this.logger.debug("Initializing session", {
       runId: payload.run_id,
@@ -1145,6 +1169,10 @@ export class AgentServer {
         return null;
       }),
     ]);
+
+    this.prewarmedRun =
+      (preTaskRun?.state as Record<string, unknown> | undefined)?.prewarmed ===
+      true;
 
     const gatewayEnv = this.configureEnvironment({
       isInternal: preTask?.internal === true,
@@ -1387,7 +1415,10 @@ export class AgentServer {
     });
 
     this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
-    this.sessionInitMs = Math.max(0, Date.now() - this.barrierReleasedAtMs!);
+    this.sessionInitMs = Math.max(
+      0,
+      Date.now() - (this.barrierReleasedAtMs ?? Date.now()),
+    );
     this.logger.debug("Session initialized successfully", {
       bootMs: this.sessionReadyBootMs,
       sessionInitMs: this.sessionInitMs,
@@ -2543,7 +2574,7 @@ export class AgentServer {
    * it cannot sit behind a plugins guard.
    */
   private buildClaudeCodeSessionMeta(
-    runtimeAdapter: "claude" | "codex",
+    runtimeAdapter: Adapter,
   ): { claudeCode: { options: Record<string, unknown> } } | undefined {
     const plugins = this.config.claudeCode?.plugins;
     const effort =
@@ -2582,12 +2613,66 @@ export class AgentServer {
   }
 
   /**
-   * Automated-origin cloud runs auto-publish by default. Every other origin is
-   * review-first unless the user explicitly asks, and createPr=false always
-   * disables publishing.
+   * Automated-origin cloud runs auto-publish by default, and manual runs
+   * auto-publish when the user opted in (Settings → Advanced, sent as
+   * autoPublish). Every other run is review-first unless the user explicitly
+   * asks, and createPr=false always disables publishing.
    */
   private shouldAutoPublishCloudChanges(): boolean {
-    return this.isAutomatedOrigin() && this.config.createPr !== false;
+    return (
+      (this.isAutomatedOrigin() || this.config.autoPublish === true) &&
+      this.config.createPr !== false
+    );
+  }
+
+  /**
+   * A prewarmed run boots before the user's first message exists, so the
+   * --autoPublish flag can't carry the user's choice; the backend persists it
+   * into the run's state at warm activation instead. Nothing has been sent to
+   * the agent until that first message arrives, so resolving it here still
+   * governs the whole conversation: flip the config (so later consumers like
+   * buildDetectedPrContext see it) and return the auto-publish cloud
+   * instructions to inject into the first prompt as an override.
+   */
+  private async resolveWarmAutoPublishUpgrade(): Promise<string | null> {
+    if (!this.prewarmedRun || this.warmAutoPublishResolved || !this.session) {
+      return null;
+    }
+    if (
+      this.config.autoPublish === true ||
+      this.config.createPr === false ||
+      this.isAutomatedOrigin()
+    ) {
+      // The boot decision already publishes (or never may) — nothing to upgrade.
+      this.warmAutoPublishResolved = true;
+      return null;
+    }
+    let state: Record<string, unknown> | undefined;
+    try {
+      const run = await this.posthogAPI.getTaskRun(
+        this.session.payload.task_id,
+        this.session.payload.run_id,
+      );
+      state = run?.state as Record<string, unknown> | undefined;
+    } catch (error) {
+      // Leave unresolved so the next message retries; stay review-first for now.
+      this.logger.debug("Failed to fetch run state for auto-publish upgrade", {
+        error,
+      });
+      return null;
+    }
+    this.warmAutoPublishResolved = true;
+    if (state?.auto_publish !== true) {
+      return null;
+    }
+    this.config.autoPublish = true;
+    this.logger.debug("Warm run upgraded to auto-publish from run state");
+    return [
+      "IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.",
+      "The user has auto-publish enabled for this run. The review-first cloud task instructions in your system prompt are replaced by the following:",
+      "",
+      this.buildCloudSystemPrompt(this.detectedPrUrl),
+    ].join("\n");
   }
 
   private buildDetectedPrContext(prUrl: string): string {
@@ -2756,7 +2841,18 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 When the user asks for code changes:
 - You may clone a repository and make local edits in that clone
 - Do NOT create branches, commits, push changes, or open pull requests in this run`
-          : `
+          : shouldAutoCreatePr
+            ? `
+When the user asks to clone or work in a GitHub repository:
+- Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
+- Work from inside that cloned repository for follow-up code changes
+- After completing code changes in a cloned repository, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone without waiting to be asked. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
+- Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
+${whyContextInstruction.trimStart()}
+${publicRepoSafetyInstruction.trimStart()}
+- End the PR description with a horizontal rule followed by this footer line: ${prFooter}
+- Always create the PR as a draft. Do not ask for confirmation before publishing completed code changes`
+            : `
 When the user explicitly asks to clone or work in a GitHub repository:
 - Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
 - Work from inside that cloned repository for follow-up code changes
@@ -3351,13 +3447,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     update: Record<string, unknown> | undefined,
   ): void {
     if (!update) return;
-    const prUrl = findPrUrl(JSON.stringify(update));
-    if (!prUrl || this.evaluatedPrUrls.has(prUrl)) return;
-    this.evaluatedPrUrls.add(prUrl);
-    // Chain so attributions run in detection order; later PRs overwrite earlier ones.
-    this.prAttributionChain = this.prAttributionChain
-      .catch(() => {})
-      .then(() => this.attachPrIfCreatedThisRun(payload, prUrl));
+    for (const prUrl of findPrUrls(JSON.stringify(update))) {
+      if (this.evaluatedPrUrls.has(prUrl)) continue;
+      this.evaluatedPrUrls.add(prUrl);
+      // Chain so attributions run in detection order; later PRs append after earlier ones.
+      this.prAttributionChain = this.prAttributionChain
+        .catch(() => {})
+        .then(() => this.attachPrIfCreatedThisRun(payload, prUrl));
+    }
   }
 
   private async attachPrIfCreatedThisRun(
@@ -3367,9 +3464,13 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     // Already the attributed PR (e.g. seeded from a Slack notification, or re-detected).
     if (prUrl === this.detectedPrUrl) return;
 
-    let createdAt: string | null;
+    let attribution: { createdAt: string | null; author: string | null };
+    let ghLogin: string | null;
     try {
-      createdAt = await this.fetchPrCreatedAt(prUrl);
+      [attribution, ghLogin] = await Promise.all([
+        this.fetchPrAttribution(prUrl),
+        this.fetchGhLogin(),
+      ]);
     } catch (err) {
       this.logger.debug("PR attribution lookup failed", {
         runId: payload.run_id,
@@ -3379,14 +3480,21 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       return;
     }
 
-    // Only attribute PRs created during this run, not ones the agent merely viewed.
-    if (!wasCreatedRecently(createdAt, Date.now())) return;
+    // Only attribute PRs created during this run by this run's own GitHub
+    // identity — not ones the agent merely viewed.
+    if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
+    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
 
     this.detectedPrUrl = prUrl;
 
     try {
+      const freshOutput = await this.posthogAPI
+        .getTaskRun(payload.task_id, payload.run_id)
+        .then((run) => run.output)
+        .catch(() => null);
+      const urls = mergePrUrls(readPrUrls(freshOutput), [prUrl]);
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
-        output: { pr_url: prUrl },
+        output: buildPrOutput(freshOutput, urls),
       });
       this.logger.debug("Attributed created PR to task run", {
         taskId: payload.task_id,
@@ -3403,19 +3511,48 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
   }
 
-  private async fetchPrCreatedAt(prUrl: string): Promise<string | null> {
-    const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
+  private async fetchPrAttribution(
+    prUrl: string,
+  ): Promise<{ createdAt: string | null; author: string | null }> {
+    const res = await execGh(
+      ["pr", "view", prUrl, "--json", "createdAt,author"],
+      {
+        cwd: this.config.repositoryPath,
+        timeoutMs: 10_000,
+      },
+    );
+    if (res.exitCode !== 0) return { createdAt: null, author: null };
+    try {
+      const data = JSON.parse(res.stdout) as {
+        createdAt?: string;
+        author?: { login?: string };
+      };
+      return {
+        createdAt: data.createdAt ?? null,
+        author: data.author?.login ?? null,
+      };
+    } catch {
+      return { createdAt: null, author: null };
+    }
+  }
+
+  private ghLoginPromise: Promise<string | null> | null = null;
+
+  private fetchGhLogin(): Promise<string | null> {
+    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
       cwd: this.config.repositoryPath,
       timeoutMs: 10_000,
-    });
-    if (res.exitCode !== 0) return null;
-    try {
-      return (
-        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
-      );
-    } catch {
-      return null;
-    }
+    })
+      .then((res) => {
+        const login = res.exitCode === 0 ? res.stdout.trim() : "";
+        if (!login) this.ghLoginPromise = null;
+        return login || null;
+      })
+      .catch(() => {
+        this.ghLoginPromise = null;
+        return null;
+      });
+    return this.ghLoginPromise;
   }
 
   private async cleanupSession({

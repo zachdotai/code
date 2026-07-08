@@ -11,6 +11,7 @@ import { useService } from "@posthog/di/react";
 import type { HostTrpcClient } from "@posthog/host-router/client";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
+  type Adapter,
   ANALYTICS_EVENTS,
   type TaskCreationInput,
   type WorkspaceMode,
@@ -39,6 +40,7 @@ import {
 import { useDraftStore } from "../../message-editor/draftStore";
 import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryStore";
 import type { EditorHandle } from "../../message-editor/types";
+import { toastError } from "../../notifications/errorDetails";
 import { useProvisioningStore } from "../../provisioning/store";
 import { useSettingsStore } from "../../settings/settingsStore";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
@@ -62,7 +64,7 @@ interface UseTaskCreationOptions {
   branch?: string | null;
   editorIsEmpty: boolean;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
@@ -299,6 +301,7 @@ export function useTaskCreation({
           }
         }
 
+        const settings = useSettingsStore.getState();
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -321,7 +324,8 @@ export function useTaskCreation({
           channelContext,
           channelName,
           channelId,
-          customInstructions: useSettingsStore.getState().customInstructions,
+          customInstructions: settings.customInstructions,
+          autoPublishCloudRuns: settings.autoPublishCloudRuns,
           allowNoRepo,
         });
 
@@ -385,9 +389,10 @@ export function useTaskCreation({
           useProvisioningStore
             .getState()
             .setFailed(result.data.task.id, result.data.provisioningError);
-          toast.error(getErrorTitle("workspace_creation"), {
-            description: result.data.provisioningError,
-          });
+          toastError(
+            getErrorTitle("workspace_creation"),
+            result.data.provisioningError,
+          );
         }
 
         if (result.success) {
@@ -427,7 +432,7 @@ export function useTaskCreation({
             log.warn("Cloud task creation blocked by usage limit");
           } else {
             const title = getErrorTitle(result.failedStep);
-            toast.error(title, { description: result.error });
+            toastError(title, result.error);
             log.error("Task creation failed", {
               failedStep: result.failedStep,
               error: result.error,
@@ -443,9 +448,7 @@ export function useTaskCreation({
         }
         return result.success;
       } catch (error) {
-        const description =
-          error instanceof Error ? error.message : "Unknown error";
-        toast.error("Failed to create task", { description });
+        toastError("Failed to create task", error);
         log.error("Unexpected error during task creation", { error });
         if (pendingTaskKey) {
           pendingTaskPromptStoreApi.clear(pendingTaskKey);
