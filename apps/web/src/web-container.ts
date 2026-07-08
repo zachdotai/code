@@ -1,5 +1,10 @@
 import "reflect-metadata";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
+import { archiveModule } from "@posthog/core/archive/archive.module";
+import {
+  ARCHIVE_CLIENT,
+  type ArchiveClient,
+} from "@posthog/core/archive/identifiers";
 import type { AuthService } from "@posthog/core/auth/auth";
 import { AUTH_SERVICE, authCoreModule } from "@posthog/core/auth/auth.module";
 import {
@@ -27,6 +32,15 @@ import {
   GITHUB_ISSUE_CLIENT,
   type GitHubIssueClient,
 } from "@posthog/core/deep-links/identifiers";
+import { externalAppsCoreModule } from "@posthog/core/external-apps/external-apps.module";
+import type { ExternalAppService } from "@posthog/core/external-apps/externalAppService";
+import {
+  EXTERNAL_APPS_FOCUS_COORDINATOR,
+  EXTERNAL_APPS_SERVICE,
+  EXTERNAL_APPS_WORKSPACE_CLIENT,
+  type ExternalAppsFocusCoordinator,
+  type ExternalAppsWorkspaceClient,
+} from "@posthog/core/external-apps/identifiers";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
 import {
   GITHUB_CONNECT_CLIENT as INTEGRATIONS_GITHUB_CONNECT_CLIENT,
@@ -47,6 +61,26 @@ import {
 } from "@posthog/core/sessions/sessionService";
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
+import {
+  TASK_CREATION_EFFECTS,
+  TASK_CREATION_HOST,
+  TASK_SERVICE,
+  WORKSPACE_SETUP_SAGA,
+} from "@posthog/core/task-detail/identifiers";
+import { taskDetailModule } from "@posthog/core/task-detail/task-detail.module";
+import type { TaskCreationEffects } from "@posthog/core/task-detail/taskCreationEffects";
+import type { ITaskCreationHost } from "@posthog/core/task-detail/taskCreationHost";
+import type { TaskService as TaskServiceType } from "@posthog/core/task-detail/taskService";
+import type { WorkspaceSetupSaga } from "@posthog/core/task-detail/workspaceSetupSaga";
+import {
+  type ITaskDeletionHost,
+  type ITaskDeletionWorkspaceClient,
+  TASK_DELETION_HOST,
+  TASK_DELETION_SERVICE,
+  TASK_DELETION_WORKSPACE_CLIENT,
+} from "@posthog/core/tasks/identifiers";
+import type { TaskDeletionService } from "@posthog/core/tasks/taskDeletionService";
+import { tasksModule } from "@posthog/core/tasks/tasks.module";
 import { setRootContainer } from "@posthog/di/container";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
@@ -71,10 +105,19 @@ import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
 } from "@posthog/ui/features/auth/identifiers";
+import { connectivityUiModule } from "@posthog/ui/features/connectivity/connectivity.module";
+import {
+  CONNECTIVITY_CLIENT,
+  type ConnectivityClient,
+} from "@posthog/ui/features/connectivity/connectivityClient";
 import {
   FEATURE_FLAGS,
   type FeatureFlags,
 } from "@posthog/ui/features/feature-flags/identifiers";
+import {
+  GIT_CACHE_KEY_PROVIDER,
+  type GitCacheKeyProvider,
+} from "@posthog/ui/features/git-interaction/gitCacheProvider";
 import {
   UiGithubConnectClient,
   UiRepositoriesClient,
@@ -89,6 +132,16 @@ import {
 import { OnboardingGithubConnectClient } from "@posthog/ui/features/onboarding/githubConnectClientImpl";
 import { getSessionService } from "@posthog/ui/features/sessions/sessionServiceHost";
 import { setupUiModule } from "@posthog/ui/features/setup/setup.module";
+import { taskCreationEffects } from "@posthog/ui/features/task-detail/taskCreationEffectsImpl";
+import { TrpcTaskCreationHost } from "@posthog/ui/features/task-detail/taskCreationHostImpl";
+import {
+  SHELL_CLIENT,
+  type ShellClient,
+} from "@posthog/ui/features/terminal/shellClient";
+import {
+  UPDATES_CLIENT,
+  type UpdatesClient,
+} from "@posthog/ui/features/updates/updatesClient";
 import {
   ANALYTICS_TRACKER,
   type AnalyticsTracker,
@@ -110,8 +163,19 @@ import {
   webPowerManager,
 } from "./web-auth-adapters";
 import { WebAuthSideEffects } from "./web-auth-side-effects";
+import { webConnectivityClient } from "./web-connectivity-client";
+import {
+  webExternalAppsFocusCoordinator,
+  webExternalAppsWorkspaceClient,
+} from "./web-external-apps";
+import { webGitCacheKeyProvider } from "./web-git-cache-keys";
 import { WebOAuthFlowService } from "./web-oauth-flow";
 import { webSetupStore } from "./web-setup-store";
+import { webShellClient } from "./web-shell-client";
+import {
+  webTaskDeletionHost,
+  webTaskDeletionWorkspaceClient,
+} from "./web-task-deletion";
 import { hostTrpcClient } from "./web-trpc";
 
 interface WebBindings {
@@ -143,6 +207,21 @@ interface WebBindings {
   [REPOSITORIES_CLIENT]: RepositoriesClient;
   [REPOSITORIES_SERVICE]: RepositoriesService;
   [HOST_CAPABILITIES]: HostCapabilities;
+  [TASK_SERVICE]: TaskServiceType;
+  [WORKSPACE_SETUP_SAGA]: WorkspaceSetupSaga;
+  [TASK_CREATION_HOST]: ITaskCreationHost;
+  [TASK_CREATION_EFFECTS]: TaskCreationEffects;
+  [CONNECTIVITY_CLIENT]: ConnectivityClient;
+  [EXTERNAL_APPS_SERVICE]: ExternalAppService;
+  [EXTERNAL_APPS_WORKSPACE_CLIENT]: ExternalAppsWorkspaceClient;
+  [EXTERNAL_APPS_FOCUS_COORDINATOR]: ExternalAppsFocusCoordinator;
+  [TASK_DELETION_SERVICE]: TaskDeletionService;
+  [TASK_DELETION_WORKSPACE_CLIENT]: ITaskDeletionWorkspaceClient;
+  [TASK_DELETION_HOST]: ITaskDeletionHost;
+  [SHELL_CLIENT]: ShellClient;
+  [ARCHIVE_CLIENT]: ArchiveClient;
+  [UPDATES_CLIENT]: UpdatesClient;
+  [GIT_CACHE_KEY_PROVIDER]: GitCacheKeyProvider;
 }
 
 export const queryClient = new QueryClient();
@@ -314,5 +393,81 @@ container
   .toConstantValue(new OnboardingGithubConnectClient());
 container.bind(REPOSITORIES_CLIENT).toConstantValue(new UiRepositoriesClient());
 container.bind(REPOSITORIES_SERVICE).to(RepositoriesService).inSingletonScope();
+
+// ── Task list + creation (TASK_SERVICE at the task views) ──
+// TaskService/WorkspaceSetupSaga are portable core (taskDetailModule). The
+// creation host and effects are the same host-agnostic renderer impls desktop
+// uses: TrpcTaskCreationHost drives everything through HOST_TRPC_CLIENT, and the
+// effects touch only UI stores + the query client. Local-only host methods
+// (workspace/folders/git) resolve to NOT_FOUND at call time, but the cloud
+// creation path doesn't need them.
+container.load(taskDetailModule);
+container.bind(TASK_CREATION_HOST).to(TrpcTaskCreationHost);
+container.bind(TASK_CREATION_EFFECTS).toConstantValue(taskCreationEffects);
+
+// ── Connectivity (ConnectivityBanner at __root) ──
+// Real web implementation over navigator.onLine + online/offline events. The
+// module's contributions react to the same status changes.
+container.load(connectivityUiModule);
+container.bind(CONNECTIVITY_CLIENT).toConstantValue(webConnectivityClient);
+
+// ── External apps (sidebar's eager useExternalAppAction) ──
+// Local-only feature (open in a local editor / reveal / copy local path). The
+// real service resolves; its workspace + focus clients are web stubs since
+// there is no local filesystem to open anything in.
+container.load(externalAppsCoreModule);
+container
+  .bind(EXTERNAL_APPS_WORKSPACE_CLIENT)
+  .toConstantValue(webExternalAppsWorkspaceClient);
+container
+  .bind(EXTERNAL_APPS_FOCUS_COORDINATOR)
+  .toConstantValue(webExternalAppsFocusCoordinator);
+
+// ── Task deletion (sidebar context menu / task CRUD) ──
+// The task delete itself goes through the PostHog API; these clients only cover
+// local-worktree cleanup (inert on web) and host UI (confirm dialog, unpin,
+// navigate). TaskDeletionService is portable core.
+container.load(tasksModule);
+container
+  .bind(TASK_DELETION_WORKSPACE_CLIENT)
+  .toConstantValue(webTaskDeletionWorkspaceClient);
+container.bind(TASK_DELETION_HOST).toConstantValue(webTaskDeletionHost);
+
+// ── Shell client (chat view's useSessionCallbacks) ──
+// No PTY in a browser; cloud tasks never invoke it. Bound as a stub so the
+// eager useService call resolves.
+container.bind(SHELL_CLIENT).toConstantValue(webShellClient);
+
+// ── Archive (sidebar's ArchivedTasksController) ──
+// The controller resolves eagerly for the sidebar; UnarchiveService needs an
+// ARCHIVE_CLIENT. Its methods are user actions (unarchive/delete/context menu)
+// backed by workspace-server on desktop — not available on web, so reject. The
+// archived-task LIST comes from the api-client, not this client.
+container.load(archiveModule);
+container.bind(ARCHIVE_CLIENT).toConstantValue({
+  unarchive: () =>
+    Promise.reject(new Error("Unarchive is not available on the web")),
+  delete: () => Promise.reject(new Error("Delete is not available on the web")),
+  showArchivedTaskContextMenu: () => Promise.resolve({ action: null }),
+});
+
+// ── Updates (UpdateAvailableModal / WhatsNewModal at __root) ──
+// Auto-update is a desktop (Electron) capability; a web app updates on reload.
+// Report disabled/up-to-date and never emit update events.
+container.bind(UPDATES_CLIENT).toConstantValue({
+  install: () => Promise.resolve({ installed: false }),
+  check: () => Promise.resolve({ success: true }),
+  isEnabled: () => Promise.resolve({ enabled: false }),
+  getStatus: () => Promise.resolve({ checking: false, upToDate: true }),
+  onStatus: () => ({ unsubscribe: () => {} }),
+  onReady: () => ({ unsubscribe: () => {} }),
+  onCheckFromMenu: () => ({ unsubscribe: () => {} }),
+});
+
+// ── Git cache keys (git-interaction invalidation) ──
+// Only a query-key/filter mapper. Web has no git/fs router or reads, so these
+// keys match nothing; the adapter just produces valid tRPC-shaped keys so
+// invalidation calls don't throw.
+container.bind(GIT_CACHE_KEY_PROVIDER).toConstantValue(webGitCacheKeyProvider);
 
 setRootContainer(container);
