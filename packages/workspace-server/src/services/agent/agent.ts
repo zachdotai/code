@@ -2258,9 +2258,10 @@ For git operations while detached:
         description: `Context: ${model.context_window.toLocaleString()} tokens`,
       }));
 
-    // The gateway returns models in an arbitrary order. Sort Claude and hog
-    // models oldest-to-newest so the picker is deterministic and the newest
-    // model lands at the end of the list, closest to the trigger.
+    // The gateway returns models in an arbitrary order. Sort Claude models
+    // oldest-to-newest so the picker is deterministic; OpenAI models offered
+    // by the hog adapter have no comparable recency function and cluster at
+    // the same sort key, keeping their gateway order relative to each other.
     if (adapter !== "codex") {
       modelOptions.sort(
         (a, b) =>

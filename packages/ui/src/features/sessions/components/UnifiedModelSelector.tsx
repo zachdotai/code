@@ -40,7 +40,7 @@ const ADAPTER_LABELS: Record<AgentAdapter, string> = {
 
 const ADAPTER_CYCLE: AgentAdapter[] = ["claude", "codex", "hog"];
 
-function getOtherAdapter(adapter: AgentAdapter): AgentAdapter {
+function getNextAdapter(adapter: AgentAdapter): AgentAdapter {
   const index = ADAPTER_CYCLE.indexOf(adapter);
   return ADAPTER_CYCLE[(index + 1) % ADAPTER_CYCLE.length];
 }
@@ -86,7 +86,7 @@ export function UnifiedModelSelector({
   const currentLabel =
     options.find((opt) => opt.value === currentValue)?.name ?? currentValue;
 
-  const otherAdapter = getOtherAdapter(adapter);
+  const nextAdapter = getNextAdapter(adapter);
 
   // Collapse to a bare loading button only while the menu is closed (initial
   // load). When the menu is open we keep it mounted and surface the loading
@@ -181,10 +181,10 @@ export function UnifiedModelSelector({
 
         <DropdownMenuItem
           closeOnClick={false}
-          onClick={() => onAdapterChange(otherAdapter)}
+          onClick={() => onAdapterChange(nextAdapter)}
         >
           <ArrowsClockwise size={12} weight="bold" />
-          Switch to {ADAPTER_LABELS[otherAdapter]}
+          Switch to {ADAPTER_LABELS[nextAdapter]}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

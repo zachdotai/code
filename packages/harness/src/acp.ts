@@ -396,7 +396,13 @@ function piStopReasonToAcp(reason: PiStopReason): StopReason {
     case "aborted":
       return "cancelled";
     case "error":
-      return "refusal";
+      // Pi's "error" means an internal failure (gateway 5xx, malformed
+      // response, tool crash) carried on `AssistantMessage.errorMessage`,
+      // not a model content-policy refusal. ACP has no dedicated failure
+      // stop reason, so mapping to "refusal" would misrepresent a crash as
+      // a deliberate "model declined to answer". `end_turn` is the neutral
+      // choice among what ACP actually offers.
+      return "end_turn";
   }
 }
 
