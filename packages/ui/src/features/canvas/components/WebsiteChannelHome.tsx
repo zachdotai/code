@@ -104,18 +104,16 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     [channelId, fileTask, invalidateFeed, queryClient],
   );
 
-  // Clicking a task opens its thread dock — the merged conversation with the
-  // task card and the agent's live replies inline — rather than navigating away
-  // to the full task view. The full view stays a click away (openFull).
+  // Clicking a task card or its "reply in thread" action both open the same
+  // thread dock — the merged conversation with the task card and the agent's
+  // live replies inline — rather than navigating away to the full task view.
+  // The full view stays a click away (openFull). The feed keeps the two intents
+  // as distinct props so they can diverge later without re-plumbing.
   const handleOpenTask = useCallback(
     (task: Task) => openThread(channelId, task.id),
     [openThread, channelId],
   );
-
-  const handleOpenThread = useCallback(
-    (task: Task) => openThread(channelId, task.id),
-    [openThread, channelId],
-  );
+  const handleOpenThread = handleOpenTask;
 
   const handleOpenFull = useCallback(
     (taskId: string) => {
