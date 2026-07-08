@@ -159,4 +159,12 @@ export default defineConfig([
     clean: false,
     ...sharedOptions,
   },
+  {
+    // ACP-over-stdio sidecar for the Rust agent-server (rust/README.md).
+    entry: { "server/acp-stdio": "src/server/acp-stdio-bin.ts" },
+    format: ["cjs"],
+    dts: false,
+    clean: false,
+    ...sharedOptions,
+  },
 ]);
