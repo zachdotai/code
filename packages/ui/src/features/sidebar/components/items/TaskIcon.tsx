@@ -232,10 +232,15 @@ function PrStatusIcon({
   // radial-gradient mask punches a hole in the PR glyph under the badge so
   // both shapes stay legible on any row background (hover, selected, command
   // palette highlight) without hardcoding a cutout ring color.
+  //
+  // Both svgs get inline width/height: quill's
+  // `.quill-button svg:not([class*=size-])` rule otherwise forces descendant
+  // svgs to the button's icon size, which would inflate the badge and shift
+  // the glyph out of the mask's coordinate system.
   const badgeSize = Math.round(size * 0.5);
-  const overflow = 2;
+  const overflow = 1;
   const holeCenter = size + overflow - badgeSize / 2;
-  const holeRadius = badgeSize / 2 + 1;
+  const holeRadius = badgeSize / 2 + 0.5;
   const mask = `radial-gradient(circle at ${holeCenter}px ${holeCenter}px, transparent ${holeRadius}px, black ${holeRadius + 0.5}px)`;
   const icon = (
     <span
@@ -246,7 +251,12 @@ function PrStatusIcon({
         size={size}
         weight="bold"
         color={meta.color}
-        style={{ maskImage: mask, WebkitMaskImage: mask }}
+        style={{
+          width: size,
+          height: size,
+          maskImage: mask,
+          WebkitMaskImage: mask,
+        }}
       />
       <provenanceBadge.Icon
         size={badgeSize}
@@ -254,9 +264,6 @@ function PrStatusIcon({
         color="var(--gray-10)"
         className="absolute"
         style={{
-          // quill's `.quill-button svg:not([class*=size-])` rule forces
-          // descendant svgs to the button's icon size, overriding phosphor's
-          // width/height attributes — inline dimensions keep the badge small.
           width: badgeSize,
           height: badgeSize,
           right: -overflow,
