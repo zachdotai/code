@@ -25,7 +25,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 // A channel: a Slack-style multiplayer feed. Each member message kicks off a
 // task rendered as a card everyone in the channel sees; the composer stays
@@ -52,15 +52,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
 
-  const threadTaskId = useThreadPanelStore((s) => s.taskId);
+  // Which thread is open is tracked per tab (keyed by channelId), so switching
+  // between channel tabs keeps each tab's own thread docked.
+  const threadTaskId = useThreadPanelStore((s) => s.openByChannel[channelId]);
   const openThread = useThreadPanelStore((s) => s.openThread);
   const closeThread = useThreadPanelStore((s) => s.closeThread);
-
-  // A thread from another channel shouldn't linger when switching feeds.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-close per channel
-  useEffect(() => {
-    closeThread();
-  }, [closeThread, channelId]);
 
   const handleSuggestionSelect = useCallback(
     (prompt: string, mode?: string) => {
@@ -112,13 +108,13 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // task card and the agent's live replies inline — rather than navigating away
   // to the full task view. The full view stays a click away (openFull).
   const handleOpenTask = useCallback(
-    (task: Task) => openThread(task.id),
-    [openThread],
+    (task: Task) => openThread(channelId, task.id),
+    [openThread, channelId],
   );
 
   const handleOpenThread = useCallback(
-    (task: Task) => openThread(task.id),
-    [openThread],
+    (task: Task) => openThread(channelId, task.id),
+    [openThread, channelId],
   );
 
   const handleOpenFull = useCallback(
@@ -168,6 +164,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     <div className="flex h-full min-w-0 bg-gray-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <ChannelFeedView
+          channelId={channelId}
           tasks={tasks}
           isLoading={isLoading}
           emptyState={emptyState}
@@ -189,8 +186,9 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
       {threadTaskId && (
         <ThreadSidebar
           taskId={threadTaskId}
+          channelId={channelId}
           task={threadTask}
-          onClose={closeThread}
+          onClose={() => closeThread(channelId)}
           onOpenFull={() => handleOpenFull(threadTaskId)}
         />
       )}

@@ -284,64 +284,12 @@ function AgentTurnRow({
   );
 }
 
-// The agent's activity as one thread item per turn. Prior turns stay put; a new
-// turn (e.g. after "Create PR") adds another item below. The live status chip
-// and ship actions attach to the current (last) turn only.
-function AgentActivity({
-  messages,
-  status,
-  hasPr,
-  onCreatePr,
-  onDraftPr,
-}: {
-  messages: AgentMessage[];
-  status: AgentStatus;
-  /** A PR already exists for the task, so hide the create/draft actions. */
-  hasPr: boolean;
-  onCreatePr: () => void;
-  onDraftPr: () => void;
-}) {
-  // No text yet (turn just started) — still show a header row with the status.
-  if (messages.length === 0) {
-    return (
-      <AgentTurnRow
-        status={status}
-        streaming={false}
-        showActions={false}
-        hasPr={hasPr}
-        onCreatePr={onCreatePr}
-        onDraftPr={onDraftPr}
-      />
-    );
-  }
-
-  const lastIndex = messages.length - 1;
-  return (
-    <>
-      {messages.map((message, index) => {
-        const isLast = index === lastIndex;
-        return (
-          <AgentTurnRow
-            key={message.id}
-            message={message}
-            status={isLast ? status : undefined}
-            streaming={isLast && status.phase === "active"}
-            showActions={isLast && status.phase === "complete"}
-            hasPr={hasPr}
-            onCreatePr={onCreatePr}
-            onDraftPr={onDraftPr}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-// One entry in the human thread, sorted by time.
-interface HumanEntry {
-  ts: number;
-  message: TaskThreadMessage;
-}
+// One row in the merged thread timeline: a human message or an agent turn,
+// interleaved by timestamp so the conversation reads chronologically (latest at
+// the bottom) instead of pinning all agent activity below the human replies.
+type TimelineRow =
+  | { kind: "human"; ts: number; message: TaskThreadMessage }
+  | { kind: "agent"; ts: number; message: AgentMessage };
 
 // The merged thread + task conversation: a task card pinned at the top, the
 // human thread, and a single live agent status message pinned at the bottom.
@@ -350,11 +298,13 @@ interface HumanEntry {
 // known.
 function ThreadConversation({
   task,
+  channelId,
   onClose,
   onToggleCollapsed,
   onOpenFull,
 }: {
   task: Task;
+  channelId: string;
   onClose?: () => void;
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
@@ -448,16 +398,32 @@ function ThreadConversation({
     );
   };
 
-  const entries = useMemo<HumanEntry[]>(
-    () =>
-      messages
-        .map((message) => ({
+  // Human messages and agent turns woven into one chronological list. Ties keep
+  // humans-before-agents (insertion) order; an agent turn with no timestamp yet
+  // (just started, still streaming) sorts to the end so it stays at the bottom.
+  const timeline = useMemo<TimelineRow[]>(() => {
+    const rows: TimelineRow[] = [
+      ...messages.map(
+        (message): TimelineRow => ({
+          kind: "human",
           ts: Date.parse(message.created_at) || 0,
           message,
-        }))
-        .sort((a, b) => a.ts - b.ts),
-    [messages],
-  );
+        }),
+      ),
+      ...agentMsgs.map(
+        (message): TimelineRow => ({
+          kind: "agent",
+          ts: message.ts ?? Number.MAX_SAFE_INTEGER,
+          message,
+        }),
+      ),
+    ];
+    return rows.sort((a, b) => a.ts - b.ts);
+  }, [messages, agentMsgs]);
+
+  // The status chip + ship actions ride the newest agent turn; when the agent
+  // has spoken nothing yet they hang off a trailing status-only row instead.
+  const lastAgentId = agentMsgs[agentMsgs.length - 1]?.id;
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -479,7 +445,7 @@ function ThreadConversation({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [
-    entries.length,
+    messages.length,
     agentMsgs.length,
     agentMsgs[agentMsgs.length - 1]?.text,
     agentStatus?.phase,
@@ -521,7 +487,7 @@ function ThreadConversation({
     });
   };
 
-  const isEmpty = entries.length === 0 && !agentStatus;
+  const isEmpty = timeline.length === 0 && !agentStatus;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
@@ -568,7 +534,7 @@ function ThreadConversation({
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-2">
         <div className="px-2">
-          <TaskCard task={task} onOpen={() => onOpenFull?.()} />
+          <TaskCard task={task} channelId={channelId} />
         </div>
         {isLoading && isEmpty ? (
           <div className="flex justify-center py-6">
@@ -584,25 +550,46 @@ function ThreadConversation({
           </div>
         ) : (
           <ThreadItemGroup className="mt-1">
-            {entries.map((entry) => (
-              <ThreadMessageRow
-                key={entry.message.id}
-                message={entry.message}
-                isTaskAuthor={isTaskAuthor}
-                isOwnMessage={
-                  !!currentUser?.uuid &&
-                  currentUser.uuid === entry.message.author?.uuid
-                }
-                currentUserEmail={currentUser?.email}
-                canForward={canForward}
-                onSendToAgent={() => handleSendToAgent(entry.message.id)}
-                onDelete={() => handleDelete(entry.message.id)}
-              />
-            ))}
-            {agentStatus && (
-              <AgentActivity
-                messages={agentMsgs}
+            {timeline.map((row) =>
+              row.kind === "human" ? (
+                <ThreadMessageRow
+                  key={row.message.id}
+                  message={row.message}
+                  isTaskAuthor={isTaskAuthor}
+                  isOwnMessage={
+                    !!currentUser?.uuid &&
+                    currentUser.uuid === row.message.author?.uuid
+                  }
+                  currentUserEmail={currentUser?.email}
+                  canForward={canForward}
+                  onSendToAgent={() => handleSendToAgent(row.message.id)}
+                  onDelete={() => handleDelete(row.message.id)}
+                />
+              ) : (
+                <AgentTurnRow
+                  key={row.message.id}
+                  message={row.message}
+                  streaming={
+                    row.message.id === lastAgentId &&
+                    agentStatus?.phase === "active"
+                  }
+                  showActions={false}
+                  hasPr={!!prUrl}
+                  onCreatePr={() => askAgentToOpenPr(false)}
+                  onDraftPr={() => askAgentToOpenPr(true)}
+                />
+              ),
+            )}
+            {/* The live status + ship actions stay pinned at the bottom rather
+                than riding the (chronologically-placed) agent turn — otherwise a
+                human reply sent after the agent finished would push the "Create
+                PR" action above it, out of view. Once a PR exists the agent's
+                "Done" message already reflects it, so the footer is dropped. */}
+            {agentStatus && !(agentStatus.phase === "complete" && !!prUrl) && (
+              <AgentTurnRow
                 status={agentStatus}
+                streaming={false}
+                showActions={agentStatus.phase === "complete"}
                 hasPr={!!prUrl}
                 onCreatePr={() => askAgentToOpenPr(false)}
                 onDraftPr={() => askAgentToOpenPr(true)}
@@ -648,6 +635,7 @@ function ThreadConversation({
 // to agent" in the row's hover menu). Collapses to a thin rail.
 export function ThreadPanel({
   taskId,
+  channelId,
   task: taskProp,
   onClose,
   collapsed,
@@ -655,6 +643,8 @@ export function ThreadPanel({
   onOpenFull,
 }: {
   taskId: string;
+  /** Channel the thread is docked in; the pinned task card links here. */
+  channelId: string;
   /** The thread's task when the caller already has it; fetched otherwise. */
   task?: Task;
   onClose?: () => void;
@@ -694,6 +684,7 @@ export function ThreadPanel({
   return (
     <ThreadConversation
       task={task}
+      channelId={channelId}
       onClose={onClose}
       onToggleCollapsed={onToggleCollapsed}
       onOpenFull={onOpenFull}

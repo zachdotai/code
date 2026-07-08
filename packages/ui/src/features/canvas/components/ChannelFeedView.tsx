@@ -52,7 +52,14 @@ import {
 } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { Text } from "@radix-ui/themes";
-import { Fragment, memo, type ReactNode, useMemo } from "react";
+import { Link } from "@tanstack/react-router";
+import {
+  Fragment,
+  type MouseEvent,
+  memo,
+  type ReactNode,
+  useMemo,
+} from "react";
 
 // Feed rows poll their reply counts slower than the open thread panel — the
 // shared query key means an open panel naturally speeds the row up too.
@@ -271,7 +278,21 @@ function TaskCardOrigin({ task }: { task: Task }) {
 // The task the message kicked off, as a card everyone in the channel sees:
 // origin + status up top, bold title, then run metadata. Also pinned at the top
 // of the merged thread panel, where "open" jumps to the full task view.
-export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
+//
+// The whole card is a router Link to the task's full page, so it's keyboard
+// focusable and supports open-in-new-tab / new-window (modifier + middle
+// clicks) like any real link. `onOpen`, when given, intercepts the plain
+// primary click to run an in-app action instead (opening the thread dock);
+// without it, a plain click just follows the link.
+export function TaskCard({
+  task,
+  channelId,
+  onOpen,
+}: {
+  task: Task;
+  channelId: string;
+  onOpen?: () => void;
+}) {
   const statusDisplay = useTaskStatusDisplay(task);
   const prUrl =
     typeof task.latest_run?.output?.pr_url === "string"
@@ -290,54 +311,79 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
         : null,
   ].filter(Boolean) as string[];
 
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!onOpen) return;
+    // Leave modifier / non-primary clicks to the browser so the link still
+    // opens the full task in a new tab or window.
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    onOpen();
+  };
+
   return (
-    <Card
-      size="sm"
-      className={cn(
-        "mt-1.5 w-full max-w-[820px] cursor-pointer rounded-sm py-0 transition-none hover:bg-fill-hover",
-        statusDisplay.isMerged
-          ? "border-transparent bg-(--purple-a2) shadow-[0_0_0_1px_var(--purple-8)] hover:bg-(--purple-a3) dark:bg-(--purple-a1) dark:hover:bg-(--purple-a2)"
-          : "hover:border-border-primary",
-      )}
-      onClick={onOpen}
+    <Link
+      to="/website/$channelId/tasks/$taskId"
+      params={{ channelId, taskId: task.id }}
+      preload="intent"
+      onClick={handleClick}
+      className="mt-1.5 block w-full max-w-[820px] rounded-sm text-inherit no-underline outline-none focus-visible:ring-(--accent-8) focus-visible:ring-2"
     >
-      <CardContent className="flex flex-col gap-1 py-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <TaskCardOrigin task={task} />
-          <TaskStatusBadge display={statusDisplay} />
-        </div>
-        <div className="flex min-w-0 items-center gap-1.5">
-          {/* Same live status icon as the code side nav, so the card and the
+      <Card
+        size="sm"
+        className={cn(
+          "w-full cursor-pointer rounded-sm py-0 transition-none hover:bg-fill-hover",
+          statusDisplay.isMerged
+            ? "border-transparent bg-(--purple-a2) shadow-[0_0_0_1px_var(--purple-8)] hover:bg-(--purple-a3) dark:bg-(--purple-a1) dark:hover:bg-(--purple-a2)"
+            : "hover:border-border-primary",
+        )}
+      >
+        <CardContent className="flex flex-col gap-1 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <TaskCardOrigin task={task} />
+            <TaskStatusBadge display={statusDisplay} />
+          </div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            {/* Same live status icon as the code side nav, so the card and the
               nav never disagree (generating spinner, needs-permission, cloud
               status colors, PR state). */}
-          <TaskTabIcon task={task} size={14} />
-          <Text size="2" weight="medium" className="line-clamp-2">
-            {task.title || "Untitled task"}
-          </Text>
-        </div>
-        {(meta.length > 0 || task.repository || prUrl) && (
-          <div className="flex min-w-0 items-center gap-3">
-            {task.repository && (
-              <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
-                <GitBranchIcon size={12} />
-                {task.repository}
-              </span>
-            )}
-            {meta.length > 0 && (
-              <Text size="1" className="truncate text-muted-foreground">
-                {meta.join(" · ")}
-              </Text>
-            )}
-            {prUrl && (
-              <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
-                <ArrowSquareOutIcon size={12} />
-                PR
-              </span>
-            )}
+            <TaskTabIcon task={task} size={14} />
+            <Text size="2" weight="medium" className="line-clamp-2">
+              {task.title || "Untitled task"}
+            </Text>
           </div>
-        )}
-      </CardContent>
-    </Card>
+          {(meta.length > 0 || task.repository || prUrl) && (
+            <div className="flex min-w-0 items-center gap-3">
+              {task.repository && (
+                <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
+                  <GitBranchIcon size={12} />
+                  {task.repository}
+                </span>
+              )}
+              {meta.length > 0 && (
+                <Text size="1" className="truncate text-muted-foreground">
+                  {meta.join(" · ")}
+                </Text>
+              )}
+              {prUrl && (
+                <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+                  <ArrowSquareOutIcon size={12} />
+                  PR
+                </span>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -387,11 +433,13 @@ function RepliesRow({
 
 const FeedItem = memo(function FeedItem({
   task,
+  channelId,
   inView,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
+  channelId: string;
   inView: boolean;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
@@ -430,7 +478,11 @@ const FeedItem = memo(function FeedItem({
           {prompt}
         </ThreadItemBody>
 
-        <TaskCard task={task} onOpen={() => onOpenTask(task)} />
+        <TaskCard
+          task={task}
+          channelId={channelId}
+          onOpen={() => onOpenTask(task)}
+        />
         {/* Off-screen rows drop the reply teaser so a long feed isn't running a
             15s poll timer per row; the wide inView margin mounts it well before
             the row scrolls into view, so nothing pops in. */}
@@ -465,10 +517,12 @@ const FeedItem = memo(function FeedItem({
 // near the viewport, letting `FeedItem` shed off-screen polling.
 function FeedRow({
   task,
+  channelId,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
+  channelId: string;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
@@ -486,6 +540,7 @@ function FeedRow({
     >
       <FeedItem
         task={task}
+        channelId={channelId}
         inView={inView}
         onOpenTask={onOpenTask}
         onOpenThread={onOpenThread}
@@ -498,12 +553,14 @@ function FeedRow({
 // first, rendered as a kickoff message + task card. Multiplayer — the list is
 // team-visible and polls for teammates' cards and status flips.
 export function ChannelFeedView({
+  channelId,
   tasks,
   isLoading,
   emptyState,
   onOpenTask,
   onOpenThread,
 }: {
+  channelId: string;
   tasks: Task[];
   isLoading: boolean;
   emptyState?: React.ReactNode;
@@ -548,6 +605,7 @@ export function ChannelFeedView({
                   )}
                   <FeedRow
                     task={task}
+                    channelId={channelId}
                     onOpenTask={onOpenTask}
                     onOpenThread={onOpenThread}
                   />
