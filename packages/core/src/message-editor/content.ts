@@ -1,4 +1,5 @@
 import { escapeXmlAttr, type UploadableSkillSource } from "@posthog/shared";
+import { GITHUB_REF_PLACEHOLDER_TITLE } from "./githubIssueChip";
 import { isUploadableSkillSource, parseXmlAttrs } from "./skillTags";
 
 export interface MentionChip {
@@ -83,7 +84,12 @@ export function contentToXml(content: EditorContent): string {
       case "github_pr": {
         const labelMatch = chip.label.match(/^#(\d+)(?:\s*-\s*(.*))?$/);
         const number = labelMatch?.[1] ?? "";
-        const title = labelMatch?.[2] ?? "";
+        const rawTitle = labelMatch?.[2] ?? "";
+        // Drop the transient "Loading..." placeholder so a ref submitted before
+        // its title resolves serializes as a clean number + url rather than
+        // freezing the placeholder into the sent message.
+        const title =
+          rawTitle === GITHUB_REF_PLACEHOLDER_TITLE ? "" : rawTitle;
         return `<${chip.type} number="${escapeXmlAttr(number)}" title="${escapeXmlAttr(title)}" url="${escapedId}" />`;
       }
       default:

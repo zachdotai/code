@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildGithubRefPlaceholderChip,
   GITHUB_ISSUE_STATE_COLORS,
   githubIssueStateColor,
   githubIssueToMentionChip,
+  isGithubRefPlaceholderLabel,
 } from "./githubIssueChip";
 
 describe("githubIssueToMentionChip", () => {
@@ -18,6 +20,24 @@ describe("githubIssueToMentionChip", () => {
       id: "https://github.com/PostHog/code/issues/1819",
       label: "#1819 - Let me mention GH issues",
     });
+  });
+});
+
+describe("isGithubRefPlaceholderLabel", () => {
+  it("matches the placeholder built for an unresolved ref", () => {
+    const chip = buildGithubRefPlaceholderChip({
+      kind: "issue",
+      owner: "PostHog",
+      repo: "code",
+      number: 1819,
+      normalizedUrl: "https://github.com/PostHog/code/issues/1819",
+    });
+    expect(isGithubRefPlaceholderLabel(chip.label)).toBe(true);
+  });
+
+  it("does not match resolved or fallback labels", () => {
+    expect(isGithubRefPlaceholderLabel("#1819 - Real title")).toBe(false);
+    expect(isGithubRefPlaceholderLabel("#1819")).toBe(false);
   });
 });
 

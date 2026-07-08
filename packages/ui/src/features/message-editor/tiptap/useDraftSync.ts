@@ -113,8 +113,11 @@ export function useDraftSync(
   editor: Editor | null,
   sessionId: string,
   context?: DraftContext,
+  onRestore?: (editor: Editor) => void,
 ) {
   const hasRestoredRef = useRef(false);
+  const onRestoreRef = useRef(onRestore);
+  onRestoreRef.current = onRestore;
   const lastSessionIdRef = useRef(sessionId);
   const lastEditorRef = useRef(editor);
   const editorRef = useRef(editor);
@@ -165,6 +168,8 @@ export function useDraftSync(
     } else {
       editor.commands.setContent(editorContentToTiptapJson(draft));
     }
+
+    onRestoreRef.current?.(editor);
   }, [hasHydrated, draft, editor]);
 
   // Handle pending content (e.g., restoring queued messages after cancel)

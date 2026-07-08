@@ -5,7 +5,10 @@ import {
   isContentEmpty,
   type MentionChip,
 } from "@posthog/core/message-editor/content";
-import { buildGithubRefPlaceholderChip } from "@posthog/core/message-editor/githubIssueChip";
+import {
+  buildGithubRefPlaceholderChip,
+  isGithubRefPlaceholderLabel,
+} from "@posthog/core/message-editor/githubIssueChip";
 import {
   type ParsedGithubIssueUrl,
   parseGithubIssueUrl,
@@ -137,7 +140,6 @@ async function resolveGithubRefChip(
   parsed: ParsedGithubIssueUrl,
 ): Promise<void> {
   const chipType = parsed.kind === "pr" ? "github_pr" : "github_issue";
-  const placeholderLabel = `#${parsed.number} - Loading...`;
   const title = await fetchGithubRefTitle(parsed);
   const resolvedLabel =
     title !== null ? `#${parsed.number} - ${title}` : `#${parsed.number}`;
@@ -147,11 +149,14 @@ async function resolveGithubRefChip(
   const { doc, tr } = view.state;
   let updated = false;
   doc.descendants((node, pos) => {
+    // Match by url + placeholder state rather than an exact label so the update
+    // still lands after the doc mutated (e.g. the chip was restored from a
+    // persisted draft) while the fetch was in flight.
     if (
       node.type.name !== "mentionChip" ||
       node.attrs.type !== chipType ||
       node.attrs.id !== parsed.normalizedUrl ||
-      node.attrs.label !== placeholderLabel
+      !isGithubRefPlaceholderLabel(node.attrs.label)
     ) {
       return true;
     }
@@ -164,6 +169,45 @@ async function resolveGithubRefChip(
   });
 
   if (updated) view.dispatch(tr);
+}
+
+// Resolve a chip's title at most once per url; concurrent paste + restore
+// reconciliation share one in-flight set so they don't double-fetch.
+function resolveGithubRefChipOnce(
+  view: EditorView,
+  parsed: ParsedGithubIssueUrl,
+  inFlight: Set<string>,
+): void {
+  if (inFlight.has(parsed.normalizedUrl)) return;
+  inFlight.add(parsed.normalizedUrl);
+  void resolveGithubRefChip(view, parsed).finally(() => {
+    inFlight.delete(parsed.normalizedUrl);
+  });
+}
+
+// Re-resolve any github chips still showing "Loading..." — e.g. a draft
+// persisted before its title loaded and restored after a refresh, which would
+// otherwise stay "Loading..." forever since the original fetch never rewrote it.
+function reconcileGithubRefChips(
+  view: EditorView,
+  inFlight: Set<string>,
+): void {
+  const pending: ParsedGithubIssueUrl[] = [];
+  view.state.doc.descendants((node) => {
+    if (
+      node.type.name !== "mentionChip" ||
+      (node.attrs.type !== "github_issue" && node.attrs.type !== "github_pr") ||
+      !isGithubRefPlaceholderLabel(node.attrs.label)
+    ) {
+      return true;
+    }
+    const parsed = parseGithubIssueUrl(node.attrs.id);
+    if (parsed) pending.push(parsed);
+    return true;
+  });
+  for (const parsed of pending) {
+    resolveGithubRefChipOnce(view, parsed, inFlight);
+  }
 }
 
 function showPasteHint(message: string, description: string): void {
@@ -234,6 +278,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const draftRef = useRef<ReturnType<typeof useDraftSync> | null>(null);
 
   const pasteCountRef = useRef(0);
+  const githubResolveInFlightRef = useRef<Set<string>>(new Set());
   const historyActions = usePromptHistoryStore.getState();
   const [isEmptyState, setIsEmptyState] = useState(true);
   const [isReady, setIsReady] = useState(false);
@@ -404,7 +449,11 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             if (parsedRef) {
               event.preventDefault();
               insertGithubRefPlaceholder(view, parsedRef);
-              void resolveGithubRefChip(view, parsedRef);
+              resolveGithubRefChipOnce(
+                view,
+                parsedRef,
+                githubResolveInFlightRef.current,
+              );
               return true;
             }
           }
@@ -529,7 +578,14 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     [sessionId, disabled, fileMentions, commands, placeholder],
   );
 
-  const draft = useDraftSync(editor, sessionId, context);
+  const draft = useDraftSync(editor, sessionId, context, (restoredEditor) => {
+    // A draft persisted while a github title was still loading restores with the
+    // "Loading..." placeholder; re-resolve it so it doesn't stay stuck forever.
+    reconcileGithubRefChips(
+      restoredEditor.view,
+      githubResolveInFlightRef.current,
+    );
+  });
   draftRef.current = draft;
 
   // Keep attachmentsRef in sync with state (synchronous, no effect needed)

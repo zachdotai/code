@@ -97,6 +97,24 @@ describe("xmlToContent", () => {
     );
   });
 
+  it("drops the 'Loading...' placeholder title when a ref is submitted before it resolves", () => {
+    const content: EditorContent = {
+      segments: [
+        {
+          type: "chip",
+          chip: {
+            type: "github_pr",
+            id: "https://github.com/org/repo/pull/42",
+            label: "#42 - Loading...",
+          },
+        },
+      ],
+    };
+    expect(contentToXml(content)).toBe(
+      '<github_pr number="42" title="" url="https://github.com/org/repo/pull/42" />',
+    );
+  });
+
   it("round-trips a github_pr chip", () => {
     const content: EditorContent = {
       segments: [
