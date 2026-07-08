@@ -328,6 +328,9 @@ function buildSpawnWrapper(
       cwd: spawnOpts.cwd,
       env: spawnOpts.env as NodeJS.ProcessEnv,
       stdio: ["pipe", "pipe", "pipe"],
+      // Prevent a console window from flashing on Windows for each spawned
+      // agent subprocess.
+      windowsHide: true,
     });
 
     if (child.pid) {

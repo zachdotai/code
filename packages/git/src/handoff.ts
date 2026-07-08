@@ -577,6 +577,7 @@ export class GitHandoffTracker {
       const child = spawn("git", args, {
         cwd: this.repositoryPath,
         stdio: ["ignore", "ignore", "pipe"],
+        windowsHide: true,
       });
 
       let stderr = "";
@@ -611,6 +612,7 @@ export class GitHandoffTracker {
         cwd: this.repositoryPath,
         stdio: ["ignore", "pipe", "pipe"],
         env,
+        windowsHide: true,
       });
       let stdout = "";
       let stderr = "";
@@ -641,6 +643,7 @@ export class GitHandoffTracker {
       const child = spawn("git", args, {
         cwd: this.repositoryPath,
         stdio: "pipe",
+        windowsHide: true,
       });
 
       let stdout = "";

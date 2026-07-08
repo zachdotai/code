@@ -63,6 +63,7 @@ export const listReposTool = defineLocalTool({
       const { stdout } = await execFileAsync("gh", cmdArgs, {
         env: token ? { ...process.env, GH_TOKEN: token } : process.env,
         maxBuffer: 1024 * 1024 * 8,
+        windowsHide: true,
       });
       const parsed = ghRepoSchema.safeParse(JSON.parse(stdout));
       if (!parsed.success) {

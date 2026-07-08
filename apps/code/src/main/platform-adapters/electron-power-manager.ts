@@ -41,12 +41,17 @@ async function detectBuiltInBattery(): Promise<boolean> {
       return stdout.includes("AppleSmartBattery");
     }
     case "win32": {
-      const { stdout } = await execFileAsync("powershell", [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "[bool](Get-CimInstance -ClassName Win32_Battery)",
-      ]);
+      const { stdout } = await execFileAsync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "[bool](Get-CimInstance -ClassName Win32_Battery)",
+        ],
+        // Prevent a console window from flashing on Windows.
+        { windowsHide: true },
+      );
       return stdout.trim().toLowerCase() === "true";
     }
     case "linux": {

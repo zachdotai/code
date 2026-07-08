@@ -39,6 +39,7 @@ function parseAgentshVersion(output: AgentshVersionOutput): string | null {
 async function getAgentshVersion(): Promise<AgentshVersionOutput> {
   const { stdout, stderr } = await execFileAsync("agentsh", ["--version"], {
     timeout: 5_000,
+    windowsHide: true,
   });
   return { stdout, stderr };
 }

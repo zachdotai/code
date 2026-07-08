@@ -51,6 +51,7 @@ export function execGh(
         env,
         timeout: options.timeoutMs ?? 0,
         maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
+        windowsHide: true,
       },
       (error, stdout, stderr) => {
         if (!error) {

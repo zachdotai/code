@@ -381,7 +381,7 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
     return new Promise((resolve) => {
       exec(
         command,
-        { cwd, timeout: 60000, env: buildShellEnv() },
+        { cwd, timeout: 60000, env: buildShellEnv(), windowsHide: true },
         (error, stdout, stderr) => {
           resolve({
             stdout: stdout || "",

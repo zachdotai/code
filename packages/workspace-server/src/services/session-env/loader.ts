@@ -116,6 +116,7 @@ export async function loadSessionEnvOverrides(
     const proc = spawn("bash", ["-c", cmd], {
       stdio: ["ignore", "pipe", "ignore"],
       env: process.env,
+      windowsHide: true,
     });
 
     const chunks: Buffer[] = [];

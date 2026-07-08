@@ -53,6 +53,8 @@ export function spawnPiCli(
   });
   return spawn(invocation.command, invocation.args, {
     stdio,
+    // Prevent a console window from flashing on Windows.
+    windowsHide: true,
     ...rest,
     env: invocation.env,
   });

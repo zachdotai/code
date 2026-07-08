@@ -101,7 +101,12 @@ function openBrowser(url: string): void {
     platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
   const args = platform === "win32" ? ["/c", "start", "", url] : [url];
   try {
-    spawn(command, args, { stdio: "ignore", detached: true }).unref();
+    spawn(command, args, {
+      stdio: "ignore",
+      detached: true,
+      // Prevent a console window from flashing on Windows (`cmd /c start`).
+      windowsHide: true,
+    }).unref();
   } catch {}
 }
 

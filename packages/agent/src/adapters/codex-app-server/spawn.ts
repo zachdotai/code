@@ -169,6 +169,8 @@ export function spawnCodexAppServerProcess(
     env,
     stdio: ["pipe", "pipe", "pipe"],
     detached: process.platform !== "win32",
+    // Prevent a console window from flashing on Windows.
+    windowsHide: true,
   });
 
   child.stderr?.on("data", (data: Buffer) => {

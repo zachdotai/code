@@ -603,6 +603,7 @@ export class WorktreeManager {
         cwd: this.mainRepoPath,
         stdio: ["ignore", "pipe", "pipe"],
         env: getCleanEnv(),
+        windowsHide: true,
       });
 
       const handleData = (data: Buffer) => {
@@ -931,7 +932,7 @@ function listIgnoredPathsViaGit(
         "--directory",
         `--exclude-from=${excludeFile}`,
       ],
-      { cwd: mainRepoPath },
+      { cwd: mainRepoPath, windowsHide: true },
       (error, stdout) => {
         if (error || !stdout) {
           resolve([]);
@@ -972,7 +973,7 @@ function listExcludeCandidates(
         "--exclude-standard",
         `--exclude-from=${excludeFile}`,
       ],
-      { cwd: mainRepoPath },
+      { cwd: mainRepoPath, windowsHide: true },
       (error, stdout) => {
         if (error || !stdout) {
           resolve([]);
@@ -1084,7 +1085,7 @@ function findPostCheckoutHook(mainRepoPath: string): Promise<string | null> {
     execFile(
       "git",
       ["rev-parse", "--git-path", "hooks/post-checkout"],
-      { cwd: mainRepoPath },
+      { cwd: mainRepoPath, windowsHide: true },
       async (error, stdout) => {
         if (error || !stdout.trim()) {
           resolve(null);
@@ -1131,6 +1132,7 @@ export async function runPostCheckoutHook(
     const proc = spawn(shell, ["-lc", `${hookPath} ${nullSha} ${head} 1`], {
       cwd: worktreePath,
       stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
 
     const handleData = (data: Buffer) => {

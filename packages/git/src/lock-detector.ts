@@ -15,7 +15,7 @@ export async function getIndexLockPath(repoPath: string): Promise<string> {
     const { stdout } = await execFileAsync(
       "git",
       ["rev-parse", "--git-path", "index.lock"],
-      { cwd: repoPath },
+      { cwd: repoPath, windowsHide: true },
     );
     return path.resolve(repoPath, stdout.trim());
   } catch {

@@ -36,6 +36,8 @@ export function spawnChildProcess(
       env,
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
+      // Prevent a console window from flashing on Windows.
+      windowsHide: true,
     });
   } catch {
     // `spawn()` can throw synchronously for some invalid inputs (e.g. a

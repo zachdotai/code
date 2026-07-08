@@ -105,7 +105,7 @@ function runGit(args: string[], cwd: string): Promise<GitRunResult> {
     childProcess.execFile(
       "git",
       args,
-      { cwd, maxBuffer: MAX_GIT_BUFFER, encoding: "buffer" },
+      { cwd, maxBuffer: MAX_GIT_BUFFER, encoding: "buffer", windowsHide: true },
       (error, stdout, stderr) => {
         const err = error as (Error & { code?: number | string }) | null;
         const exitCode =

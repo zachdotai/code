@@ -215,7 +215,9 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
 
   async getGitStatus(): Promise<GitStatusOutput> {
     try {
-      const { stdout } = await execFileAsync("git", ["--version"]);
+      const { stdout } = await execFileAsync("git", ["--version"], {
+        windowsHide: true,
+      });
       return { installed: true, version: stdout.trim() };
     } catch {
       return { installed: false, version: null };

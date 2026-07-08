@@ -45,6 +45,8 @@ export function streamGitStatus(
     const child = spawn(binary, args, {
       cwd: baseDir,
       env: { ...getCleanEnv(), GIT_OPTIONAL_LOCKS: "0" },
+      // Prevent a console window from flashing on Windows.
+      windowsHide: true,
     });
 
     const staged: string[] = [];
