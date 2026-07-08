@@ -12,6 +12,17 @@ const PULL_REQUEST_LINKS = `
 When you mention a pull request in any reply or summary, always hyperlink it to its full URL (e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain text, so readers can open it directly.
 `;
 
+const PULL_REQUEST_DESCRIPTION = `
+# Pull Request Description
+
+When you open a pull request, do NOT use the default Claude Code PR footer (no "🤖 Generated with Claude Code" line, no "Co-Authored-By" trailer). Instead, end the PR description with a horizontal rule followed by this footer line:
+
+\`\`\`
+---
+*Created with [PostHog Code](https://posthog.com/code?ref=pr)*
+\`\`\`
+`;
+
 const PLAN_MODE = `
 # Plan Mode
 
@@ -44,4 +55,9 @@ Optimize for the fewest shell round trips.
 `;
 
 export const APPENDED_INSTRUCTIONS =
-  BRANCH_NAMING + PULL_REQUEST_LINKS + PLAN_MODE + MCP_TOOLS + SHELL_EFFICIENCY;
+  BRANCH_NAMING +
+  PULL_REQUEST_LINKS +
+  PULL_REQUEST_DESCRIPTION +
+  PLAN_MODE +
+  MCP_TOOLS +
+  SHELL_EFFICIENCY;
