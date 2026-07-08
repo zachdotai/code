@@ -88,8 +88,7 @@ export function contentToXml(content: EditorContent): string {
         // Drop the transient "Loading..." placeholder so a ref submitted before
         // its title resolves serializes as a clean number + url rather than
         // freezing the placeholder into the sent message.
-        const title =
-          rawTitle === GITHUB_REF_PLACEHOLDER_TITLE ? "" : rawTitle;
+        const title = rawTitle === GITHUB_REF_PLACEHOLDER_TITLE ? "" : rawTitle;
         return `<${chip.type} number="${escapeXmlAttr(number)}" title="${escapeXmlAttr(title)}" url="${escapedId}" />`;
       }
       default:
