@@ -3,6 +3,7 @@ import { getLlmGatewayUrl } from "./gateway";
 import {
   fallbackModelConfigs,
   gatewayBaseUrlForApi,
+  gatewayBaseUrlForApiWithGatewayUrl,
   resolveModelConfigs,
 } from "./models";
 
@@ -20,6 +21,27 @@ describe("gatewayBaseUrlForApi", () => {
     expect(gatewayBaseUrlForApi("openai-completions", "dev")).toBe(
       getLlmGatewayUrl("dev"),
     );
+  });
+});
+
+describe("gatewayBaseUrlForApiWithGatewayUrl", () => {
+  it.each([
+    ["https://gateway.example.com", "https://gateway.example.com"],
+    ["https://gateway.example.com/", "https://gateway.example.com"],
+    ["https://gateway.example.com///", "https://gateway.example.com"],
+  ])("strips trailing slashes from %s", (input, expected) => {
+    expect(
+      gatewayBaseUrlForApiWithGatewayUrl("anthropic-messages", input),
+    ).toBe(expected);
+  });
+
+  it("appends /v1 for openai-responses after stripping trailing slashes", () => {
+    expect(
+      gatewayBaseUrlForApiWithGatewayUrl(
+        "openai-responses",
+        "https://gateway.example.com/",
+      ),
+    ).toBe("https://gateway.example.com/v1");
   });
 });
 

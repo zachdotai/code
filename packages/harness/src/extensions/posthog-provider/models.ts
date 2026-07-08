@@ -18,6 +18,19 @@ type ModelFamily = "anthropic" | "openai" | "cloudflare";
 
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
+/**
+ * Strips trailing slashes without a regex. `.replace(/\/+$/, "")` is
+ * unanchored at the start, so the engine retries every possible split of
+ * the `+` quantifier at every position when the string doesn't end where
+ * expected — quadratic on a long run of slashes. A plain loop is O(n) and
+ * has no such worst case.
+ */
+function stripTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end--;
+  return url.slice(0, end);
+}
+
 function detectFamily(model: GatewayModel): ModelFamily {
   if (model.owned_by === "openai" || model.id.startsWith("gpt-")) {
     return "openai";
@@ -42,7 +55,7 @@ export function gatewayBaseUrlForApiWithGatewayUrl(
   api: string,
   gatewayUrl: string,
 ): string {
-  const normalized = gatewayUrl.replace(/\/+$/, "");
+  const normalized = stripTrailingSlashes(gatewayUrl);
   return api === "openai-responses" ? `${normalized}/v1` : normalized;
 }
 
@@ -181,7 +194,9 @@ async function fetchGatewayModels(
     return [];
   }
   try {
-    const baseUrl = gatewayUrl?.replace(/\/+$/, "") ?? getLlmGatewayUrl(region);
+    const baseUrl = gatewayUrl
+      ? stripTrailingSlashes(gatewayUrl)
+      : getLlmGatewayUrl(region);
     const response = await fetch(`${baseUrl}/v1/models`, {
       signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
     });

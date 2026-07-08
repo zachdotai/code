@@ -1,5 +1,14 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { buildEditDiffUpdate, reconstructEditOldText } from "./acp";
+import {
+  buildEditDiffUpdate,
+  buildHarnessModelSurface,
+  reconstructEditOldText,
+} from "./acp";
+
+function fakeModel(id: string, name: string): Model<Api> {
+  return { id, name, provider: "posthog" } as Model<Api>;
+}
 
 describe("reconstructEditOldText", () => {
   it("reverses a single unambiguous edit against the post-edit content", () => {
@@ -96,5 +105,30 @@ describe("buildEditDiffUpdate", () => {
       [],
     );
     expect(update).toBeUndefined();
+  });
+});
+
+describe("buildHarnessModelSurface", () => {
+  it("strips a '(latest)' suffix, including surrounding whitespace, from model names", () => {
+    const { models } = buildHarnessModelSurface(
+      [fakeModel("claude-opus-4-8", "Claude Opus (latest)")],
+      "claude-opus-4-8",
+    );
+    expect(models?.availableModels).toEqual([
+      { modelId: "claude-opus-4-8", name: "Claude Opus" },
+    ]);
+  });
+
+  it("prefers the '(latest)'-tagged entry when deduping same-named models", () => {
+    const { models } = buildHarnessModelSurface(
+      [
+        fakeModel("claude-opus-4-8-old", "Claude Opus"),
+        fakeModel("claude-opus-4-8", "Claude Opus (latest)"),
+      ],
+      "claude-opus-4-8",
+    );
+    expect(models?.availableModels).toEqual([
+      { modelId: "claude-opus-4-8", name: "Claude Opus" },
+    ]);
   });
 });

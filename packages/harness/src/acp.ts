@@ -35,11 +35,16 @@ export interface PiToolResult<TDetails = unknown> {
   isError?: boolean;
 }
 
-const LATEST_SUFFIX = /\s*\(latest\)\s*$/i;
+// No leading `\s*` here: paired with the unanchored search .replace() does by
+// default, a leading quantifier in front of a literal makes the engine retry
+// every possible split of \s* at every start position when the literal isn't
+// found, which is quadratic on a run of whitespace. The trailing .trimEnd()
+// below gets the same "trim surrounding whitespace" behavior without it.
+const LATEST_SUFFIX = /\(latest\)\s*$/i;
 const LATEST_MARKER = /\(latest\)/i;
 
 function stripLatestSuffix(name: string): string {
-  return name.replace(LATEST_SUFFIX, "");
+  return name.replace(LATEST_SUFFIX, "").trimEnd();
 }
 
 function dedupeToLatest<T extends Model<Api>>(models: T[]): T[] {
