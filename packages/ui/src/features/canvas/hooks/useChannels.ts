@@ -120,6 +120,10 @@ export function useChannelMutations() {
           (c) => c.channel_type === "public" && c.name === normalized,
         );
         if (backendChannel) {
+          // getTasks caps at 500 and does not paginate, so a channel with more
+          // than 500 tasks soft-deletes only the first page here. The channel
+          // itself is still soft-deleted below, so any stragglers stay attached
+          // to it and remain recoverable — nothing is lost, just left behind.
           const tasks = await client.getTasks({ channel: backendChannel.id });
           // Best-effort per task — one failed soft delete shouldn't strand
           // the rest or block the channel delete (the failed task stays

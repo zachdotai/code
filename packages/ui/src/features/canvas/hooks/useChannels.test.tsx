@@ -33,6 +33,14 @@ function folder(id: string, path: string): Schemas.FileSystem {
   };
 }
 
+function taskChannel(
+  id: string,
+  name: string,
+  channel_type: TaskChannel["channel_type"] = "public",
+): TaskChannel {
+  return { id, name, channel_type, created_at: "2026-01-01T00:00:00Z" };
+}
+
 let queryClient: QueryClient;
 function wrapper({ children }: { children: ReactNode }) {
   return (
@@ -109,14 +117,6 @@ describe("useChannelMutations", () => {
 });
 
 describe("useChannelMutations rename", () => {
-  function taskChannel(
-    id: string,
-    name: string,
-    channel_type: TaskChannel["channel_type"] = "public",
-  ): TaskChannel {
-    return { id, name, channel_type, created_at: "2026-01-01T00:00:00Z" };
-  }
-
   beforeEach(() => {
     vi.clearAllMocks();
     queryClient = new QueryClient({
@@ -219,14 +219,6 @@ describe("useChannelMutations rename", () => {
 });
 
 describe("useChannelMutations delete", () => {
-  function taskChannel(
-    id: string,
-    name: string,
-    channel_type: TaskChannel["channel_type"] = "public",
-  ): TaskChannel {
-    return { id, name, channel_type, created_at: "2026-01-01T00:00:00Z" };
-  }
-
   beforeEach(() => {
     vi.clearAllMocks();
     queryClient = new QueryClient({
