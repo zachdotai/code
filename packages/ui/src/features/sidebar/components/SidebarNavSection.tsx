@@ -13,6 +13,7 @@ import {
   navigateToCommandCenter,
   navigateToHome,
   navigateToInbox,
+  navigateToLoops,
   navigateToMcpServers,
   navigateToSkills,
   navigateToWebsiteCommandCenter,
@@ -32,6 +33,7 @@ import { AgentsItem } from "./items/AgentsItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
+import { LoopsItem } from "./items/LoopsItem";
 import { McpServersItem } from "./items/McpServersItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
@@ -96,6 +98,7 @@ export function SidebarNavSection({
   const isActivityActive = view.type === "activity";
   const isInboxActive = view.type === "inbox";
   const isAgentsActive = view.type === "agents";
+  const isLoopsActive = view.type === "loops";
   const isCommandCenterActive = view.type === "command-center";
   const isSkillsActive = view.type === "skills";
   const isMcpServersActive = view.type === "mcp-servers";
@@ -159,6 +162,10 @@ export function SidebarNavSection({
 
       <Box>
         <AgentsItem isActive={isAgentsActive} onClick={navigateToAgents} />
+      </Box>
+
+      <Box>
+        <LoopsItem isActive={isLoopsActive} onClick={navigateToLoops} />
       </Box>
 
       <Box>
