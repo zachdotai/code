@@ -238,11 +238,11 @@ function PrStatusIcon({
   // glyph to the button's icon size (14px in the sidebar), and the badge and
   // mask must track whatever actually renders so the composite stays the
   // same size as the plain PR icons on local-run rows. The badge's inline
-  // percentage dimensions also exempt it from that quill rule. Badge: 50% of
-  // the glyph, bleeding 7% past the corner, centered at 82%; the mask hole's
-  // 30% radius leaves a thin ring around it.
+  // percentage dimensions also exempt it from that quill rule. Badge: 65% of
+  // the glyph, bleeding 9% past the corner, centered at 76.5%; the mask
+  // hole's 37% radius leaves a thin ring around it.
   const mask =
-    "radial-gradient(ellipse 30% 30% at 82% 82%, transparent 97%, black 100%)";
+    "radial-gradient(ellipse 37% 37% at 76.5% 76.5%, transparent 97%, black 100%)";
   const icon = (
     <span className="relative flex items-center justify-center">
       <meta.Icon
@@ -252,11 +252,11 @@ function PrStatusIcon({
         style={{ maskImage: mask, WebkitMaskImage: mask }}
       />
       <provenanceBadge.Icon
-        size={Math.round(size * 0.5)}
+        size={Math.round(size * 0.65)}
         weight="fill"
         color="var(--gray-10)"
         className="absolute"
-        style={{ width: "50%", height: "50%", right: "-7%", bottom: "-7%" }}
+        style={{ width: "65%", height: "65%", right: "-9%", bottom: "-9%" }}
       />
     </span>
   );
