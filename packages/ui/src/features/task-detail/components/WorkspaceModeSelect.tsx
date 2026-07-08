@@ -22,6 +22,7 @@ import {
 } from "@posthog/quill";
 import type { WorkspaceMode } from "@posthog/shared";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { useCallback, useMemo, useState } from "react";
 import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { useSandboxEnvironments } from "../../settings/sections/environments/useSandboxEnvironments";
@@ -68,8 +69,11 @@ export function WorkspaceModeSelect({
   selectedCloudEnvironmentId,
   onCloudEnvironmentChange,
 }: WorkspaceModeSelectProps) {
+  const { localWorkspaces } = useHostCapabilities();
   const cloudModeEnabled =
-    useFeatureFlag("twig-cloud-mode-toggle") || import.meta.env.DEV;
+    useFeatureFlag("twig-cloud-mode-toggle") ||
+    import.meta.env.DEV ||
+    !localWorkspaces;
 
   const { environments } = useSandboxEnvironments();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -85,10 +89,13 @@ export function WorkspaceModeSelect({
 
   const localModes = useMemo(
     () =>
-      LOCAL_MODES.filter(
-        (m) => !overrideModes || overrideModes.includes(m.mode),
-      ),
-    [overrideModes],
+      // Cloud-only hosts have no local filesystem — hide worktree/local modes.
+      localWorkspaces
+        ? LOCAL_MODES.filter(
+            (m) => !overrideModes || overrideModes.includes(m.mode),
+          )
+        : [],
+    [overrideModes, localWorkspaces],
   );
 
   const selectedEnvName = useMemo(() => {

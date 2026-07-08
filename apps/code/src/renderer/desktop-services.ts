@@ -45,6 +45,10 @@ import { SETUP_STORE } from "@posthog/core/setup/identifiers";
 import { resolveService } from "@posthog/di/container";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
+  HOST_CAPABILITIES,
+  type HostCapabilities,
+} from "@posthog/platform/host-capabilities";
+import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
   type NotificationTarget,
@@ -339,3 +343,8 @@ container
   .inSingletonScope();
 
 container.bind(SETUP_STORE).toConstantValue(setupStore);
+
+// Desktop is a full local host: local folders, git worktrees, and a terminal.
+container
+  .bind(HOST_CAPABILITIES)
+  .toConstantValue({ localWorkspaces: true } satisfies HostCapabilities);

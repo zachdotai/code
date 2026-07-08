@@ -22,10 +22,31 @@ import {
   CLOUD_TASK_SERVICE,
   type ICloudTaskAuth,
 } from "@posthog/core/cloud-task/identifiers";
+import { deepLinksCoreModule } from "@posthog/core/deep-links/deep-links.module";
+import {
+  GITHUB_ISSUE_CLIENT,
+  type GitHubIssueClient,
+} from "@posthog/core/deep-links/identifiers";
+import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
+import {
+  GITHUB_CONNECT_CLIENT as INTEGRATIONS_GITHUB_CONNECT_CLIENT,
+  type GithubConnectClient as IntegrationsGithubConnectClient,
+  REPOSITORIES_CLIENT,
+  REPOSITORIES_SERVICE,
+  type RepositoriesClient,
+} from "@posthog/core/integrations/identifiers";
+import { RepositoriesService } from "@posthog/core/integrations/repositoriesService";
+import {
+  GITHUB_CONNECT_CLIENT as ONBOARDING_GITHUB_CONNECT_CLIENT,
+  type GithubConnectClient as OnboardingGithubConnectContract,
+} from "@posthog/core/onboarding/identifiers";
+import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
 import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
+import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
+import { setupCoreModule } from "@posthog/core/setup/setup.module";
 import { setRootContainer } from "@posthog/di/container";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
@@ -36,6 +57,10 @@ import {
   ANALYTICS_SERVICE,
   type IAnalytics,
 } from "@posthog/platform/analytics";
+import {
+  HOST_CAPABILITIES,
+  type HostCapabilities,
+} from "@posthog/platform/host-capabilities";
 import {
   type IPowerManager,
   POWER_MANAGER_SERVICE,
@@ -50,6 +75,10 @@ import {
   FEATURE_FLAGS,
   type FeatureFlags,
 } from "@posthog/ui/features/feature-flags/identifiers";
+import {
+  UiGithubConnectClient,
+  UiRepositoriesClient,
+} from "@posthog/ui/features/integrations/integrationsClientImpl";
 import { McpAppHost } from "@posthog/ui/features/mcp-apps/components/McpAppHost";
 import {
   MCP_APP_HOST_COMPONENT,
@@ -57,11 +86,17 @@ import {
   type McpAppHostComponent,
   type McpSandboxProxyUrlProvider,
 } from "@posthog/ui/features/mcp-apps/identifiers";
+import { OnboardingGithubConnectClient } from "@posthog/ui/features/onboarding/githubConnectClientImpl";
 import { getSessionService } from "@posthog/ui/features/sessions/sessionServiceHost";
+import { setupUiModule } from "@posthog/ui/features/setup/setup.module";
 import {
   ANALYTICS_TRACKER,
   type AnalyticsTracker,
 } from "@posthog/ui/shell/analytics";
+import {
+  HEDGEHOG_MODE_HOST,
+  type HedgehogModeHost,
+} from "@posthog/ui/shell/hedgehogModeHost";
 import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
@@ -76,6 +111,7 @@ import {
 } from "./web-auth-adapters";
 import { WebAuthSideEffects } from "./web-auth-side-effects";
 import { WebOAuthFlowService } from "./web-oauth-flow";
+import { webSetupStore } from "./web-setup-store";
 import { hostTrpcClient } from "./web-trpc";
 
 interface WebBindings {
@@ -99,6 +135,14 @@ interface WebBindings {
   [CLOUD_TASK_SERVICE]: CloudTaskService;
   [CLOUD_TASK_AUTH]: ICloudTaskAuth;
   [SESSION_SERVICE]: SessionService;
+  [SETUP_STORE]: ISetupStore;
+  [GITHUB_ISSUE_CLIENT]: GitHubIssueClient;
+  [HEDGEHOG_MODE_HOST]: HedgehogModeHost;
+  [INTEGRATIONS_GITHUB_CONNECT_CLIENT]: IntegrationsGithubConnectClient;
+  [ONBOARDING_GITHUB_CONNECT_CLIENT]: OnboardingGithubConnectContract;
+  [REPOSITORIES_CLIENT]: RepositoriesClient;
+  [REPOSITORIES_SERVICE]: RepositoriesService;
+  [HOST_CAPABILITIES]: HostCapabilities;
 }
 
 export const queryClient = new QueryClient();
@@ -143,6 +187,14 @@ container
       | undefined) ?? null,
   );
 container.bind(POWER_MANAGER_SERVICE).toConstantValue(webPowerManager);
+
+// The web host is cloud-only: no local filesystem, so the UI must use remote
+// (connected-GitHub-org) repositories and cloud workspaces everywhere it would
+// otherwise reach for local folders/worktrees/terminal.
+container
+  .bind(HOST_CAPABILITIES)
+  .toConstantValue({ localWorkspaces: false } satisfies HostCapabilities);
+
 container.load(authUiModule);
 
 // ── Cloud tasks: CloudTaskService is pure fetch/SSE core code ──
@@ -213,5 +265,54 @@ container.bind(MCP_SANDBOX_PROXY_URL).toConstantValue(() => {
   }
   return sandboxProxyUrl;
 });
+
+// ── Post-login shell: the tokens __root.tsx resolves eagerly via useService ──
+// The shared app shell (packages/ui __root.tsx) mounts the full desktop surface
+// once authenticated+onboarded. These three are resolved synchronously in
+// render, so an unbound token crashes the tree (unlike tRPC/query calls, which
+// degrade to a rejected promise). Bind the real host-agnostic services where
+// they exist and thin stubs for genuinely local-only host capabilities.
+
+// Setup discovery (useSetupDiscovery at __root): SetupRunService is portable
+// core; SetupRunServiceImpl talks to the PostHog API via HOST_TRPC_CLIENT; the
+// store adapter is host-agnostic zustand, reused verbatim from desktop.
+container.load(setupCoreModule);
+container.load(setupUiModule);
+container.bind(SETUP_STORE).toConstantValue(webSetupStore);
+
+// New-task deep links (useNewTaskDeepLink at __root): the resolver is portable
+// core, but its GITHUB_ISSUE_CLIENT dep reads a local git repo on desktop. Web
+// has no git backend, so bind a stub that rejects if an "issue" deep link is
+// ever resolved (the browser has no deep-link scheme, so this never fires).
+container.load(deepLinksCoreModule);
+container.bind(GITHUB_ISSUE_CLIENT).toConstantValue({
+  getGithubIssue: () =>
+    Promise.reject(new Error("GitHub issue lookup is not available on web")),
+});
+
+// Hedgehog overlay (HedgehogMode at __root): optional cosmetic canvas game the
+// desktop adapter owns via @posthog/hedgehog-mode. Web binds a no-op host so
+// the useService call resolves; nothing renders.
+container.bind(HEDGEHOG_MODE_HOST).toConstantValue({
+  mount: () => Promise.resolve({ destroy: () => {} }),
+});
+
+// ── GitHub integration: onboarding connect step + __root's useIntegrations() ──
+// Cloud tasks operate on GitHub repos, so these are REAL bindings backed by the
+// PostHog API (api-client), not stubs. The onboarding and integrations features
+// each define their own GITHUB_CONNECT_{CLIENT,SERVICE} tokens; both services
+// are portable core and both client impls are host-agnostic, reused verbatim
+// from the desktop renderer. RepositoriesService has no module, so bind it
+// directly like desktop does.
+container.load(githubConnectModule);
+container.load(onboardingModule);
+container
+  .bind(INTEGRATIONS_GITHUB_CONNECT_CLIENT)
+  .toConstantValue(new UiGithubConnectClient());
+container
+  .bind(ONBOARDING_GITHUB_CONNECT_CLIENT)
+  .toConstantValue(new OnboardingGithubConnectClient());
+container.bind(REPOSITORIES_CLIENT).toConstantValue(new UiRepositoriesClient());
+container.bind(REPOSITORIES_SERVICE).to(RepositoriesService).inSingletonScope();
 
 setRootContainer(container);

@@ -134,6 +134,10 @@ import {
   type HostTrpcClient,
 } from "@posthog/host-router/client";
 import {
+  HOST_CAPABILITIES,
+  type HostCapabilities,
+} from "@posthog/platform/host-capabilities";
+import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
 } from "@posthog/platform/notifications";
@@ -320,6 +324,7 @@ export interface RendererBindings {
   [FEATURE_FLAGS]: FeatureFlags;
   [AUTH_SIDE_EFFECTS]: IAuthSideEffects;
   [SETUP_STORE]: ISetupStore;
+  [HOST_CAPABILITIES]: HostCapabilities;
 
   // --- desktop-contributions.ts ---
   [CONTRIBUTION]: Contribution;

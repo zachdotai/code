@@ -51,6 +51,20 @@ const foldersStubRouter = router({
   getMostRecentlyAccessedRepository: publicProcedure.query(() => null),
 });
 
+const workspaceStubRouter = router({
+  // useWorkspaces() at __root maps taskId -> local worktree/folder. No local
+  // workspaces exist on web (cloud tasks run in the sandbox), so return an
+  // empty map. A resolved (not rejected) query keeps the sidebar out of a
+  // perpetual loading state.
+  getAll: publicProcedure.query(() => ({}) as Record<string, unknown>),
+  // Fired by __root's cloud-workspace reconcile effect (gated behind the
+  // sync-cloud-tasks flag, off by default). Nothing to reconcile without a
+  // local workspace backend.
+  reconcileCloudWorkspaces: publicProcedure
+    .input(z.object({ taskIds: z.array(z.string()) }))
+    .mutation(() => ({ created: [] as string[] })),
+});
+
 export const webHostRouter = router({
   additionalDirectories: additionalDirectoriesStubRouter,
   agent: agentStubRouter,
@@ -60,6 +74,7 @@ export const webHostRouter = router({
   folders: foldersStubRouter,
   os: osStubRouter,
   skills: skillsStubRouter,
+  workspace: workspaceStubRouter,
 });
 
 export type WebHostRouter = typeof webHostRouter;

@@ -25,6 +25,7 @@ import { useConnectivity } from "../../../hooks/useConnectivity";
 import { DotPatternBackground } from "../../../primitives/DotPatternBackground";
 import { toast } from "../../../primitives/toast";
 import { useActiveRepoStore } from "../../../shell/activeRepoStore";
+import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import { useAuthStateValue } from "../../auth/store";
 import { AutoresearchComposerControls } from "../../autoresearch/AutoresearchComposerControls";
@@ -310,8 +311,11 @@ export function TaskInput({
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
 
+  // Cloud-only hosts (web) can't run local/worktree tasks — force cloud mode.
+  const { localWorkspaces } = useHostCapabilities();
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
+    if (!localWorkspaces) return "cloud";
     return lastUsedWorkspaceMode || "local";
   });
 
@@ -321,8 +325,14 @@ export function TaskInput({
     if (!settingsHydrated) return;
     didResolveWorkspaceModeRef.current = true;
     if (initialCloudRepository) return;
+    if (!localWorkspaces) return;
     setWorkspaceModeState(lastUsedWorkspaceMode || "local");
-  }, [settingsHydrated, lastUsedWorkspaceMode, initialCloudRepository]);
+  }, [
+    settingsHydrated,
+    lastUsedWorkspaceMode,
+    initialCloudRepository,
+    localWorkspaces,
+  ]);
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
     didResolveWorkspaceModeRef.current = true;
