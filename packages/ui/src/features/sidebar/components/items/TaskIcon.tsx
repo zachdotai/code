@@ -232,15 +232,6 @@ function PrStatusIcon({
   // radial-gradient mask punches a hole in the PR glyph under the badge so
   // both shapes stay legible on any row background (hover, selected, command
   // palette highlight) without hardcoding a cutout ring color.
-  //
-  // All geometry is relative to the glyph's rendered box, not the `size`
-  // prop: quill's `.quill-button svg:not([class*=size-])` rule resizes the
-  // glyph to the button's icon size (14px in the sidebar), and the badge and
-  // mask must track whatever actually renders so the composite stays the
-  // same size as the plain PR icons on local-run rows. The badge's inline
-  // percentage dimensions also exempt it from that quill rule. Badge: 65% of
-  // the glyph, bleeding 9% past the corner, centered at 76.5%; the mask
-  // hole's 37% radius leaves a thin ring around it.
   const mask =
     "radial-gradient(ellipse 37% 37% at 76.5% 76.5%, transparent 97%, black 100%)";
   const icon = (
