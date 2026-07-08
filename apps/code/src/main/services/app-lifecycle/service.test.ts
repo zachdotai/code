@@ -297,17 +297,27 @@ describe("AppLifecycleService", () => {
 
     it("leaves fullscreen and waits for the transition before finishing", async () => {
       mockBrowserWindow.isFullScreen.mockReturnValue(true);
-      mockBrowserWindow.setFullScreen.mockImplementationOnce(() => {
-        const [event, listener] = mockBrowserWindow.once.mock.calls[0] ?? [];
+
+      let leaveListener: (() => void) | undefined;
+      mockBrowserWindow.once.mockImplementationOnce((event, listener) => {
         expect(event).toBe("leave-full-screen");
-        (listener as () => void)();
+        leaveListener = listener as () => void;
       });
 
       const promise = service.shutdownWithoutContainer();
-      await vi.runAllTimersAsync();
-      await promise;
+      let finished = false;
+      void promise.then(() => {
+        finished = true;
+      });
 
+      // Allow teardownNativeResources()'s setImmediate to run so the fullscreen exit is initiated.
+      await vi.advanceTimersByTimeAsync(0);
       expect(mockBrowserWindow.setFullScreen).toHaveBeenCalledWith(false);
+      expect(finished).toBe(false);
+
+      leaveListener?.();
+      await vi.advanceTimersByTimeAsync(100);
+      await promise;
     });
 
     it("does not touch fullscreen when the window is not fullscreen", async () => {
