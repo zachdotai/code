@@ -233,42 +233,30 @@ function PrStatusIcon({
   // both shapes stay legible on any row background (hover, selected, command
   // palette highlight) without hardcoding a cutout ring color.
   //
-  // Both svgs get inline width/height: quill's
-  // `.quill-button svg:not([class*=size-])` rule otherwise forces descendant
-  // svgs to the button's icon size, which would inflate the badge and shift
-  // the glyph out of the mask's coordinate system.
-  const badgeSize = Math.round(size * 0.5);
-  const overflow = 1;
-  const holeCenter = size + overflow - badgeSize / 2;
-  const holeRadius = badgeSize / 2 + 0.5;
-  const mask = `radial-gradient(circle at ${holeCenter}px ${holeCenter}px, transparent ${holeRadius}px, black ${holeRadius + 0.5}px)`;
+  // All geometry is relative to the glyph's rendered box, not the `size`
+  // prop: quill's `.quill-button svg:not([class*=size-])` rule resizes the
+  // glyph to the button's icon size (14px in the sidebar), and the badge and
+  // mask must track whatever actually renders so the composite stays the
+  // same size as the plain PR icons on local-run rows. The badge's inline
+  // percentage dimensions also exempt it from that quill rule. Badge: 50% of
+  // the glyph, bleeding 7% past the corner, centered at 82%; the mask hole's
+  // 30% radius leaves a thin ring around it.
+  const mask =
+    "radial-gradient(ellipse 30% 30% at 82% 82%, transparent 97%, black 100%)";
   const icon = (
-    <span
-      className="relative flex items-center justify-center"
-      style={{ width: size, height: size }}
-    >
+    <span className="relative flex items-center justify-center">
       <meta.Icon
         size={size}
         weight="bold"
         color={meta.color}
-        style={{
-          width: size,
-          height: size,
-          maskImage: mask,
-          WebkitMaskImage: mask,
-        }}
+        style={{ maskImage: mask, WebkitMaskImage: mask }}
       />
       <provenanceBadge.Icon
-        size={badgeSize}
+        size={Math.round(size * 0.5)}
         weight="fill"
         color="var(--gray-10)"
         className="absolute"
-        style={{
-          width: badgeSize,
-          height: badgeSize,
-          right: -overflow,
-          bottom: -overflow,
-        }}
+        style={{ width: "50%", height: "50%", right: "-7%", bottom: "-7%" }}
       />
     </span>
   );
