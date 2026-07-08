@@ -33,29 +33,30 @@ describe("buildNodeShimScript", () => {
 });
 
 describe("isNodeShimScript", () => {
-  it("recognizes both variants written for the same binary", () => {
-    expect(isNodeShimScript(buildNodeShimScript(EXEC_PATH), EXEC_PATH)).toBe(
-      true,
-    );
-    expect(
-      isNodeShimScript(
-        buildNodeShimScript(EXEC_PATH, "/usr/local/bin/node"),
-        EXEC_PATH,
-      ),
-    ).toBe(true);
-  });
-
-  it("rejects shims written for a different binary and non-shim content", () => {
-    expect(
-      isNodeShimScript(buildNodeShimScript("/some/other/app"), EXEC_PATH),
-    ).toBe(false);
-    expect(
-      isNodeShimScript(
-        buildNodeShimScript("/some/other/app", "/usr/local/bin/node"),
-        EXEC_PATH,
-      ),
-    ).toBe(false);
-    expect(isNodeShimScript("not a shim", EXEC_PATH)).toBe(false);
-    expect(isNodeShimScript("", EXEC_PATH)).toBe(false);
+  it.each([
+    {
+      content: "fallback-only shim for the binary",
+      script: buildNodeShimScript(EXEC_PATH),
+      expected: true,
+    },
+    {
+      content: "real-node-preferring shim for the binary",
+      script: buildNodeShimScript(EXEC_PATH, "/usr/local/bin/node"),
+      expected: true,
+    },
+    {
+      content: "fallback-only shim for a different binary",
+      script: buildNodeShimScript("/some/other/app"),
+      expected: false,
+    },
+    {
+      content: "real-node-preferring shim for a different binary",
+      script: buildNodeShimScript("/some/other/app", "/usr/local/bin/node"),
+      expected: false,
+    },
+    { content: "non-shim content", script: "not a shim", expected: false },
+    { content: "empty content", script: "", expected: false },
+  ])("returns $expected for $content", ({ script, expected }) => {
+    expect(isNodeShimScript(script, EXEC_PATH)).toBe(expected);
   });
 });

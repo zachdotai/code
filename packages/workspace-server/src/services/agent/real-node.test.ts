@@ -74,26 +74,25 @@ describe.skipIf(process.platform === "win32")("findRealNode probing", () => {
     });
   });
 
-  it("rejects a candidate that identifies as Electron", async () => {
-    const dir = makeBinDir(
-      probeFixture('{"node":"v22.1.0","electron":"37.2.0"}'),
-    );
-    await expect(findWithPath([dir])).resolves.toBeNull();
-  });
-
-  it("rejects a node older than the minimum major", async () => {
-    const dir = makeBinDir(
-      probeFixture(
+  it.each([
+    {
+      candidate: "identifies as Electron",
+      script: probeFixture('{"node":"v22.1.0","electron":"37.2.0"}'),
+    },
+    {
+      candidate: "reports a version below the minimum major",
+      script: probeFixture(
         `{"node":"v${MIN_REAL_NODE_MAJOR - 2}.20.0","electron":null}`,
       ),
-    );
+    },
+    {
+      candidate: "emits non-JSON output",
+      script: "#!/bin/sh\necho 'not json'\n",
+    },
+    { candidate: "exits non-zero", script: "#!/bin/sh\nexit 1\n" },
+  ])("rejects a candidate that $candidate", async ({ script }) => {
+    const dir = makeBinDir(script);
     await expect(findWithPath([dir])).resolves.toBeNull();
-  });
-
-  it("rejects candidates that emit garbage or fail", async () => {
-    const garbage = makeBinDir("#!/bin/sh\necho 'not json'\n");
-    const failing = makeBinDir("#!/bin/sh\nexit 1\n");
-    await expect(findWithPath([garbage, failing])).resolves.toBeNull();
   });
 
   it("kills and rejects a candidate that hangs", async () => {
