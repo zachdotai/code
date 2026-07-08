@@ -243,7 +243,6 @@ function PrStatusIcon({
         style={{ maskImage: mask, WebkitMaskImage: mask }}
       />
       <provenanceBadge.Icon
-        size={Math.round(size * 0.65)}
         weight="fill"
         color="var(--gray-10)"
         className="absolute"
