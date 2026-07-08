@@ -16,7 +16,7 @@ If an issue does not yet exist for your change, please create one first so we ca
 ## Development setup
 
 ```bash
-# Prerequisites: Node.js 22+, pnpm 10.23+
+# Prerequisites: Node.js 22+, pnpm 10.23.0
 pnpm install
 cp .env.example .env
 pnpm dev
