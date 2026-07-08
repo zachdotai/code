@@ -1,10 +1,7 @@
 import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import {
-  hasFileMentions,
-  parseFileMentions,
-} from "./parseFileMentions";
+import { hasFileMentions, parseFileMentions } from "./parseFileMentions";
 
 function renderParts(content: string) {
   return render(<Theme>{parseFileMentions(content)}</Theme>);
