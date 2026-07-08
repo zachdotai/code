@@ -28,21 +28,30 @@ A new export in any sub-package flows to `@posthog/quill` automatically on build
 
 1. Edit/add the component in the right sub-package (above) and export it from that
    package's `src/index.ts`.
-2. Re-sync into this repo:
+2. Re-sync into this repo manually — build → pack → point the override → reinstall:
 
    ```bash
-   .claude/skills/quill-code/scripts/sync-quill.sh
-   ```
+   QUILL_DIR="${QUILL_DIR:-../posthog/packages/quill/packages/quill}"
 
-   This builds the **whole quill workspace** (recursive `pnpm build` at the workspace
-   root — it rebuilds the sub-packages BEFORE the aggregate bundles them), packs it
-   into `.local-quill/` as a content-hashed `posthog-quill-local-<hash>.tgz`, rewrites
-   the override line in `pnpm-workspace.yaml`, deletes stale tarballs, and runs
-   `pnpm install`.
+   # a. Build the WHOLE quill workspace (two levels up from the aggregate), so the
+   #    sub-packages rebuild BEFORE the aggregate bundles them.
+   ( cd "$QUILL_DIR/../.." && pnpm build )
+
+   # b. Pack into .local-quill/ under a UNIQUE filename. pnpm pins a tarball by
+   #    integrity, so a stable name caches stale across re-syncs — drop old local
+   #    tarballs first, then rename the packed file to a unique local name.
+   rm -f .local-quill/posthog-quill-local-*.tgz
+   ( cd "$QUILL_DIR" && npm pack --pack-destination "$(git rev-parse --show-toplevel)/.local-quill" )
+   mv .local-quill/posthog-quill-[0-9]*.tgz ".local-quill/posthog-quill-local-$(git rev-parse --short HEAD)-$$.tgz"
+
+   # c. Point the override at the new tarball, then reinstall.
+   #    Edit pnpm-workspace.yaml so overrides['@posthog/quill'] = file:./.local-quill/<new file>
+   pnpm install
+   ```
 
    > Building only the aggregate (`packages/quill/packages/quill`) re-bundles the
    > sub-packages' **stale** `dist/`, so edits to primitives/components/blocks are
-   > silently dropped. Always build at the workspace root — the script does this.
+   > silently dropped. Always build at the workspace root.
 3. Verify in the Code app (`pnpm dev`, or the `test-electron-app` skill). Repeat from 1.
 
 After every quill edit you **must** re-run the sync — the app consumes the tarball, not
