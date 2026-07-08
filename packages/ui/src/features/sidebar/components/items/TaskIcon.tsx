@@ -232,7 +232,7 @@ function PrStatusIcon({
   // radial-gradient mask punches a hole in the PR glyph under the badge so
   // both shapes stay legible on any row background (hover, selected, command
   // palette highlight) without hardcoding a cutout ring color.
-  const badgeSize = Math.round(size * 0.66);
+  const badgeSize = Math.round(size * 0.5);
   const overflow = 2;
   const holeCenter = size + overflow - badgeSize / 2;
   const holeRadius = badgeSize / 2 + 1;
