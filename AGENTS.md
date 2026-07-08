@@ -97,6 +97,19 @@ For each new file or meaningful change:
    - Domain fact read by business logic: core store.
    - Pure view state: UI store.
 
+## Persisting State
+
+PostHog Code has no local database. Durable, account-scoped state (settings, custom instructions, saved preferences) persists to PostHog cloud through `@posthog/api-client`, called from a `core` service. It is not `localStorage` and not host-local files. Cloud persistence is what makes state survive a reinstall and sync to the user's other machines.
+
+`localStorage` and host-local files are for device-local, ephemeral view state only. If a user would be surprised to lose it after switching machines or reinstalling, it is account state and belongs in the cloud.
+
+| State | Home |
+| --- | --- |
+| Account/durable (settings, custom instructions, preferences that should sync) | PostHog cloud via `@posthog/api-client`, from a `core` service |
+| Device-local ephemeral view state (panel sizes, last-open tab, dismissed hints) | UI store or host-local storage |
+
+Do not default to `localStorage` because the repo has no database of its own. The database is PostHog cloud, reached through `api-client`.
+
 ## Forbidden Patterns
 
 - Business logic in store actions.
@@ -113,6 +126,7 @@ For each new file or meaningful change:
 - Bespoke clients that wrap `trpcClient.x` one-to-one.
 - `*Port`, `*_PORT`, or `ports.ts` naming.
 - Business logic in `apps/<host>`.
+- Persisting account-scoped or durable state to `localStorage` or host-local files instead of PostHog cloud via `@posthog/api-client`.
 
 ## Host Boundary
 
