@@ -28,9 +28,10 @@ export interface IBrowserTabsService {
       channelId: string | null;
       channelSection?: string | null;
       appView?: string | null;
+      tabId?: string;
     },
   ): TabsSnapshot;
-  newBlankTab(input: { windowId: string }): TabsSnapshot;
+  newBlankTab(input: { windowId: string; tabId?: string }): TabsSnapshot;
   setTabTarget(
     input: TabTarget & {
       tabId: string;
@@ -103,20 +104,31 @@ export class BrowserTabsService
       channelId: string | null;
       channelSection?: string | null;
       appView?: string | null;
+      tabId?: string;
     },
   ): TabsSnapshot {
+    // Honor a renderer-minted id so the caller's optimistic apply and this
+    // persisted state agree on the id. Dedup-by-identity still applies first,
+    // so a replay of the same open focuses the existing tab.
+    const providedId = input.tabId;
     const { snapshot } = openOrFocusTab(this.snapshot, {
       ...input,
-      makeId,
+      makeId: providedId ? () => providedId : makeId,
       now,
     });
     return this.commit(snapshot);
   }
 
-  newBlankTab(input: { windowId: string }): TabsSnapshot {
+  newBlankTab(input: { windowId: string; tabId?: string }): TabsSnapshot {
+    const providedId = input.tabId;
+    // Idempotent on the renderer-minted id: a replay of the same call (blank
+    // tabs have no identity to dedup on) must not append a second tab.
+    if (providedId && this.snapshot.tabs.some((t) => t.id === providedId)) {
+      return this.snapshot;
+    }
     const { snapshot } = newBlankTab(this.snapshot, {
       windowId: input.windowId,
-      makeId,
+      makeId: providedId ? () => providedId : makeId,
       now,
     });
     return this.commit(snapshot);

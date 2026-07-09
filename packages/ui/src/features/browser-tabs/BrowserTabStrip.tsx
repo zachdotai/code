@@ -7,10 +7,13 @@ import {
   SquaresFourIcon,
   TrayIcon,
 } from "@phosphor-icons/react";
-import { browserTabsStore } from "@posthog/core/browser-tabs/browserTabsStore";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
+  closeTab as closeTabLocal,
+  closeTabs as closeTabsLocal,
   decideTabNavigation,
+  newBlankTab as newBlankTabLocal,
+  openOrFocusTab as openOrFocusLocal,
   PROJECT_BLUEBIRD_FLAG,
   primaryWindow,
   setTabOrder,
@@ -45,7 +48,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { type ReactNode, useCallback, useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
   frontOfUnpinnedOrder,
@@ -56,6 +59,7 @@ import { usePinnedTabsStore } from "./pinnedTabsStore";
 import { TabStrip, type TabView } from "./TabStrip";
 import { TaskTabIcon } from "./TaskTabIcon";
 import { useTabReorderStore } from "./tabReorderStore";
+import { applyLocalTransform, persistWrite, readMirror } from "./tabsSync";
 import { useTabsSnapshot } from "./useBrowserTabs";
 
 /** The active tab id is carried in router history state so back/forward replay
@@ -194,55 +198,27 @@ export function BrowserTabStrip() {
     return channelSectionFor(seg)?.key ?? null;
   }, [pathname, params.channelId]);
 
-  // Every tab mutation returns the fresh authoritative snapshot. Apply it to
-  // the renderer mirror synchronously: the snapshot-change subscription also
-  // delivers it, but only after an IPC round-trip, and the navigation effect
-  // below makes *persistent writes* (setTabTarget/openOrFocus) from the mirror.
-  // A stale mirror mis-targets those writes — the classic symptom is a
-  // navigation replacing some other tab's contents, or opening a duplicate tab
-  // because the mirror still says "no active tab".
-  const applySnapshot = (next: TabsSnapshot) =>
-    browserTabsStore.getState().setSnapshot(next);
-  // Optimistic mirror write: apply a pure transform to the store's CURRENT
-  // snapshot (not a render-closure copy — a mutation onSuccess may have applied
-  // a newer one since this render, and writing a stale-derived snapshot would
-  // regress the mirror, e.g. transiently resurrect a just-closed tab). Shared by
-  // the navigation effect's activate/replace cases so the rule lives in one spot.
-  const applyOptimistic = useCallback(
-    (transform: (s: TabsSnapshot) => TabsSnapshot) => {
-      const store = browserTabsStore.getState();
-      store.setSnapshot(transform(store.snapshot));
-    },
-    [],
+  // Local-first sync (see tabsSync.ts): every operation applies its shared
+  // pure transform to the mirror synchronously via applyLocalTransform, then
+  // persists in the background via persistWrite. The mutations below are pure
+  // transport — their returned snapshots are handled by persistWrite's
+  // last-settle reconcile, never applied directly, so a stale echo can't
+  // rewind the mirror mid-interaction.
+  const openOrFocus = useMutation(
+    trpc.browserTabs.openOrFocus.mutationOptions(),
   );
-  const openOrFocus = useMutation({
-    ...trpc.browserTabs.openOrFocus.mutationOptions(),
-    onSuccess: applySnapshot,
-  });
-  const newBlankTab = useMutation({
-    ...trpc.browserTabs.newBlankTab.mutationOptions(),
-    onSuccess: applySnapshot,
-  });
-  const setTabTarget = useMutation({
-    ...trpc.browserTabs.setTabTarget.mutationOptions(),
-    onSuccess: applySnapshot,
-  });
-  const close = useMutation({
-    ...trpc.browserTabs.close.mutationOptions(),
-    onSuccess: applySnapshot,
-  });
-  const closeMany = useMutation({
-    ...trpc.browserTabs.closeMany.mutationOptions(),
-    onSuccess: applySnapshot,
-  });
-  const setOrder = useMutation({
-    ...trpc.browserTabs.setOrder.mutationOptions(),
-    onSuccess: applySnapshot,
-  });
-  const setActiveTab = useMutation({
-    ...trpc.browserTabs.setActiveTab.mutationOptions(),
-    onSuccess: applySnapshot,
-  });
+  const newBlankTab = useMutation(
+    trpc.browserTabs.newBlankTab.mutationOptions(),
+  );
+  const setTabTarget = useMutation(
+    trpc.browserTabs.setTabTarget.mutationOptions(),
+  );
+  const close = useMutation(trpc.browserTabs.close.mutationOptions());
+  const closeMany = useMutation(trpc.browserTabs.closeMany.mutationOptions());
+  const setOrder = useMutation(trpc.browserTabs.setOrder.mutationOptions());
+  const setActiveTab = useMutation(
+    trpc.browserTabs.setActiveTab.mutationOptions(),
+  );
 
   const pinnedTabIds = usePinnedTabsStore((s) => s.pinnedTabIds);
   const togglePinned = usePinnedTabsStore((s) => s.togglePinned);
@@ -259,9 +235,6 @@ export function BrowserTabStrip() {
 
   const win = primaryWindow(snapshot);
   const windowId = win?.id;
-  const activeTab = win?.activeTabId
-    ? snapshot.tabs.find((t) => t.id === win.activeTabId)
-    : undefined;
   // The history state flips the instant you navigate, while the server snapshot
   // round-trips — so prefer it for "which tab is active" to avoid a one-step lag
   // in the highlight and the name. Validate it against the live tab list first:
@@ -309,35 +282,58 @@ export function BrowserTabStrip() {
   // decideTabNavigation) and apply it: focus a tab, replace the active tab's
   // target in place, open a tab, and/or stamp the history entry with the tab it
   // belongs to so back/forward can replay it.
+  //
+  // Keyed on the LOCATION only — the route is the command stream; the mirror is
+  // state this effect reconciles against, read fresh via readMirror() rather
+  // than subscribed to. Running on mirror changes is actively wrong under
+  // local-first sync: a handler moves the mirror BEFORE it navigates (e.g. the
+  // + tab appends and focuses a blank tab), and an effect run in that gap sees
+  // the OLD location's tag disagree with the new mirror focus and "activates"
+  // the stale tab — yanking focus back and mis-targeting the follow-up
+  // navigation as an in-tab replace of the wrong tab.
   useEffect(() => {
     if (!windowId) return;
     const stamp = (tabId: string) => {
       const loc = router.history.location;
-      // Already tagged — skip the replace. The effect re-runs on every
-      // snapshot broadcast, so an unguarded replace would churn history (and
-      // retrigger router subscribers) once per broadcast.
+      // Already tagged — skip the replace so history entries and router
+      // subscribers don't churn.
       if ((loc.state as { tabId?: string }).tabId === tabId) return;
       // Use the full href (always a string); reconstructing from pathname +
       // search crashes because search is parsed to an object at runtime.
       router.history.replace(loc.href, { ...(loc.state as object), tabId });
     };
+    const mirror = readMirror();
+    const mirrorWin = primaryWindow(mirror);
+    const mirrorTabs = mirror.tabs.filter((t) => t.windowId === windowId);
+    const mirrorActive = mirrorWin?.activeTabId
+      ? mirrorTabs.find((t) => t.id === mirrorWin.activeTabId)
+      : undefined;
     const decision = decideTabNavigation({
       historyTabId: historyTabId ?? null,
       // Validates history tags: back/forward can replay an entry tagged with a
       // closed tab; activating that dead id would persist a dangling
       // activeTabId, after which every nav "opens" (no active tab found).
-      windowTabIds: snapshot.tabs
-        .filter((t) => t.windowId === windowId)
-        .map((t) => t.id),
-      serverActiveTabId: win?.activeTabId ?? null,
-      activeTab: activeTab
+      windowTabIds: mirrorTabs.map((t) => t.id),
+      // Identities of this window's tabs, so a navigation to a target already
+      // open in another tab focuses it instead of duplicating it (and a rapid
+      // switch whose history stamp was lost self-heals to the right tab).
+      windowTabs: mirrorTabs.map((t) => ({
+        id: t.id,
+        dashboardId: t.dashboardId,
+        taskId: t.taskId,
+        channelId: t.channelId,
+        channelSection: t.channelSection,
+        appView: t.appView,
+      })),
+      serverActiveTabId: mirrorWin?.activeTabId ?? null,
+      activeTab: mirrorActive
         ? {
-            id: activeTab.id,
-            dashboardId: activeTab.dashboardId,
-            taskId: activeTab.taskId,
-            channelId: activeTab.channelId,
-            channelSection: activeTab.channelSection,
-            appView: activeTab.appView,
+            id: mirrorActive.id,
+            dashboardId: mirrorActive.dashboardId,
+            taskId: mirrorActive.taskId,
+            channelId: mirrorActive.channelId,
+            channelSection: mirrorActive.channelSection,
+            appView: mirrorActive.appView,
           }
         : null,
       routeDashboardId: params.dashboardId ?? null,
@@ -348,11 +344,20 @@ export function BrowserTabStrip() {
     });
     switch (decision.type) {
       case "activate": {
-        // Optimistically focus in the mirror before the round-trip: an
-        // untagged navigation racing this window would otherwise decide
-        // against the PREVIOUS active tab and replace its contents.
-        applyOptimistic((s) => setWindowActiveTab(s, windowId, decision.tabId));
-        setActiveTab.mutate({ windowId, tabId: decision.tabId });
+        // Focus in the mirror synchronously; persist in the background.
+        applyLocalTransform((s) =>
+          setWindowActiveTab(s, windowId, decision.tabId),
+        );
+        void persistWrite(() =>
+          setActiveTab.mutateAsync({ windowId, tabId: decision.tabId }),
+        );
+        // Heal the history tag to the tab we're activating. Normally it already
+        // matches (a tagged switch), so `stamp` no-ops. When the dedup path
+        // activated an existing tab the route pointed at (a switch whose stamp
+        // was lost), the entry still carries the STALE tab — left unhealed, the
+        // first branch above would re-activate it next render and ping-pong with
+        // the dedup (a "Maximum update depth exceeded" loop). Stamping breaks it.
+        stamp(decision.tabId);
         break;
       }
       case "replace": {
@@ -364,48 +369,63 @@ export function BrowserTabStrip() {
           channelSection: decision.channelSection,
           appView: decision.appView,
         };
-        // Same optimistic apply: keep the mirror consistent with the write so
-        // re-entrant runs (and the /website index redirect guard) never see
-        // the pre-navigation target.
-        applyOptimistic((s) =>
+        // Synchronous local apply keeps re-entrant runs (and the /website index
+        // redirect guard) from ever seeing the pre-navigation target.
+        applyLocalTransform((s) =>
           setTabTargetLocal(s, { ...target, now: Date.now }),
         );
-        setTabTarget.mutate(target);
+        void persistWrite(() => setTabTarget.mutateAsync(target));
         if (decision.stampTabId) stamp(decision.stampTabId);
         break;
       }
-      case "open":
-        openOrFocus.mutate({
+      case "open": {
+        const input = {
           windowId,
           dashboardId: decision.dashboardId,
           taskId: decision.taskId,
           channelId: decision.channelId,
           channelSection: decision.channelSection,
           appView: decision.appView,
+        };
+        // Mint the id here so the local apply and the persisted state agree on
+        // it; openOrFocusLocal may instead dedup-focus an existing tab, in
+        // which case the minted id goes unused (identically on the server).
+        const mintedId = crypto.randomUUID();
+        let openedTabId: string = mintedId;
+        applyLocalTransform((s) => {
+          const result = openOrFocusLocal(s, {
+            ...input,
+            makeId: () => mintedId,
+            now: Date.now,
+          });
+          openedTabId = result.tabId;
+          return result.snapshot;
         });
-        if (decision.stampTabId) stamp(decision.stampTabId);
+        void persistWrite(() =>
+          openOrFocus.mutateAsync({ ...input, tabId: mintedId }),
+        );
+        // Stamp the entry with the tab that now owns this route.
+        stamp(openedTabId);
         break;
+      }
       case "stamp":
         stamp(decision.stampTabId);
         break;
     }
   }, [
+    // windowId flips once when the boot seed lands — that run adopts the
+    // initial route. Everything else here is location; mirror state is read
+    // fresh inside, deliberately NOT a dependency (see the comment above).
     windowId,
     historyTabId,
-    win?.activeTabId,
     params.channelId,
     params.dashboardId,
     params.taskId,
     routeChannelSection,
     routeAppView,
-    activeTab,
-    // The tab LIST feeds windowTabIds (dead-tag validation); activeTab alone
-    // doesn't change when an inactive tab closes in another window.
-    snapshot,
-    openOrFocus.mutate,
-    setTabTarget.mutate,
-    setActiveTab.mutate,
-    applyOptimistic,
+    openOrFocus.mutateAsync,
+    setTabTarget.mutateAsync,
+    setActiveTab.mutateAsync,
     router,
   ]);
 
@@ -624,8 +644,13 @@ export function BrowserTabStrip() {
     else landOnDefault();
   };
 
+  // Close applies locally and navigates to the survivor in the same tick — the
+  // /website index therefore always renders against the post-close snapshot
+  // and can't redirect (re-opening a tab) mid-flight.
   const handleClose = (tabId: string) => {
-    close.mutate({ tabId }, { onSuccess: applyCloseResult });
+    const next = applyLocalTransform((s) => closeTabLocal(s, tabId).snapshot);
+    applyCloseResult(next);
+    void persistWrite(() => close.mutateAsync({ tabId }));
   };
 
   // Unpinning re-homes the tab at the front of the unpinned block. Apply the
@@ -636,10 +661,8 @@ export function BrowserTabStrip() {
     togglePinned(tabId);
     if (!wasPinned || !windowId) return;
     const order = frontOfUnpinnedOrder(snapshot, windowId, tabId, pinnedTabIds);
-    browserTabsStore
-      .getState()
-      .setSnapshot(setTabOrder(snapshot, windowId, order));
-    setOrder.mutate({ windowId, tabIds: order });
+    applyLocalTransform((s) => setTabOrder(s, windowId, order));
+    void persistWrite(() => setOrder.mutateAsync({ windowId, tabIds: order }));
   };
 
   // Bulk closes operate on the strip's *displayed* order (pinned-first) and
@@ -647,9 +670,12 @@ export function BrowserTabStrip() {
   // always survives) takes focus if the active tab was among those closed.
   const handleCloseMany = (tabIds: string[], anchorTabId: string) => {
     if (tabIds.length === 0) return;
-    closeMany.mutate(
-      { tabIds, focusTabId: anchorTabId },
-      { onSuccess: applyCloseResult },
+    const next = applyLocalTransform((s) =>
+      closeTabsLocal(s, tabIds, anchorTabId),
+    );
+    applyCloseResult(next);
+    void persistWrite(() =>
+      closeMany.mutateAsync({ tabIds, focusTabId: anchorTabId }),
     );
   };
 
@@ -720,17 +746,20 @@ export function BrowserTabStrip() {
     })();
   };
 
+  // New tab is fully local: mint the id here, append the blank tab to the
+  // mirror and navigate in the same tick (no IPC wait), then persist with the
+  // same id so the durable state matches. The service is idempotent on the
+  // minted id, so a replay can't append a duplicate.
   const handleNewTab = () => {
     if (!windowId) return;
-    newBlankTab.mutate(
-      { windowId },
-      {
-        onSuccess: (next) => {
-          const w = primaryWindow(next);
-          if (w?.activeTabId) landOnDefault(w.activeTabId);
-        },
-      },
+    const tabId = crypto.randomUUID();
+    applyLocalTransform(
+      (s) =>
+        newBlankTabLocal(s, { windowId, makeId: () => tabId, now: Date.now })
+          .snapshot,
     );
+    landOnDefault(tabId);
+    void persistWrite(() => newBlankTab.mutateAsync({ windowId, tabId }));
   };
 
   // Cmd/Ctrl+T opens a new browser tab. Bound here (not globally) so it only
@@ -755,6 +784,29 @@ export function BrowserTabStrip() {
       if (activeTabId) handleClose(activeTabId);
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
+  );
+
+  // With channels on, Cmd/Ctrl+1-9 switches to the Nth browser tab (in the
+  // displayed, pinned-first order) instead of the Nth sidebar task. The global
+  // task-switch handler yields via the same channelsEnabled gate, so exactly one
+  // owner fires. Mirror its pure-ctrl guard: ctrl+1-9 is the editor-panel tab
+  // switcher (SWITCH_TAB), so leave ctrl-only presses to it.
+  useHotkeys(
+    SHORTCUTS.SWITCH_TASK,
+    (event, handler) => {
+      if (event.ctrlKey && !event.metaKey) return;
+      const key = handler.keys?.[0];
+      if (!key) return;
+      const tab = tabs[Number.parseInt(key, 10) - 1];
+      if (tab) handleSelect(tab.id);
+    },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      preventDefault: true,
+      enabled: channelsEnabled,
+    },
+    [tabs, handleSelect],
   );
 
   return (

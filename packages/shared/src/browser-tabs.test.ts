@@ -404,6 +404,157 @@ describe("decideTabNavigation", () => {
   });
 });
 
+describe("decideTabNavigation: dedup against existing tabs (windowTabs)", () => {
+  const identity = {
+    dashboardId: null,
+    taskId: null,
+    channelId: null,
+    channelSection: null,
+    appView: null,
+  };
+
+  it("activates the existing tab instead of replacing the active tab's target (would-be duplicate)", () => {
+    // A rapid switch whose history stamp was lost arrives looking like an in-tab
+    // nav: active tab A, but the route identifies tab B (already open). Without
+    // the dedup this replaces A's target → two tabs on c2/artifacts. With it, B
+    // is focused.
+    expect(
+      decideTabNavigation({
+        historyTabId: "tab-a",
+        serverActiveTabId: "tab-a",
+        windowTabs: [
+          { id: "tab-a", ...identity, channelId: "c1" },
+          {
+            id: "tab-b",
+            ...identity,
+            channelId: "c2",
+            channelSection: "artifacts",
+          },
+        ],
+        activeTab: {
+          id: "tab-a",
+          dashboardId: null,
+          taskId: null,
+          channelId: "c1",
+        },
+        routeDashboardId: null,
+        routeTaskId: null,
+        routeChannelId: "c2",
+        routeChannelSection: "artifacts",
+      }),
+    ).toEqual({ type: "activate", tabId: "tab-b" });
+  });
+
+  it("activates an existing matching tab instead of opening a duplicate (no active tab)", () => {
+    expect(
+      decideTabNavigation({
+        historyTabId: null,
+        serverActiveTabId: null,
+        windowTabs: [{ id: "tab-b", ...identity, channelId: "c2" }],
+        activeTab: null,
+        routeDashboardId: null,
+        routeTaskId: null,
+        routeChannelId: "c2",
+      }),
+    ).toEqual({ type: "activate", tabId: "tab-b" });
+  });
+
+  it("does NOT jump when the active tab already shows the route, even if a duplicate exists", () => {
+    // Two tabs share an identity (a pre-existing duplicate). The active one
+    // already shows the route → stamp/noop. Jumping to the other duplicate
+    // would ping-pong between them forever (Maximum update depth exceeded).
+    expect(
+      decideTabNavigation({
+        historyTabId: "tab-x",
+        serverActiveTabId: "tab-x",
+        windowTabs: [
+          {
+            id: "tab-x",
+            ...identity,
+            channelId: "c1",
+            channelSection: "artifacts",
+          },
+          {
+            id: "tab-y",
+            ...identity,
+            channelId: "c1",
+            channelSection: "artifacts",
+          },
+        ],
+        activeTab: {
+          id: "tab-x",
+          dashboardId: null,
+          taskId: null,
+          channelId: "c1",
+          channelSection: "artifacts",
+        },
+        routeDashboardId: null,
+        routeTaskId: null,
+        routeChannelId: "c1",
+        routeChannelSection: "artifacts",
+      }),
+    ).toEqual({ type: "stamp", stampTabId: "tab-x" });
+  });
+
+  it("fills a blank active tab (fresh + tab) even when the route is open elsewhere", () => {
+    // Cmd+T lands the new blank tab on #me. If a #me tab is already open, the
+    // dedup must NOT steal the navigation to it — that would strand the blank
+    // tab forever. The blank active tab means "fill me".
+    expect(
+      decideTabNavigation({
+        historyTabId: "tab-blank",
+        serverActiveTabId: "tab-blank",
+        windowTabs: [
+          { id: "tab-blank", ...identity },
+          { id: "tab-me", ...identity, channelId: "me-ch" },
+        ],
+        activeTab: { id: "tab-blank", dashboardId: null, taskId: null },
+        routeDashboardId: null,
+        routeTaskId: null,
+        routeChannelId: "me-ch",
+      }),
+    ).toEqual({
+      type: "replace",
+      tabId: "tab-blank",
+      dashboardId: null,
+      taskId: null,
+      channelId: "me-ch",
+      channelSection: null,
+      appView: null,
+      stampTabId: "tab-blank",
+    });
+  });
+
+  it("still replaces for a genuine in-tab nav to a target no other tab holds", () => {
+    expect(
+      decideTabNavigation({
+        historyTabId: "tab-a",
+        serverActiveTabId: "tab-a",
+        windowTabs: [{ id: "tab-a", ...identity, channelId: "c1" }],
+        activeTab: {
+          id: "tab-a",
+          dashboardId: null,
+          taskId: null,
+          channelId: "c1",
+        },
+        routeDashboardId: null,
+        routeTaskId: null,
+        routeChannelId: "c1",
+        routeChannelSection: "artifacts",
+      }),
+    ).toEqual({
+      type: "replace",
+      tabId: "tab-a",
+      dashboardId: null,
+      taskId: null,
+      channelId: "c1",
+      channelSection: "artifacts",
+      appView: null,
+      stampTabId: "tab-a",
+    });
+  });
+});
+
 function openChannel(s: TabsSnapshot, windowId: string, channelId: string) {
   return openOrFocusTab(s, {
     windowId,

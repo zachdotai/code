@@ -458,6 +458,16 @@ export function decideTabNavigation(input: {
    * with a live tab. When omitted, tags are trusted (legacy behaviour).
    */
   windowTabIds?: readonly string[];
+  /**
+   * The window's tabs with their identities. When a navigation's route matches
+   * an existing tab that isn't the active one, we activate that tab instead of
+   * replacing the active tab's target (which would duplicate it) or opening a
+   * second copy. This also self-heals a rapid tab switch whose history stamp
+   * was lost: it arrives looking like an in-tab nav, but the route still
+   * identifies the intended tab, so we focus it rather than corrupt the active
+   * tab. When omitted, this dedup is skipped (legacy behaviour).
+   */
+  windowTabs?: readonly (TabIdentity & { id: string })[];
   /** The window's active tab id from the server snapshot (lags history). */
   serverActiveTabId: string | null;
   /** The active tab record, if one exists. */
@@ -518,9 +528,9 @@ export function decideTabNavigation(input: {
     return { type: "noop" };
   }
 
-  if (
-    activeTab &&
-    !sameIdentity(
+  const activeMatchesRoute =
+    !!activeTab &&
+    sameIdentity(
       {
         dashboardId: activeTab.dashboardId,
         taskId: activeTab.taskId,
@@ -529,8 +539,34 @@ export function decideTabNavigation(input: {
         appView: activeTab.appView ?? null,
       },
       routeIdentity,
-    )
-  ) {
+    );
+
+  // A blank active tab is a fresh `+` tab waiting for its first target: the
+  // navigation is "fill me", never a switch — so the dedup below must not
+  // steal it (activating another tab would strand the blank forever).
+  const activeIsBlank =
+    !!activeTab &&
+    activeTab.dashboardId == null &&
+    activeTab.taskId == null &&
+    (activeTab.channelId ?? null) == null &&
+    (activeTab.appView ?? null) == null;
+
+  // The route already lives in another tab → focus it instead of replacing the
+  // active tab's target (which would leave two tabs on the same identity) or
+  // opening a duplicate. Also recovers a rapid switch whose history tag was
+  // lost: the intended tab is still identified by the route. Only when the
+  // active tab does NOT already show the route — otherwise, if a duplicate tab
+  // already exists, we'd bounce between the two identical tabs forever.
+  if (!activeMatchesRoute && !activeIsBlank) {
+    const existingMatch = input.windowTabs?.find(
+      (t) => t.id !== activeTab?.id && sameIdentity(t, routeIdentity),
+    );
+    if (existingMatch) {
+      return { type: "activate", tabId: existingMatch.id };
+    }
+  }
+
+  if (activeTab && !activeMatchesRoute) {
     return {
       type: "replace",
       tabId: activeTab.id,
