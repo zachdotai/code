@@ -1,4 +1,7 @@
-import type { McpAuthType } from "@posthog/api-client/types";
+import type {
+  McpAuthType,
+  McpInstallationScope,
+} from "@posthog/api-client/types";
 
 export interface CustomServerFormValues {
   name: string;
@@ -8,6 +11,7 @@ export interface CustomServerFormValues {
   apiKey: string;
   clientId: string;
   clientSecret: string;
+  scope: McpInstallationScope;
 }
 
 export interface CustomServerRequest {
@@ -18,6 +22,7 @@ export interface CustomServerRequest {
   api_key?: string;
   client_id?: string;
   client_secret?: string;
+  scope: McpInstallationScope;
 }
 
 export function isValidMcpUrl(url: string): boolean {
@@ -38,6 +43,7 @@ export function buildCustomServerRequest(
     url: values.url.trim(),
     description: values.description.trim(),
     auth_type: values.authType,
+    scope: values.scope,
     ...(values.authType === "api_key" && values.apiKey
       ? { api_key: values.apiKey }
       : {}),

@@ -16,6 +16,7 @@ function makeInstallation(
     updated_at: "2026-01-01T00:00:00Z",
     needs_reauth: false,
     pending_oauth: false,
+    scope: "personal",
     ...overrides,
   };
 }

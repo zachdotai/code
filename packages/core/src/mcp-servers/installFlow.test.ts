@@ -33,11 +33,13 @@ describe("installTemplateWithOAuth", () => {
     const result = await installTemplateWithOAuth(client, oauth, {
       template_id: "tpl-1",
       api_key: "k",
+      scope: "shared",
     });
 
     expect(client.installMcpTemplate).toHaveBeenCalledWith({
       template_id: "tpl-1",
       api_key: "k",
+      scope: "shared",
       install_source: "posthog-code",
       posthog_code_callback_url: "cb://here",
     });
@@ -82,6 +84,7 @@ describe("installCustomWithOAuth", () => {
       url: "https://x",
       description: "d",
       auth_type: "oauth",
+      scope: "shared",
     });
 
     expect(client.installCustomMcpServer).toHaveBeenCalledWith({
@@ -89,6 +92,7 @@ describe("installCustomWithOAuth", () => {
       url: "https://x",
       description: "d",
       auth_type: "oauth",
+      scope: "shared",
       install_source: "posthog-code",
       posthog_code_callback_url: "cb://here",
     });

@@ -169,6 +169,7 @@ import type {
   McpApprovalState,
   McpAuthType,
   McpCategory,
+  McpInstallationScope,
   McpInstallationTool,
   McpRecommendedServer,
   McpServerInstallation,
@@ -177,6 +178,7 @@ export type {
   McpApprovalState,
   McpAuthType,
   McpCategory,
+  McpInstallationScope,
   McpInstallationTool,
   McpRecommendedServer,
   McpServerInstallation,
@@ -3959,6 +3961,7 @@ export class PostHogAPIClient {
     client_secret?: string;
     install_source?: "posthog" | "posthog-code";
     posthog_code_callback_url?: string;
+    scope?: "personal" | "shared";
   }): Promise<McpServerInstallation | Schemas.OAuthRedirectResponse> {
     const teamId = await this.getTeamId();
     const apiUrl = new URL(
@@ -4039,6 +4042,7 @@ export class PostHogAPIClient {
     api_key?: string;
     install_source?: "posthog" | "posthog-code";
     posthog_code_callback_url?: string;
+    scope?: "personal" | "shared";
   }): Promise<McpServerInstallation | Schemas.OAuthRedirectResponse> {
     const teamId = await this.getTeamId();
     const path = `/api/environments/${teamId}/mcp_server_installations/install_template/`;

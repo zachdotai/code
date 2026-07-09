@@ -5,6 +5,7 @@ export type McpCategory = Schemas.CategoryEnum;
 export type McpApprovalState =
   Schemas.MCPServerInstallationToolApprovalStateEnum;
 export type McpAuthType = Schemas.MCPAuthTypeEnum;
+export type McpInstallationScope = Schemas.MCPServerInstallationScopeEnum;
 export type McpRecommendedServer = Schemas.MCPServerTemplate;
 export type McpServerInstallation = Schemas.MCPServerInstallation;
 export type McpInstallationTool = Schemas.MCPServerInstallationTool;

@@ -1,9 +1,13 @@
 import { ArrowLeft, CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
-import type { McpAuthType } from "@posthog/api-client/posthog-client";
+import type {
+  McpAuthType,
+  McpInstallationScope,
+} from "@posthog/api-client/posthog-client";
 import {
   buildCustomServerRequest,
   canSubmitCustomServer,
 } from "@posthog/core/mcp-servers/customServerForm";
+import { useIsOrgAdmin } from "@posthog/ui/features/auth/useOrgRole";
 import {
   Button,
   Flex,
@@ -25,6 +29,7 @@ interface AddCustomServerFormProps {
     api_key?: string;
     client_id?: string;
     client_secret?: string;
+    scope: McpInstallationScope;
   }) => void;
   /** Prefill the form (e.g. the agent builder's connect_mcp punch-out supplies a
    *  suggested name/url). The user can still edit every field before connecting. */
@@ -57,7 +62,14 @@ export function AddCustomServerForm({
   const [apiKey, setApiKey] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [scope, setScope] = useState<McpInstallationScope>("personal");
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Shared servers expose the installer's credential to every project member
+  // and all autonomous agents, so creating one is admin-only (enforced again
+  // on the backend). Non-admins still see shared servers in the installed list.
+  const { isAdmin } = useIsOrgAdmin();
+  const canAddShared = isAdmin === true;
 
   const canSubmit = canSubmitCustomServer({ name, url }) && !pending;
 
@@ -74,6 +86,7 @@ export function AddCustomServerForm({
           apiKey,
           clientId,
           clientSecret,
+          scope,
         }),
       );
     },
@@ -86,6 +99,7 @@ export function AddCustomServerForm({
       apiKey,
       clientId,
       clientSecret,
+      scope,
       onSubmit,
     ],
   );
@@ -152,6 +166,27 @@ export function AddCustomServerForm({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What does this server do?"
             />
+          </Flex>
+
+          <Flex direction="column" gap="1">
+            <Text className="font-medium text-sm">Visibility</Text>
+            <Text color="gray" className="text-[13px]">
+              {canAddShared
+                ? "Shared servers are available to all project members and autonomous agents."
+                : "Only project admins can add shared servers."}
+            </Text>
+            <Select.Root
+              value={scope}
+              onValueChange={(val) => setScope(val as McpInstallationScope)}
+            >
+              <Select.Trigger />
+              <Select.Content>
+                <Select.Item value="personal">Personal (only you)</Select.Item>
+                <Select.Item value="shared" disabled={!canAddShared}>
+                  Shared (everyone in project)
+                </Select.Item>
+              </Select.Content>
+            </Select.Root>
           </Flex>
 
           <Flex direction="column" gap="1">

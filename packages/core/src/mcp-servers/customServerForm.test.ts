@@ -17,6 +17,7 @@ function values(
     apiKey: "",
     clientId: "",
     clientSecret: "",
+    scope: "personal",
     ...overrides,
   };
 }
@@ -73,6 +74,10 @@ describe("buildCustomServerRequest", () => {
       buildCustomServerRequest(values({ authType: "api_key", apiKey: "" }))
         .api_key,
     ).toBeUndefined();
+  });
+
+  it.each(["personal", "shared"] as const)("forwards the %s scope", (scope) => {
+    expect(buildCustomServerRequest(values({ scope })).scope).toBe(scope);
   });
 
   it("includes client_id/client_secret only for oauth when non-empty", () => {

@@ -1,5 +1,6 @@
 import type {
   McpAuthType,
+  McpInstallationScope,
   McpRecommendedServer,
   McpServerInstallation,
 } from "@posthog/api-client/posthog-client";
@@ -101,8 +102,14 @@ export function useMcpServers() {
   );
 
   const installTemplateMutation = useAuthenticatedMutation(
-    (client, vars: { template_id: string; api_key?: string }) =>
-      installTemplateWithOAuth(client, oauth, vars),
+    (
+      client,
+      vars: {
+        template_id: string;
+        api_key?: string;
+        scope?: McpInstallationScope;
+      },
+    ) => installTemplateWithOAuth(client, oauth, vars),
     {
       onSuccess: (data) => {
         if (data && "success" in data && data.success) {
@@ -121,11 +128,15 @@ export function useMcpServers() {
   );
 
   const installTemplate = useCallback(
-    (template: McpRecommendedServer, opts?: { api_key?: string }) => {
+    (
+      template: McpRecommendedServer,
+      opts?: { api_key?: string; scope?: McpInstallationScope },
+    ) => {
       setInstallingId(template.id);
       installTemplateMutation.mutate({
         template_id: template.id,
         api_key: opts?.api_key,
+        scope: opts?.scope,
       });
     },
     [installTemplateMutation],
@@ -142,6 +153,7 @@ export function useMcpServers() {
         api_key?: string;
         client_id?: string;
         client_secret?: string;
+        scope?: McpInstallationScope;
       },
     ) => installCustomWithOAuth(client, oauth, vars),
     {

@@ -1,5 +1,6 @@
 import type {
   McpAuthType,
+  McpInstallationScope,
   McpServerInstallation,
 } from "@posthog/api-client/posthog-client";
 import {
@@ -44,6 +45,7 @@ export interface CustomServerInput {
   api_key?: string;
   client_id?: string;
   client_secret?: string;
+  scope?: McpInstallationScope;
 }
 
 /**

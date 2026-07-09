@@ -119,6 +119,13 @@ export function ServerDetailView({
             <Text truncate className="font-bold text-xl">
               {name}
             </Text>
+            {installation?.scope === "shared" && (
+              <Tooltip content="Available to all project members and autonomous agents">
+                <Badge color="blue" variant="soft">
+                  Shared
+                </Badge>
+              </Tooltip>
+            )}
             {installation && (
               <Badge color={statusColor} variant="soft">
                 {statusLabel}

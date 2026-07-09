@@ -164,6 +164,7 @@ export function McpInstalledRail({
                       className="text-[10px] leading-none"
                     >
                       {installation.tool_count ?? 0} tools
+                      {installation.scope === "shared" ? " · Shared" : ""}
                     </Text>
                   </Flex>
                   <span

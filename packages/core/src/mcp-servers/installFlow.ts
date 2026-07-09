@@ -1,5 +1,6 @@
 import type {
   McpAuthType,
+  McpInstallationScope,
   McpServerInstallation,
 } from "@posthog/api-client/types";
 
@@ -15,6 +16,7 @@ export interface InstallFlowClient {
     api_key?: string;
     install_source?: "posthog" | "posthog-code";
     posthog_code_callback_url?: string;
+    scope?: McpInstallationScope;
   }): Promise<InstallResult>;
   installCustomMcpServer(options: {
     name: string;
@@ -26,6 +28,7 @@ export interface InstallFlowClient {
     client_secret?: string;
     install_source?: "posthog" | "posthog-code";
     posthog_code_callback_url?: string;
+    scope?: McpInstallationScope;
   }): Promise<InstallResult>;
   authorizeMcpInstallation(options: {
     installation_id: string;
@@ -55,7 +58,11 @@ function hasRedirect(data: InstallResult): data is OAuthRedirect {
 export async function installTemplateWithOAuth(
   client: InstallFlowClient,
   oauth: IOAuthCallback,
-  vars: { template_id: string; api_key?: string },
+  vars: {
+    template_id: string;
+    api_key?: string;
+    scope?: McpInstallationScope;
+  },
 ): Promise<OAuthCallbackResult> {
   const { callbackUrl } = await oauth.getCallbackUrl();
   const data = await client.installMcpTemplate({
@@ -80,6 +87,7 @@ export async function installCustomWithOAuth(
     api_key?: string;
     client_id?: string;
     client_secret?: string;
+    scope?: McpInstallationScope;
   },
 ): Promise<OAuthCallbackResult> {
   const { callbackUrl } = await oauth.getCallbackUrl();

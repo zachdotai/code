@@ -9350,6 +9350,7 @@ export namespace Schemas {
   export type InsightsToolCall = { query: string; insight_type: InsightTypeEnum };
   export type InstallCustomAuthTypeEnum = "api_key" | "oauth";
   export type InstallSourceEnum = "posthog" | "posthog-code";
+  export type MCPInstallationScopeEnum = "personal" | "shared";
   export type InstallCustom = {
     name: string;
     url: string;
@@ -9360,12 +9361,14 @@ export namespace Schemas {
     client_secret?: string | undefined;
     install_source?: (InstallSourceEnum & unknown) | undefined;
     posthog_code_callback_url?: string | undefined;
+    scope?: (MCPInstallationScopeEnum & unknown) | undefined;
   };
   export type InstallTemplate = {
     template_id: string;
     api_key?: string | undefined;
     install_source?: (InstallSourceEnum & unknown) | undefined;
     posthog_code_callback_url?: string | undefined;
+    scope?: (MCPInstallationScopeEnum & unknown) | undefined;
   };
   export type IntegrationKindEnum =
     | "azure-blob"
@@ -9707,6 +9710,7 @@ export namespace Schemas {
     updated_at: string | null;
   };
   export type MCPAuthTypeEnum = "api_key" | "oauth";
+  export type MCPServerInstallationScopeEnum = "personal" | "shared";
   export type MCPServerInstallation = {
     id: string;
     template_id: string | null;
@@ -9717,6 +9721,7 @@ export namespace Schemas {
     description?: string | undefined;
     auth_type?: MCPAuthTypeEnum | undefined;
     is_enabled?: boolean | undefined;
+    scope: MCPServerInstallationScopeEnum;
     needs_reauth: boolean;
     pending_oauth: boolean;
     proxy_url: string;
