@@ -1,4 +1,14 @@
-import { HashIcon } from "@phosphor-icons/react";
+import {
+  CaretLeftIcon,
+  CaretRightIcon,
+  EnvelopeSimple,
+  HashIcon,
+} from "@phosphor-icons/react";
+import { resolveService } from "@posthog/di/container";
+import {
+  HOST_TRPC_CLIENT,
+  type HostTrpcClient,
+} from "@posthog/host-router/client";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -10,6 +20,7 @@ import {
   AutocompleteStatus,
   Dialog,
   DialogContent,
+  Kbd,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import {
@@ -21,6 +32,12 @@ import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
+import { useFileSearchStore } from "@posthog/ui/features/command/fileSearchStore";
+import {
+  formatHotkeyParts,
+  SHORTCUTS,
+} from "@posthog/ui/features/command/keyboard-shortcuts";
+import { useFileSearchContext } from "@posthog/ui/features/command/useFileSearchContext";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import {
@@ -31,19 +48,31 @@ import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
+import {
+  goBackInHistory,
+  goForwardInHistory,
+  navigateToChannel,
+  navigateToCommandCenter,
+  navigateToInbox,
+} from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
+import { showLogFolder } from "@posthog/ui/shell/openExternal";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import {
   DesktopIcon,
   FileTextIcon,
   GearIcon,
   HomeIcon,
+  LightningBoltIcon,
+  MagnifyingGlassIcon,
   MoonIcon,
+  ReloadIcon,
   SunIcon,
   ViewVerticalIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
 } from "@radix-ui/react-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -62,6 +91,8 @@ type Command = {
   action: CommandMenuAction;
   /** Channel in scope for the bluebird open-channel / open-task actions. */
   channelId?: string;
+  /** Hotkey string (e.g. "mod+b") shown right-aligned when present. */
+  shortcut?: string;
   onRun: () => void;
 };
 
@@ -120,6 +151,9 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   );
   const { data: tasks = [] } = useTasks();
   const [query, setQuery] = useState("");
+  const { repoPath } = useFileSearchContext();
+  const canSearchFiles = !!repoPath;
+  const openFilePicker = useFileSearchStore((state) => state.openPicker);
   const [systemPrefersDark, setSystemPrefersDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -132,14 +166,18 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
+  // The review panel lives in the task-detail view, so the command only makes
+  // sense when a task is open. Elsewhere (e.g. the new-task screen) it would be
+  // a no-op, so we omit it below rather than show a dead entry.
+  const reviewTaskId = view.type === "task-detail" ? view.taskId : undefined;
+
   const openReviewPanel = useCallback(() => {
-    const taskId = view.type === "task-detail" ? view.taskId : undefined;
-    if (!taskId) return;
-    const mode = getReviewMode(taskId);
+    if (!reviewTaskId) return;
+    const mode = getReviewMode(reviewTaskId);
     if (mode === "closed") {
-      setReviewMode(taskId, "split");
+      setReviewMode(reviewTaskId, "split");
     }
-  }, [view, getReviewMode, setReviewMode]);
+  }, [reviewTaskId, getReviewMode, setReviewMode]);
 
   useEffect(() => {
     if (open) {
@@ -204,7 +242,49 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         label: "Settings",
         icon: <GearIcon className="h-3 w-3 text-gray-11" />,
         action: "settings",
+        shortcut: SHORTCUTS.SETTINGS,
         onRun: () => openSettingsDialog(),
+      },
+      {
+        id: "inbox",
+        label: "Inbox",
+        keywords: "reports pull requests agents notifications",
+        icon: <EnvelopeSimple size={12} className="text-gray-11" />,
+        action: "open-inbox",
+        shortcut: SHORTCUTS.INBOX,
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToInbox();
+        },
+      },
+      {
+        id: "command-center",
+        label: "Command center",
+        keywords: "lightning grid tasks parallel dashboard",
+        icon: <LightningBoltIcon className="h-3 w-3 text-gray-11" />,
+        action: "open-command-center",
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToCommandCenter();
+        },
+      },
+      {
+        id: "go-back",
+        label: "Go back",
+        keywords: "navigate history previous",
+        icon: <CaretLeftIcon size={12} className="text-gray-11" />,
+        action: "go-back",
+        shortcut: SHORTCUTS.GO_BACK,
+        onRun: goBackInHistory,
+      },
+      {
+        id: "go-forward",
+        label: "Go forward",
+        keywords: "navigate history next",
+        icon: <CaretRightIcon size={12} className="text-gray-11" />,
+        action: "go-forward",
+        shortcut: SHORTCUTS.GO_FORWARD,
+        onRun: goForwardInHistory,
       },
     ];
 
@@ -215,21 +295,30 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         label: "Toggle left sidebar",
         icon: <ViewVerticalIcon className="h-3 w-3 text-gray-11" />,
         action: "toggle-left-sidebar",
+        shortcut: SHORTCUTS.TOGGLE_LEFT_SIDEBAR,
         onRun: toggleLeftSidebar,
       },
-      {
-        id: "open-review-panel",
-        label: "Open review panel",
-        icon: <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />,
-        action: "open-review-panel",
-        onRun: openReviewPanel,
-      },
+      ...(reviewTaskId
+        ? [
+            {
+              id: "open-review-panel",
+              label: "Open review panel",
+              icon: (
+                <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />
+              ),
+              action: "open-review-panel" as CommandMenuAction,
+              shortcut: SHORTCUTS.TOGGLE_REVIEW_PANEL,
+              onRun: openReviewPanel,
+            },
+          ]
+        : []),
       {
         id: "new-task",
         label: "New task",
         keywords: "create",
         icon: <FileTextIcon className="h-3 w-3 text-gray-11" />,
         action: "new-task",
+        shortcut: SHORTCUTS.NEW_TASK,
         onRun: () => {
           closeSettingsDialog();
           openTaskInput();
@@ -237,9 +326,81 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       },
     ];
 
+    if (canSearchFiles) {
+      actions.push({
+        id: "search-files",
+        label: "Search files",
+        keywords: "file find open",
+        icon: <MagnifyingGlassIcon className="h-3 w-3 text-gray-11" />,
+        action: "search-files",
+        onRun: openFilePicker,
+      });
+    }
+
+    const developer: Command[] = [
+      {
+        id: "show-log-folder",
+        label: "Show log folder",
+        keywords: "logs debug files finder",
+        icon: <FileTextIcon className="h-3 w-3 text-gray-11" />,
+        action: "show-log-folder",
+        onRun: showLogFolder,
+      },
+      {
+        id: "reload-window",
+        label: "Reload window",
+        keywords: "refresh restart",
+        icon: <ReloadIcon className="h-3 w-3 text-gray-11" />,
+        action: "reload-window",
+        shortcut: SHORTCUTS.RELOAD_WINDOW,
+        onRun: () => window.location.reload(),
+      },
+    ];
+
+    const viewCommands: Command[] = [
+      {
+        id: "zoom-in",
+        label: "Zoom in",
+        keywords: "zoom increase larger",
+        icon: <ZoomInIcon className="h-3 w-3 text-gray-11" />,
+        action: "zoom-in",
+        shortcut: SHORTCUTS.ZOOM_IN,
+        onRun: () =>
+          void resolveService<HostTrpcClient>(
+            HOST_TRPC_CLIENT,
+          ).os.zoomIn.mutate(),
+      },
+      {
+        id: "zoom-out",
+        label: "Zoom out",
+        keywords: "zoom decrease smaller",
+        icon: <ZoomOutIcon className="h-3 w-3 text-gray-11" />,
+        action: "zoom-out",
+        shortcut: SHORTCUTS.ZOOM_OUT,
+        onRun: () =>
+          void resolveService<HostTrpcClient>(
+            HOST_TRPC_CLIENT,
+          ).os.zoomOut.mutate(),
+      },
+      {
+        id: "zoom-reset",
+        label: "Reset zoom",
+        keywords: "zoom actual size default",
+        icon: <MagnifyingGlassIcon className="h-3 w-3 text-gray-11" />,
+        action: "zoom-reset",
+        shortcut: SHORTCUTS.RESET_ZOOM,
+        onRun: () =>
+          void resolveService<HostTrpcClient>(
+            HOST_TRPC_CLIENT,
+          ).os.resetZoom.mutate(),
+      },
+    ];
+
     const out: CommandSection[] = [
-      { label: "Navigation", items: navigation },
       { label: "Actions", items: actions },
+      { label: "Navigation", items: navigation },
+      { label: "View", items: viewCommands },
+      { label: "Developer", items: developer },
     ];
 
     if (folders.length > 0) {
@@ -267,6 +428,9 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     closeSettingsDialog,
     toggleLeftSidebar,
     openReviewPanel,
+    reviewTaskId,
+    canSearchFiles,
+    openFilePicker,
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {
@@ -359,6 +523,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           items={sections}
           value={query}
           autoHighlight="always"
+          keepHighlight
           onValueChange={(val, eventDetails) => {
             if (eventDetails.reason !== "input-change") return;
             if (typeof val === "string") {
@@ -398,8 +563,12 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       value={cmd.id}
                       onClick={() => handleSelect(cmd.id)}
                       // Long task names wrap instead of truncating, so the
-                      // item must grow: min-height, not a fixed height.
-                      className="h-auto! min-h-7 py-1.5 text-left"
+                      // item must grow: min-height, not a fixed height. Quill
+                      // wraps our children in an inner content span; force it to
+                      // fill the row (so a trailing shortcut can `ml-auto` to the
+                      // end) and let it overflow visibly so the shortcut Kbd
+                      // boxes aren't clipped by the wrapper's `truncate`.
+                      className="flex h-auto! min-h-7 w-full items-center gap-2 py-1.5 pr-2 text-left [&>span]:w-full [&>span]:overflow-visible"
                     >
                       {cmd.icon}
                       <span className="wrap-break-word min-w-0 whitespace-normal">
@@ -408,6 +577,13 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       {cmd.detail && (
                         <span className="shrink-0 text-gray-9">
                           · #{cmd.detail}
+                        </span>
+                      )}
+                      {cmd.shortcut && (
+                        <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+                          {formatHotkeyParts(cmd.shortcut).map((part) => (
+                            <Kbd key={part}>{part}</Kbd>
+                          ))}
                         </span>
                       )}
                     </AutocompleteItem>

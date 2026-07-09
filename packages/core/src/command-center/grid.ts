@@ -9,6 +9,32 @@ export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 1.5;
 export const ZOOM_STEP = 0.1;
 
+// Reserved cell value for the Brainrot video slot instead of a task. Real task
+// ids are uuids, so this never collides with one.
+export const BRAINROT_CELL = "__brainrot__";
+
+export function isBrainrotCell(value: string | null): boolean {
+  return value === BRAINROT_CELL;
+}
+
+// Reserved prefix for standalone terminal cells. Never collides with a task id
+// (uuids) or with BRAINROT_CELL ("__brainrot__").
+export const TERMINAL_CELL_PREFIX = "__terminal__:";
+
+export function isTerminalCell(value: string | null): value is string {
+  return value?.startsWith(TERMINAL_CELL_PREFIX) ?? false;
+}
+
+export function makeTerminalCellValue(terminalId: string): string {
+  return `${TERMINAL_CELL_PREFIX}${terminalId}`;
+}
+
+export function getTerminalCellId(value: string | null): string | null {
+  return isTerminalCell(value)
+    ? value.slice(TERMINAL_CELL_PREFIX.length)
+    : null;
+}
+
 export function getGridDimensions(preset: LayoutPreset): GridDimensions {
   const [cols, rows] = preset.split("x").map(Number);
   return { cols, rows };

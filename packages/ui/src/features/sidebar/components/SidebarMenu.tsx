@@ -1,3 +1,5 @@
+import { findGroupFolder } from "@posthog/core/sidebar/groupTasks";
+import { isTaskActivelyRunning } from "@posthog/core/sidebar/taskRunning";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { Separator } from "@posthog/quill";
 import type { Task } from "@posthog/shared/types";
@@ -7,14 +9,13 @@ import {
   useArchiveTask,
 } from "@posthog/ui/features/archive/useArchiveTask";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
+import { useExternalAppAction } from "@posthog/ui/features/external-apps/useExternalAppAction";
+import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
-import {
-  type TaskData,
-  useSidebarData,
-} from "@posthog/ui/features/sidebar/useSidebarData";
+import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
@@ -40,10 +41,6 @@ import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
 
-function isTaskActivelyRunning(task: TaskData): boolean {
-  return task.taskRunStatus === "in_progress" || task.isGenerating;
-}
-
 function SidebarMenuComponent() {
   const hostClient = useHostTRPCClient();
   const archiveCacheKeys = useArchiveCacheKeys();
@@ -57,6 +54,10 @@ function SidebarMenuComponent() {
 
   const { data: workspaces = {} } = useWorkspaces();
   const { markAsViewed } = useTaskViewed();
+
+  const { folders, removeFolder } = useFolders();
+
+  const openExternalApp = useExternalAppAction();
 
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
@@ -222,6 +223,36 @@ function SidebarMenuComponent() {
     [hostClient, queryClient, clearSelection, archiveCacheKeys],
   );
 
+  const handleGroupContextMenu = useCallback(
+    async (groupId: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const folder = findGroupFolder(folders, groupId);
+      if (!folder) return;
+      try {
+        const result =
+          await hostClient.contextMenu.showFolderContextMenu.mutate({
+            folderName: folder.name,
+            folderPath: folder.path,
+          });
+        if (result.action?.type === "remove") {
+          await removeFolder(folder.id);
+        } else if (result.action?.type === "external-app") {
+          await openExternalApp(
+            result.action.action,
+            folder.path,
+            folder.name,
+            { workspace: null },
+          );
+        }
+      } catch (error) {
+        log.error("Failed to show folder context menu", error);
+        toast.error("Couldn't perform folder action");
+      }
+    },
+    [folders, removeFolder, hostClient, openExternalApp],
+  );
+
   const handleTaskContextMenu = (
     taskId: string,
     e: React.MouseEvent,
@@ -243,10 +274,10 @@ function SidebarMenuComponent() {
       clearSelection();
     }
 
-    const task = taskMap.get(taskId);
+    const taskData = allSidebarTasks.find((t) => t.id === taskId);
+    const task = taskMap.get(taskId) ?? taskData;
     if (task) {
       const workspace = workspaces[taskId];
-      const taskData = allSidebarTasks.find((t) => t.id === taskId);
       const isInCommandCenter = commandCenterCells.some(
         (id) => id === taskId && taskMap.has(id),
       );
@@ -437,6 +468,7 @@ function SidebarMenuComponent() {
               onTaskTogglePin={handleTaskTogglePin}
               onTaskEditSubmit={handleTaskEditSubmit}
               onTaskEditCancel={handleTaskEditCancel}
+              onGroupContextMenu={handleGroupContextMenu}
               hasMore={sidebarData.hasMore}
             />
           )}

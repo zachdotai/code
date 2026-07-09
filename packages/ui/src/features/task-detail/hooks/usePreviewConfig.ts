@@ -6,10 +6,16 @@ import {
   deriveInitialConfig,
 } from "@posthog/core/task-detail/previewConfig";
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import { getCloudUrlFromRegion } from "@posthog/shared";
+import {
+  type Adapter,
+  GLM_MODEL_FLAG,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
+import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logger } from "../../../shell/logger";
 import { useAuthStateValue } from "../../auth/store";
+import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { useSettingsStore } from "../../settings/settingsStore";
 
 const log = logger.scope("preview-config");
@@ -38,10 +44,9 @@ function getOptionByCategory(
  *
  * Returns config options as local state with a setter for local updates.
  */
-export function usePreviewConfig(
-  adapter: "claude" | "codex",
-): PreviewConfigResult {
+export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const hostClient = useHostTRPCClient();
+  const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const apiHost = useMemo(
     () => (cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null),
@@ -74,8 +79,12 @@ export function usePreviewConfig(
 
     hostClient.agent.getPreviewConfigOptions
       .query({ apiHost, adapter }, { signal: abort.signal })
-      .then((options) => {
+      .then((serverOptions) => {
         if (abort.signal.aborted) return;
+
+        const options = glmEnabled
+          ? serverOptions
+          : serverOptions.map(stripGlmModelOption);
 
         const {
           defaultInitialTaskMode,
@@ -134,7 +143,7 @@ export function usePreviewConfig(
     return () => {
       abort.abort();
     };
-  }, [adapter, apiHost, hostClient, hasHydrated]);
+  }, [adapter, apiHost, hostClient, hasHydrated, glmEnabled]);
 
   const setConfigOption = useCallback(
     (configId: string, value: string) => {

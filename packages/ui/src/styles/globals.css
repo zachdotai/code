@@ -361,6 +361,26 @@ body:has(.rt-DialogOverlay[data-state="open"]) [data-quill-portal] {
   animation: zen-float 3.5s ease-in-out infinite;
 }
 
+/* Braille-dots spinner: 10 stacked frames, each held for 10% of the cycle.
+   step-end holds each keyframe value so frames swap hard instead of fading.
+   Pure CSS so spinners cost no JS timers, React renders or DOM mutations
+   (DOM mutations would otherwise be serialized by session replay). */
+@keyframes ph-dots-frame {
+  0% {
+    opacity: 1;
+  }
+  10%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.ph-dots-frame {
+  grid-area: 1 / 1;
+  opacity: 0;
+  animation: ph-dots-frame 800ms step-end infinite;
+}
+
 /* Pulse animation for generating indicator */
 @keyframes ph-pulse {
   0%,
@@ -376,6 +396,18 @@ body:has(.rt-DialogOverlay[data-state="open"]) [data-quill-portal] {
 
 .ph-pulse {
   animation: ph-pulse 1s ease-in-out infinite;
+}
+
+/* Freeze CSS keyframe animations while the app window is unfocused or hidden.
+   Perpetual indicators (spinners, pulses, floats) otherwise keep the compositor
+   and GPU busy in the background for animations nobody is looking at — and some,
+   like ph-pulse's color shift, force main-thread repaints every frame. The class
+   is toggled from the renderer focus store (see GlobalEventHandlers). Transitions
+   are unaffected, and animations resume where they left off on refocus. */
+body.ph-window-blurred *,
+body.ph-window-blurred *::before,
+body.ph-window-blurred *::after {
+  animation-play-state: paused !important;
 }
 
 .radix-themes {
@@ -475,13 +507,13 @@ body {
     "Berkeley Mono", "JetBrains Mono", "Monaco", "Menlo", "Ubuntu Mono",
     "Courier New", monospace;
   font-size: 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--blue-a5);
   padding: 0 4px;
   border-radius: 4px;
 }
 
 .plan-markdown pre {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--blue-a3);
   padding: 8px 10px;
   border-radius: 6px;
   overflow-x: auto;
@@ -504,7 +536,7 @@ body {
 
 .plan-markdown th,
 .plan-markdown td {
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--blue-a6);
   padding: 4px 6px;
   text-align: left;
   vertical-align: top;
@@ -513,7 +545,7 @@ body {
 .plan-markdown blockquote {
   margin: 8px 0 12px;
   padding-left: 10px;
-  border-left: 2px solid rgba(255, 255, 255, 0.3);
+  border-left: 2px solid var(--blue-a6);
 }
 
 ::-webkit-scrollbar {
@@ -830,6 +862,25 @@ body {
   }
   to {
     height: 0;
+  }
+}
+
+/* Resting opacity is 1, so a dropped/stalled animation can never leave the app invisible. */
+.app-fade-in {
+  animation: appFadeIn 0.5s ease-out forwards;
+}
+
+/* The window-blur freeze above pauses every keyframe animation; let this one-shot entrance finish anyway, or a blur mid-fade would strand the app invisible. */
+body.ph-window-blurred .app-fade-in {
+  animation-play-state: running !important;
+}
+
+@keyframes appFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -1217,6 +1268,23 @@ button,
 
 ::highlight(search-match-active) {
   background-color: var(--orange-a8);
+}
+
+/*
+ * @posthog/quill toast — the description carries error summaries which can be
+ * long, unbroken JSON strings (e.g. `{"type":"validation_error",...}`) with no
+ * spaces to wrap at. Quill's `.quill-toast-card__description` sets no
+ * overflow-wrap, so such a token blows past the fixed 360px card. Break
+ * anywhere and clamp to a few lines — the toast is only a summary; the full
+ * payload lives behind the "Details" action.
+ */
+.quill-toast-card__description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /*

@@ -28,7 +28,8 @@ import type { CodeExecutionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
-import { DEFAULT_MODEL } from "./models";
+import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
+import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
 import type { SettingsManager } from "./settings";
 
 export interface ProcessSpawnedInfo {
@@ -182,7 +183,9 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
     }),
     ...(gateway?.openaiBaseUrl && { OPENAI_BASE_URL: gateway.openaiBaseUrl }),
     ...(gateway?.openaiApiKey && { OPENAI_API_KEY: gateway.openaiApiKey }),
-    ELECTRON_RUN_AS_NODE: "1",
+    ...((process.versions.electron || process.env.ELECTRON_RUN_AS_NODE) && {
+      ELECTRON_RUN_AS_NODE: "1",
+    }),
     CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL: "true",
     // Offload all MCP tools by default
     ENABLE_TOOL_SEARCH: "auto:0",
@@ -210,6 +213,7 @@ function buildHooks(
   onEnsureLocalToolsConnected: (() => Promise<boolean>) | undefined,
   taskState: TaskState,
   onTaskStateChange: (() => Promise<void>) | undefined,
+  rtkPrefix: string | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [
     createPostToolUseHook({
@@ -231,6 +235,10 @@ function buildHooks(
     preToolUseHooks.push(
       createSignedCommitGuardHook(logger, onEnsureLocalToolsConnected),
     );
+  }
+  // Registered last so the signed-commit guard evaluates the raw command first.
+  if (rtkPrefix) {
+    preToolUseHooks.push(createRtkRewriteHook(rtkPrefix, logger));
   }
 
   const taskHook = createTaskHook(taskState, onTaskStateChange);
@@ -457,6 +465,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.onEnsureLocalToolsConnected,
       params.taskState,
       params.onTaskStateChange,
+      resolveRtkPrefix(process.env),
     ),
     outputFormat: params.outputFormat,
     abortController: getAbortController(
@@ -485,6 +494,10 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
   } else {
     options.sessionId = params.sessionId;
     options.model = DEFAULT_MODEL;
+  }
+
+  if (!options.fallbackModel && options.model !== FALLBACK_MODEL) {
+    options.fallbackModel = FALLBACK_MODEL;
   }
 
   if (params.additionalDirectories) {

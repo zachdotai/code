@@ -1,4 +1,5 @@
 import { agentChatCoreModule } from "@posthog/core/agent-chat/agentChat.module";
+import { autoresearchCoreModule } from "@posthog/core/autoresearch/autoresearch.module";
 import { billingCoreModule } from "@posthog/core/billing/billing.module";
 import { inboxCoreModule } from "@posthog/core/inbox/inbox.module";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
@@ -9,6 +10,7 @@ import { CONTRIBUTION } from "@posthog/di/contribution";
 import { agentUiModule } from "@posthog/ui/features/agent/agent.module";
 import { authUiModule } from "@posthog/ui/features/auth/auth.module";
 import { billingUiModule } from "@posthog/ui/features/billing/billing.module";
+import { browserTabsUiModule } from "@posthog/ui/features/browser-tabs/browser-tabs.module";
 import { cloneUiModule } from "@posthog/ui/features/clone/clone.module";
 import { connectivityUiModule } from "@posthog/ui/features/connectivity/connectivity.module";
 import { discordPresenceUiModule } from "@posthog/ui/features/discord-presence/discordPresence.module";
@@ -29,8 +31,10 @@ export function registerDesktopContributions(): void {
     agentChatCoreModule,
     agentUiModule,
     authUiModule,
+    autoresearchCoreModule,
     billingUiModule,
     billingCoreModule,
+    browserTabsUiModule,
     cloneUiModule,
     connectivityUiModule,
     discordPresenceUiModule,

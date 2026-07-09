@@ -11,6 +11,7 @@ import { useService } from "@posthog/di/react";
 import type { HostTrpcClient } from "@posthog/host-router/client";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
+  type Adapter,
   ANALYTICS_EVENTS,
   type TaskCreationInput,
   type WorkspaceMode,
@@ -39,6 +40,8 @@ import {
 import { useDraftStore } from "../../message-editor/draftStore";
 import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryStore";
 import type { EditorHandle } from "../../message-editor/types";
+import { toastError } from "../../notifications/errorDetails";
+import { useProvisioningStore } from "../../provisioning/store";
 import { useSettingsStore } from "../../settings/settingsStore";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
 import { useTasks } from "../../tasks/useTasks";
@@ -61,14 +64,17 @@ interface UseTaskCreationOptions {
   branch?: string | null;
   editorIsEmpty: boolean;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
+  /** Backend channel UUID the created task is owned by (its feed home). */
+  channelId?: string;
   /**
    * Channels "generic chat box" mode: drop the repo/branch requirement so a
    * task can be submitted without picking a repo. The agent decides at runtime
@@ -76,6 +82,12 @@ interface UseTaskCreationOptions {
    */
   allowNoRepo?: boolean;
   onTaskCreated?: (task: Task) => void;
+  /**
+   * Side effect run with the created task in addition to (not instead of)
+   * the default open/navigation behavior — unlike onTaskCreated, providing
+   * this does not suppress the pending-task view.
+   */
+  onTaskCreatedEffect?: (task: Task) => void;
 }
 
 interface UseTaskCreationReturn {
@@ -152,11 +164,14 @@ export function useTaskCreation({
   reasoningLevel,
   environmentId,
   sandboxEnvironmentId,
+  customImageId,
   signalReportId,
   channelContext,
   channelName,
+  channelId,
   allowNoRepo,
   onTaskCreated,
+  onTaskCreatedEffect,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const hostClient = useHostTRPCClient();
@@ -278,6 +293,8 @@ export function useTaskCreation({
         }
       }
 
+      let createdTaskId: string | undefined;
+
       try {
         if (!contentOverride) {
           const plainText = editor.getText()?.trim() ?? plainPromptText;
@@ -286,6 +303,7 @@ export function useTaskCreation({
           }
         }
 
+        const settings = useSettingsStore.getState();
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -303,11 +321,14 @@ export function useTaskCreation({
           reasoningLevel,
           environmentId,
           sandboxEnvironmentId,
+          customImageId,
           signalReportId,
           additionalDirectories,
           channelContext,
           channelName,
-          customInstructions: useSettingsStore.getState().customInstructions,
+          channelId,
+          customInstructions: settings.customInstructions,
+          autoPublishCloudRuns: settings.autoPublishCloudRuns,
           allowNoRepo,
         });
 
@@ -340,6 +361,7 @@ export function useTaskCreation({
             if (signalReportId) {
               clearTaskInputReportAssociation();
             }
+            createdTaskId = output.task.id;
             if (pendingTaskKey) {
               pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
             }
@@ -350,6 +372,7 @@ export function useTaskCreation({
             if (!pendingTaskKey && !contentOverride) {
               editor.clear();
             }
+            onTaskCreatedEffect?.(output.task);
             if (onTaskCreated) {
               onTaskCreated(output.task);
             } else {
@@ -361,7 +384,29 @@ export function useTaskCreation({
           { skipCloudUsagePreflight: true },
         );
 
+        if (result.success && result.data.provisioningError) {
+          // Worktree provisioning failed but the task (and its prompt) was kept
+          // so the user can retry setup on it. Stay on the task the onTaskReady
+          // callback already navigated to — don't reopen the composer — and
+          // flag the failure so the task view shows a retry prompt.
+          useProvisioningStore
+            .getState()
+            .setFailed(result.data.task.id, result.data.provisioningError);
+          toastError(
+            getErrorTitle("workspace_creation"),
+            result.data.provisioningError,
+          );
+        }
+
         if (result.success) {
+          if (!result.data.provisioningError) {
+            if (pendingTaskKey) {
+              pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            }
+            if (createdTaskId) {
+              pendingTaskPromptStoreApi.clear(createdTaskId);
+            }
+          }
           setAdditionalDirectoriesOverride(null);
           // Guarantee the editor draft is wiped on success. editor.clear()
           // above only runs inside the onTaskReady callback (and after it
@@ -390,7 +435,7 @@ export function useTaskCreation({
             log.warn("Cloud task creation blocked by usage limit");
           } else {
             const title = getErrorTitle(result.failedStep);
-            toast.error(title, { description: result.error });
+            toastError(title, result.error);
             log.error("Task creation failed", {
               failedStep: result.failedStep,
               error: result.error,
@@ -398,17 +443,21 @@ export function useTaskCreation({
           }
           if (pendingTaskKey) {
             pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            if (createdTaskId) {
+              pendingTaskPromptStoreApi.clear(createdTaskId);
+            }
             openTaskInput({ initialPrompt: plainPromptText });
           }
         }
         return result.success;
       } catch (error) {
-        const description =
-          error instanceof Error ? error.message : "Unknown error";
-        toast.error("Failed to create task", { description });
+        toastError("Failed to create task", error);
         log.error("Unexpected error during task creation", { error });
         if (pendingTaskKey) {
           pendingTaskPromptStoreApi.clear(pendingTaskKey);
+          if (createdTaskId) {
+            pendingTaskPromptStoreApi.clear(createdTaskId);
+          }
           openTaskInput({ initialPrompt: plainPromptText });
         }
         return false;
@@ -433,14 +482,17 @@ export function useTaskCreation({
       reasoningLevel,
       environmentId,
       sandboxEnvironmentId,
+      customImageId,
       signalReportId,
       additionalDirectories,
       channelContext,
       channelName,
+      channelId,
       allowNoRepo,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
+      onTaskCreatedEffect,
       hostClient,
       trpc,
       queryClient,

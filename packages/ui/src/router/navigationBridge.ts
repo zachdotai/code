@@ -26,11 +26,22 @@ export function navigateToTaskDetail(taskId: string): void {
   });
 }
 
+export function navigateToPullRequestView(prUrl: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/pr",
+    search: { prUrl },
+  });
+}
+
 export function navigateToTaskPending(key: string): void {
   void getRouterOrNull()?.navigate({
     to: "/code/tasks/pending/$key",
     params: { key },
   });
+}
+
+export function navigateToActivity(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/activity" });
 }
 
 export function navigateToChannel(channelId: string): void {
@@ -140,6 +151,10 @@ export function navigateToScoutDetail(
   });
 }
 
+export function navigateToScoutFindings(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/agents/scouts/findings" });
+}
+
 export function navigateToAgents(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents" });
 }
@@ -168,6 +183,10 @@ export function navigateToSkills(): void {
 
 export function navigateToMcpServers(): void {
   void getRouterOrNull()?.navigate({ to: "/mcp-servers" });
+}
+
+export function navigateToUsage(options?: { replace?: boolean }): void {
+  void getRouterOrNull()?.navigate({ to: "/usage", replace: options?.replace });
 }
 
 // Channels-space mirrors. These render the same shared views as their /code (or
