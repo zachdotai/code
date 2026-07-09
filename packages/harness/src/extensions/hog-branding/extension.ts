@@ -20,6 +20,10 @@ export interface HogBrandingOptions {
 
 const BRAND_NAME = "hog";
 const BRAND_TAGLINE = "A Pi distribution by PostHog";
+// Our mascot, in place of pi's default `π`. PostHog's hedgehog is the whole
+// point of the "hog" name, so it fronts both the TUI header and the OS
+// terminal title.
+const BRAND_GLYPH = "🦔";
 
 type ExpandableHeaderComponent = Component & {
   setExpanded(expanded: boolean): void;
@@ -30,7 +34,7 @@ function brandLine(theme: Theme, version: string): string {
   const brand = theme.bold(theme.fg("accent", BRAND_NAME));
   const tagline = theme.fg("dim", ` (${BRAND_TAGLINE})`);
   const versionText = theme.fg("dim", ` v${version}`);
-  return `${brand}${tagline}${versionText}`;
+  return `${BRAND_GLYPH} ${brand}${tagline}${versionText}`;
 }
 
 function createHeaderComponent(
@@ -87,9 +91,10 @@ function createHeaderComponent(
 function terminalTitle(ctx: ExtensionContext): string {
   const cwdBasename = path.basename(ctx.sessionManager.getCwd());
   const sessionName = ctx.sessionManager.getSessionName();
-  return sessionName
+  const label = sessionName
     ? `${BRAND_NAME} - ${sessionName} - ${cwdBasename}`
     : `${BRAND_NAME} - ${cwdBasename}`;
+  return `${BRAND_GLYPH} ${label}`;
 }
 
 // pi's own interactive mode calls its internal `updateTerminalTitle()`

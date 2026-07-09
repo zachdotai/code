@@ -80,6 +80,7 @@ describe("createHogBrandingExtension", () => {
     const component = factory(undefined, fakeTheme());
     const lines = component.render(80);
 
+    expect(lines[0]).toContain("🦔");
     expect(lines[0]).toContain("Hog");
     expect(lines[0]).toContain("A Pi distribution by PostHog");
     expect(lines[0]).toContain("v9.9.9");
@@ -129,7 +130,7 @@ describe("createHogBrandingExtension", () => {
       {} as SessionStartEvent,
       fakeCtx({ cwd: "/home/user/my-project", setTitle: setTitleNoName }),
     );
-    expect(setTitleNoName).toHaveBeenCalledWith("hog - my-project");
+    expect(setTitleNoName).toHaveBeenCalledWith("🦔 hog - my-project");
 
     const setTitleWithName = vi.fn();
     await handlers.session_start[0]?.(
@@ -140,7 +141,9 @@ describe("createHogBrandingExtension", () => {
         setTitle: setTitleWithName,
       }),
     );
-    expect(setTitleWithName).toHaveBeenCalledWith("hog - fix-bug - my-project");
+    expect(setTitleWithName).toHaveBeenCalledWith(
+      "🦔 hog - fix-bug - my-project",
+    );
   });
 
   it("updates the terminal title on session_info_changed", async () => {
@@ -167,7 +170,7 @@ describe("createHogBrandingExtension", () => {
       }),
     );
 
-    expect(setTitle).toHaveBeenCalledWith("hog - renamed - my-project");
+    expect(setTitle).toHaveBeenCalledWith("🦔 hog - renamed - my-project");
   });
 
   it("re-applies the branded title on the next tick to win the race against pi's own updateTerminalTitle()", async () => {
@@ -183,7 +186,7 @@ describe("createHogBrandingExtension", () => {
 
       // Set immediately...
       expect(setTitle).toHaveBeenCalledTimes(1);
-      expect(setTitle).toHaveBeenLastCalledWith("hog - my-project");
+      expect(setTitle).toHaveBeenLastCalledWith("🦔 hog - my-project");
 
       // Simulate pi's own interactive-mode stomping the title synchronously
       // right after our handler resolves, as it does in practice.
@@ -192,7 +195,7 @@ describe("createHogBrandingExtension", () => {
 
       // ...and re-applied on the next tick, winning the race.
       vi.runAllTimers();
-      expect(setTitle).toHaveBeenLastCalledWith("hog - my-project");
+      expect(setTitle).toHaveBeenLastCalledWith("🦔 hog - my-project");
     } finally {
       vi.useRealTimers();
     }
