@@ -12,7 +12,3 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
 export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";
 export const GLM_MODEL_FLAG = "posthog-code-glm-model";
-// Gates the whole local-MCP-in-cloud-runs feature: importing url-based
-// servers into the sandbox and relaying desktop-only servers over the durable
-// channel (docs/cloud-mcp-import.md, docs/cloud-mcp-relay.md).
-export const LOCAL_MCP_IMPORT_FLAG = "posthog-code-local-mcp-import";
