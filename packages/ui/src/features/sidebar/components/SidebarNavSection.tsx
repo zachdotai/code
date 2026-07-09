@@ -150,18 +150,6 @@ export function SidebarNavSection({
         </Box>
       )}
 
-      {/* Activity (the mentions feed) is a /website surface, so it only appears
-          where the canvas backend is wired — same gate as the Channels toggle
-          below. */}
-      {bluebirdEnabled && (
-        <Box>
-          <ActivityItem
-            isActive={isActivityActive}
-            onClick={navigateToActivity}
-          />
-        </Box>
-      )}
-
       <Box>
         <SearchItem onClick={openCommandMenu} />
       </Box>
@@ -236,6 +224,18 @@ export function SidebarNavSection({
             }}
           />
         </label>
+      )}
+
+      {/* Activity (the mentions feed) is a channels surface, so it only appears
+          once channels are enabled — sitting directly under the toggle that
+          reveals it. */}
+      {channelsEnabled && (
+        <Box>
+          <ActivityItem
+            isActive={isActivityActive}
+            onClick={navigateToActivity}
+          />
+        </Box>
       )}
     </Flex>
   );
