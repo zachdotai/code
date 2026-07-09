@@ -155,6 +155,7 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
+export { isPrivateIpv4Octets } from "./private-network";
 export {
   buildPrOutput,
   mergePrUrls,
