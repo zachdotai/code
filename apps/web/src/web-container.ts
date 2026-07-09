@@ -42,6 +42,17 @@ import {
   type ExternalAppsFocusCoordinator,
   type ExternalAppsWorkspaceClient,
 } from "@posthog/core/external-apps/identifiers";
+import { gitInteractionModule } from "@posthog/core/git-interaction/git-interaction.module";
+import type {
+  GitInteractionEffects,
+  GitInteractionService,
+  IGitWriteClient,
+} from "@posthog/core/git-interaction/gitInteractionService";
+import {
+  GIT_INTERACTION_EFFECTS,
+  GIT_INTERACTION_SERVICE,
+  GIT_WRITE_CLIENT,
+} from "@posthog/core/git-interaction/identifiers";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
 import {
   GITHUB_CONNECT_CLIENT as INTEGRATIONS_GITHUB_CONNECT_CLIENT,
@@ -67,6 +78,16 @@ import {
   type ResolveSkillBundleDependencies,
 } from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import type { CloudArtifactService } from "@posthog/core/sessions/cloudArtifactService";
+import {
+  LOCAL_HANDOFF_DIALOG,
+  LOCAL_HANDOFF_HOST,
+  LOCAL_HANDOFF_NOTIFIER,
+  LOCAL_HANDOFF_SERVICE,
+  type LocalHandoffDialog,
+  type LocalHandoffHost,
+  type LocalHandoffNotifier,
+  LocalHandoffService,
+} from "@posthog/core/sessions/localHandoffService";
 import {
   SESSION_SERVICE,
   type SessionService,
@@ -145,9 +166,17 @@ import {
   type FeatureFlags,
 } from "@posthog/ui/features/feature-flags/identifiers";
 import {
+  FILE_WATCHER_CLIENT,
+  type FileWatcherClient,
+} from "@posthog/ui/features/file-watcher/identifiers";
+import {
   GIT_CACHE_KEY_PROVIDER,
   type GitCacheKeyProvider,
 } from "@posthog/ui/features/git-interaction/gitCacheProvider";
+import {
+  gitInteractionEffects,
+  gitWriteClient,
+} from "@posthog/ui/features/git-interaction/gitInteractionAdapter";
 import {
   UiGithubConnectClient,
   UiRepositoriesClient,
@@ -160,6 +189,10 @@ import {
   type McpSandboxProxyUrlProvider,
 } from "@posthog/ui/features/mcp-apps/identifiers";
 import { OnboardingGithubConnectClient } from "@posthog/ui/features/onboarding/githubConnectClientImpl";
+import {
+  localHandoffDialog,
+  localHandoffNotifier,
+} from "@posthog/ui/features/sessions/localHandoffService";
 import { getSessionService } from "@posthog/ui/features/sessions/sessionServiceHost";
 import { setupUiModule } from "@posthog/ui/features/setup/setup.module";
 import { taskCreationEffects } from "@posthog/ui/features/task-detail/taskCreationEffectsImpl";
@@ -270,6 +303,14 @@ interface WebBindings {
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;
   [TITLE_GENERATOR_LOGGER]: TitleGeneratorLogger;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
+  [LOCAL_HANDOFF_SERVICE]: LocalHandoffService;
+  [LOCAL_HANDOFF_HOST]: LocalHandoffHost;
+  [LOCAL_HANDOFF_DIALOG]: LocalHandoffDialog;
+  [LOCAL_HANDOFF_NOTIFIER]: LocalHandoffNotifier;
+  [FILE_WATCHER_CLIENT]: FileWatcherClient;
+  [GIT_INTERACTION_SERVICE]: GitInteractionService;
+  [GIT_WRITE_CLIENT]: IGitWriteClient;
+  [GIT_INTERACTION_EFFECTS]: GitInteractionEffects;
 }
 
 export const queryClient = new QueryClient();
@@ -558,5 +599,40 @@ container
   .bind(TITLE_GENERATOR_LOGGER)
   .toConstantValue(webTitleGeneratorLogger(scoped()));
 container.bind(LLM_GATEWAY_SERVICE).toConstantValue(webLlmGatewayService);
+
+// ── Local handoff (cloud git header's "hand off to local" affordance) ──
+// LocalHandoffService is resolved eagerly by CloudGitInteractionHeader. The
+// dialog + notifier are host-agnostic UI (reused from @posthog/ui); the host is
+// local-fs (pick a folder, add it) which can't run on the browser, so it's
+// stubbed — a cloud-only host can't hand a task off to a local checkout.
+container.bind(LOCAL_HANDOFF_HOST).toConstantValue({
+  getRepositoryByRemoteUrl: () => Promise.resolve(null),
+  selectDirectory: () => Promise.resolve(null),
+  addFolder: () =>
+    Promise.reject(new Error("Local handoff is not available on the web")),
+});
+container.bind(LOCAL_HANDOFF_DIALOG).toConstantValue(localHandoffDialog);
+container.bind(LOCAL_HANDOFF_NOTIFIER).toConstantValue(localHandoffNotifier);
+container
+  .bind(LOCAL_HANDOFF_SERVICE)
+  .to(LocalHandoffService)
+  .inSingletonScope();
+
+// ── File watcher (TaskDetail's useRepoFileWatcher) ──
+// Watches a local repo for changes; there is none on web. The consumer gates
+// start/stop on a repoPath (null for cloud tasks), so this no-op never runs.
+container.bind(FILE_WATCHER_CLIENT).toConstantValue({
+  start: () => Promise.resolve(),
+  stop: () => Promise.resolve(),
+});
+
+// ── Git interaction (git header's useGitInteraction) ──
+// GitInteractionService is portable core. Effects are host-agnostic UI (reused
+// verbatim). The write client forwards local git ops to the host git router,
+// which the web host doesn't serve — those are user actions (commit/PR) that
+// reject cleanly if invoked; cloud PRs flow through the cloud API, not here.
+container.load(gitInteractionModule);
+container.bind(GIT_WRITE_CLIENT).toConstantValue(gitWriteClient);
+container.bind(GIT_INTERACTION_EFFECTS).toConstantValue(gitInteractionEffects);
 
 setRootContainer(container);
