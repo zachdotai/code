@@ -10,6 +10,8 @@ export interface IWorkspaceSettings {
   setAutoSuspendAfterDays(value: number): void;
   getPreventSleepWhileRunning(): boolean;
   setPreventSleepWhileRunning(value: boolean): void;
+  getKeepDisplayAwakeWhileRunning(): boolean;
+  setKeepDisplayAwakeWhileRunning(value: boolean): void;
 }
 
 export const WORKSPACE_SETTINGS_SERVICE = Symbol.for(

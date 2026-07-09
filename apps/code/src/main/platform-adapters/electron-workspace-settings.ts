@@ -4,11 +4,13 @@ import {
   getAllWorktreeLocations,
   getAutoSuspendAfterDays,
   getAutoSuspendEnabled,
+  getKeepDisplayAwakeWhileRunning,
   getMaxActiveWorktrees,
   getPreventSleepWhileRunning,
   getWorktreeLocation,
   setAutoSuspendAfterDays,
   setAutoSuspendEnabled,
+  setKeepDisplayAwakeWhileRunning,
   setMaxActiveWorktrees,
   setPreventSleepWhileRunning,
   setWorktreeLocation,
@@ -58,5 +60,13 @@ export class ElectronWorkspaceSettings implements IWorkspaceSettings {
 
   setPreventSleepWhileRunning(value: boolean): void {
     setPreventSleepWhileRunning(value);
+  }
+
+  getKeepDisplayAwakeWhileRunning(): boolean {
+    return getKeepDisplayAwakeWhileRunning();
+  }
+
+  setKeepDisplayAwakeWhileRunning(value: boolean): void {
+    setKeepDisplayAwakeWhileRunning(value);
   }
 }

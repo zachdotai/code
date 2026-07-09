@@ -8,6 +8,7 @@ import { getUserDataDir, isDevBuild } from "../utils/env";
 interface SettingsSchema {
   worktreeLocation: string;
   preventSleepWhileRunning: boolean;
+  keepDisplayAwakeWhileRunning: boolean;
   autoSuspendEnabled: boolean;
   maxActiveWorktrees: number;
   autoSuspendAfterDays: number;
@@ -71,6 +72,10 @@ const schema = {
     type: "boolean" as const,
     default: false,
   },
+  keepDisplayAwakeWhileRunning: {
+    type: "boolean" as const,
+    default: false,
+  },
   autoSuspendEnabled: {
     type: "boolean" as const,
     default: true,
@@ -108,6 +113,7 @@ export const settingsStore = new Store<SettingsSchema>({
   defaults: {
     worktreeLocation: getDefaultWorktreeLocation(),
     preventSleepWhileRunning: false,
+    keepDisplayAwakeWhileRunning: false,
     autoSuspendEnabled: true,
     maxActiveWorktrees: 5,
     autoSuspendAfterDays: 7,
@@ -191,4 +197,12 @@ export function getPreventSleepWhileRunning(): boolean {
 
 export function setPreventSleepWhileRunning(value: boolean): void {
   settingsStore.set("preventSleepWhileRunning", value);
+}
+
+export function getKeepDisplayAwakeWhileRunning(): boolean {
+  return settingsStore.get("keepDisplayAwakeWhileRunning", false);
+}
+
+export function setKeepDisplayAwakeWhileRunning(value: boolean): void {
+  settingsStore.set("keepDisplayAwakeWhileRunning", value);
 }

@@ -1,7 +1,10 @@
 import { execFile } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import { promisify } from "node:util";
-import type { IPowerManager } from "@posthog/platform/power-manager";
+import type {
+  IPowerManager,
+  PowerSaveBlockerType,
+} from "@posthog/platform/power-manager";
 import { powerMonitor, powerSaveBlocker } from "electron";
 import { injectable } from "inversify";
 
@@ -14,8 +17,8 @@ export class ElectronPowerManager implements IPowerManager {
     return () => powerMonitor.off("resume", handler);
   }
 
-  public preventSleep(_reason: string): () => void {
-    const id = powerSaveBlocker.start("prevent-app-suspension");
+  public preventSleep(type: PowerSaveBlockerType): () => void {
+    const id = powerSaveBlocker.start(type);
     return () => {
       if (powerSaveBlocker.isStarted(id)) {
         powerSaveBlocker.stop(id);

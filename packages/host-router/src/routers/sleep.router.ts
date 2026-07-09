@@ -16,6 +16,20 @@ export const sleepRouter = router({
       ctx.container.get<SleepService>(SLEEP_SERVICE).setEnabled(input.enabled);
     }),
 
+  getKeepDisplayAwake: publicProcedure
+    .output(z.boolean())
+    .query(({ ctx }) =>
+      ctx.container.get<SleepService>(SLEEP_SERVICE).getKeepDisplayAwake(),
+    ),
+
+  setKeepDisplayAwake: publicProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(({ ctx, input }) => {
+      ctx.container
+        .get<SleepService>(SLEEP_SERVICE)
+        .setKeepDisplayAwake(input.enabled);
+    }),
+
   hasBuiltInBattery: publicProcedure
     .output(z.boolean())
     .query(({ ctx }) =>

@@ -35,10 +35,17 @@ export function GeneralSettings() {
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
   // Power state
-  const { preventSleepWhileRunning, setPreventSleepWhileRunning } =
-    useSettingsStore();
+  const {
+    preventSleepWhileRunning,
+    setPreventSleepWhileRunning,
+    keepDisplayAwakeWhileRunning,
+    setKeepDisplayAwakeWhileRunning,
+  } = useSettingsStore();
   const { data: serverPreventSleep } = useQuery(
     hostTRPC.sleep.getEnabled.queryOptions(),
+  );
+  const { data: serverKeepDisplayAwake } = useQuery(
+    hostTRPC.sleep.getKeepDisplayAwake.queryOptions(),
   );
   const { data: hasBuiltInBattery } = useQuery(
     hostTRPC.sleep.hasBuiltInBattery.queryOptions(),
@@ -46,12 +53,21 @@ export function GeneralSettings() {
   const preventSleepMutation = useMutation(
     hostTRPC.sleep.setEnabled.mutationOptions(),
   );
+  const keepDisplayAwakeMutation = useMutation(
+    hostTRPC.sleep.setKeepDisplayAwake.mutationOptions(),
+  );
 
   useEffect(() => {
     if (serverPreventSleep !== undefined) {
       setPreventSleepWhileRunning(serverPreventSleep);
     }
   }, [serverPreventSleep, setPreventSleepWhileRunning]);
+
+  useEffect(() => {
+    if (serverKeepDisplayAwake !== undefined) {
+      setKeepDisplayAwakeWhileRunning(serverKeepDisplayAwake);
+    }
+  }, [serverKeepDisplayAwake, setKeepDisplayAwakeWhileRunning]);
 
   const handlePreventSleepChange = useCallback(
     (checked: boolean) => {
@@ -64,6 +80,19 @@ export function GeneralSettings() {
       preventSleepMutation.mutate({ enabled: checked });
     },
     [setPreventSleepWhileRunning, preventSleepMutation],
+  );
+
+  const handleKeepDisplayAwakeChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "keep_display_awake_while_running",
+        new_value: checked,
+        old_value: !checked,
+      });
+      setKeepDisplayAwakeWhileRunning(checked);
+      keepDisplayAwakeMutation.mutate({ enabled: checked });
+    },
+    [setKeepDisplayAwakeWhileRunning, keepDisplayAwakeMutation],
   );
 
   // Chat state
@@ -442,11 +471,23 @@ export function GeneralSettings() {
             ? "Prevent your computer from going to sleep on its own while the agent is running a task. Closing the lid will still put it to sleep."
             : "Prevent your computer from going to sleep on its own while the agent is running a task"
         }
-        noBorder
       >
         <Switch
           checked={preventSleepWhileRunning}
           onCheckedChange={handlePreventSleepChange}
+          size="1"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Also keep display awake"
+        description="Keep the display on so your computer doesn't lock while the agent works. Useful if commits are signed with a key that needs an unlocked machine (e.g. Secretive). Your screen stays unlocked, so only use this somewhere you trust."
+        noBorder
+      >
+        <Switch
+          checked={preventSleepWhileRunning && keepDisplayAwakeWhileRunning}
+          disabled={!preventSleepWhileRunning}
+          onCheckedChange={handleKeepDisplayAwakeChange}
           size="1"
         />
       </SettingRow>

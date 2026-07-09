@@ -151,12 +151,14 @@ interface SettingsStore {
   // System / power / permissions
   allowBypassPermissions: boolean;
   preventSleepWhileRunning: boolean;
+  keepDisplayAwakeWhileRunning: boolean;
   debugLogsCloudRuns: boolean;
   // When on, cloud runs push their work and open a draft PR on completion
   // without waiting for an explicit ask.
   autoPublishCloudRuns: boolean;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
+  setKeepDisplayAwakeWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
   setAutoPublishCloudRuns: (enabled: boolean) => void;
 
@@ -324,12 +326,15 @@ export const useSettingsStore = create<SettingsStore>()(
       // System / power / permissions
       allowBypassPermissions: false,
       preventSleepWhileRunning: false,
+      keepDisplayAwakeWhileRunning: false,
       debugLogsCloudRuns: false,
       autoPublishCloudRuns: true,
       setAllowBypassPermissions: (enabled) =>
         set({ allowBypassPermissions: enabled }),
       setPreventSleepWhileRunning: (enabled) =>
         set({ preventSleepWhileRunning: enabled }),
+      setKeepDisplayAwakeWhileRunning: (enabled) =>
+        set({ keepDisplayAwakeWhileRunning: enabled }),
       setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
       setAutoPublishCloudRuns: (enabled) =>
         set({ autoPublishCloudRuns: enabled }),
@@ -444,6 +449,7 @@ export const useSettingsStore = create<SettingsStore>()(
         // System / power / permissions
         allowBypassPermissions: state.allowBypassPermissions,
         preventSleepWhileRunning: state.preventSleepWhileRunning,
+        keepDisplayAwakeWhileRunning: state.keepDisplayAwakeWhileRunning,
         debugLogsCloudRuns: state.debugLogsCloudRuns,
         autoPublishCloudRuns: state.autoPublishCloudRuns,
 

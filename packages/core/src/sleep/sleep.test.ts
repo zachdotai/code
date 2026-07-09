@@ -13,7 +13,10 @@ function makeLogger() {
   return { ...scoped, scope: vi.fn(() => scoped) };
 }
 
-function createDeps(preventSleepInitially = true) {
+function createDeps(
+  preventSleepInitially = true,
+  keepDisplayAwakeInitially = false,
+) {
   const release = vi.fn();
   const powerManager: IPowerManager = {
     onResume: vi.fn(() => () => {}),
@@ -22,10 +25,15 @@ function createDeps(preventSleepInitially = true) {
   };
 
   let stored = preventSleepInitially;
+  let storedDisplayAwake = keepDisplayAwakeInitially;
   const settings: IWorkspaceSettings = {
     getPreventSleepWhileRunning: vi.fn(() => stored),
     setPreventSleepWhileRunning: vi.fn((value: boolean) => {
       stored = value;
+    }),
+    getKeepDisplayAwakeWhileRunning: vi.fn(() => storedDisplayAwake),
+    setKeepDisplayAwakeWhileRunning: vi.fn((value: boolean) => {
+      storedDisplayAwake = value;
     }),
   } as unknown as IWorkspaceSettings;
 
@@ -107,6 +115,48 @@ describe("SleepService", () => {
       true,
     );
     expect(disabled.powerManager.preventSleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks app suspension only when display awake is off", () => {
+    ctx.service.acquire("turn-1");
+    expect(ctx.powerManager.preventSleep).toHaveBeenCalledWith(
+      "prevent-app-suspension",
+    );
+  });
+
+  it("blocks display sleep when display awake is on", () => {
+    const displayAwake = createDeps(true, true);
+    displayAwake.service.acquire("turn-1");
+    expect(displayAwake.powerManager.preventSleep).toHaveBeenCalledWith(
+      "prevent-display-sleep",
+    );
+  });
+
+  it("restarts the blocker with the new type when display awake changes mid-activity", () => {
+    ctx.service.acquire("turn-1");
+    expect(ctx.powerManager.preventSleep).toHaveBeenLastCalledWith(
+      "prevent-app-suspension",
+    );
+
+    ctx.service.setKeepDisplayAwake(true);
+
+    expect(ctx.release).toHaveBeenCalledTimes(1);
+    expect(ctx.powerManager.preventSleep).toHaveBeenLastCalledWith(
+      "prevent-display-sleep",
+    );
+    expect(ctx.settings.setKeepDisplayAwakeWhileRunning).toHaveBeenCalledWith(
+      true,
+    );
+  });
+
+  it("does not restart the blocker when display awake changes with no activity", () => {
+    ctx.service.setKeepDisplayAwake(true);
+    expect(ctx.powerManager.preventSleep).not.toHaveBeenCalled();
+  });
+
+  it("seeds display awake from persisted settings", () => {
+    expect(ctx.service.getKeepDisplayAwake()).toBe(false);
+    expect(createDeps(true, true).service.getKeepDisplayAwake()).toBe(true);
   });
 
   it("releases the blocker on cleanup", () => {
