@@ -164,6 +164,7 @@ export interface SessionTrpc {
     unwatch: TrpcMutation;
     retry: TrpcMutation;
     sendCommand: TrpcMutation;
+    designateRelayedMcpServers: TrpcMutation;
     onUpdate: TrpcSubscription;
   };
   handoff: {
@@ -3983,6 +3984,22 @@ export class SessionService {
    * status triggers full teardown from within handleCloudTaskUpdate via
    * stopCloudTaskWatch().
    */
+  /**
+   * Register this client as the relay executor for a run's desktop-only MCP
+   * servers (docs/cloud-mcp-relay.md). Called by the creation saga — only the
+   * creating client may execute relay requests.
+   */
+  async designateRelayedMcpServers(
+    runId: string,
+    servers: string[],
+  ): Promise<void> {
+    if (servers.length === 0) return;
+    await this.d.trpc.cloudTask.designateRelayedMcpServers.mutate({
+      runId,
+      servers,
+    });
+  }
+
   watchCloudTask(
     taskId: string,
     runId: string,

@@ -83,6 +83,8 @@ export const POSTHOG_NOTIFICATIONS = {
 
   /** Permission request resolved, persisted so a reconnecting client can tell it is no longer pending */
   PERMISSION_RESOLVED: "_posthog/permission_resolved",
+  /** Desktop → sandbox reply to an MCP relay request (docs/cloud-mcp-relay.md). */
+  MCP_RESPONSE: "_posthog/mcp_response",
 } as const;
 
 /**

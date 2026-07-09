@@ -15,3 +15,6 @@ export const GLM_MODEL_FLAG = "posthog-code-glm-model";
 // Gates forwarding the user's local (~/.claude.json) url-based MCP servers
 // into cloud task runs.
 export const LOCAL_MCP_IMPORT_FLAG = "posthog-code-local-mcp-import";
+// Gates relaying desktop-only local MCP servers (stdio / private-URL) into
+// cloud task runs over the durable channel (docs/cloud-mcp-relay.md).
+export const MCP_RELAY_FLAG = "posthog-code-mcp-relay";

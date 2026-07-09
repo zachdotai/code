@@ -3,6 +3,7 @@ import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-ef
 import type {
   Adapter,
   CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
   CloudRunSource,
   ExecutionMode,
   PrAuthorshipMode,
@@ -507,6 +508,7 @@ interface CloudRunOptions {
    * backend merges these into the agent server's `--mcpServers` at spawn.
    */
   importedMcpServers?: CloudMcpServerImport[];
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }
 
 interface CreateTaskRunOptions extends CloudRunOptions {
@@ -600,6 +602,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.importedMcpServers?.length) {
     body.imported_mcp_servers = options.importedMcpServers;
+  }
+  if (options?.relayedMcpServers?.length) {
+    body.relayed_mcp_servers = options.relayedMcpServers;
   }
 
   return body;

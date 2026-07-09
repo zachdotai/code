@@ -31,6 +31,7 @@ import {
   createAcpConnection,
   type InProcessAcpConnection,
 } from "../adapters/acp-connection";
+import { setAlwaysAskMcpServers } from "../adapters/claude/mcp/tool-metadata";
 import {
   getSessionJsonlPath,
   hydrateSessionJsonl,
@@ -87,10 +88,12 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { type McpRelayResponse, McpRelayServer } from "./mcp-relay-server";
 import { RunUsageAccumulator } from "./run-usage";
 import {
   handoffLocalGitStateSchema,
   jsonRpcRequestSchema,
+  type RemoteMcpServer,
   validateCommandParams,
 } from "./schemas";
 import type { AgentServerConfig } from "./types";
@@ -353,6 +356,35 @@ export class AgentServer {
       toolCallId?: string;
     }
   >();
+  private mcpRelayServer: McpRelayServer | null = null;
+  /**
+   * Last observed desktop activity (SSE attach or received command), for the
+   * MCP relay's 503-when-idle liveness signal. Stricter than
+   * `hasDesktopConnected`, which is a one-way "ever connected" flag.
+   */
+  private desktopSeenAt: number | null = null;
+
+  /**
+   * Start loopback relay endpoints for the run's designated desktop-only MCP
+   * servers and return their session mcpServers entries. No designations →
+   * no relay server, no entries.
+   */
+  private async startMcpRelayServer(): Promise<RemoteMcpServer[]> {
+    const names = this.config.relayMcpServers ?? [];
+    if (names.length === 0) return [];
+    if (!this.mcpRelayServer) {
+      this.mcpRelayServer = new McpRelayServer({
+        servers: names,
+        emitEvent: (event) => this.broadcastEvent(event),
+        getDesktopSeenAt: () => this.desktopSeenAt,
+        logger: this.logger,
+      });
+      await this.mcpRelayServer.start();
+      // Relayed tools execute on the user's machine — always ask.
+      setAlwaysAskMcpServers(names);
+    }
+    return this.mcpRelayServer.mcpServers;
+  }
 
   private detachSseController(controller: SseController): void {
     if (this.session?.sseController === controller) {
@@ -519,6 +551,7 @@ export class AgentServer {
           }, SSE_KEEPALIVE_INTERVAL_MS);
 
           try {
+            this.desktopSeenAt = Date.now();
             if (
               !this.session ||
               this.session.payload.run_id !== payload.run_id
@@ -577,6 +610,8 @@ export class AgentServer {
       if (!this.session || this.session.payload.run_id !== payload.run_id) {
         return c.json({ error: "No active session for this run" }, 400);
       }
+
+      this.desktopSeenAt = Date.now();
 
       const rawBody = await c.req.json().catch(() => null);
       const parseResult = jsonRpcRequestSchema.safeParse(rawBody);
@@ -1091,6 +1126,19 @@ export class AgentServer {
         return { resolved: true };
       }
 
+      case POSTHOG_NOTIFICATIONS.MCP_RESPONSE:
+      case "mcp_response": {
+        const resolved = this.mcpRelayServer?.resolveResponse(
+          params as unknown as McpRelayResponse,
+        );
+        if (!resolved) {
+          throw new Error(
+            `No pending MCP relay request found for id: ${String(params.requestId)}`,
+          );
+        }
+        return { resolved: true };
+      }
+
       default:
         throw new Error(`Unknown method: ${method}`);
     }
@@ -1357,13 +1405,18 @@ export class AgentServer {
       initialPermissionMode,
     );
 
+    const sessionMcpServers = [
+      ...(this.config.mcpServers ?? []),
+      ...(await this.startMcpRelayServer()),
+    ];
+
     let acpSessionId: string | null = null;
     if (nativeResume) {
       try {
         await clientConnection.resumeSession({
           sessionId: nativeResume.sessionId,
           cwd: sessionCwd,
-          mcpServers: this.config.mcpServers ?? [],
+          mcpServers: sessionMcpServers,
           _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
         });
         acpSessionId = nativeResume.sessionId;
@@ -1385,7 +1438,7 @@ export class AgentServer {
     if (!acpSessionId) {
       const sessionResponse = await clientConnection.newSession({
         cwd: sessionCwd,
-        mcpServers: this.config.mcpServers ?? [],
+        mcpServers: sessionMcpServers,
         _meta: sessionMeta,
       });
       acpSessionId = sessionResponse.sessionId;
@@ -3199,6 +3252,46 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
           }
         }
 
+        // Tools on relayed MCP servers execute on the user's machine with
+        // their local privileges: always ask, regardless of permission mode
+        // (docs/cloud-mcp-relay.md). Without a reachable client, deny rather
+        // than auto-approve.
+        {
+          const meta = params.toolCall?._meta as
+            | { claudeCode?: { toolName?: string } }
+            | undefined;
+          const rawInput = params.toolCall?.rawInput as
+            | { toolName?: string }
+            | undefined;
+          const permissionToolName =
+            meta?.claudeCode?.toolName ?? rawInput?.toolName;
+          const mcpServerName =
+            typeof permissionToolName === "string" &&
+            permissionToolName.startsWith("mcp__")
+              ? permissionToolName.split("__")[1]
+              : undefined;
+          if (
+            mcpServerName &&
+            (this.config.relayMcpServers ?? []).includes(mcpServerName)
+          ) {
+            const hasReachableClient =
+              Boolean(this.session?.hasDesktopConnected) ||
+              this.eventStreamSender !== null;
+            if (mode !== "background" && hasReachableClient) {
+              return this.relayPermissionToClient(params);
+            }
+            return {
+              outcome: { outcome: "cancelled" as const },
+              _meta: {
+                message:
+                  "This tool runs on the user's machine via the MCP relay and " +
+                  "requires their explicit approval, but no client is available " +
+                  "to approve it. Do NOT retry; tell the user what you wanted to do.",
+              },
+            };
+          }
+        }
+
         // Relay permission requests to the connected client when:
         // - Plan approvals: always relay because they gate autonomy changes
         //   that require human confirmation (buffered until desktop connects)
@@ -3599,6 +3692,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       });
     } catch (error) {
       this.logger.error("Failed to flush session logs", error);
+    }
+
+    if (this.mcpRelayServer) {
+      await this.mcpRelayServer.stop();
+      this.mcpRelayServer = null;
     }
 
     // Drain pending permissions before ACP cleanup to avoid deadlocks —
