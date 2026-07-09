@@ -11,6 +11,7 @@ import { browserTabsStore } from "@posthog/core/browser-tabs/browserTabsStore";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
   decideTabNavigation,
+  PROJECT_BLUEBIRD_FLAG,
   primaryWindow,
   setTabOrder,
   setTabTarget as setTabTargetLocal,
@@ -19,14 +20,20 @@ import {
 } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
-import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import {
+  useChannelMutations,
+  useChannels,
+} from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useDashboard,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { getLeafPanel } from "@posthog/ui/features/panels/panelStoreHelpers";
+import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useAppView } from "@posthog/ui/router/useAppView";
@@ -158,6 +165,17 @@ export function BrowserTabStrip() {
   const routeAppView: AppView | null = isAppView(view.type) ? view.type : null;
 
   const { channels } = useChannels();
+  const { createChannel } = useChannelMutations();
+  // Whether the channels surface is live — the same gate the sidebar uses. This
+  // (not the current route) decides a new tab's default: with channels on a
+  // fresh tab opens #me, otherwise the Code new-task screen. Keying off the
+  // route would leave the behaviour stale right after the toggle flips.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled =
+    useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
 
   // The active channel sub-section (artifacts/history/context) is the
   // route segment after the channelId. Null when on the channel home or a
@@ -581,17 +599,16 @@ export function BrowserTabStrip() {
     goToTab(tab);
   };
 
-  // Navigate to the close's survivor. The mutation-level onSuccess has already
-  // applied `next` to the mirror (mutation callbacks run after option-level
-  // ones), so the /website index renders against the post-close snapshot and
-  // can't redirect to the first channel (re-opening a tab) mid-flight.
+  // Navigate to the close's survivor, or — when the last tab was closed — to the
+  // flag's default landing (#me / new-task), never the /website index (which
+  // would redirect to channels[0], re-opening a random channel tab).
   const applyCloseResult = (next: TabsSnapshot) => {
     const w = primaryWindow(next);
     const active = w?.activeTabId
       ? next.tabs.find((t) => t.id === w.activeTabId)
       : null;
     if (active) goToTab(active);
-    else navigate({ to: inChannels ? "/website" : "/code" });
+    else landOnDefault();
   };
 
   const handleClose = (tabId: string) => {
@@ -654,6 +671,34 @@ export function BrowserTabStrip() {
     );
   };
 
+  // The default landing, keyed off the channels toggle (not the current route,
+  // which lags a toggle flip): #me when channels are on, the Code new-task
+  // screen otherwise. Deliberately never routes through the /website index,
+  // which would redirect to channels[0]. `tabId` (a fresh blank tab) fills that
+  // tab in place; without one (last tab closed) the navigation opens a new tab.
+  const landOnDefault = (tabId?: string) => {
+    const state = tabId ? (prev: object) => ({ ...prev, tabId }) : undefined;
+    if (!channelsEnabled) {
+      navigate({ to: "/code", state });
+      return;
+    }
+    // #me is provisioned lazily the first time (same bridge the sidebar's #me
+    // row uses); fall back to the new-task screen if it can't be created.
+    void (async () => {
+      try {
+        const existing = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
+        const folder = existing ?? (await createChannel(PERSONAL_CHANNEL_NAME));
+        navigate({
+          to: "/website/$channelId",
+          params: { channelId: folder.id },
+          state,
+        });
+      } catch {
+        navigate({ to: "/code", state });
+      }
+    })();
+  };
+
   const handleNewTab = () => {
     if (!windowId) return;
     newBlankTab.mutate(
@@ -661,16 +706,7 @@ export function BrowserTabStrip() {
       {
         onSuccess: (next) => {
           const w = primaryWindow(next);
-          if (w?.activeTabId) {
-            goToTab({
-              id: w.activeTabId,
-              dashboardId: null,
-              taskId: null,
-              channelId: null,
-              channelSection: null,
-              appView: null,
-            });
-          }
+          if (w?.activeTabId) landOnDefault(w.activeTabId);
         },
       },
     );
