@@ -1,4 +1,5 @@
 import {
+  ArchiveIcon,
   ArrowSquareOutIcon,
   ChatCircleIcon,
   GitBranchIcon,
@@ -389,11 +390,13 @@ const FeedItem = memo(function FeedItem({
   inView,
   onOpenTask,
   onOpenThread,
+  onArchiveTask,
 }: {
   task: Task;
   inView: boolean;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
+  onArchiveTask: (task: Task) => void;
 }) {
   const prompt = useMemo(() => promptText(task), [task]);
   const isAgent = !task.created_by || task.origin_product !== "user_created";
@@ -454,6 +457,9 @@ const FeedItem = memo(function FeedItem({
         <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
           <ArrowSquareOutIcon size={15} />
         </ThreadItemAction>
+        <ThreadItemAction label="Archive" onClick={() => onArchiveTask(task)}>
+          <ArchiveIcon size={15} />
+        </ThreadItemAction>
       </ThreadItemActions>
     </ThreadItem>
   );
@@ -466,10 +472,12 @@ function FeedRow({
   task,
   onOpenTask,
   onOpenThread,
+  onArchiveTask,
 }: {
   task: Task;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
+  onArchiveTask: (task: Task) => void;
 }) {
   const [ref, inView] = useInView<HTMLDivElement>({ rootMargin: "1200px 0px" });
   return (
@@ -488,6 +496,7 @@ function FeedRow({
         inView={inView}
         onOpenTask={onOpenTask}
         onOpenThread={onOpenThread}
+        onArchiveTask={onArchiveTask}
       />
     </ChatMessageScrollerItem>
   );
@@ -502,12 +511,14 @@ export function ChannelFeedView({
   emptyState,
   onOpenTask,
   onOpenThread,
+  onArchiveTask,
 }: {
   tasks: Task[];
   isLoading: boolean;
   emptyState?: React.ReactNode;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
+  onArchiveTask: (task: Task) => void;
 }) {
   if (isLoading && tasks.length === 0) {
     return (
@@ -549,6 +560,7 @@ export function ChannelFeedView({
                     task={task}
                     onOpenTask={onOpenTask}
                     onOpenThread={onOpenThread}
+                    onArchiveTask={onArchiveTask}
                   />
                 </Fragment>
               );

@@ -1,5 +1,7 @@
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
+import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
 import { ChannelFeedView } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
@@ -45,6 +47,17 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // personal channel), which owns the task feed and threads.
   const { channel: backendChannel } = useBackendChannel(channelName);
   const { tasks, isLoading } = useChannelFeed(backendChannel?.id);
+
+  // Archiving from the channel lands back on the website new-task screen (not
+  // /code) if the archived task happens to be the open view.
+  const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
+  const archivedTaskIds = useArchivedTaskIds();
+  // Keep archived tasks out of the feed the moment the archive confirms; the
+  // History tab already filters the same way, and undo brings the row back.
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => !archivedTaskIds.has(task.id)),
+    [tasks, archivedTaskIds],
+  );
 
   useSetHeaderContent(
     useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
@@ -125,6 +138,35 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     [openThread],
   );
 
+  // useArchiveTask owns the success toast + Undo; we add the channel analytics
+  // and surface a failure toast (the hook only toasts on success).
+  const handleArchiveTask = useCallback(
+    async (task: Task) => {
+      try {
+        await archiveTask({ taskId: task.id });
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: "archive_task",
+          surface: "channel_home",
+          channel_id: channelId,
+          task_id: task.id,
+          success: true,
+        });
+      } catch (error) {
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: "archive_task",
+          surface: "channel_home",
+          channel_id: channelId,
+          task_id: task.id,
+          success: false,
+        });
+        toast.error("Couldn't archive task", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [archiveTask, channelId],
+  );
+
   const threadTask = threadTaskId
     ? tasks.find((t) => t.id === threadTaskId)
     : undefined;
@@ -162,11 +204,12 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     <div className="flex h-full min-w-0 bg-gray-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <ChannelFeedView
-          tasks={tasks}
+          tasks={visibleTasks}
           isLoading={isLoading}
           emptyState={emptyState}
           onOpenTask={handleOpenTask}
           onOpenThread={handleOpenThread}
+          onArchiveTask={handleArchiveTask}
         />
         <div className="mx-auto w-full px-4 pb-4">
           <ChannelHomeComposer
