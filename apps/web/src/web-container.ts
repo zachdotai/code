@@ -62,6 +62,15 @@ import {
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
 import {
+  SKILLS_WORKSPACE_CLIENT,
+  TEAM_SKILLS_SERVICE,
+} from "@posthog/core/skills/identifiers";
+import { skillsCoreModule } from "@posthog/core/skills/skills.module";
+import type {
+  SkillsWorkspaceClient,
+  TeamSkillsService,
+} from "@posthog/core/skills/teamSkillsService";
+import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
   TASK_SERVICE,
@@ -222,6 +231,8 @@ interface WebBindings {
   [ARCHIVE_CLIENT]: ArchiveClient;
   [UPDATES_CLIENT]: UpdatesClient;
   [GIT_CACHE_KEY_PROVIDER]: GitCacheKeyProvider;
+  [TEAM_SKILLS_SERVICE]: TeamSkillsService;
+  [SKILLS_WORKSPACE_CLIENT]: SkillsWorkspaceClient;
 }
 
 export const queryClient = new QueryClient();
@@ -469,5 +480,22 @@ container.bind(UPDATES_CLIENT).toConstantValue({
 // keys match nothing; the adapter just produces valid tRPC-shaped keys so
 // invalidation calls don't throw.
 container.bind(GIT_CACHE_KEY_PROVIDER).toConstantValue(webGitCacheKeyProvider);
+
+// ── Team skills (skills panel) ──
+// Listing team skills is a real PostHog API call, so TeamSkillsService is bound
+// for real. Its workspace client only does local-disk export/install (publish a
+// local skill / materialize a team skill to disk) — neither exists on web, so
+// those two methods reject.
+container.load(skillsCoreModule);
+container.bind(SKILLS_WORKSPACE_CLIENT).toConstantValue({
+  exportSkill: () =>
+    Promise.reject(
+      new Error("Publishing a local skill is not available on the web"),
+    ),
+  installTeamSkill: () =>
+    Promise.reject(
+      new Error("Installing a skill locally is not available on the web"),
+    ),
+});
 
 setRootContainer(container);
