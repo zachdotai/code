@@ -1,5 +1,8 @@
 import Store from "electron-store";
 import { getUserDataDir } from "./env";
+import { logger } from "./logger";
+
+const log = logger.scope("store");
 
 interface FocusSession {
   mainRepoPath: string;
@@ -59,12 +62,30 @@ export const windowStateStore = new Store<WindowStateSchema>({
   },
 });
 
+/**
+ * Persist a single window-state key. Writes go through electron-store's
+ * synchronous atomic `writeFileSync`, which can throw on transient FS errors
+ * (e.g. `ENOSPC` when the disk is full). Window-state persistence is
+ * non-critical, so a failed write is logged and swallowed rather than allowed
+ * to propagate and crash the main process.
+ */
+export function setWindowStateKey<K extends keyof WindowStateSchema>(
+  key: K,
+  value: WindowStateSchema[K],
+): void {
+  try {
+    windowStateStore.set(key, value);
+  } catch (error) {
+    log.warn(`Failed to persist window-state key "${key}"`, { error });
+  }
+}
+
 export function saveZoomLevel(level: number): void {
-  windowStateStore.set("zoomLevel", level);
+  setWindowStateKey("zoomLevel", level);
 }
 
 export function saveFullScreenState(isFullScreen: boolean): void {
-  windowStateStore.set("isFullScreen", isFullScreen);
+  setWindowStateKey("isFullScreen", isFullScreen);
 }
 
 export function getFullScreenState(): boolean {
@@ -77,7 +98,7 @@ export function getFullScreenState(): boolean {
  * A normal quit leaves it false and launches windowed.
  */
 export function setRestoreFullScreenOnNextLaunch(restore: boolean): void {
-  windowStateStore.set("restoreFullScreenOnNextLaunch", restore);
+  setWindowStateKey("restoreFullScreenOnNextLaunch", restore);
 }
 
 export function getRestoreFullScreenOnNextLaunch(): boolean {

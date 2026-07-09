@@ -28,6 +28,7 @@ import {
   saveFullScreenState,
   saveZoomLevel,
   setRestoreFullScreenOnNextLaunch,
+  setWindowStateKey,
   type WindowStateSchema,
   windowStateStore,
 } from "./utils/store";
@@ -77,16 +78,16 @@ function getSavedWindowState(): WindowStateSchema {
 
 export function saveWindowState(window: BrowserWindow): void {
   const isMaximized = window.isMaximized();
-  windowStateStore.set("isMaximized", isMaximized);
+  setWindowStateKey("isMaximized", isMaximized);
 
   // Only save bounds when not maximized, so restoring from maximized
   // gives the user their previous windowed size/position
   if (!isMaximized && !window.isFullScreen()) {
     const bounds = window.getBounds();
-    windowStateStore.set("x", bounds.x);
-    windowStateStore.set("y", bounds.y);
-    windowStateStore.set("width", bounds.width);
-    windowStateStore.set("height", bounds.height);
+    setWindowStateKey("x", bounds.x);
+    setWindowStateKey("y", bounds.y);
+    setWindowStateKey("width", bounds.width);
+    setWindowStateKey("height", bounds.height);
   }
 }
 
