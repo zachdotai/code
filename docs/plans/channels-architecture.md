@@ -20,6 +20,10 @@ The framing we're building toward:
   | Here's a signal / work done | PR |
   | Generate artifact | Canvas |
   | Loop / automation | Canvas, PR |
+- **Everything a thread produces or consumes is saved as an artifact** —
+  PRs, canvases and generated UI HTML, pasted images, plans, files — in a
+  real data model, so it can be surfaced later in the UI or attached to new
+  work as a context piece.
 - **The thread creator steers.** Others can request to steer; the owner
   accepts or denies per user.
 - **MCP can pull in all of the above.** The whole channel and its threads are
@@ -139,19 +143,38 @@ One channel identity that owns feed, context, artifacts, and membership.
   and the feed; `domain-types.ts` no longer needs the "distinct from the
   desktop file-system channel folders" disclaimer.
 
-### B. Artifact registry (M)
+### B. Artifact registry (L)
 
-Make "thread shape → artifact" a domain concept.
+Make "thread shape → artifact" a domain concept — and make artifact *content*
+a stored, retrievable model, not a scatter of refs. Everything a thread
+produces or consumes (PRs, canvases, generated UI HTML, pasted images, plans,
+files) must be saved so it can be surfaced later in the UI or fed back into
+prompts as context pieces.
 
 - A typed `Artifact` row (cloud, child of channel): `kind: canvas | pr |
-  plan | report | file | loop`, `thread_id`, `ref` (PR URL, fs row id,
-  plan version id), lifecycle status.
+  plan | report | image | file | loop`, `thread_id`, lifecycle status, and a
+  `content` facet that is either a **stored blob** (generated HTML, images,
+  files — content-addressed object storage; the presigned-upload path in
+  `packages/core/src/sessions/cloudArtifactService.ts` is the seed of this
+  pipe) or a **live ref** (PR URL, canvas fs row id) *plus a captured
+  snapshot* — a PR artifact keeps its merged diff/summary even after branches
+  are deleted, a canvas artifact keeps rendered HTML per version.
+- **Capture at every ingress**, not just thread completion: images/files
+  pasted into a thread are filed as artifacts at paste time; agent-generated
+  outputs file themselves as the session produces them; PR refs attach when
+  the run reports `pr_url`. If it appeared in a thread, it is in the model.
+- **Retrieval is the point.** Two consumers from day one:
+  - the UI — the channel artifacts pane and thread views render from the
+    registry (replacing the `WebsiteChannelArtifacts.tsx` union), with
+    everything linkable and re-openable later;
+  - agents — artifacts are addressable context pieces: attachable to a new
+    thread's prompt, returned by G's search, readable via an MCP
+    `read_artifact` tool, and citable from CONTEXT.md (C's provenance edges
+    point at artifact ids, not prose descriptions).
 - Thread shapes declared at creation (`do | plan | signal | generate | loop`)
   so the session can be held to producing its artifact; plan-mode threads file
   the accepted plan.md as an artifact version instead of leaving it in the
   transcript.
-- Replace the `WebsiteChannelArtifacts.tsx` union with a registry the UI and
-  MCP both read.
 - Depends on A for the parent id; canvas and PR kinds are backfills of what
   exists.
 
@@ -172,6 +195,22 @@ The channel learns. This is the highest-leverage differentiator.
 - **v2 — cross-channel references:** when channel X is @-mentioned from
   channel Y (see D), record the reference and let X's updater fold in what Y
   learned. Explicitly out of scope for v1.
+- **v2 — doc-rot prevention:** a CONTEXT.md that quietly goes stale is worse
+  than none — the agent confidently acts on wrong context, and members stop
+  trusting the channel. Provenance (above) is the foundation; on top of it:
+  - *Staleness signals:* each context claim carries its source thread and
+    timestamp. Rot indicators: the referenced artifact/PR/repo has changed
+    since the claim was written; recent threads contradict it (the post-run
+    summarizer flags "outcome disagrees with context" instead of silently
+    appending); no thread has touched the claim's area in N months.
+  - *Verification passes:* a periodic low-cost agent run (scout-shaped —
+    the dispatch machinery exists) rereads CONTEXT.md against current
+    reality (repo state, open threads, linked artifacts) and files proposed
+    edits/deletions through the same review flow as post-thread updates.
+  - *Surface it, don't just fix it:* per-section freshness in the CONTEXT.md
+    view (fresh / aging / contradicted), so humans see rot before the agent
+    trips on it. The compaction pass prefers deleting stale claims over
+    summarizing them harder.
 - Independent of A/B in mechanism, but lands cleanest after A.
 
 ### D. Channel mentions and cross-pollination (M)
