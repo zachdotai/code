@@ -127,6 +127,7 @@ export {
   mentionsToPlainText,
   splitMentionSegments,
 } from "./mentions";
+export { defaultEligibleModel } from "./models";
 export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
