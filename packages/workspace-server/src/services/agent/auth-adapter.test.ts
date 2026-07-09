@@ -153,6 +153,72 @@ describe("AgentAuthAdapter", () => {
     );
   });
 
+  it("prefers a personal installation over a shared one for the same URL", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          results: [
+            {
+              id: "inst-shared",
+              url: "https://linear.example.com/mcp",
+              proxy_url: "https://proxy.posthog.com/inst-shared/",
+              name: "linear",
+              display_name: "Linear (shared)",
+              auth_type: "oauth",
+              is_enabled: true,
+              pending_oauth: false,
+              needs_reauth: false,
+              scope: "shared",
+            },
+            {
+              id: "inst-personal",
+              url: "https://linear.example.com/mcp",
+              proxy_url: "https://proxy.posthog.com/inst-personal/",
+              name: "linear",
+              display_name: "Linear",
+              auth_type: "oauth",
+              is_enabled: true,
+              pending_oauth: false,
+              needs_reauth: false,
+              scope: "personal",
+            },
+            {
+              id: "inst-shared-only",
+              url: "https://notion.example.com/mcp",
+              proxy_url: "https://proxy.posthog.com/inst-shared-only/",
+              name: "notion",
+              display_name: "Notion (shared)",
+              auth_type: "oauth",
+              is_enabled: true,
+              pending_oauth: false,
+              needs_reauth: false,
+              scope: "shared",
+            },
+          ],
+        }),
+    });
+
+    const { servers } = await adapter.buildMcpServers(baseCredentials);
+
+    // The user's own Linear connection wins; the teammate's shared one is
+    // dropped. The shared Notion install has no personal counterpart, so it
+    // is kept.
+    expect(deps.mcpProxy.register).toHaveBeenCalledWith(
+      "installation-inst-personal",
+      "https://proxy.posthog.com/inst-personal/",
+    );
+    expect(deps.mcpProxy.register).not.toHaveBeenCalledWith(
+      "installation-inst-shared",
+      expect.anything(),
+    );
+    expect(deps.mcpProxy.register).toHaveBeenCalledWith(
+      "installation-inst-shared-only",
+      "https://proxy.posthog.com/inst-shared-only/",
+    );
+    expect(servers.map((s) => s.name)).toEqual(["posthog", "linear", "notion"]);
+  });
+
   it("fetches tool approval states for installations", async () => {
     mockFetch
       .mockResolvedValueOnce({

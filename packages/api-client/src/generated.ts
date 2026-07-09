@@ -9722,6 +9722,7 @@ export namespace Schemas {
     auth_type?: MCPAuthTypeEnum | undefined;
     is_enabled?: boolean | undefined;
     scope: MCPServerInstallationScopeEnum;
+    is_owner?: boolean | undefined;
     needs_reauth: boolean;
     pending_oauth: boolean;
     proxy_url: string;

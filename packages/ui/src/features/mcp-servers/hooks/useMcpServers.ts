@@ -171,6 +171,34 @@ export function useMcpServers() {
     },
   );
 
+  const shareMutation = useAuthenticatedMutation(
+    (client, installationId: string) =>
+      client.shareMcpInstallation(installationId),
+    {
+      onSuccess: () => {
+        toast.success("Server shared with project");
+        invalidateInstallations();
+      },
+      onError: (error: Error) => {
+        toast.error(error.message || "Failed to share server");
+      },
+    },
+  );
+
+  const unshareMutation = useAuthenticatedMutation(
+    (client, installationId: string) =>
+      client.unshareMcpInstallation(installationId),
+    {
+      onSuccess: () => {
+        toast.success("Server is personal again");
+        invalidateInstallations();
+      },
+      onError: (error: Error) => {
+        toast.error(error.message || "Failed to unshare server");
+      },
+    },
+  );
+
   const reauthorizeMutation = useAuthenticatedMutation(
     (client, installationId: string) =>
       reauthorizeWithOAuth(client, oauth, installationId),
@@ -214,6 +242,10 @@ export function useMcpServers() {
     installCustomPending: installCustomMutation.isPending,
     reauthorize: reauthorizeMutation.mutate,
     reauthorizePending: reauthorizeMutation.isPending,
+    share: shareMutation.mutate,
+    sharePending: shareMutation.isPending,
+    unshare: unshareMutation.mutate,
+    unsharePending: unshareMutation.isPending,
     invalidateInstallations,
   };
 }

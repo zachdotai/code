@@ -4066,6 +4066,43 @@ export class PostHogAPIClient {
       | Schemas.OAuthRedirectResponse;
   }
 
+  /** Escalate a personal installation to team-wide shared (owner + admin only). */
+  async shareMcpInstallation(
+    installationId: string,
+  ): Promise<McpServerInstallation> {
+    return this.postMcpInstallationScopeAction(installationId, "share");
+  }
+
+  /** Revert a shared installation to personal (owner or admin). */
+  async unshareMcpInstallation(
+    installationId: string,
+  ): Promise<McpServerInstallation> {
+    return this.postMcpInstallationScopeAction(installationId, "unshare");
+  }
+
+  private async postMcpInstallationScopeAction(
+    installationId: string,
+    action: "share" | "unshare",
+  ): Promise<McpServerInstallation> {
+    const teamId = await this.getTeamId();
+    const path = `/api/environments/${teamId}/mcp_server_installations/${installationId}/${action}/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${path}`),
+      path,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        (errorData as { detail?: string }).detail ??
+          `Failed to ${action} MCP server: ${response.statusText}`,
+      );
+    }
+
+    return (await response.json()) as McpServerInstallation;
+  }
+
   async authorizeMcpInstallation(options: {
     installation_id: string;
     install_source?: "posthog" | "posthog-code";

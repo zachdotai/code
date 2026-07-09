@@ -74,6 +74,10 @@ export function McpServersView() {
     installCustomPending,
     reauthorize,
     reauthorizePending,
+    share,
+    sharePending,
+    unshare,
+    unsharePending,
   } = useMcpServers();
 
   useEffect(() => {
@@ -208,6 +212,19 @@ export function McpServersView() {
         view.kind === "detail-installation" ? selectedInstallation : null;
       const template = selectedTemplate;
 
+      // Whether the user already holds their own (personal) installation of
+      // the server shown — matched by URL or template, since a teammate's
+      // shared install and the user's personal one are distinct rows.
+      const hasPersonalInstall =
+        !!install &&
+        installationList.some(
+          (i) =>
+            i.id !== install.id &&
+            i.scope !== "shared" &&
+            ((!!install.url && i.url === install.url) ||
+              (!!install.template_id && i.template_id === install.template_id)),
+        );
+
       if (!install && !template) {
         return (
           <Flex align="center" justify="center" py="6">
@@ -227,14 +244,26 @@ export function McpServersView() {
           installation={install}
           template={template}
           isEnabled={install?.is_enabled !== false}
-          isInstalling={!!template && installingId === template.id && !install}
+          isInstalling={!!template && installingId === template.id}
           isReauthorizing={reauthorizePending}
+          isSharing={sharePending}
+          isUnsharing={unsharePending}
+          hasPersonalInstall={hasPersonalInstall}
           onBack={() => setView({ kind: "marketplace" })}
           onConnect={() => {
-            if (template) {
+            if (!template) return;
+            if (install) {
+              // "Connect personally" from a teammate's shared install. The
+              // template-id watcher would immediately match the existing
+              // shared row, so identify the new personal row by id snapshot
+              // instead (same mechanism as custom installs).
+              setPendingCustomKnownIds(
+                new Set(installationList.map((i) => i.id)),
+              );
+            } else {
               setPendingTemplateId(template.id);
-              installTemplate(template);
             }
+            installTemplate(template);
           }}
           onReauthorize={() => {
             if (install) reauthorize(install.id);
@@ -244,6 +273,12 @@ export function McpServersView() {
           }}
           onUninstall={() => {
             if (install) setUninstallTarget(install);
+          }}
+          onShare={() => {
+            if (install) share(install.id);
+          }}
+          onUnshare={() => {
+            if (install) unshare(install.id);
           }}
         />
       );

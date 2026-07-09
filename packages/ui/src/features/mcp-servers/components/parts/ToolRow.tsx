@@ -10,9 +10,10 @@ import { ToolPolicyToggle } from "./ToolPolicyToggle";
 interface ToolRowProps {
   tool: McpInstallationTool;
   onChange: (approval_state: McpApprovalState) => void;
+  disabled?: boolean;
 }
 
-export function ToolRow({ tool, onChange }: ToolRowProps) {
+export function ToolRow({ tool, onChange, disabled }: ToolRowProps) {
   const [open, setOpen] = useState(false);
   const hasDescription = !!tool.description?.trim();
   const removed = !!tool.removed_at;
@@ -69,7 +70,7 @@ export function ToolRow({ tool, onChange }: ToolRowProps) {
           <ToolPolicyToggle
             value={tool.approval_state ?? "needs_approval"}
             onChange={onChange}
-            disabled={removed}
+            disabled={removed || disabled}
           />
         </div>
       </div>

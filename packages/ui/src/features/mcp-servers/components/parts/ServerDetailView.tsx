@@ -8,6 +8,7 @@ import {
   Prohibit,
   Shield,
   Trash,
+  UsersThree,
   X,
 } from "@phosphor-icons/react";
 import type {
@@ -23,6 +24,7 @@ import {
   filterToolsByName,
   sortToolsForDisplay,
 } from "@posthog/core/mcp-servers/toolDerivation";
+import { useIsOrgAdmin } from "@posthog/ui/features/auth/useOrgRole";
 import { ServerIcon } from "@posthog/ui/features/mcp-servers/components/parts/icons";
 import {
   STATUS_COLORS,
@@ -31,6 +33,7 @@ import {
 import { ToolRow } from "@posthog/ui/features/mcp-servers/components/parts/ToolRow";
 import { useMcpInstallationTools } from "@posthog/ui/features/mcp-servers/hooks/useMcpInstallationTools";
 import {
+  AlertDialog,
   Badge,
   Button,
   Flex,
@@ -50,11 +53,18 @@ interface ServerDetailViewProps {
   isEnabled: boolean;
   isInstalling: boolean;
   isReauthorizing: boolean;
+  isSharing: boolean;
+  isUnsharing: boolean;
+  /** Whether the current user already has their own personal installation for
+   *  this server — hides "Connect personally" on a teammate's shared server. */
+  hasPersonalInstall: boolean;
   onBack: () => void;
   onConnect: () => void;
   onReauthorize: () => void;
   onToggleEnabled: (enabled: boolean) => void;
   onUninstall: () => void;
+  onShare: () => void;
+  onUnshare: () => void;
 }
 
 export function ServerDetailView({
@@ -63,14 +73,34 @@ export function ServerDetailView({
   isEnabled,
   isInstalling,
   isReauthorizing,
+  isSharing,
+  isUnsharing,
+  hasPersonalInstall,
   onBack,
   onConnect,
   onReauthorize,
   onToggleEnabled,
   onUninstall,
+  onShare,
+  onUnshare,
 }: ServerDetailViewProps) {
   const [showRemoved, setShowRemoved] = useState(false);
   const [toolSearch, setToolSearch] = useState("");
+  const [shareConfirmOpen, setShareConfirmOpen] = useState(false);
+
+  // Shared-scope gating. `is_owner` is absent on older backends; treat unknown
+  // as owner so controls stay usable — the backend is the enforcement point.
+  const { isAdmin } = useIsOrgAdmin();
+  const isShared = installation?.scope === "shared";
+  const isOwner = !!installation && installation.is_owner !== false;
+  const canShare = !!installation && !isShared && isOwner && isAdmin === true;
+  const canUnshare =
+    !!installation && isShared && (isOwner || isAdmin === true);
+  const canRemove =
+    !!installation && (!isShared || isOwner || isAdmin === true);
+  const canManage = !!installation && (!isShared || isOwner);
+  const canConnectPersonally =
+    isShared && !isOwner && !!template && !hasPersonalInstall;
 
   const { name, description, docsUrl, iconKey, authType } =
     resolveServerDetails(installation, template);
@@ -185,7 +215,47 @@ export function ServerDetailView({
                 Connect
               </Button>
             )}
-            {installation && (
+            {canConnectPersonally && (
+              <Tooltip content="Connect your own account instead of using the shared connection">
+                <Button
+                  variant="outline"
+                  size="2"
+                  onClick={onConnect}
+                  disabled={isInstalling}
+                >
+                  {isInstalling ? (
+                    <Spinner size="1" />
+                  ) : (
+                    <DownloadSimple size={12} />
+                  )}
+                  Connect personally
+                </Button>
+              </Tooltip>
+            )}
+            {canShare && (
+              <Button
+                variant="outline"
+                size="2"
+                onClick={() => setShareConfirmOpen(true)}
+                disabled={isSharing}
+              >
+                {isSharing ? <Spinner size="1" /> : <UsersThree size={12} />}
+                Share with project
+              </Button>
+            )}
+            {canUnshare && (
+              <Button
+                variant="outline"
+                color="gray"
+                size="2"
+                onClick={onUnshare}
+                disabled={isUnsharing}
+              >
+                {isUnsharing ? <Spinner size="1" /> : null}
+                Unshare
+              </Button>
+            )}
+            {installation && canRemove && (
               <Tooltip content="Remove server">
                 <IconButton
                   variant="ghost"
@@ -198,7 +268,7 @@ export function ServerDetailView({
               </Tooltip>
             )}
           </Flex>
-          {installation && status === "connected" && (
+          {installation && status === "connected" && canManage && (
             <Flex align="center" gap="2">
               <Switch
                 size="1"
@@ -209,6 +279,13 @@ export function ServerDetailView({
           )}
         </Flex>
       </Flex>
+
+      <ShareConfirmDialog
+        open={shareConfirmOpen}
+        serverName={name}
+        onOpenChange={setShareConfirmOpen}
+        onConfirm={onShare}
+      />
 
       {installation && status === "connected" && (
         <>
@@ -237,83 +314,89 @@ export function ServerDetailView({
                 ) : null}
               </Flex>
             </Flex>
-            <Flex gap="2" align="center">
+            {canManage ? (
+              <Flex gap="2" align="center">
+                <Text color="gray" className="text-[13px]">
+                  Set all:
+                </Text>
+                <Tooltip
+                  content={toolSearch ? "Approve filtered" : "Approve all"}
+                >
+                  <IconButton
+                    variant="soft"
+                    color="green"
+                    size="1"
+                    disabled={bulkPending || filteredTools.length === 0}
+                    onClick={() =>
+                      setBulkApproval(
+                        "approved",
+                        toolSearch ? filteredTools : undefined,
+                      )
+                    }
+                  >
+                    <Check size={12} weight="bold" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip
+                  content={
+                    toolSearch
+                      ? "Require approval for filtered"
+                      : "Require approval for all"
+                  }
+                >
+                  <IconButton
+                    variant="soft"
+                    color="amber"
+                    size="1"
+                    disabled={bulkPending || filteredTools.length === 0}
+                    onClick={() =>
+                      setBulkApproval(
+                        "needs_approval",
+                        toolSearch ? filteredTools : undefined,
+                      )
+                    }
+                  >
+                    <Shield size={12} weight="bold" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip content={toolSearch ? "Block filtered" : "Block all"}>
+                  <IconButton
+                    variant="soft"
+                    color="red"
+                    size="1"
+                    disabled={bulkPending || filteredTools.length === 0}
+                    onClick={() =>
+                      setBulkApproval(
+                        "do_not_use",
+                        toolSearch ? filteredTools : undefined,
+                      )
+                    }
+                  >
+                    <Prohibit size={12} weight="bold" />
+                  </IconButton>
+                </Tooltip>
+                <Separator orientation="vertical" />
+                <Tooltip content="Refresh tools from server">
+                  <IconButton
+                    variant="soft"
+                    color="gray"
+                    size="1"
+                    disabled={refreshPending}
+                    onClick={refresh}
+                  >
+                    {refreshPending ? (
+                      <Spinner size="1" />
+                    ) : (
+                      <ArrowClockwise size={12} weight="bold" />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              </Flex>
+            ) : (
               <Text color="gray" className="text-[13px]">
-                Set all:
+                Tool permissions are managed by the sharer.
               </Text>
-              <Tooltip
-                content={toolSearch ? "Approve filtered" : "Approve all"}
-              >
-                <IconButton
-                  variant="soft"
-                  color="green"
-                  size="1"
-                  disabled={bulkPending || filteredTools.length === 0}
-                  onClick={() =>
-                    setBulkApproval(
-                      "approved",
-                      toolSearch ? filteredTools : undefined,
-                    )
-                  }
-                >
-                  <Check size={12} weight="bold" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip
-                content={
-                  toolSearch
-                    ? "Require approval for filtered"
-                    : "Require approval for all"
-                }
-              >
-                <IconButton
-                  variant="soft"
-                  color="amber"
-                  size="1"
-                  disabled={bulkPending || filteredTools.length === 0}
-                  onClick={() =>
-                    setBulkApproval(
-                      "needs_approval",
-                      toolSearch ? filteredTools : undefined,
-                    )
-                  }
-                >
-                  <Shield size={12} weight="bold" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip content={toolSearch ? "Block filtered" : "Block all"}>
-                <IconButton
-                  variant="soft"
-                  color="red"
-                  size="1"
-                  disabled={bulkPending || filteredTools.length === 0}
-                  onClick={() =>
-                    setBulkApproval(
-                      "do_not_use",
-                      toolSearch ? filteredTools : undefined,
-                    )
-                  }
-                >
-                  <Prohibit size={12} weight="bold" />
-                </IconButton>
-              </Tooltip>
-              <Separator orientation="vertical" />
-              <Tooltip content="Refresh tools from server">
-                <IconButton
-                  variant="soft"
-                  color="gray"
-                  size="1"
-                  disabled={refreshPending}
-                  onClick={refresh}
-                >
-                  {refreshPending ? (
-                    <Spinner size="1" />
-                  ) : (
-                    <ArrowClockwise size={12} weight="bold" />
-                  )}
-                </IconButton>
-              </Tooltip>
-            </Flex>
+            )}
           </Flex>
 
           {isLoading ? (
@@ -378,6 +461,7 @@ export function ServerDetailView({
                   <ToolRow
                     key={tool.tool_name}
                     tool={tool}
+                    disabled={!canManage}
                     onChange={(approval_state) =>
                       setToolApproval({
                         toolName: tool.tool_name,
@@ -425,5 +509,45 @@ export function ServerDetailView({
         </Flex>
       )}
     </Flex>
+  );
+}
+
+function ShareConfirmDialog({
+  open,
+  serverName,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  serverName: string;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
+      <AlertDialog.Content maxWidth="480px">
+        <AlertDialog.Title>Share with project?</AlertDialog.Title>
+        <AlertDialog.Description className="text-sm">
+          Everyone in this project — including autonomous agents — will be able
+          to use <Text className="font-bold">{serverName}</Text> through your
+          connection. Actions they take are attributed to your account on the
+          connected service. Consider connecting a service account rather than a
+          personal one. You can unshare at any time.
+        </AlertDialog.Description>
+        <Flex gap="3" mt="4" justify="end">
+          <AlertDialog.Cancel>
+            <Button variant="soft" color="gray">
+              Cancel
+            </Button>
+          </AlertDialog.Cancel>
+          <AlertDialog.Action>
+            <Button variant="solid" onClick={onConfirm}>
+              <UsersThree size={12} />
+              Share with project
+            </Button>
+          </AlertDialog.Action>
+        </Flex>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
   );
 }

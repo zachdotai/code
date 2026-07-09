@@ -280,6 +280,7 @@ export class AgentAuthAdapter {
       name: string;
       display_name: string;
       auth_type: string;
+      scope?: "personal" | "shared";
     }>
   > {
     const baseUrl = this.getPostHogApiBaseUrl(credentials.apiHost);
@@ -310,14 +311,24 @@ export class AgentAuthAdapter {
           is_enabled?: boolean;
           pending_oauth: boolean;
           needs_reauth: boolean;
+          scope?: "personal" | "shared";
         }>;
       };
       const installations = data.results ?? [];
 
-      return installations
-        .filter(
-          (i) => !i.pending_oauth && !i.needs_reauth && i.is_enabled !== false,
-        )
+      const active = installations.filter(
+        (i) => !i.pending_oauth && !i.needs_reauth && i.is_enabled !== false,
+      );
+      // Personal wins over shared: when the user has their own connection to
+      // the same server URL, agent sessions act as the user rather than
+      // through a teammate's shared credential. Rows without a scope come
+      // from older backends and are personal by definition.
+      const personalUrls = new Set(
+        active.filter((i) => i.scope !== "shared").map((i) => i.url),
+      );
+
+      return active
+        .filter((i) => i.scope !== "shared" || !personalUrls.has(i.url))
         .map((i) => ({
           ...i,
           proxy_url:
