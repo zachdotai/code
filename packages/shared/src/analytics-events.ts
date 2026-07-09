@@ -1,5 +1,7 @@
 // Analytics event types and properties
 
+import type { Adapter } from "./adapter";
+
 export interface PromptHistoryOpenedProperties {
   entry_count: number;
 }
@@ -85,7 +87,7 @@ export interface TaskCreateProperties {
   uses_worktree_link?: boolean;
   /** Worktree mode: repo has a non-empty .worktreeinclude file */
   uses_worktree_include?: boolean;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
 }
 
 export interface TaskViewProperties {
@@ -363,6 +365,12 @@ export interface DeepLinkIssueFailedProperties {
 export interface DeepLinkCanvasProperties {
   channel_id: string;
   dashboard_id: string;
+}
+
+export interface DeepLinkChannelProperties {
+  channel_id: string;
+  /** Present when the link targets a thread inside the channel. */
+  task_id?: string;
 }
 
 // Feedback events
@@ -826,7 +834,8 @@ export type ChannelsSurface =
   | "dashboards_grid"
   | "canvas"
   | "context"
-  | "thread_panel";
+  | "thread_panel"
+  | "activity";
 
 export type ChannelActionType =
   | "enter_space"
@@ -853,19 +862,25 @@ export type ChannelActionType =
   | "archive_task"
   | "open_task"
   | "collapse_thread"
-  | "expand_thread";
+  | "expand_thread"
+  | "copy_link"
+  | "mention_member"
+  | "view_activity"
+  | "open_mention";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
   surface: ChannelsSurface;
   /** The channel acted on, when one is in scope. */
   channel_id?: string;
-  /** For file/unfile/archive/open task actions. */
+  /** For file/unfile/archive/open task actions; for copy_link of a thread. */
   task_id?: string;
   /** For file_task: destination channel when different from `channel_id`. */
   target_channel_id?: string;
-  /** For nav_click: which destination ("home"|"inbox"|"canvas"|"agents"|"files"|"settings"). */
+  /** For nav_click: which destination ("home"|"activity"|"inbox"|"canvas"|"agents"|"files"|"settings"). */
   nav_target?: string;
+  /** For mention_member: the tagged teammate's user uuid. */
+  mentioned_user_id?: string;
   /** For new_task_suggestion: the starter-prompt card label. */
   suggestion_label?: string;
   /** Whether the underlying mutation resolved successfully. */
@@ -1132,6 +1147,7 @@ export const ANALYTICS_EVENTS = {
   DEEP_LINK_ISSUE: "Deep link issue",
   DEEP_LINK_ISSUE_FAILED: "Deep link issue failed",
   DEEP_LINK_CANVAS: "Deep link canvas",
+  DEEP_LINK_CHANNEL: "Deep link channel",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -1288,6 +1304,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.DEEP_LINK_ISSUE]: DeepLinkIssueProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_ISSUE_FAILED]: DeepLinkIssueFailedProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_CANVAS]: DeepLinkCanvasProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_CHANNEL]: DeepLinkChannelProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;

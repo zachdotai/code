@@ -22,6 +22,7 @@ import {
   isJsonRpcRequest,
   isJsonRpcResponse,
   isRateLimitError,
+  isTransientUpstreamError,
   mergeConfigOptions,
   type OptimisticItem,
   type PermissionRequest,
@@ -65,6 +66,7 @@ import {
   routeLocalConnect,
 } from "./connectRouting";
 import {
+  formatPermissionAnswerPrompt,
   type PermissionSelectionPlan,
   planPermissionResponse,
 } from "./permissionResponse";
@@ -97,6 +99,7 @@ const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
 const AUTH_RESTORE_MAX_RETRY_WAITS = 6;
 const MAX_SUPERSEDED_RUN_IDS = 100;
+const MAX_RESPONDED_PERMISSION_REQUEST_IDS = 500;
 /**
  * Streamed events are buffered and flushed on this cadence so a burst of tokens
  * coalesces into one processing pass (and roughly one render) instead of one
@@ -328,7 +331,7 @@ export interface ConnectParams {
   repoPath: string;
   initialPrompt?: ContentBlock[];
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   /**
@@ -443,12 +446,57 @@ type DerivedPermissionRequest = Pick<
   "requestId" | "toolCall" | "options"
 >;
 
+function getEntryTaskRunMarker(entry: StoredLogEntry): string | undefined {
+  const method = entry.notification?.method;
+  if (!method) return undefined;
+
+  const params = (entry.notification?.params ?? {}) as {
+    runId?: unknown;
+    taskRunId?: unknown;
+  };
+
+  if (
+    isNotification(method, POSTHOG_NOTIFICATIONS.SDK_SESSION) &&
+    typeof params.taskRunId === "string"
+  ) {
+    return params.taskRunId;
+  }
+
+  if (
+    isNotification(method, POSTHOG_NOTIFICATIONS.RUN_STARTED) &&
+    typeof params.runId === "string"
+  ) {
+    return params.runId;
+  }
+
+  return undefined;
+}
+
+function entriesScopedToTaskRun(
+  entries: StoredLogEntry[],
+  taskRunId: string | undefined,
+): StoredLogEntry[] {
+  if (!taskRunId || !entries.some((entry) => getEntryTaskRunMarker(entry))) {
+    return entries;
+  }
+
+  let currentTaskRunId: string | undefined;
+  return entries.filter((entry) => {
+    const marker = getEntryTaskRunMarker(entry);
+    if (marker) {
+      currentTaskRunId = marker;
+    }
+    return currentTaskRunId === taskRunId;
+  });
+}
+
 export function derivePendingPermissionRequests(
   entries: StoredLogEntry[],
+  options?: { taskRunId?: string },
 ): DerivedPermissionRequest[] {
   const requests = new Map<string, DerivedPermissionRequest>();
   const resolved = new Set<string>();
-  for (const entry of entries) {
+  for (const entry of entriesScopedToTaskRun(entries, options?.taskRunId)) {
     const method = entry.notification?.method;
     if (!method) continue;
     const params = (entry.notification?.params ?? {}) as {
@@ -561,10 +609,18 @@ export class SessionService {
   private cloudLogGapReconciler: CloudLogGapReconciler;
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
+  /**
+   * Cloud permission requestIds the user has already responded to this app
+   * session. A stale snapshot (a resolved marker not yet flushed to storage)
+   * or a replayed stream frame can re-deliver an answered request; without
+   * this guard it would re-surface as a fresh pending card.
+   */
+  private respondedCloudPermissionRequestIds = new Set<string>();
   private liveTurnContent = new Map<
     string,
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
   >();
+  private pendingPermissionHydratedRuns = new Set<string>();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -910,7 +966,11 @@ export class SessionService {
     const previous = this.d.store.getSessions()[taskRunId];
 
     const session = createBaseSession(taskRunId, taskId, taskTitle);
-    session.events = events;
+    // Repainting from the log must not blank a transcript we already hold:
+    // fetchSessionLogs swallows read errors and returns empty, so keep the
+    // previous in-memory events when the log read produced nothing.
+    session.events =
+      events.length === 0 && previous?.events.length ? previous.events : events;
     if (logUrl) {
       session.logUrl = logUrl;
     }
@@ -1276,7 +1336,7 @@ export class SessionService {
     auth: AuthCredentials,
     initialPrompt?: ContentBlock[],
     executionMode?: ExecutionMode,
-    adapter?: "claude" | "codex",
+    adapter?: Adapter,
     model?: string,
     reasoningLevel?: string,
     importedSessionId?: string,
@@ -2120,6 +2180,15 @@ export class SessionService {
       return;
     }
 
+    if (this.respondedCloudPermissionRequestIds.has(update.requestId)) {
+      this.d.log.debug("Skipping already-answered cloud permission request", {
+        taskRunId,
+        requestId: update.requestId,
+        toolCallId: update.toolCall.toolCallId,
+      });
+      return;
+    }
+
     if (
       isPermissionRequestAlreadySurfaced(
         session.pendingPermissions,
@@ -2153,7 +2222,9 @@ export class SessionService {
     taskRunId: string,
     entries: StoredLogEntry[],
   ): void {
-    for (const request of derivePendingPermissionRequests(entries)) {
+    for (const request of derivePendingPermissionRequests(entries, {
+      taskRunId,
+    })) {
       this.handleCloudPermissionRequest(taskRunId, request);
     }
   }
@@ -2407,7 +2478,7 @@ export class SessionService {
     session: AgentSession,
     blocks: ContentBlock[],
     promptText: string,
-    options: { optimisticApplied?: boolean } = {},
+    options: { optimisticApplied?: boolean; isRecoveryResend?: boolean } = {},
   ): Promise<{ stopReason: string }> {
     if (!options.optimisticApplied) {
       this.applyOptimisticPrompt(session.taskRunId, blocks, promptText);
@@ -2449,14 +2520,33 @@ export class SessionService {
           errorMessage,
           errorDetails,
         });
-        this.startAutoRecoverLocalSession(
-          session.taskId,
-          session.taskRunId,
-          session.taskTitle,
-          errorDetails || errorMessage,
-          errorDetails ||
-            "Session connection lost. Please retry or start a new session.",
-        );
+        if (!options.isRecoveryResend) {
+          const resent = await this.recoverAndResendPrompt(
+            session,
+            blocks,
+            promptText,
+            errorDetails || errorMessage,
+          );
+          if (resent) {
+            return resent;
+          }
+        }
+        // Recovery failed (or this already was the post-recovery resend):
+        // surface the error state so the user can retry manually.
+        const latest = this.d.store.getSessionByTaskId(session.taskId);
+        if (
+          latest?.taskRunId === session.taskRunId &&
+          latest.status !== "error"
+        ) {
+          this.setErrorSession(
+            session.taskId,
+            session.taskRunId,
+            session.taskTitle,
+            errorDetails ||
+              "Session connection lost. Please retry or start a new session.",
+            "Connection lost",
+          );
+        }
       } else {
         this.d.store.updateSession(session.taskRunId, {
           isPromptPending: false,
@@ -2465,8 +2555,77 @@ export class SessionService {
         });
       }
 
+      // A provider request that timed out or dropped leaves the session
+      // healthy — no recovery ran above — so tell the user to just re-send
+      // instead of surfacing the raw "Internal error: API Error: …" text.
+      if (isTransientUpstreamError(errorMessage, errorDetails)) {
+        this.d.log.warn("Transient upstream provider failure during prompt", {
+          taskRunId: session.taskRunId,
+          errorMessage,
+          errorDetails,
+        });
+        throw new Error(
+          "The AI provider timed out or dropped the connection. Your session is unaffected — please send the message again.",
+          { cause: error },
+        );
+      }
+
       throw error;
     }
+  }
+
+  /**
+   * A fatal prompt failure (e.g. "Session not found") usually means the
+   * backend agent was idle-killed or the host process restarted while the
+   * renderer still shows the session as connected. Recover the session in
+   * place and resend the prompt once, so a reply to a stale session lands
+   * instead of erroring and losing the user's message.
+   *
+   * Returns the resend result, or null when recovery (or the refreshed
+   * session lookup) failed and the caller should surface the original error.
+   */
+  private async recoverAndResendPrompt(
+    session: AgentSession,
+    blocks: ContentBlock[],
+    promptText: string,
+    reason: string,
+  ): Promise<{ stopReason: string } | null> {
+    let recovered = false;
+    try {
+      recovered = await this.tryAutoRecoverLocalSession(
+        session.taskId,
+        session.taskRunId,
+        reason,
+      );
+    } catch (recoveryError) {
+      this.d.log.warn("Session recovery threw while resending prompt", {
+        taskId: session.taskId,
+        taskRunId: session.taskRunId,
+        error:
+          recoveryError instanceof Error
+            ? recoveryError.message
+            : String(recoveryError),
+      });
+      return null;
+    }
+    if (!recovered) return null;
+
+    const refreshed = this.d.store.getSessionByTaskId(session.taskId);
+    if (
+      !refreshed ||
+      refreshed.taskRunId !== session.taskRunId ||
+      refreshed.status !== "connected"
+    ) {
+      return null;
+    }
+
+    this.d.log.info("Resending prompt after session recovery", {
+      taskId: session.taskId,
+      taskRunId: session.taskRunId,
+    });
+    return this.sendLocalPrompt(refreshed, blocks, promptText, {
+      isRecoveryResend: true,
+    });
   }
 
   /**
@@ -2927,6 +3086,7 @@ export class SessionService {
           pendingUserArtifactIds:
             artifactIds.length > 0 ? artifactIds : undefined,
           prAuthorshipMode,
+          autoPublish: previousState.auto_publish === true || undefined,
           runSource: getCloudRunSource(previousState),
           signalReportId:
             typeof previousState.signal_report_id === "string"
@@ -3095,6 +3255,138 @@ export class SessionService {
     });
   }
 
+  private async refreshCloudRunStatus(
+    session: AgentSession,
+  ): Promise<TaskRunStatus | null> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") {
+      return null;
+    }
+
+    try {
+      const run = await authStatus.auth.client.getTaskRun(
+        session.taskId,
+        session.taskRunId,
+      );
+      this.d.store.updateSession(session.taskRunId, {
+        cloudStatus: run.status,
+        cloudStage: run.stage ?? null,
+        cloudOutput: run.output ?? null,
+        cloudErrorMessage: run.error_message,
+        logUrl: run.log_url ?? session.logUrl,
+      });
+      return run.status;
+    } catch (error) {
+      this.d.log.warn("Failed to refresh cloud run status", {
+        taskId: session.taskId,
+        taskRunId: session.taskRunId,
+        error: String(error),
+      });
+      return null;
+    }
+  }
+
+  private async resumeTerminalCloudPermissionResponse(
+    session: AgentSession,
+    permission: PermissionRequest | undefined,
+    toolCallId: string,
+    requestId: string | undefined,
+    optionId: string,
+    customInput?: string,
+    answers?: Record<string, string>,
+    cloudStatus?: TaskRunStatus | null,
+  ): Promise<void> {
+    this.cloudPermissionRequestIds.delete(toolCallId);
+    const answerPrompt = formatPermissionAnswerPrompt(
+      permission,
+      optionId,
+      customInput,
+      answers,
+    );
+    if (answerPrompt) {
+      await this.sendCloudPrompt(
+        { ...session, cloudStatus: cloudStatus ?? session.cloudStatus },
+        answerPrompt,
+      );
+      this.d.log.info("Permission answer resumed terminal cloud run", {
+        taskId: session.taskId,
+        toolCallId,
+        optionId,
+      });
+    } else {
+      this.d.log.info("Dropped permission response for terminal cloud run", {
+        taskId: session.taskId,
+        toolCallId,
+        optionId,
+      });
+    }
+    await this.persistCloudPermissionResolution(
+      session.taskId,
+      permission?.taskRunId ?? session.taskRunId,
+      toolCallId,
+      requestId,
+      optionId,
+    );
+  }
+
+  /**
+   * Record a response to a permission request whose sandbox is gone. A live
+   * sandbox writes `_posthog/permission_resolved` to the run log when it
+   * resolves a request, but a request answered after its run terminalized has
+   * no sandbox left to do that — without this record the request stays
+   * pending in the persisted log forever, and every future derivation (app
+   * restart, another device, a session rebuild) re-surfaces the
+   * already-answered question as a fresh card.
+   */
+  private async persistCloudPermissionResolution(
+    taskId: string,
+    taskRunId: string,
+    toolCallId: string,
+    requestId: string | undefined,
+    optionId: string,
+  ): Promise<void> {
+    if (!requestId) return;
+    this.markCloudPermissionResponded(requestId);
+
+    const client = await this.d.getAuthenticatedClient();
+    if (!client) return;
+    try {
+      await client.appendTaskRunLog(taskId, taskRunId, [
+        {
+          type: "notification",
+          timestamp: new Date().toISOString(),
+          notification: {
+            method: POSTHOG_NOTIFICATIONS.PERMISSION_RESOLVED,
+            params: { requestId, toolCallId, optionId },
+          },
+        },
+      ]);
+    } catch (error) {
+      this.d.log.warn("Failed to persist permission resolution to run log", {
+        taskId,
+        taskRunId,
+        toolCallId,
+        error,
+      });
+    }
+  }
+
+  private markCloudPermissionResponded(requestId: string): void {
+    this.respondedCloudPermissionRequestIds.add(requestId);
+    // add() grows the set by at most one, so one eviction restores the cap.
+    if (
+      this.respondedCloudPermissionRequestIds.size >
+      MAX_RESPONDED_PERMISSION_REQUEST_IDS
+    ) {
+      const oldest = this.respondedCloudPermissionRequestIds
+        .values()
+        .next().value;
+      if (oldest !== undefined) {
+        this.respondedCloudPermissionRequestIds.delete(oldest);
+      }
+    }
+  }
+
   // --- Permissions ---
 
   private resolvePermission(session: AgentSession, toolCallId: string): void {
@@ -3138,14 +3430,60 @@ export class SessionService {
     this.resolvePermission(session, toolCallId);
 
     try {
-      if (session.isCloud && cloudRequestId) {
-        this.cloudPermissionRequestIds.delete(toolCallId);
-        await this.sendCloudCommand(session, "permission_response", {
-          requestId: cloudRequestId,
+      const refreshedCloudStatus =
+        session.isCloud && !isTerminalStatus(session.cloudStatus)
+          ? await this.refreshCloudRunStatus(session)
+          : null;
+      const terminalCloudStatus = isTerminalStatus(session.cloudStatus)
+        ? session.cloudStatus
+        : refreshedCloudStatus;
+
+      if (session.isCloud && isTerminalStatus(terminalCloudStatus)) {
+        // The run is over: complete_task drained the sandbox's pending
+        // permission promise, and permission_response only proxies to an active
+        // sandbox. Carry the selected answer forward as a user message instead.
+        await this.resumeTerminalCloudPermissionResponse(
+          session,
+          permission,
+          toolCallId,
+          cloudRequestId,
           optionId,
           customInput,
           answers,
-        });
+          terminalCloudStatus,
+        );
+        return;
+      }
+      if (session.isCloud && cloudRequestId) {
+        this.cloudPermissionRequestIds.delete(toolCallId);
+        try {
+          await this.sendCloudCommand(session, "permission_response", {
+            requestId: cloudRequestId,
+            optionId,
+            customInput,
+            answers,
+          });
+        } catch (error) {
+          const latestCloudStatus = await this.refreshCloudRunStatus(session);
+          if (isTerminalStatus(latestCloudStatus)) {
+            await this.resumeTerminalCloudPermissionResponse(
+              session,
+              permission,
+              toolCallId,
+              cloudRequestId,
+              optionId,
+              customInput,
+              answers,
+              latestCloudStatus,
+            );
+            return;
+          }
+          throw error;
+        }
+        // The live sandbox persists its own resolved marker; remember the
+        // response locally so a snapshot fetched before that marker flushes
+        // to storage cannot re-surface the question.
+        this.markCloudPermissionResponded(cloudRequestId);
       } else {
         await this.d.trpc.agent.respondToPermission.mutate({
           taskRunId: session.taskRunId,
@@ -3195,6 +3533,20 @@ export class SessionService {
     this.resolvePermission(session, toolCallId);
 
     try {
+      if (session.isCloud && isTerminalStatus(session.cloudStatus)) {
+        // The run is over — the card was resolved locally above and there is no
+        // live permission promise left to reject. Persist the dismissal so the
+        // request is not re-derived as pending from the run log later.
+        this.cloudPermissionRequestIds.delete(toolCallId);
+        await this.persistCloudPermissionResolution(
+          session.taskId,
+          permission?.taskRunId ?? session.taskRunId,
+          toolCallId,
+          cloudRequestId,
+          "cancelled",
+        );
+        return;
+      }
       if (session.isCloud && cloudRequestId) {
         this.cloudPermissionRequestIds.delete(toolCallId);
         await this.sendCloudCommand(session, "permission_response", {
@@ -3202,6 +3554,7 @@ export class SessionService {
           optionId: "reject_with_feedback",
           customInput: "User cancelled the permission request.",
         });
+        this.markCloudPermissionResponded(cloudRequestId);
       } else {
         await this.d.trpc.agent.cancelPermission.mutate({
           taskRunId: session.taskRunId,
@@ -3397,14 +3750,17 @@ export class SessionService {
    * effect loop.
    *
    * If the session failed before any conversation started (has an
-   * initialPrompt saved from the original creation attempt), creates
-   * a fresh session and re-sends the prompt instead of reconnecting
-   * to an empty session.
+   * initialPrompt saved from the original creation attempt, and no
+   * conversation in memory or in the run log), creates a fresh session
+   * and re-sends the prompt instead of reconnecting to an empty session.
    */
   async clearSessionError(taskId: string, repoPath: string): Promise<void> {
     this.localRepoPaths.set(taskId, repoPath);
     const session = this.d.store.getSessionByTaskId(taskId);
-    if (session?.initialPrompt?.length) {
+    if (
+      session?.initialPrompt?.length &&
+      !(await this.runHasConversationHistory(session))
+    ) {
       const {
         taskTitle,
         initialPrompt,
@@ -3437,6 +3793,34 @@ export class SessionService {
       return;
     }
     await this.reconnectInPlace(taskId, repoPath);
+  }
+
+  /**
+   * Whether the run already holds conversation beyond the user's prompt
+   * echoes. A set `initialPrompt` alone doesn't prove the conversation never
+   * started: it is only cleared when a live agent event arrives, so it
+   * survives when the event subscription drops before the first agent event
+   * while the agent keeps working and logging, and error sessions carry it
+   * forward. Recreating the run in that state orphans the populated run log
+   * behind a fresh latest_run — the task's entire history disappears — so
+   * check the in-memory transcript first and fall back to the persisted log.
+   */
+  private async runHasConversationHistory(
+    session: AgentSession,
+  ): Promise<boolean> {
+    const isPromptEcho = (event: AcpMessage): boolean =>
+      isJsonRpcRequest(event.message) &&
+      event.message.method === "session/prompt";
+    if (session.events.some((event) => !isPromptEcho(event))) {
+      return true;
+    }
+    const { rawEntries } = await this.fetchSessionLogs(
+      session.logUrl,
+      session.taskRunId,
+    );
+    return convertStoredEntriesToEvents(rawEntries).some(
+      (event) => !isPromptEcho(event),
+    );
   }
 
   /**
@@ -3668,11 +4052,25 @@ export class SessionService {
     // the stop-and-restart below.
     if (!existingWatcher) {
       const hydrated = this.d.store.getSessionByTaskId(taskId);
+      const needsPersistedPermissionHydration =
+        hydrated?.taskRunId === taskRunId &&
+        hydrated.pendingPermissions.size === 0 &&
+        !this.pendingPermissionHydratedRuns.has(taskRunId);
       if (
         hydrated?.taskRunId === taskRunId &&
         isTerminalStatus(hydrated.cloudStatus) &&
         hydrated.processedLineCount !== undefined
       ) {
+        if (needsPersistedPermissionHydration) {
+          this.hydrateCloudTaskSessionFromLogs(
+            taskId,
+            taskRunId,
+            logUrl,
+            taskDescription,
+            runStatus,
+            runState,
+          );
+        }
         return () => {};
       }
     }
@@ -3693,11 +4091,19 @@ export class SessionService {
       existing?.taskRunId === taskRunId &&
       existing.events.length > 0 &&
       existing.processedLineCount === undefined;
+    const shouldHydratePersistedPermissions =
+      existing?.taskRunId === taskRunId &&
+      existing.pendingPermissions.size === 0 &&
+      existing.processedLineCount !== undefined &&
+      !this.pendingPermissionHydratedRuns.has(taskRunId) &&
+      (isTerminalStatus(existing.cloudStatus) ||
+        (runStatus !== undefined && isTerminalStatus(runStatus)));
     const shouldHydrateSession =
       !existing ||
       existing.taskRunId !== taskRunId ||
       shouldResetExistingSession ||
-      existing.events.length === 0;
+      existing.events.length === 0 ||
+      shouldHydratePersistedPermissions;
 
     if (
       !existing ||
@@ -3910,6 +4316,7 @@ export class SessionService {
       }
 
       if (rawEntries.length === 0) {
+        this.pendingPermissionHydratedRuns.add(taskRunId);
         return;
       }
 
@@ -3919,6 +4326,8 @@ export class SessionService {
         session.processedLineCount !== undefined &&
         session.processedLineCount > 0
       ) {
+        this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+        this.pendingPermissionHydratedRuns.add(taskRunId);
         return;
       }
 
@@ -3928,6 +4337,8 @@ export class SessionService {
         logUrl: logUrl ?? session.logUrl,
         processedLineCount: totalLineCount,
       });
+      this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+      this.pendingPermissionHydratedRuns.add(taskRunId);
       // Without this the "Galumphing…" indicator stays hidden when the hydrated
       // baseline already contains an in-flight session/prompt — the live delta
       // path otherwise sees delta <= 0 and never re-evaluates the tail.

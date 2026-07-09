@@ -1,3 +1,4 @@
+export * from "./adapter";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
@@ -75,6 +76,7 @@ export {
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransientUpstreamError,
   NotAuthenticatedError,
   type SerializedError,
   serializeError,
@@ -120,6 +122,12 @@ export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
 export {
+  formatMention,
+  type MentionSegment,
+  mentionsToPlainText,
+  splitMentionSegments,
+} from "./mentions";
+export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
   OAUTH_SCOPES,
@@ -138,6 +146,13 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
+export {
+  buildPrOutput,
+  mergePrUrls,
+  promotePrUrl,
+  readPrSummaries,
+  readPrUrls,
+} from "./pr-urls";
 export {
   type CloudRegion,
   formatRegionBadge,
@@ -178,7 +193,6 @@ export {
   type UserShellExecuteResult,
 } from "./session-events";
 export {
-  type Adapter,
   type AgentSession,
   cycleModeOption,
   flattenSelectOptions,
