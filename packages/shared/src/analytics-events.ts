@@ -717,6 +717,7 @@ export type ScoutActionType =
   | "show_more_emitted_runs"
   | "filter_runs"
   | "toggle_hide_disabled"
+  | "filter_created_by"
   | "open_settings"
   | "close_settings"
   | "open_findings"
@@ -775,6 +776,7 @@ export interface ScoutActionProperties {
   filter_match_count?: number;
   helper_skill?: string;
   hide_disabled?: boolean;
+  created_by_me?: boolean;
   /** Status of the linked inbox report, for `open_linked_report`. */
   report_status?: string;
 }
