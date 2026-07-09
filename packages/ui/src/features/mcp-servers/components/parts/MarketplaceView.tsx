@@ -53,7 +53,14 @@ export function MarketplaceView({
   const installationByTemplateId = useMemo(() => {
     const map = new Map<string, string>();
     for (const installation of installations) {
-      if (installation.template_id) {
+      if (!installation.template_id) continue;
+      // A template can have both the user's personal row and a teammate's
+      // shared one; prefer the personal row so the card opens the same
+      // detail regardless of API ordering.
+      if (
+        !map.has(installation.template_id) ||
+        installation.scope !== "shared"
+      ) {
         map.set(installation.template_id, installation.id);
       }
     }

@@ -112,7 +112,10 @@ export class AgentAuthAdapter {
       if (installation.url === mcpUrl) continue;
 
       const name =
-        installation.name || installation.display_name || installation.url;
+        installation.name ||
+        installation.display_name ||
+        installation.url ||
+        installation.id;
 
       const proxiedUrl = this.mcpProxy.register(
         `installation-${installation.id}`,
@@ -206,7 +209,7 @@ export class AgentAuthAdapter {
     credentials: Credentials,
     installations: Array<{
       id: string;
-      url: string;
+      url?: string;
       name: string;
       display_name: string;
     }>,
@@ -221,7 +224,10 @@ export class AgentAuthAdapter {
     const results = await Promise.allSettled(
       installations.map(async (installation) => {
         const serverName = sanitizeMcpServerName(
-          installation.name || installation.display_name || installation.url,
+          installation.name ||
+            installation.display_name ||
+            installation.url ||
+            installation.id,
         );
         const toolsUrl = `${baseUrl}/api/environments/${credentials.projectId}/mcp_server_installations/${installation.id}/tools/`;
 
@@ -275,7 +281,7 @@ export class AgentAuthAdapter {
   private async fetchMcpInstallations(credentials: Credentials): Promise<
     Array<{
       id: string;
-      url: string;
+      url?: string;
       proxy_url: string;
       name: string;
       display_name: string;
@@ -303,7 +309,7 @@ export class AgentAuthAdapter {
       const data = (await response.json()) as {
         results?: Array<{
           id: string;
-          url: string;
+          url?: string;
           proxy_url?: string;
           name: string;
           display_name: string;
@@ -322,13 +328,17 @@ export class AgentAuthAdapter {
       // Personal wins over shared: when the user has their own connection to
       // the same server URL, agent sessions act as the user rather than
       // through a teammate's shared credential. Rows without a scope come
-      // from older backends and are personal by definition.
+      // from older backends and are personal by definition. Rows without a
+      // URL never dedupe against each other — they are not known to be the
+      // same server.
       const personalUrls = new Set(
-        active.filter((i) => i.scope !== "shared").map((i) => i.url),
+        active.filter((i) => i.scope !== "shared" && i.url).map((i) => i.url),
       );
 
       return active
-        .filter((i) => i.scope !== "shared" || !personalUrls.has(i.url))
+        .filter(
+          (i) => i.scope !== "shared" || !i.url || !personalUrls.has(i.url),
+        )
         .map((i) => ({
           ...i,
           proxy_url:

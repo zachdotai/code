@@ -256,14 +256,20 @@ export function McpServersView() {
               // "Connect personally" from a teammate's shared install. The
               // template-id watcher would immediately match the existing
               // shared row, so identify the new personal row by id snapshot
-              // instead (same mechanism as custom installs).
+              // instead (same mechanism as custom installs). Clear the
+              // snapshot on failure, or a row appearing later for any other
+              // reason (e.g. a teammate sharing a server) would hijack the
+              // view.
               setPendingCustomKnownIds(
                 new Set(installationList.map((i) => i.id)),
               );
+              installTemplate(template, {
+                onError: () => setPendingCustomKnownIds(null),
+              });
             } else {
               setPendingTemplateId(template.id);
+              installTemplate(template);
             }
-            installTemplate(template);
           }}
           onReauthorize={() => {
             if (install) reauthorize(install.id);

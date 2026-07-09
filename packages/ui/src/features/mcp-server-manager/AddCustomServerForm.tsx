@@ -171,9 +171,9 @@ export function AddCustomServerForm({
           <Flex direction="column" gap="1">
             <Text className="font-medium text-sm">Visibility</Text>
             <Text color="gray" className="text-[13px]">
-              {canAddShared
-                ? "Shared servers are available to all project members and autonomous agents."
-                : "Only project admins can add shared servers."}
+              {isAdmin === false
+                ? "Only project admins can add shared servers."
+                : "Shared servers are available to all project members and autonomous agents."}
             </Text>
             <Select.Root
               value={scope}

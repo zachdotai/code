@@ -130,14 +130,23 @@ export function useMcpServers() {
   const installTemplate = useCallback(
     (
       template: McpRecommendedServer,
-      opts?: { api_key?: string; scope?: McpInstallationScope },
+      opts?: {
+        api_key?: string;
+        scope?: McpInstallationScope;
+        /** Per-call failure hook so callers can clear optimistic view state
+         *  (e.g. the pending-install id snapshot in McpServersView). */
+        onError?: () => void;
+      },
     ) => {
       setInstallingId(template.id);
-      installTemplateMutation.mutate({
-        template_id: template.id,
-        api_key: opts?.api_key,
-        scope: opts?.scope,
-      });
+      installTemplateMutation.mutate(
+        {
+          template_id: template.id,
+          api_key: opts?.api_key,
+          scope: opts?.scope,
+        },
+        { onError: opts?.onError },
+      );
     },
     [installTemplateMutation],
   );

@@ -219,6 +219,49 @@ describe("AgentAuthAdapter", () => {
     expect(servers.map((s) => s.name)).toEqual(["posthog", "linear", "notion"]);
   });
 
+  it("keeps a shared installation without a URL even when a personal one also lacks a URL", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          results: [
+            {
+              id: "inst-personal-no-url",
+              proxy_url: "https://proxy.posthog.com/inst-personal-no-url/",
+              name: "asana",
+              display_name: "Asana",
+              auth_type: "oauth",
+              is_enabled: true,
+              pending_oauth: false,
+              needs_reauth: false,
+              scope: "personal",
+            },
+            {
+              id: "inst-shared-no-url",
+              proxy_url: "https://proxy.posthog.com/inst-shared-no-url/",
+              name: "jira",
+              display_name: "Jira (shared)",
+              auth_type: "oauth",
+              is_enabled: true,
+              pending_oauth: false,
+              needs_reauth: false,
+              scope: "shared",
+            },
+          ],
+        }),
+    });
+
+    const { servers } = await adapter.buildMcpServers(baseCredentials);
+
+    // Absent URLs say nothing about the servers being the same, so the
+    // personal-over-shared dedupe must not collapse these two rows.
+    expect(deps.mcpProxy.register).toHaveBeenCalledWith(
+      "installation-inst-shared-no-url",
+      "https://proxy.posthog.com/inst-shared-no-url/",
+    );
+    expect(servers.map((s) => s.name)).toEqual(["posthog", "asana", "jira"]);
+  });
+
   it("fetches tool approval states for installations", async () => {
     mockFetch
       .mockResolvedValueOnce({

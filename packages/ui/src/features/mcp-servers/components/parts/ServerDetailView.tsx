@@ -99,6 +99,9 @@ export function ServerDetailView({
   const canRemove =
     !!installation && (!isShared || isOwner || isAdmin === true);
   const canManage = !!installation && (!isShared || isOwner);
+  // Template-backed servers only for phase 1: "Connect personally" re-runs
+  // the template install. A shared custom server has no template to install
+  // from — members recreate it via "Add custom" instead.
   const canConnectPersonally =
     isShared && !isOwner && !!template && !hasPersonalInstall;
 
@@ -255,7 +258,7 @@ export function ServerDetailView({
                 Unshare
               </Button>
             )}
-            {installation && canRemove && (
+            {canRemove && (
               <Tooltip content="Remove server">
                 <IconButton
                   variant="ghost"

@@ -361,6 +361,75 @@ describe("PostHogAPIClient", () => {
     });
   });
 
+  describe("share/unshare MCP installation", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it.each([
+      ["shareMcpInstallation", "share"],
+      ["unshareMcpInstallation", "unshare"],
+    ] as const)(
+      "%s POSTs to the %s action and returns the installation",
+      async (method, action) => {
+        const installation = { id: "inst-1", scope: "shared" };
+        const fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => installation,
+        });
+        const client = makeClient(fetch);
+
+        await expect(client[method]("inst-1")).resolves.toEqual(installation);
+
+        expect(fetch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            method: "post",
+            path: `/api/environments/123/mcp_server_installations/inst-1/${action}/`,
+          }),
+        );
+      },
+    );
+
+    it("surfaces the backend detail message on failure", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        statusText: "Forbidden",
+        json: async () => ({ detail: "Only admins can share installations." }),
+      });
+      const client = makeClient(fetch);
+
+      await expect(client.shareMcpInstallation("inst-1")).rejects.toThrow(
+        "Only admins can share installations.",
+      );
+    });
+
+    it("falls back to statusText when the error body is not JSON", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        statusText: "Bad Gateway",
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+      const client = makeClient(fetch);
+
+      await expect(client.unshareMcpInstallation("inst-1")).rejects.toThrow(
+        "Failed to unshare MCP server: Bad Gateway",
+      );
+    });
+  });
+
   describe("getSignalReport", () => {
     function makeClient(fetch: ReturnType<typeof vi.fn>) {
       const client = new PostHogAPIClient(
