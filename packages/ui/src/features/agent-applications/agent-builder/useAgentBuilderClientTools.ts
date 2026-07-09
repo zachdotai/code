@@ -93,6 +93,20 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
         }
       };
 
+      // An explicit `revision_id` must belong to `agent_slug` before we park
+      // the punch-out. The nested env/spec routes reject mismatches
+      // server-side anyway, but that failure would only surface at submit —
+      // after the user has already typed a secret into a doomed form.
+      const verifyExplicitRevision = async (
+        agentSlug: string,
+        revisionId: string,
+      ): Promise<boolean> => {
+        const revision = await client
+          .getAgentRevision(agentSlug, revisionId)
+          .catch(() => null);
+        return revision != null;
+      };
+
       // set_secret — interactive punch-out. Park the call (defer) and render a
       // form; the dock PUTs the key and wakes the session on submit.
       if (data.tool_id === "set_secret") {
@@ -101,8 +115,12 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
         if (!agentSlug) return { error: "missing_arg: agent_slug" };
         if (!secret) return { error: "missing_arg: secret" };
         const mode = args.mode === "rotate" ? "rotate" : "set";
+        const explicit = str(args.revision_id);
+        if (explicit && !(await verifyExplicitRevision(agentSlug, explicit))) {
+          return { error: `revision_not_found: ${explicit} on ${agentSlug}` };
+        }
         const revisionId =
-          str(args.revision_id) ??
+          explicit ??
           (await resolveRevision(
             agentSlug,
             mode === "rotate" ? "live" : "draft",
@@ -127,8 +145,12 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
       if (data.tool_id === "connect_mcp") {
         const agentSlug = str(args.agent_slug);
         if (!agentSlug) return { error: "missing_arg: agent_slug" };
+        const explicit = str(args.revision_id);
+        if (explicit && !(await verifyExplicitRevision(agentSlug, explicit))) {
+          return { error: `revision_not_found: ${explicit} on ${agentSlug}` };
+        }
         const revisionId =
-          str(args.revision_id) ?? (await resolveRevision(agentSlug, "draft"));
+          explicit ?? (await resolveRevision(agentSlug, "draft"));
         if (!revisionId) return { error: `no_target_revision: ${agentSlug}` };
         setPendingMcpConnect({
           callId: data.call_id,

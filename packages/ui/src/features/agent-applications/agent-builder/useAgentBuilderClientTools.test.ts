@@ -8,6 +8,7 @@ vi.mock("@tanstack/react-router", () => ({
 const client = {
   getAgentApplication: vi.fn(),
   listAgentRevisions: vi.fn(),
+  getAgentRevision: vi.fn(),
 };
 
 vi.mock("@posthog/ui/features/auth/authClient", () => ({
@@ -33,6 +34,7 @@ describe("useAgentBuilderClientTools revision resolution", () => {
   beforeEach(() => {
     client.getAgentApplication.mockReset();
     client.listAgentRevisions.mockReset();
+    client.getAgentRevision.mockReset();
     useAgentBuilderStore.setState({
       page: { kind: "unknown" },
       pendingSecret: null,
@@ -40,7 +42,9 @@ describe("useAgentBuilderClientTools revision resolution", () => {
     });
   });
 
-  it("uses an explicit revision_id without hitting the API", async () => {
+  it("uses an explicit revision_id once it verifies as belonging to the agent", async () => {
+    client.getAgentRevision.mockResolvedValue({ id: "rev-explicit" });
+
     const outcome = await handler()(
       call("set_secret", {
         agent_slug: "my-agent",
@@ -55,8 +59,30 @@ describe("useAgentBuilderClientTools revision resolution", () => {
       secret: "API_KEY",
       revisionId: "rev-explicit",
     });
+    expect(client.getAgentRevision).toHaveBeenCalledWith(
+      "my-agent",
+      "rev-explicit",
+    );
     expect(client.getAgentApplication).not.toHaveBeenCalled();
     expect(client.listAgentRevisions).not.toHaveBeenCalled();
+  });
+
+  it("rejects an explicit revision_id that does not belong to the agent", async () => {
+    // The nested revision route 404s (→ null) for another agent's revision.
+    client.getAgentRevision.mockResolvedValue(null);
+
+    const outcome = await handler()(
+      call("set_secret", {
+        agent_slug: "my-agent",
+        secret: "API_KEY",
+        revision_id: "rev-of-other-agent",
+      }),
+    );
+
+    expect(outcome).toEqual({
+      error: "revision_not_found: rev-of-other-agent on my-agent",
+    });
+    expect(useAgentBuilderStore.getState().pendingSecret).toBeNull();
   });
 
   it("falls back to the revision open on this agent's config page", async () => {
