@@ -528,11 +528,10 @@ function ShareConfirmDialog({
       <AlertDialog.Content maxWidth="480px">
         <AlertDialog.Title>Share with project?</AlertDialog.Title>
         <AlertDialog.Description className="text-sm">
-          Everyone in this project — including autonomous agents — will be able
-          to use <Text className="font-bold">{serverName}</Text> through your
-          connection. Actions they take are attributed to your account on the
-          connected service. Consider connecting a service account rather than a
-          personal one. You can unshare at any time.
+          Everyone in this project, including the PostHog agent, can use{" "}
+          <Text className="font-bold">{serverName}</Text> via your connection.
+          Their actions will be attributed to your account. For better security,
+          connect a service account. You can unshare anytime.
         </AlertDialog.Description>
         <Flex gap="3" mt="4" justify="end">
           <AlertDialog.Cancel>
