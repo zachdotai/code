@@ -379,6 +379,19 @@ assembly). The dependency arrow runs backend → client for A/B, so the first
 substantive PRs land in `posthog/posthog` — but there is a client refactor we
 can start immediately that makes every later change cheaper.
 
+**Naming: "product-os", not "desktop".** Code will be on the web (apps/web
+already exists as the portability smoke test) and mobile; "desktop" baked
+into durable names is wrong the day that ships. The shared cloud
+file-system / OS layer is named **product-os** from here on. Client-side
+this applies immediately to new and moved code: `packages/core/src/product-os/`,
+`ProductOsFsClient`, `posthog.productOs.*` tokens — with the legacy
+`desktop_file_system` endpoint treated as a URL detail behind
+product-os-named clients, not an identity. Backend, the rename of the
+`desktop_file_system` endpoint/models (and the `desktop-file-system` MCP
+domain) goes into step 2's ADR: cheap to alias now (new route name, old one
+kept as deprecated alias), expensive after G freezes the MCP tool names in
+external agents' hands.
+
 Concrete first steps, in order:
 
 1. **`posthog/code` — extract the channels feature seam (start now).**
