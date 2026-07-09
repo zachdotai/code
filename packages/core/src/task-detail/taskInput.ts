@@ -1,6 +1,7 @@
 import { buildCloudTaskDescription } from "@posthog/core/editor/cloud-prompt";
 import type {
   Adapter,
+  CloudMcpServerImport,
   TaskCreationInput,
   WorkspaceMode,
 } from "@posthog/shared";
@@ -30,6 +31,7 @@ export interface PrepareTaskInputOptions {
   customInstructions?: string;
   autoPublishCloudRuns?: boolean;
   allowNoRepo?: boolean;
+  importedMcpServers?: CloudMcpServerImport[];
 }
 
 export function prepareTaskInput(
@@ -71,6 +73,7 @@ export function prepareTaskInput(
     channelId: options.channelId,
     customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
+    importedMcpServers: isCloud ? options.importedMcpServers : undefined,
   };
 }
 

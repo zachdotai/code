@@ -13,6 +13,7 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
   ANALYTICS_EVENTS,
+  type CloudMcpServerImport,
   type TaskCreationInput,
   type WorkspaceMode,
 } from "@posthog/shared";
@@ -81,6 +82,8 @@ interface UseTaskCreationOptions {
    * whether it needs one and attaches it lazily.
    */
   allowNoRepo?: boolean;
+  /** Importable local MCP servers to forward into a cloud run's sandbox. */
+  importedMcpServers?: CloudMcpServerImport[];
   onTaskCreated?: (task: Task) => void;
   /**
    * Side effect run with the created task in addition to (not instead of)
@@ -170,6 +173,7 @@ export function useTaskCreation({
   channelName,
   channelId,
   allowNoRepo,
+  importedMcpServers,
   onTaskCreated,
   onTaskCreatedEffect,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
@@ -330,6 +334,7 @@ export function useTaskCreation({
           customInstructions: settings.customInstructions,
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           allowNoRepo,
+          importedMcpServers,
         });
 
         if (executionMode) {
@@ -489,6 +494,7 @@ export function useTaskCreation({
       channelName,
       channelId,
       allowNoRepo,
+      importedMcpServers,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
