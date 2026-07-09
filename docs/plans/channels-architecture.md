@@ -369,6 +369,52 @@ The multiplayer bets (E, F) are the most speculative and the most expensive;
 shipping A–C first means channels are already valuable single-player (durable
 context, no re-briefing) before we pay for presence.
 
+## Where we start
+
+The work splits across two repos: `posthog/posthog` owns the Django models,
+API, and Temporal workers (`desktop_file_system`, the tasks-product
+`Channel`, `/instructions/` + `/context_generation/`, blob storage, the MCP
+server); `posthog/code` owns the client (core services/stores, UI, prompt
+assembly). The dependency arrow runs backend → client for A/B, so the first
+substantive PRs land in `posthog/posthog` — but there is a client refactor we
+can start immediately that makes every later change cheaper.
+
+Concrete first steps, in order:
+
+1. **`posthog/code` — extract the channels feature seam (start now).**
+   Create `packages/core/src/channels/` (service, store, schemas per the
+   standard feature shape) and move `channelTasksService`, `channelName`,
+   channel-link wiring, and the channel queries currently living under
+   `canvas/` and `api-client` call sites behind one `ChannelsService`. Pure
+   refactor, no behavior change, ships behind the existing flag. This is the
+   seam that absorbs the A unification so the client migration later is one
+   service's internals, not thirty call sites.
+2. **`posthog/posthog` — the A decision as a short ADR, then the migration.**
+   Settle which row is canonical (working hypothesis: the tasks-product
+   `Channel` owns identity; the `desktop_file_system` folder becomes its
+   storage facet via FK) and add the membership model. Everything scoped in
+   this doc keys on that id — deciding it first is what keeps B/E/G from
+   building on sand. The client-visible outcome is one channel id across the
+   feed, folder, deep links, and task rows.
+3. **`posthog/posthog` — Artifact model (B) skeleton.** New `Artifact` table
+   keyed on channel + thread, blob upload via the existing presigned-POST
+   path, snapshot fields for `pr`/`canvas` kinds, list/read endpoints.
+   Backfill rows for existing canvases and PR-bearing task runs.
+4. **`posthog/code` — consume the registry.** Point the artifacts pane and
+   thread views at the new endpoints via the step-1 seam; add paste-time
+   image/file capture and `pr_url`-time attach as the first two ingresses.
+5. **`posthog/posthog` — C prototype in parallel.** A post-run summarizer
+   worker (same machinery as `evaluate-code-workstreams`) that proposes a
+   CONTEXT.md version through the existing `/instructions/` endpoint, dark —
+   proposals logged, not published — until the review UX exists in step-4+
+   client work.
+
+Steps 1 and 2 can run concurrently; 3 follows 2's ADR; 4 follows 3; 5 is
+independent after 2. Note the backend shapes referenced here (the tasks
+`Channel` model, `desktop_file_system` internals) are inferred from this
+repo's client code — validating them against `posthog/posthog` is part of
+step 2's ADR, and may move work between the two repos.
+
 ## Open product questions
 
 Carried from the positioning discussion; they gate scope, not architecture:
