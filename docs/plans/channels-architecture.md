@@ -22,8 +22,16 @@ The framing we're building toward:
   | Loop / automation | Canvas, PR |
 - **The thread creator steers.** Others can request to steer; the owner
   accepts or denies per user.
-- **MCP can pull in all of the above** so channels are reachable from Slack,
+- **MCP can pull in all of the above.** The whole channel and its threads are
+  accessible via MCP, so other agents can grab the right context and search
+  efficiently through the channel — and across other channels — from Slack,
   Claude, and other agent surfaces.
+- **(Possible v2) Channels are created via natural language,** with a
+  back-and-forth on areas of ownership rather than a bare create form.
+- **(Maybe) Each channel gets its own agent.** You can `@agent` inside the
+  channel, or `@agent/channel-name` from another channel or thread; it
+  intelligently fetches whatever is needed — context, todos — or asks what to
+  do when called from outside its own channel.
 
 ## What already exists
 
@@ -100,8 +108,11 @@ Measured against the target model:
 6. **No real-time multiplayer substrate.** The only push channel is per-run
    SSE for the owner. Channel feeds, presence, artifact edits, and mentions
    are all poll-based; canvas `meta` is documented last-write-wins.
-7. **No MCP surface for channels.** External agents can't list channels, read
-   CONTEXT.md, open threads, or file artifacts.
+7. **No MCP surface for channels, and nothing is searchable.** External
+   agents can't list channels, read CONTEXT.md or thread transcripts, open
+   threads, or file artifacts — and there is no search over channel content
+   at any grain, so even a full read surface would force agents to page
+   through raw feeds.
 8. **Channel creation/organization is manual.** Agents don't create or
    suggest channels; there's no archive, discovery, or org-level convention
    support.
@@ -214,17 +225,37 @@ Move channels from poll to push.
   co-editing is explicitly out of scope.
 - Depends on A. E's shared visibility benefits from it but streams per-run.
 
-### G. Channels MCP surface (M)
+### G. Channels MCP surface (L)
 
-Expose the model to external agents — Slack, Claude, PostHog web.
+Expose the whole model — channels, threads, transcripts, artifacts — to
+external agents (Slack, Claude, PostHog web), with search that lets an agent
+find the right context without slurping everything.
 
-- MCP tools over the unified model: list/read channels, read CONTEXT.md,
-  list threads and artifacts, create a thread in a channel, post to a thread
-  (subject to E's steering rules), file an artifact.
-- The PostHog MCP server already fronts `desktop-file-system`; this
-  workstream is mostly defining the right tool grain and auth (channel
-  membership from A) rather than new plumbing.
-- Depends on A + B; D and E make it much more useful.
+- **Read/write tools** over the unified model: list/read channels, read
+  CONTEXT.md, list threads and artifacts, read a thread's transcript and
+  outcome, create a thread in a channel, post to a thread (subject to E's
+  steering rules), file an artifact.
+- **Search tools**, the efficiency half: an agent should never have to page
+  through raw feeds. Two grains:
+  - `search_channel(channel, query)` — threads, messages, transcripts,
+    artifacts, and context versions within one channel;
+  - `search_channels(query)` — cross-channel, membership-scoped, returning
+    channel + thread hits ranked so the caller can drill in with one more
+    call.
+  This needs a server-side index over thread titles/messages/summaries and
+  context versions. Full-transcript indexing is expensive; index the
+  per-thread summaries C already produces, with transcript fetch as the
+  drill-in. That coupling is deliberate: C's summaries are what make search
+  (and small-context agents) cheap.
+- **Transcript availability caveat:** MCP can only serve what the cloud
+  holds. Cloud-run transcripts are in S3 (`TaskRun.log_url`); local-run
+  transcripts are NDJSON on the owner's disk. Until E's local-relay
+  follow-on, local threads surface via MCP as metadata + summary only —
+  another reason for the "shared threads run in the cloud" stance.
+- The PostHog MCP server already fronts `desktop-file-system`; the new
+  plumbing is the search index and transcript read path, plus auth (channel
+  membership from A).
+- Depends on A + B; C feeds the index; D and E make it much more useful.
 
 ### H. Channel creation, organization, and automations-in-channels (M)
 
@@ -232,6 +263,16 @@ Expose the model to external agents — Slack, Claude, PostHog web.
   arrives via MCP/Slack with no channel), the agent proposes create-or-file
   rather than silently filing to `#me`. Keep creation cheap and reversible:
   archive, rename (ids are already rename-proof), merge.
+- **(v2) Natural-language creation with ownership negotiation:** you describe
+  the area in prose ("this channel owns onboarding emails and the activation
+  funnel") and the agent drafts the channel — name, seed CONTEXT.md, repos
+  from registered folders — then goes back and forth on boundaries,
+  flagging overlap with existing channels' stated ownership ("#growth already
+  claims the activation funnel — split or move it?"). The negotiated
+  ownership statement becomes the top of CONTEXT.md and is what
+  create-or-file suggestions and G's cross-channel search rank against.
+  Requires C (context versioning) and G's search; ship the plain create-form
+  path first.
 - Org conventions vary — resist hard-coding a taxonomy; ship defaults
   (per-product/per-repo starter channels from registered folders) and let
   usage shape it.
@@ -240,16 +281,50 @@ Expose the model to external agents — Slack, Claude, PostHog web.
   addition to) the Signals inbox. This is the "loop → Canvas, PR" thread
   shape and reuses B.
 
+### I. Channel agents (L, speculative — "maybe")
+
+The strong form of "the channel is the agent": each channel gets an
+addressable agent identity, not just an injected context block.
+
+- **Inside its channel:** `@agent` in a thread or the feed addresses the
+  channel agent directly — answer from channel context, triage todos, spawn a
+  thread. Mechanically this is a channel-mode session (scratch dir + CONTEXT.md
+  agent mode already exists in `agent.ts`) bound to a persistent identity.
+- **From outside:** `@agent/channel-name` in another channel or thread
+  invokes it cross-channel. It resolves the ask against its own channel using
+  the same tools G exposes (context read, channel-scoped search, todos/open
+  threads) and returns what's needed — or, when the ask is ambiguous or
+  touches something only its channel members should decide, it asks the
+  caller what to do instead of guessing. That clarify-first behavior is the
+  contract that makes cross-channel calls safe.
+- **Relationship to D:** D's static CONTEXT.md folding is the v1 of
+  cross-pollination; the channel agent supersedes it for anything requiring
+  judgment (picking which context matters, checking current thread state).
+  Build D first — the mention plumbing, reference edges, and prompt blocks
+  are all reused; the agent swaps "inline the file" for "call the expert".
+- **Boundaries to decide before building:** does the channel agent act
+  (create threads, edit context) or only answer when called from outside?
+  Recommendation: read-and-answer only in v1, with actions routed back as
+  suggestions to channel members — it keeps E's steering rules intact.
+- Depends on A (identity), C (fresh context worth consulting), D (mention
+  plumbing), G (the tools it uses). Effectively the capstone; cheap to
+  prototype behind a flag once those land.
+
 ## Sequencing
 
 1. **Now:** A (unify identity) and B (artifact registry) — everything else
    compounds on them. C's summarizer can be prototyped in parallel against
    the existing instructions endpoint.
 2. **Next:** C (context lifecycle) and E's grant flow — these deliver the
-   "channel is the agent" and "owner steers" halves of the pitch. G alongside,
-   since it's mostly surface area.
+   "channel is the agent" and "owner steers" halves of the pitch. G's
+   read/write tools alongside; its search index lands once C's summaries
+   exist to feed it.
 3. **Then:** F (real-time feed/presence), E's shared visibility, D
    (cross-channel mentions), H.
+4. **Later, gated on the above:** I (channel agents) and H's
+   natural-language creation — both are cheap prototypes once A/C/D/G exist,
+   and both are the pieces to validate with design partners before
+   committing.
 
 The multiplayer bets (E, F) are the most speculative and the most expensive;
 shipping A–C first means channels are already valuable single-player (durable
