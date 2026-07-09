@@ -75,6 +75,29 @@ describe("useAgentBuilderClientTools revision resolution", () => {
     expect(client.getAgentApplication).not.toHaveBeenCalled();
   });
 
+  it("rotation targets live even while a draft config page is open", async () => {
+    useAgentBuilderStore.setState({
+      page: { kind: "agent-config", slug: "my-agent", revision: "rev-draft" },
+    });
+    client.getAgentApplication.mockResolvedValue({ live_revision: "rev-live" });
+    client.listAgentRevisions.mockResolvedValue([
+      { id: "rev-draft", state: "draft" },
+      { id: "rev-live", state: "ready" },
+    ]);
+
+    await handler()(
+      call("set_secret", {
+        agent_slug: "my-agent",
+        secret: "API_KEY",
+        mode: "rotate",
+      }),
+    );
+
+    expect(useAgentBuilderStore.getState().pendingSecret?.revisionId).toBe(
+      "rev-live",
+    );
+  });
+
   it("ignores the page revision when it belongs to a different agent", async () => {
     useAgentBuilderStore.setState({
       page: { kind: "agent-config", slug: "other-agent", revision: "rev-page" },

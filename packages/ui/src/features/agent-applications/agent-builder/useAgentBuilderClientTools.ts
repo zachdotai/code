@@ -65,7 +65,14 @@ export function useAgentBuilderClientTools(): ClientToolHandler {
         prefer: "live" | "draft",
       ): Promise<string | undefined> => {
         const p = pageRef.current;
-        if (p.kind === "agent-config" && p.slug === agentSlug && p.revision) {
+        // The viewed revision only stands in for authoring flows: a rotation
+        // must reach what's running even while the user is viewing a draft.
+        if (
+          prefer === "draft" &&
+          p.kind === "agent-config" &&
+          p.slug === agentSlug &&
+          p.revision
+        ) {
           return p.revision;
         }
         try {
