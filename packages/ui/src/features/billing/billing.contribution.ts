@@ -7,11 +7,11 @@ import {
 } from "@posthog/host-router/client";
 import { inject, injectable } from "inversify";
 import { toast } from "../../primitives/toast";
-import { openSettings } from "../settings/hooks/useOpenSettings";
+import { navigateToUsage } from "../../router/navigationBridge";
 import { useUsageLimitStore } from "./usageLimitStore";
 
 const openPlanUsage = () => {
-  openSettings("plan-usage");
+  navigateToUsage();
 };
 
 @injectable()
