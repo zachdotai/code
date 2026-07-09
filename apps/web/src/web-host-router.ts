@@ -3,6 +3,7 @@ import { authRouter } from "@posthog/host-router/routers/auth.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import { z } from "zod";
+import { getWebPreviewConfigOptions } from "./web-agent-config";
 
 // The in-browser slice of the host router. Electron serves the full hostRouter
 // over IPC from its main process; the web host serves the subset the
@@ -25,6 +26,19 @@ const agentStubRouter = router({
   }),
   // Called by resetSessionService() on logout/project switch.
   resetAll: publicProcedure.mutation(() => undefined),
+  // Model/mode/effort options for the task-input preview + cloud run creation
+  // (a cloud run requires a model). Real: fetched from the CORS-open PostHog LLM
+  // gateway, same logic the desktop main process runs (see web-agent-config.ts).
+  getPreviewConfigOptions: publicProcedure
+    .input(
+      z.object({
+        apiHost: z.string(),
+        adapter: z.enum(["claude", "codex"]).default("claude"),
+      }),
+    )
+    .query(({ input }) =>
+      getWebPreviewConfigOptions(input.apiHost, input.adapter),
+    ),
 });
 
 const osStubRouter = router({
@@ -49,6 +63,12 @@ const additionalDirectoriesStubRouter = router({
 const foldersStubRouter = router({
   // Queried on task-input mount to prefill a local repo path.
   getMostRecentlyAccessedRepository: publicProcedure.query(() => null),
+  // Called by getTaskDirectory during task creation to resolve a local repo
+  // folder from a git remote. No local repos on web, so there's no directory —
+  // getTaskDirectory returns null and the cloud path proceeds without one.
+  getRepositoryByRemoteUrl: publicProcedure
+    .input(z.object({ remoteUrl: z.string() }))
+    .query(() => null),
 });
 
 const workspaceStubRouter = router({
@@ -63,6 +83,17 @@ const workspaceStubRouter = router({
   reconcileCloudWorkspaces: publicProcedure
     .input(z.object({ taskIds: z.array(z.string()) }))
     .mutation(() => ({ created: [] as string[] })),
+  // Called by the task-creation saga's "cloud_workspace_creation" step. On
+  // desktop this persists a task<->worktree row; a cloud workspace has no local
+  // worktree, and the saga discards the return value (it builds its own cloud
+  // workspace literal), so this only needs to resolve without a local backend.
+  create: publicProcedure
+    .input(z.object({}).passthrough())
+    .mutation(() => ({ worktree: null, linkedBranch: null })),
+  // Compensating rollback for the step above if a later step fails.
+  delete: publicProcedure
+    .input(z.object({}).passthrough())
+    .mutation(() => undefined),
 });
 
 export const webHostRouter = router({

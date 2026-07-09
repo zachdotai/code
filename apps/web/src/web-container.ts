@@ -32,6 +32,7 @@ import {
   GITHUB_ISSUE_CLIENT,
   type GitHubIssueClient,
 } from "@posthog/core/deep-links/identifiers";
+import type { ReadFileAsBase64 } from "@posthog/core/editor/cloud-prompt";
 import { externalAppsCoreModule } from "@posthog/core/external-apps/external-apps.module";
 import type { ExternalAppService } from "@posthog/core/external-apps/externalAppService";
 import {
@@ -50,15 +51,35 @@ import {
   type RepositoriesClient,
 } from "@posthog/core/integrations/identifiers";
 import { RepositoriesService } from "@posthog/core/integrations/repositoriesService";
+import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
+import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import {
   GITHUB_CONNECT_CLIENT as ONBOARDING_GITHUB_CONNECT_CLIENT,
   type GithubConnectClient as OnboardingGithubConnectContract,
 } from "@posthog/core/onboarding/identifiers";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
 import {
+  type BundleLocalSkill,
+  CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
+  CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
+  CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES,
+  CLOUD_ARTIFACT_SERVICE,
+  type ResolveSkillBundleDependencies,
+} from "@posthog/core/sessions/cloudArtifactIdentifiers";
+import type { CloudArtifactService } from "@posthog/core/sessions/cloudArtifactService";
+import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
+import { sessionsModule } from "@posthog/core/sessions/sessions.module";
+import {
+  type FileReadClient,
+  TITLE_GENERATOR_FILE_READ_CLIENT,
+  TITLE_GENERATOR_LOGGER,
+  TITLE_GENERATOR_SERVICE,
+  type TitleGeneratorLogger,
+} from "@posthog/core/sessions/titleGeneratorIdentifiers";
+import type { TitleGeneratorService } from "@posthog/core/sessions/titleGeneratorService";
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
 import {
@@ -179,6 +200,14 @@ import {
 } from "./web-external-apps";
 import { webGitCacheKeyProvider } from "./web-git-cache-keys";
 import { WebOAuthFlowService } from "./web-oauth-flow";
+import {
+  webBundleLocalSkill,
+  webLlmGatewayService,
+  webReadFileAsBase64,
+  webResolveSkillBundleDependencies,
+  webTitleGeneratorFileReadClient,
+  webTitleGeneratorLogger,
+} from "./web-sessions-clients";
 import { webSetupStore } from "./web-setup-store";
 import { webShellClient } from "./web-shell-client";
 import {
@@ -233,6 +262,14 @@ interface WebBindings {
   [GIT_CACHE_KEY_PROVIDER]: GitCacheKeyProvider;
   [TEAM_SKILLS_SERVICE]: TeamSkillsService;
   [SKILLS_WORKSPACE_CLIENT]: SkillsWorkspaceClient;
+  [CLOUD_ARTIFACT_SERVICE]: CloudArtifactService;
+  [CLOUD_ARTIFACT_READ_FILE_AS_BASE64]: ReadFileAsBase64;
+  [CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL]: BundleLocalSkill;
+  [CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES]: ResolveSkillBundleDependencies;
+  [TITLE_GENERATOR_SERVICE]: TitleGeneratorService;
+  [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;
+  [TITLE_GENERATOR_LOGGER]: TitleGeneratorLogger;
+  [LLM_GATEWAY_SERVICE]: LlmGatewayService;
 }
 
 export const queryClient = new QueryClient();
@@ -497,5 +534,29 @@ container.bind(SKILLS_WORKSPACE_CLIENT).toConstantValue({
       new Error("Installing a skill locally is not available on the web"),
     ),
 });
+
+// ── Sessions: cloud-artifact upload + title generation ──
+// CloudArtifactService (run attachment upload) is resolved during cloud task
+// creation; TitleGeneratorService is resolved by the chat view. Both are
+// portable core (sessionsModule). Their host clients are local-fs/skill readers
+// and the title LLM call — all degrade on the cloud-only web host (see
+// web-sessions-clients.ts).
+container.load(sessionsModule);
+container
+  .bind(CLOUD_ARTIFACT_READ_FILE_AS_BASE64)
+  .toConstantValue(webReadFileAsBase64);
+container
+  .bind(CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL)
+  .toConstantValue(webBundleLocalSkill);
+container
+  .bind(CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES)
+  .toConstantValue(webResolveSkillBundleDependencies);
+container
+  .bind(TITLE_GENERATOR_FILE_READ_CLIENT)
+  .toConstantValue(webTitleGeneratorFileReadClient);
+container
+  .bind(TITLE_GENERATOR_LOGGER)
+  .toConstantValue(webTitleGeneratorLogger(scoped()));
+container.bind(LLM_GATEWAY_SERVICE).toConstantValue(webLlmGatewayService);
 
 setRootContainer(container);
