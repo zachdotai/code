@@ -21,6 +21,7 @@ import {
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import {
+  type Channel,
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -44,7 +45,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useMemo } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
   frontOfUnpinnedOrder,
@@ -73,6 +74,13 @@ declare module "@tanstack/history" {
  */
 const canvasInfo = new Map<string, { name: string; templateId: string }>();
 const taskInfo = new Map<string, string>();
+
+// Dedupe concurrent #me provisioning. The folder-creation endpoint isn't
+// server-side idempotent, and the new-tab path is on Cmd+T (trivially
+// double-fired/held) — so two landings racing before the first create's cache
+// update lands could each create a "me" folder. One in-flight create is shared
+// across callers until it settles.
+let personalChannelInFlight: Promise<Channel> | null = null;
 
 /** Bounded insert (most-recent kept) so the caches don't grow unbounded over a
  * long session. */
@@ -195,6 +203,18 @@ export function BrowserTabStrip() {
   // because the mirror still says "no active tab".
   const applySnapshot = (next: TabsSnapshot) =>
     browserTabsStore.getState().setSnapshot(next);
+  // Optimistic mirror write: apply a pure transform to the store's CURRENT
+  // snapshot (not a render-closure copy — a mutation onSuccess may have applied
+  // a newer one since this render, and writing a stale-derived snapshot would
+  // regress the mirror, e.g. transiently resurrect a just-closed tab). Shared by
+  // the navigation effect's activate/replace cases so the rule lives in one spot.
+  const applyOptimistic = useCallback(
+    (transform: (s: TabsSnapshot) => TabsSnapshot) => {
+      const store = browserTabsStore.getState();
+      store.setSnapshot(transform(store.snapshot));
+    },
+    [],
+  );
   const openOrFocus = useMutation({
     ...trpc.browserTabs.openOrFocus.mutationOptions(),
     onSuccess: applySnapshot,
@@ -330,15 +350,8 @@ export function BrowserTabStrip() {
       case "activate": {
         // Optimistically focus in the mirror before the round-trip: an
         // untagged navigation racing this window would otherwise decide
-        // against the PREVIOUS active tab and replace its contents. Derive
-        // from the store's CURRENT snapshot, not the effect closure's — a
-        // mutation onSuccess may have applied a newer one since this render,
-        // and writing a stale-derived snapshot would regress the mirror
-        // (e.g. transiently resurrect a just-closed tab).
-        const store = browserTabsStore.getState();
-        store.setSnapshot(
-          setWindowActiveTab(store.snapshot, windowId, decision.tabId),
-        );
+        // against the PREVIOUS active tab and replace its contents.
+        applyOptimistic((s) => setWindowActiveTab(s, windowId, decision.tabId));
         setActiveTab.mutate({ windowId, tabId: decision.tabId });
         break;
       }
@@ -353,10 +366,9 @@ export function BrowserTabStrip() {
         };
         // Same optimistic apply: keep the mirror consistent with the write so
         // re-entrant runs (and the /website index redirect guard) never see
-        // the pre-navigation target. Same current-snapshot rule as "activate".
-        const store = browserTabsStore.getState();
-        store.setSnapshot(
-          setTabTargetLocal(store.snapshot, { ...target, now: Date.now }),
+        // the pre-navigation target.
+        applyOptimistic((s) =>
+          setTabTargetLocal(s, { ...target, now: Date.now }),
         );
         setTabTarget.mutate(target);
         if (decision.stampTabId) stamp(decision.stampTabId);
@@ -393,6 +405,7 @@ export function BrowserTabStrip() {
     openOrFocus.mutate,
     setTabTarget.mutate,
     setActiveTab.mutate,
+    applyOptimistic,
     router,
   ]);
 
@@ -687,7 +700,15 @@ export function BrowserTabStrip() {
     void (async () => {
       try {
         const existing = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
-        const folder = existing ?? (await createChannel(PERSONAL_CHANNEL_NAME));
+        if (!existing && !personalChannelInFlight) {
+          personalChannelInFlight = createChannel(
+            PERSONAL_CHANNEL_NAME,
+          ).finally(() => {
+            personalChannelInFlight = null;
+          });
+        }
+        const folder = existing ?? (await personalChannelInFlight);
+        if (!folder) return;
         navigate({
           to: "/website/$channelId",
           params: { channelId: folder.id },
