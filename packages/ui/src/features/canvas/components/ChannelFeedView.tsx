@@ -33,13 +33,19 @@ import {
   ThreadItemReplies,
   ThreadItemRepliesLabel,
   ThreadItemRepliesMeta,
-  ThreadItemTimestamp,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
+import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
@@ -51,7 +57,6 @@ import {
   useTaskPrStatus,
 } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
-import { Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import {
   Fragment,
@@ -241,7 +246,7 @@ function PrStateBadge({ prState }: { prState: Exclude<SidebarPrState, null> }) {
 
 function TaskStatusBadge({ display }: { display: TaskStatusDisplay }) {
   return (
-    <div className="flex shrink-0 items-center gap-1">
+    <div className="flex shrink-0 items-center gap-1 text-xs">
       {display.base}
       {display.prState && <PrStateBadge prState={display.prState} />}
     </div>
@@ -261,14 +266,21 @@ function promptText(task: Task): string {
 }
 
 // The card's context line, mirroring the storybook feed: who/what kicked the
-// task off ("Requested by @Ann" for humans, the origin product otherwise).
+// task off ("Requested by You" / "Requested by @Ann" for humans, the origin
+// product otherwise).
 function TaskCardOrigin({ task }: { task: Task }) {
+  const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client });
   const isUserCreated = task.origin_product === "user_created";
+  const isMe =
+    !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
   const label = isUserCreated
-    ? `Requested by @${userDisplayName(task.created_by)}`
+    ? isMe
+      ? "Requested by You"
+      : `Requested by @${userDisplayName(task.created_by)}`
     : (getOriginProductMeta(task.origin_product)?.label ?? task.origin_product);
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+    <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground text-xs">
       {isUserCreated ? <UserIcon size={12} /> : <RobotIcon size={12} />}
       <span className="truncate">{label}</span>
     </span>
@@ -284,14 +296,20 @@ function TaskCardOrigin({ task }: { task: Task }) {
 // clicks) like any real link. `onOpen`, when given, intercepts the plain
 // primary click to run an in-app action instead (opening the thread dock);
 // without it, a plain click just follows the link.
+//
+// `rounded` defaults to true (the feed's free-standing card). Pass `false` when
+// the card sits flush against a container edge — e.g. pinned at the top of the
+// thread panel — so its corners meet the edge squarely.
 export function TaskCard({
   task,
   channelId,
   onOpen,
+  inThread = true,
 }: {
   task: Task;
   channelId: string;
   onOpen?: () => void;
+  inThread?: boolean;
 }) {
   const statusDisplay = useTaskStatusDisplay(task);
   const prUrl =
@@ -302,7 +320,6 @@ export function TaskCard({
   // remainder of the row.
   const environment = task.latest_run?.environment;
   const meta = [
-    task.slug || null,
     task.latest_run?.stage ?? null,
     environment === "cloud"
       ? "Cloud"
@@ -335,52 +352,48 @@ export function TaskCard({
       params={{ channelId, taskId: task.id }}
       preload="intent"
       onClick={handleClick}
-      className="mt-1.5 block w-full max-w-[820px] rounded-sm text-inherit no-underline outline-none focus-visible:ring-(--accent-8) focus-visible:ring-2"
+      className={cn(
+        "block w-full max-w-4xl text-inherit no-underline outline-none focus-visible:ring-(--accent-8) focus-visible:ring-2",
+        inThread ? "rounded-none" : "rounded-sm",
+      )}
     >
       <Card
         size="sm"
         className={cn(
-          "w-full cursor-pointer rounded-sm py-0 transition-none hover:bg-fill-hover",
+          "w-full cursor-pointer py-0 transition-none hover:bg-fill-hover",
           statusDisplay.isMerged
             ? "border-transparent bg-(--purple-a2) shadow-[0_0_0_1px_var(--purple-8)] hover:bg-(--purple-a3) dark:bg-(--purple-a1) dark:hover:bg-(--purple-a2)"
             : "hover:border-border-primary",
+          inThread ? "rounded-none" : "rounded-sm",
         )}
       >
-        <CardContent className="flex flex-col gap-1 py-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <TaskCardOrigin task={task} />
-            <TaskStatusBadge display={statusDisplay} />
-          </div>
+        <CardContent className="flex flex-col gap-0 px-2 pt-1 pb-1.5">
           <div className="flex min-w-0 items-center gap-1.5">
             {/* Same live status icon as the code side nav, so the card and the
               nav never disagree (generating spinner, needs-permission, cloud
               status colors, PR state). */}
             <TaskTabIcon task={task} size={14} />
-            <Text size="2" weight="medium" className="line-clamp-2">
-              {task.title || "Untitled task"}
-            </Text>
+            <span className="font-medium">{task.title || "Untitled task"}</span>
           </div>
-          {(meta.length > 0 || task.repository || prUrl) && (
-            <div className="flex min-w-0 items-center gap-3">
-              {task.repository && (
-                <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
-                  <GitBranchIcon size={12} />
-                  {task.repository}
-                </span>
+          {inThread
+            ? "View task details"
+            : (meta.length > 0 || task.repository || prUrl) && (
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <TaskStatusBadge display={statusDisplay} />
+                  {task.repository && (
+                    <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
+                      <GitBranchIcon size={12} />
+                      {task.repository}
+                    </span>
+                  )}
+                  {meta.length > 0 && (
+                    <span className="truncate text-muted-foreground text-xs">
+                      {meta.join(" · ")}
+                    </span>
+                  )}
+                  <TaskCardOrigin task={task} />
+                </div>
               )}
-              {meta.length > 0 && (
-                <Text size="1" className="truncate text-muted-foreground">
-                  {meta.join(" · ")}
-                </Text>
-              )}
-              {prUrl && (
-                <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
-                  <ArrowSquareOutIcon size={12} />
-                  PR
-                </span>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>
     </Link>
@@ -413,14 +426,25 @@ function RepliesRow({
   const last = messages[messages.length - 1];
 
   return (
-    <ThreadItemReplies onClick={onOpenThread} className="mt-1">
-      <AvatarGroup size="xs">
-        {authors.map((author, index) => (
-          <Avatar key={author?.uuid ?? index} size="xs">
-            <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
-          </Avatar>
-        ))}
-      </AvatarGroup>
+    <ThreadItemReplies onClick={onOpenThread} className="mt-1 max-w-4xl">
+      <TooltipProvider delay={300}>
+        <AvatarGroup size="xs">
+          {authors.map((author, index) => (
+            <Tooltip key={author?.uuid ?? index}>
+              <TooltipTrigger
+                render={
+                  <Avatar size="xs">
+                    <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
+                  </Avatar>
+                }
+              />
+              <TooltipContent side="top">
+                {userDisplayName(author)}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </AvatarGroup>
+      </TooltipProvider>
       <ThreadItemRepliesLabel>
         {messages.length} {messages.length === 1 ? "reply" : "replies"}
       </ThreadItemRepliesLabel>
@@ -467,22 +491,21 @@ const FeedItem = memo(function FeedItem({
             {task.created_by ? userDisplayName(task.created_by) : "Agent"}
           </ThreadItemAuthor>
           {isAgent && <Badge variant="info">Agent</Badge>}
-          <ThreadItemTimestamp
-            dateTime={new Date(task.created_at).toISOString()}
-          >
-            {formatRelativeTimeShort(task.created_at)}
-          </ThreadItemTimestamp>
+          <ThreadTimestamp dateTime={new Date(task.created_at).toISOString()} />
         </ThreadItemHeader>
 
         <ThreadItemBody className="wrap-break-word line-clamp-4 whitespace-pre-wrap">
           {prompt}
         </ThreadItemBody>
 
-        <TaskCard
-          task={task}
-          channelId={channelId}
-          onOpen={() => onOpenTask(task)}
-        />
+        <div className="mbs-1">
+          <TaskCard
+            inThread={false}
+            task={task}
+            channelId={channelId}
+            onOpen={() => onOpenTask(task)}
+          />
+        </div>
         {/* Off-screen rows drop the reply teaser so a long feed isn't running a
             15s poll timer per row; the wide inView margin mounts it well before
             the row scrolls into view, so nothing pops in. */}

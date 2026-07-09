@@ -29,9 +29,7 @@ import {
   ThreadItemGroup,
   ThreadItemGutter,
   ThreadItemHeader,
-  ThreadItemTimestamp,
 } from "@posthog/quill";
-import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type {
   Task,
@@ -45,6 +43,7 @@ import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
+import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
   useTaskThread,
@@ -99,9 +98,7 @@ function ThreadMessageRow({
       <ThreadItemContent>
         <ThreadItemHeader>
           <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
-          <ThreadItemTimestamp dateTime={message.created_at}>
-            {formatRelativeTimeShort(message.created_at)}
-          </ThreadItemTimestamp>
+          <ThreadTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>
         <ThreadItemBody>
           <MentionText
@@ -241,7 +238,7 @@ function AgentTurnRow({
   return (
     <ThreadItem>
       <ThreadItemGutter>
-        <Avatar size="lg">
+        <Avatar size="lg" className="sticky top-2">
           <AvatarFallback>
             <RobotIcon size={14} />
           </AvatarFallback>
@@ -252,9 +249,7 @@ function AgentTurnRow({
           <ThreadItemAuthor>Agent</ThreadItemAuthor>
           {status && <AgentStatusChip status={status} />}
           {message?.ts !== undefined && (
-            <ThreadItemTimestamp dateTime={new Date(message.ts).toISOString()}>
-              {formatRelativeTimeShort(message.ts)}
-            </ThreadItemTimestamp>
+            <ThreadTimestamp dateTime={new Date(message.ts).toISOString()} />
           )}
         </ThreadItemHeader>
         {message?.text && (
@@ -269,12 +264,12 @@ function AgentTurnRow({
           </ThreadItemBody>
         )}
         {showActions && !hasPr && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button variant="primary" size="xs" onClick={onCreatePr}>
+          <div className="pbs-1 flex flex-wrap items-center gap-1.5">
+            <Button variant="primary" size="sm" onClick={onCreatePr}>
               <GitPullRequestIcon size={13} />
               Create PR
             </Button>
-            <Button variant="outline" size="xs" onClick={onDraftPr}>
+            <Button variant="outline" size="sm" onClick={onDraftPr}>
               Draft PR
             </Button>
           </div>
@@ -496,9 +491,6 @@ function ThreadConversation({
           <Text size="2" weight="medium" className="block">
             Thread
           </Text>
-          <Text size="1" className="block truncate text-muted-foreground">
-            {task.title || "Untitled task"}
-          </Text>
         </div>
         {onOpenFull && (
           <Button
@@ -532,10 +524,10 @@ function ThreadConversation({
         )}
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-2">
-        <div className="px-2">
-          <TaskCard task={task} channelId={channelId} />
-        </div>
+      <div className="z-10">
+        <TaskCard task={task} channelId={channelId} inThread={true} />
+      </div>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {isLoading && isEmpty ? (
           <div className="flex justify-center py-6">
             <Spinner />
@@ -549,7 +541,7 @@ function ThreadConversation({
             </Text>
           </div>
         ) : (
-          <ThreadItemGroup className="mt-1">
+          <ThreadItemGroup>
             {timeline.map((row) =>
               row.kind === "human" ? (
                 <ThreadMessageRow
