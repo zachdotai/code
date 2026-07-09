@@ -150,12 +150,17 @@ import {
   type IPowerManager,
   POWER_MANAGER_SERVICE,
 } from "@posthog/platform/power-manager";
+import { SYNC_CLOUD_TASKS_FLAG } from "@posthog/shared";
 import { sandboxProxyHtml } from "@posthog/shared/mcp-sandbox-proxy";
 import { authUiModule } from "@posthog/ui/features/auth/auth.module";
 import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
 } from "@posthog/ui/features/auth/identifiers";
+import {
+  REVIEW_HOST,
+  type ReviewHost,
+} from "@posthog/ui/features/code-review/reviewHost";
 import { connectivityUiModule } from "@posthog/ui/features/connectivity/connectivity.module";
 import {
   CONNECTIVITY_CLIENT,
@@ -210,6 +215,10 @@ import {
   type AnalyticsTracker,
 } from "@posthog/ui/shell/analytics";
 import {
+  DIFF_WORKER_FACTORY,
+  type DiffWorkerFactory,
+} from "@posthog/ui/shell/diffWorkerHost";
+import {
   HEDGEHOG_MODE_HOST,
   type HedgehogModeHost,
 } from "@posthog/ui/shell/hedgehogModeHost";
@@ -233,6 +242,7 @@ import {
 } from "./web-external-apps";
 import { webGitCacheKeyProvider } from "./web-git-cache-keys";
 import { WebOAuthFlowService } from "./web-oauth-flow";
+import { webDiffWorkerFactory, webReviewHost } from "./web-review-host";
 import {
   webBundleLocalSkill,
   webLlmGatewayService,
@@ -311,6 +321,8 @@ interface WebBindings {
   [GIT_INTERACTION_SERVICE]: GitInteractionService;
   [GIT_WRITE_CLIENT]: IGitWriteClient;
   [GIT_INTERACTION_EFFECTS]: GitInteractionEffects;
+  [DIFF_WORKER_FACTORY]: DiffWorkerFactory;
+  [REVIEW_HOST]: ReviewHost;
 }
 
 export const queryClient = new QueryClient();
@@ -388,7 +400,11 @@ container
 
 // ── Stubbed web ports (TODO: real web adapters — posthog-js, etc.) ──
 container.bind(FEATURE_FLAGS).toConstantValue({
-  isEnabled: () => false,
+  // Cloud-only host: enable cloud-task sync so __root's reconcile effect
+  // registers the current user's cloud tasks into the (localStorage-backed)
+  // workspace store, populating the sidebar. Everything else stays off until a
+  // real flag source (posthog-js) is wired.
+  isEnabled: (flagKey: string) => flagKey === SYNC_CLOUD_TASKS_FLAG,
   onFlagsLoaded: () => () => {},
 });
 container.bind(ANALYTICS_TRACKER).toConstantValue({
@@ -634,5 +650,11 @@ container.bind(FILE_WATCHER_CLIENT).toConstantValue({
 container.load(gitInteractionModule);
 container.bind(GIT_WRITE_CLIENT).toConstantValue(gitWriteClient);
 container.bind(GIT_INTERACTION_EFFECTS).toConstantValue(gitInteractionEffects);
+
+// ── Diff rendering (chat view's diff blocks + the code review page) ──
+// Pure browser code (a Vite worker asset + ChangesPanel), reused verbatim from
+// the desktop renderer. ChangesPanel renders cloud diffs via useCloudChangedFiles.
+container.bind(DIFF_WORKER_FACTORY).toConstantValue(webDiffWorkerFactory);
+container.bind(REVIEW_HOST).toConstantValue(webReviewHost);
 
 setRootContainer(container);

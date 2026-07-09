@@ -4,6 +4,7 @@ import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router"
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import { z } from "zod";
 import { getWebPreviewConfigOptions } from "./web-agent-config";
+import { webWorkspaceStore } from "./web-workspace-store";
 
 // The in-browser slice of the host router. Electron serves the full hostRouter
 // over IPC from its main process; the web host serves the subset the
@@ -72,28 +73,50 @@ const foldersStubRouter = router({
 });
 
 const workspaceStubRouter = router({
-  // useWorkspaces() at __root maps taskId -> local worktree/folder. No local
-  // workspaces exist on web (cloud tasks run in the sandbox), so return an
-  // empty map. A resolved (not rejected) query keeps the sidebar out of a
-  // perpetual loading state.
-  getAll: publicProcedure.query(() => ({}) as Record<string, unknown>),
+  // useWorkspaces() at __root maps taskId -> workspace. The sidebar's default
+  // view derives its task list from this map (computeSummaryIds), so cloud
+  // tasks created in this browser are tracked in a localStorage-backed store
+  // and returned here — otherwise a created task never appears in the sidebar.
+  getAll: publicProcedure.query(() => webWorkspaceStore.getAll()),
   // Fired by __root's cloud-workspace reconcile effect (gated behind the
-  // sync-cloud-tasks flag, off by default). Nothing to reconcile without a
-  // local workspace backend.
+  // sync-cloud-tasks flag). Register a cloud entry for each task so a boot-time
+  // reconcile seeds the sidebar; report them all as created.
   reconcileCloudWorkspaces: publicProcedure
     .input(z.object({ taskIds: z.array(z.string()) }))
-    .mutation(() => ({ created: [] as string[] })),
-  // Called by the task-creation saga's "cloud_workspace_creation" step. On
-  // desktop this persists a task<->worktree row; a cloud workspace has no local
-  // worktree, and the saga discards the return value (it builds its own cloud
-  // workspace literal), so this only needs to resolve without a local backend.
+    .mutation(({ input }) => {
+      const created: string[] = [];
+      for (const taskId of input.taskIds) {
+        if (!webWorkspaceStore.getAll()[taskId]) {
+          webWorkspaceStore.addCloud(taskId, null, new Date().toISOString());
+          created.push(taskId);
+        }
+      }
+      return { created };
+    }),
+  // Task-creation saga's "cloud_workspace_creation" step. Register the cloud
+  // workspace so it survives the invalidate+refetch that follows creation (the
+  // saga builds its own literal for the optimistic cache; this persists it). The
+  // saga discards the return value.
   create: publicProcedure
-    .input(z.object({}).passthrough())
-    .mutation(() => ({ worktree: null, linkedBranch: null })),
+    .input(
+      z
+        .object({ taskId: z.string(), branch: z.string().optional() })
+        .passthrough(),
+    )
+    .mutation(({ input }) => {
+      webWorkspaceStore.addCloud(
+        input.taskId,
+        input.branch ?? null,
+        new Date().toISOString(),
+      );
+      return { worktree: null, linkedBranch: null };
+    }),
   // Compensating rollback for the step above if a later step fails.
   delete: publicProcedure
-    .input(z.object({}).passthrough())
-    .mutation(() => undefined),
+    .input(z.object({ taskId: z.string() }).passthrough())
+    .mutation(({ input }) => {
+      webWorkspaceStore.remove(input.taskId);
+    }),
 });
 
 export const webHostRouter = router({

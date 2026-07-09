@@ -12,6 +12,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "0.22.1",
     "@inversifyjs/strongly-typed": "2.2.0",
+    "@pierre/diffs": "^1.2.10",
     "@posthog/agent": "workspace:*",
     "@posthog/core": "workspace:*",
     "@posthog/di": "workspace:*",
