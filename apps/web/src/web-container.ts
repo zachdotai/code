@@ -1,5 +1,11 @@
 import "reflect-metadata";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
+import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
+import {
+  getGatewayInvalidatePlanCacheUrl,
+  getGatewayUsageUrl,
+  getLlmGatewayUrl,
+} from "@posthog/agent/posthog-api";
 import { archiveModule } from "@posthog/core/archive/archive.module";
 import {
   ARCHIVE_CLIENT,
@@ -62,8 +68,13 @@ import {
   type RepositoriesClient,
 } from "@posthog/core/integrations/identifiers";
 import { RepositoriesService } from "@posthog/core/integrations/repositoriesService";
-import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
+import {
+  LLM_GATEWAY_HOST,
+  LLM_GATEWAY_SERVICE,
+  type LlmGatewayHost,
+} from "@posthog/core/llm-gateway/identifiers";
 import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
+import { llmGatewayModule } from "@posthog/core/llm-gateway/llm-gateway.module";
 import {
   GITHUB_CONNECT_CLIENT as ONBOARDING_GITHUB_CONNECT_CLIENT,
   type GithubConnectClient as OnboardingGithubConnectContract,
@@ -262,7 +273,6 @@ import { WebOAuthFlowService } from "./web-oauth-flow";
 import { webDiffWorkerFactory, webReviewHost } from "./web-review-host";
 import {
   webBundleLocalSkill,
-  webLlmGatewayService,
   webReadFileAsBase64,
   webResolveSkillBundleDependencies,
   webTitleGeneratorFileReadClient,
@@ -331,6 +341,7 @@ interface WebBindings {
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;
   [TITLE_GENERATOR_LOGGER]: TitleGeneratorLogger;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
+  [LLM_GATEWAY_HOST]: LlmGatewayHost;
   [LOCAL_HANDOFF_SERVICE]: LocalHandoffService;
   [LOCAL_HANDOFF_HOST]: LocalHandoffHost;
   [LOCAL_HANDOFF_DIALOG]: LocalHandoffDialog;
@@ -639,7 +650,29 @@ container
 container
   .bind(TITLE_GENERATOR_LOGGER)
   .toConstantValue(webTitleGeneratorLogger(scoped()));
-container.bind(LLM_GATEWAY_SERVICE).toConstantValue(webLlmGatewayService);
+// LLM gateway (task title/summary generation, etc.). The portable core service
+// runs in the browser directly — the gateway is CORS-open — over a web host
+// that authenticates with AuthService and builds the same gateway URLs the
+// desktop main process uses.
+container.load(llmGatewayModule);
+container.bind(LLM_GATEWAY_HOST).toDynamicValue((ctx) => {
+  const auth = () => ctx.get<AuthService>(AUTH_SERVICE);
+  return {
+    getValidAccessToken: () => auth().getValidAccessToken(),
+    authenticatedFetch: (url: string, init?: RequestInit) =>
+      auth().authenticatedFetch(
+        (input, fetchInit) => fetch(input, fetchInit),
+        url,
+        init,
+      ),
+    messagesUrl: (apiHost: string) =>
+      `${getLlmGatewayUrl(apiHost)}/v1/messages`,
+    usageUrl: (apiHost: string) => getGatewayUsageUrl(apiHost),
+    invalidatePlanCacheUrl: (apiHost: string) =>
+      getGatewayInvalidatePlanCacheUrl(apiHost),
+    defaultModel: DEFAULT_GATEWAY_MODEL,
+  };
+});
 
 // ── Local handoff (cloud git header's "hand off to local" affordance) ──
 // LocalHandoffService is resolved eagerly by CloudGitInteractionHeader. The

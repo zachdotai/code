@@ -1,5 +1,4 @@
 import type { ReadFileAsBase64 } from "@posthog/core/editor/cloud-prompt";
-import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import type {
   BundleLocalSkill,
   ResolveSkillBundleDependencies,
@@ -42,14 +41,3 @@ export function webTitleGeneratorLogger(
   const scoped = logger.scope("title-generator");
   return { error: (message, data) => scoped.error(message, data) };
 }
-
-// Title/summary generation calls the PostHog LLM gateway. Desktop routes this
-// through the Node main process; a real browser implementation would post to the
-// gateway messages endpoint. Until then, reject — TitleGeneratorService catches
-// and the task simply keeps its default title (a non-critical enhancement).
-export const webLlmGatewayService: LlmGatewayService = {
-  prompt: () =>
-    Promise.reject(
-      new Error("LLM gateway prompt is not yet wired on the web host"),
-    ),
-} as unknown as LlmGatewayService;
