@@ -1,7 +1,11 @@
+import { TEAM_SKILLS_SERVICE } from "@posthog/core/skills/identifiers";
+import type { TeamSkillsService } from "@posthog/core/skills/teamSkillsService";
+import { resolveService } from "@posthog/di/container";
 import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
+import { getAuthenticatedClient } from "@posthog/ui/features/auth/authClientImperative";
 import { z } from "zod";
 import { getWebPreviewConfigOptions } from "./web-agent-config";
 import { webArchiveStore } from "./web-archive-store";
@@ -135,9 +139,25 @@ const osStubRouter = router({
 });
 
 const skillsStubRouter = router({
-  // Queried when sending a message to resolve /skill commands. No local
-  // skills directory exists on web.
-  list: publicProcedure.query(() => []),
+  // Backs the composer's "/" skill menu and typed /skill-command resolution.
+  // No local skills dir on web, so surface the team's cloud skills instead
+  // (tagged source "user" — where a team skill lands when installed — with the
+  // skill name as a synthetic path the web bundler resolves by name). When a
+  // skill is used, web-skill-bundler fetches + zips its content for the run.
+  list: publicProcedure.query(async () => {
+    const client = await getAuthenticatedClient();
+    if (!client) return [];
+    const service = resolveService<TeamSkillsService>(TEAM_SKILLS_SERVICE);
+    const listing = await service.listTeamSkills(client);
+    return listing.skills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      source: "user" as const,
+      path: skill.name,
+      editable: false,
+      skillMdBytes: 0,
+    }));
+  }),
 });
 
 const additionalDirectoriesStubRouter = router({
