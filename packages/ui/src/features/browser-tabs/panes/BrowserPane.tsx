@@ -89,23 +89,23 @@ export function BrowserPane({
       data-pane-id={paneId}
       data-focused={isFocused || undefined}
       onPointerDownCapture={handlePointerDownCapture}
-      className={`relative flex h-full min-h-0 w-full min-w-0 flex-col ${
-        // Ring driven by the DOMAIN focus (data-focused ← focusedPaneId), not
-        // :focus-within — clicks on non-focusable content move no DOM focus,
-        // and in-pane navigation must keep its pane highlighted. Every path
-        // already maintains focusedPaneId: pane clicks (pointerdown capture
-        // here), tab activation, and in-tab navigation (the shared transforms
-        // all set window.focusedPaneId). ring-inset: the Panel wrapper is
-        // overflow-hidden, so an outside ring would be clipped invisible.
-        showFocusRing
-          ? "ring-inset data-focused:ring-1 data-focused:ring-primary"
-          : ""
-      }`}
+      className="group relative flex h-full min-h-0 w-full min-w-0 flex-col"
     >
       {/* Split/move drop zones mount INSIDE the router (PaneChrome), over the
         content slot only — overlaying the whole pane would swallow drops
         aimed at the strip bar/pills. */}
       <RouterProvider router={router} />
+      {/* Focus ring as a pointer-transparent OVERLAY above the content: an
+          inset ring on the pane element itself paints under its children, so
+          anything flush with the edge (scrolling content, section headers)
+          covers it. Driven by DOMAIN focus (data-focused ← focusedPaneId),
+          not :focus-within — clicks on non-focusable content move no DOM
+          focus, and in-pane navigation must keep its pane highlighted; every
+          path already maintains focusedPaneId (pane pointerdown capture, tab
+          activation, in-tab navigation). Below the drop zones (z-100). */}
+      {showFocusRing ? (
+        <div className="pointer-events-none absolute inset-0 z-[90] hidden rounded-xs ring-1 ring-primary ring-inset group-data-focused:block" />
+      ) : null}
     </div>
   );
 }
