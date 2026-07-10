@@ -47,6 +47,7 @@ import { WorktreesSettings } from "@posthog/ui/features/settings/sections/worktr
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
 import * as nav from "@posthog/ui/router/navigationBridge";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Avatar, Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { type ReactNode, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -80,6 +81,19 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
   { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
 ];
+
+// Settings that only make sense with a local filesystem/host (local worktrees,
+// terminal, the local `claude` CLI, the desktop app itself). Hidden on the
+// cloud-only web host — several also call host routers it doesn't serve, and
+// Discord uses a non-optional useService that would hard-crash if rendered.
+const LOCAL_ONLY_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
+  "workspaces",
+  "worktrees",
+  "terminal",
+  "claude-code",
+  "discord",
+  "updates",
+]);
 
 const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   general: "General",
@@ -154,15 +168,27 @@ export function SettingsPanel({
   const { data: user } = useCurrentUser({ client });
   const { seat, planLabel } = useSeat();
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const { localWorkspaces } = useHostCapabilities();
   const logoutMutation = useLogoutMutation();
 
   const sidebarItems = useMemo(
     () =>
-      billingEnabled
-        ? SIDEBAR_ITEMS
-        : SIDEBAR_ITEMS.filter((item) => item.id !== "plan-usage"),
-    [billingEnabled],
+      SIDEBAR_ITEMS.filter((item) => {
+        if (!billingEnabled && item.id === "plan-usage") return false;
+        if (!localWorkspaces && LOCAL_ONLY_CATEGORIES.has(item.id))
+          return false;
+        return true;
+      }),
+    [billingEnabled, localWorkspaces],
   );
+
+  // Guard direct navigation (URL, deep link, programmatic openSettings) to a
+  // category hidden on this host — fall back to General so a hidden section is
+  // never rendered (Discord in particular would crash on web).
+  const resolvedCategory: SettingsCategory =
+    !localWorkspaces && LOCAL_ONLY_CATEGORIES.has(activeCategory)
+      ? "general"
+      : activeCategory;
 
   useHotkeys("escape", close, {
     enabled: true,
@@ -171,12 +197,12 @@ export function SettingsPanel({
     preventDefault: true,
   });
 
-  const ActiveComponent = CATEGORY_COMPONENTS[activeCategory];
+  const ActiveComponent = CATEGORY_COMPONENTS[resolvedCategory];
 
   const activeCategoryIcon = SIDEBAR_ITEMS.find(
     (item) =>
-      item.id === activeCategory ||
-      (item.id === "environments" && activeCategory === "cloud-environments"),
+      item.id === resolvedCategory ||
+      (item.id === "environments" && resolvedCategory === "cloud-environments"),
   )?.icon;
 
   const initials = getUserInitials(user);
@@ -224,9 +250,9 @@ export function SettingsPanel({
           <div className="flex flex-col pt-2">
             {sidebarItems.map((item) => {
               const isActive =
-                activeCategory === item.id ||
+                resolvedCategory === item.id ||
                 (item.id === "environments" &&
-                  activeCategory === "cloud-environments");
+                  resolvedCategory === "cloud-environments");
               return (
                 <SidebarNavItem
                   key={item.id}
@@ -296,7 +322,7 @@ export function SettingsPanel({
                       <span className="text-gray-10">{activeCategoryIcon}</span>
                     )}
                     <Text className="font-medium text-lg leading-6.5">
-                      {CATEGORY_TITLES[activeCategory]}
+                      {CATEGORY_TITLES[resolvedCategory]}
                     </Text>
                   </Flex>
                 )}

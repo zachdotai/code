@@ -20,6 +20,7 @@ import {
 import { track } from "@posthog/ui/shell/analytics";
 import type { ThemePreference } from "@posthog/ui/shell/themeStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Button, Flex, Link, Select, Switch, Text } from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
@@ -34,14 +35,20 @@ export function GeneralSettings() {
   // Appearance state
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
-  // Power state
+  // Power state. Prevent-sleep is a desktop OS capability (no `sleep` host
+  // router on web), so gate the queries and hide the row on cloud-only hosts.
+  const { localWorkspaces } = useHostCapabilities();
   const { preventSleepWhileRunning, setPreventSleepWhileRunning } =
     useSettingsStore();
   const { data: serverPreventSleep } = useQuery(
-    hostTRPC.sleep.getEnabled.queryOptions(),
+    hostTRPC.sleep.getEnabled.queryOptions(undefined, {
+      enabled: localWorkspaces,
+    }),
   );
   const { data: hasBuiltInBattery } = useQuery(
-    hostTRPC.sleep.hasBuiltInBattery.queryOptions(),
+    hostTRPC.sleep.hasBuiltInBattery.queryOptions(undefined, {
+      enabled: localWorkspaces,
+    }),
   );
   const preventSleepMutation = useMutation(
     hostTRPC.sleep.setEnabled.mutationOptions(),
@@ -430,26 +437,30 @@ export function GeneralSettings() {
         </Select.Root>
       </SettingRow>
 
-      {/* Power */}
-      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
-        Power
-      </Text>
+      {/* Power (desktop only — no OS sleep control in a browser) */}
+      {localWorkspaces && (
+        <>
+          <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+            Power
+          </Text>
 
-      <SettingRow
-        label="Keep awake while agents work"
-        description={
-          hasBuiltInBattery
-            ? "Prevent your computer from going to sleep on its own while the agent is running a task. Closing the lid will still put it to sleep."
-            : "Prevent your computer from going to sleep on its own while the agent is running a task"
-        }
-        noBorder
-      >
-        <Switch
-          checked={preventSleepWhileRunning}
-          onCheckedChange={handlePreventSleepChange}
-          size="1"
-        />
-      </SettingRow>
+          <SettingRow
+            label="Keep awake while agents work"
+            description={
+              hasBuiltInBattery
+                ? "Prevent your computer from going to sleep on its own while the agent is running a task. Closing the lid will still put it to sleep."
+                : "Prevent your computer from going to sleep on its own while the agent is running a task"
+            }
+            noBorder
+          >
+            <Switch
+              checked={preventSleepWhileRunning}
+              onCheckedChange={handlePreventSleepChange}
+              size="1"
+            />
+          </SettingRow>
+        </>
+      )}
 
       {/* Fun */}
       <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">

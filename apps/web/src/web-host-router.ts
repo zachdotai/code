@@ -18,6 +18,39 @@ import { webWorkspaceStore } from "./web-workspace-store";
 // with NOT_FOUND at call time — same behavior as the HTTP dev stub this
 // replaces, and a deliberate signal of where the web host is still thin.
 
+// A subscription that stays open but never emits — the web host has no source
+// for these host-push streams (idle kills, deep links). Held until the client
+// aborts so the tRPC subscription doesn't error.
+const neverEmit = publicProcedure.subscription(async function* (opts) {
+  yield* [] as never[];
+  await new Promise<void>((resolve) => {
+    opts.signal?.addEventListener("abort", () => resolve(), { once: true });
+  });
+});
+
+// Deep links are a desktop URL-scheme feature (posthog-code://); the browser has
+// no equivalent, so every pending-link query resolves null and every open-*
+// stream never emits. Stubbed to silence NOT_FOUND noise from __root's deep-link
+// hooks, which poll these on mount.
+const deepLinkStubRouter = router({
+  getPendingDeepLink: publicProcedure.query(() => null),
+  getPendingReportLink: publicProcedure.query(() => null),
+  getPendingScoutLink: publicProcedure.query(() => null),
+  getPendingNewTaskLink: publicProcedure.query(() => null),
+  getPendingApprovalLink: publicProcedure.query(() => null),
+  getPendingOpenTarget: publicProcedure.query(() => null),
+  getPendingCanvasLink: publicProcedure.query(() => null),
+  getPendingChannelLink: publicProcedure.query(() => null),
+  onOpenTask: neverEmit,
+  onOpenReport: neverEmit,
+  onOpenScout: neverEmit,
+  onNewTaskAction: neverEmit,
+  onOpenApproval: neverEmit,
+  onOpenTarget: neverEmit,
+  onOpenCanvas: neverEmit,
+  onOpenChannel: neverEmit,
+});
+
 const agentStubRouter = router({
   // SessionService subscribes to this in its constructor. No local agent
   // sessions exist on web, so hold the stream open and never emit.
@@ -189,6 +222,7 @@ export const webHostRouter = router({
   archive: archiveStubRouter,
   auth: authRouter,
   cloudTask: cloudTaskRouter,
+  deepLink: deepLinkStubRouter,
   folders: foldersStubRouter,
   os: osStubRouter,
   skills: skillsStubRouter,

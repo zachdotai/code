@@ -147,6 +147,10 @@ import {
   type HostCapabilities,
 } from "@posthog/platform/host-capabilities";
 import {
+  type INotifications,
+  NOTIFICATIONS_SERVICE,
+} from "@posthog/platform/notifications";
+import {
   type IPowerManager,
   POWER_MANAGER_SERVICE,
 } from "@posthog/platform/power-manager";
@@ -193,6 +197,13 @@ import {
   type McpAppHostComponent,
   type McpSandboxProxyUrlProvider,
 } from "@posthog/ui/features/mcp-apps/identifiers";
+import {
+  ACTIVE_VIEW_PROVIDER,
+  type IActiveView,
+  type INotificationSettings,
+  NOTIFICATION_SETTINGS_PROVIDER,
+} from "@posthog/ui/features/notifications/identifiers";
+import { notificationsUiModule } from "@posthog/ui/features/notifications/notifications.module";
 import { OnboardingGithubConnectClient } from "@posthog/ui/features/onboarding/githubConnectClientImpl";
 import {
   localHandoffDialog,
@@ -242,6 +253,11 @@ import {
   webExternalAppsWorkspaceClient,
 } from "./web-external-apps";
 import { webGitCacheKeyProvider } from "./web-git-cache-keys";
+import {
+  webActiveView,
+  webNotificationSettings,
+  webNotifications,
+} from "./web-notifications";
 import { WebOAuthFlowService } from "./web-oauth-flow";
 import { webDiffWorkerFactory, webReviewHost } from "./web-review-host";
 import {
@@ -325,6 +341,9 @@ interface WebBindings {
   [GIT_INTERACTION_EFFECTS]: GitInteractionEffects;
   [DIFF_WORKER_FACTORY]: DiffWorkerFactory;
   [REVIEW_HOST]: ReviewHost;
+  [NOTIFICATIONS_SERVICE]: INotifications;
+  [NOTIFICATION_SETTINGS_PROVIDER]: INotificationSettings;
+  [ACTIVE_VIEW_PROVIDER]: IActiveView;
 }
 
 export const queryClient = new QueryClient();
@@ -662,5 +681,16 @@ container.bind(GIT_INTERACTION_EFFECTS).toConstantValue(gitInteractionEffects);
 // the desktop renderer. ChangesPanel renders cloud diffs via useCloudChangedFiles.
 container.bind(DIFF_WORKER_FACTORY).toConstantValue(webDiffWorkerFactory);
 container.bind(REVIEW_HOST).toConstantValue(webReviewHost);
+
+// ── Notifications (task-completion notifications + settings test harness) ──
+// Real browser implementation over the Web Notifications API. NotificationBus
+// (notificationsUiModule) is resolved by SessionService on task events and by
+// the settings test harness; it needs these three providers.
+container.load(notificationsUiModule);
+container.bind(NOTIFICATIONS_SERVICE).toConstantValue(webNotifications);
+container
+  .bind(NOTIFICATION_SETTINGS_PROVIDER)
+  .toConstantValue(webNotificationSettings);
+container.bind(ACTIVE_VIEW_PROVIDER).toConstantValue(webActiveView);
 
 setRootContainer(container);
