@@ -70,6 +70,21 @@ credential).
   `http://localhost:5273` for dev) with the `POST` method to the bucket's CORS
   config. Until then, attaching + preview work but sending a task with an
   attachment fails at the upload step.
+- **Integration connect origin (`connect_from=posthog_web`) — required for Slack
+  / GitHub connect.** PostHog brokers the Slack/GitHub OAuth server-side and,
+  once it completes, redirects to a target chosen by the `connect_from` value
+  (`posthog_code` → `posthog-code://…`, `posthog_mobile` → `posthog://…`) — a
+  per-known-client mapping, not an open redirect. There is no `posthog_web`
+  mapping yet. The web host's `startFlow` opens the standard
+  `.../integrations/authorize/?kind={slack|github}&next=…&connect_from=posthog_web`
+  URL in a tab; no callback relay is needed because the integration is created
+  server-side, and the connect hooks refetch `getIntegrations()` on window-focus
+  to surface it. This covers the Slack and GitHub *team* flows once the backend
+  tolerates/handles `posthog_web`. The GitHub *user* flow
+  (`POST /api/users/@me/integrations/github/start/`) additionally hardcodes
+  `connect_from: "posthog_code"` in `@posthog/api-client` and returns **400** on
+  web — it needs a host-parameterized `connect_from` plus the same backend
+  origin support.
 
 ## Not yet wired
 
@@ -83,6 +98,12 @@ credential).
   CORS config (see External requirements) until the web host is served from an
   allowlisted origin. Attaching, preview, and byte-reads all work; only the
   final presigned-POST upload fails.
+- **Slack / GitHub connect** is client-wired (`startFlow` opens the authorize
+  URL; the connection is detected via the window-focus refetch, not a callback
+  relay) but gated on backend support for a `posthog_web` connect origin — see
+  External requirements. The GitHub user flow returns 400 on web today. Where a
+  project already has the integration connected, the settings pages render the
+  connected/manage state correctly.
 - **Per-device stores** (cloud workspaces, archive, pins, browser tabs) are
   localStorage-only — not durable across devices or a site-data clear.
 - **Skill dependency expansion** is a passthrough: a skill that declares

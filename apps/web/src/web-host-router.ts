@@ -5,7 +5,11 @@ import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
-import { tabsSnapshotSchema } from "@posthog/shared";
+import {
+  type CloudRegion,
+  getCloudUrlFromRegion,
+  tabsSnapshotSchema,
+} from "@posthog/shared";
 import { getAuthenticatedClient } from "@posthog/ui/features/auth/authClientImperative";
 import { z } from "zod";
 import { getWebPreviewConfigOptions } from "./web-agent-config";
@@ -63,39 +67,56 @@ const deepLinkStubRouter = router({
   onOpenChannel: neverEmit,
 });
 
-// Slack connect uses a desktop deep-link callback relay (Slack redirects to
-// posthog-code://, the main process captures it). No browser equivalent yet, so
-// there's never a pending callback and the event streams never fire. The
-// callback hook is mounted app-wide, so without this it errors on every page.
-const slackIntegrationStubRouter = router({
+// Slack/GitHub connect. Desktop opens the PostHog integration authorize URL in
+// the system browser and relays the result back through a posthog-code:// deep
+// link (captured by the main process). The browser has no URL scheme, but it
+// doesn't need one: the third-party (Slack/GitHub) OAuth code exchange happens
+// entirely server-side, so by the time the popup lands there is nothing to
+// relay — the integration already exists in getIntegrations(). So startFlow just
+// opens the same authorize URL in a new tab, and the connect hooks (useSlack/
+// GitHubConnect) refetch the integrations list on window-focus while
+// "connecting" — returning to the app surfaces the connection. connect_from is
+// "posthog_web" (not "posthog_code") so PostHog doesn't try to bounce the popup
+// through the desktop deep link. The callback procedures stay inert (there is no
+// deep-link callback on web); the app-wide callback hooks consume the null / see
+// streams that never emit, as before.
+function openIntegrationAuthorize(
+  region: string,
+  projectId: number,
+  kind: "slack" | "github",
+): { success: boolean; error?: string } {
+  const cloudUrl = getCloudUrlFromRegion(region as CloudRegion);
+  const next = `/account-connected/${kind}-integration?provider=${kind}&project_id=${projectId}&connect_from=posthog_web`;
+  const authorizeUrl = `${cloudUrl}/api/environments/${projectId}/integrations/authorize/?kind=${kind}&next=${encodeURIComponent(next)}`;
+  const opened = window.open(authorizeUrl, "_blank", "noopener,noreferrer");
+  return opened
+    ? { success: true }
+    : {
+        success: false,
+        error: `Enable pop-ups for this site to connect ${kind === "slack" ? "Slack" : "GitHub"}.`,
+      };
+}
+
+const slackIntegrationRouter = router({
   consumePendingCallback: publicProcedure.query(() => null),
   onCallback: neverEmit,
   onFlowTimedOut: neverEmit,
   startFlow: publicProcedure
     .input(z.object({ region: z.string(), projectId: z.number() }))
-    .mutation(() => ({
-      success: false,
-      error: "Connecting Slack isn't available on the web yet.",
-    })),
+    .mutation(({ input }) =>
+      openIntegrationAuthorize(input.region, input.projectId, "slack"),
+    ),
 });
 
-// GitHub integration uses the same desktop deep-link OAuth relay as Slack
-// (posthog-code:// callback), which the browser has no equivalent for. The
-// useGitHubIntegrationCallback hook is mounted app-wide — it polls
-// consumePendingCallback and subscribes to onCallback/onFlowTimedOut on mount —
-// so without this stub it errors on every page (surfaced as a NOT_FOUND on the
-// Agents page). Cloud-task repo access relies on the org-level GitHub
-// integration, not this per-user relay, so a stub is sufficient.
-const githubIntegrationStubRouter = router({
+const githubIntegrationRouter = router({
   consumePendingCallback: publicProcedure.query(() => null),
   onCallback: neverEmit,
   onFlowTimedOut: neverEmit,
   startFlow: publicProcedure
     .input(z.object({ region: z.string(), projectId: z.number() }))
-    .mutation(() => ({
-      success: false,
-      error: "Connecting GitHub isn't available on the web yet.",
-    })),
+    .mutation(({ input }) =>
+      openIntegrationAuthorize(input.region, input.projectId, "github"),
+    ),
 });
 
 const agentStubRouter = router({
@@ -448,11 +469,11 @@ export const webHostRouter = router({
   deepLink: deepLinkStubRouter,
   folders: foldersStubRouter,
   fs: fsStubRouter,
-  githubIntegration: githubIntegrationStubRouter,
+  githubIntegration: githubIntegrationRouter,
   logs: logsStubRouter,
   os: osStubRouter,
   skills: skillsStubRouter,
-  slackIntegration: slackIntegrationStubRouter,
+  slackIntegration: slackIntegrationRouter,
   workspace: workspaceStubRouter,
 });
 
