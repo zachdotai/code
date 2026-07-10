@@ -1,3 +1,4 @@
+import { getFocusedRouterOrNull } from "@posthog/ui/router/paneRouterRegistry";
 import { captureException } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
 import { type RefObject, useEffect } from "react";
@@ -23,7 +24,9 @@ export function useAppVisibilityWatchdog(
         opacity,
         width: Math.round(rect.width),
         height: Math.round(rect.height),
-        route: window.location.hash,
+        // Pane routers use memory history, so the URL no longer carries the
+        // route — read it from the focused pane's router instead.
+        route: getFocusedRouterOrNull()?.state.location.href ?? "",
       };
       log.error("Main app mounted but not visible", detail);
       captureException(new Error("Main app mounted but not visible"), {

@@ -1,5 +1,11 @@
+import { browserTabsStore } from "@posthog/core/browser-tabs/browserTabsStore";
 import { ToastProvider } from "@posthog/quill";
-import { EXTERNAL_LINKS, isNotAuthenticatedError } from "@posthog/shared";
+import {
+  EXTERNAL_LINKS,
+  focusedPane,
+  isNotAuthenticatedError,
+  primaryWindow,
+} from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { AiApprovalScreen } from "@posthog/ui/features/ai-approval/AiApprovalScreen";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
@@ -12,6 +18,7 @@ import { InviteCodeScreen } from "@posthog/ui/features/auth/components/InviteCod
 import { ScopeReauthPrompt } from "@posthog/ui/features/auth/components/ScopeReauthPrompt";
 import { useAuthSession } from "@posthog/ui/features/auth/useAuthSession";
 import { useIsOrgAdmin } from "@posthog/ui/features/auth/useOrgRole";
+import { hrefForTab } from "@posthog/ui/features/browser-tabs/tabHref";
 import { CanvasGenerationToaster } from "@posthog/ui/features/canvas/freeform/useCanvasGenerationToasts";
 import { AddDirectoryDialog } from "@posthog/ui/features/folder-picker/AddDirectoryDialog";
 import { ErrorDetailsDialog } from "@posthog/ui/features/notifications/ErrorDetailsDialog";
@@ -20,8 +27,14 @@ import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingSt
 import { SettingsDialog } from "@posthog/ui/features/settings/SettingsDialog";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import { PendingPromptRecovery } from "@posthog/ui/features/task-detail/components/PendingPromptRecovery";
-import { router } from "@posthog/ui/router/router";
+import {
+  type AppRouter,
+  createAppRouter,
+  persistedPaneHref,
+} from "@posthog/ui/router/createAppRouter";
+import { setPaneRouter } from "@posthog/ui/router/paneRouterRegistry";
 import { AppLoadingScreen } from "@posthog/ui/shell/AppLoadingScreen";
+import { AppShell } from "@posthog/ui/shell/AppShell";
 import { track } from "@posthog/ui/shell/analytics";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
@@ -89,40 +102,67 @@ function App({ devToolbar }: AppProps) {
     !needsInviteCode &&
     !needsAiApproval;
 
-  // Run the initial route's loaders before the router ever mounts, so the boot
-  // loading screen holds until the route is ready. The router turns loader
-  // errors into route error UI itself; the catch is only unhandled-rejection
-  // hygiene. Resets when the user leaves the main app (logout, gates) so
-  // re-entry loads fresh.
-  const [initialRouteLoaded, setInitialRouteLoaded] = useState(false);
+  // Create the (focused) pane's router once the tabs mirror has seeded —
+  // pane routers use memory history, and the initial entry comes from the
+  // pane's persisted location (Cmd+R / HMR restore) or its active tab's
+  // canonical href. The initial route's loaders run before the router ever
+  // mounts, so the boot loading screen holds until the route is ready. The
+  // router turns loader errors into route error UI itself; the catch is only
+  // unhandled-rejection hygiene. The instance (and its history) survives
+  // leaving the main app (logout, gates) — re-entry reuses it.
+  const [paneRouter, setPaneRouterInstance] = useState<AppRouter | null>(null);
+  const creatingRouter = useRef(false);
   useEffect(() => {
-    if (!readyForMainApp) {
-      setInitialRouteLoaded(false);
-      return;
-    }
-    if (initialRouteLoaded) return;
+    if (!readyForMainApp || paneRouter || creatingRouter.current) return;
     let cancelled = false;
-    void router
-      .load()
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) setInitialRouteLoaded(true);
+    let unsubscribe: (() => void) | undefined;
+    const tryCreate = (): boolean => {
+      const snapshot = browserTabsStore.getState().snapshot;
+      const win = primaryWindow(snapshot);
+      const pane = win ? focusedPane(snapshot, win.id) : undefined;
+      if (!pane) return false; // mirror not seeded yet
+      creatingRouter.current = true;
+      const activeTab = pane.activeTabId
+        ? snapshot.tabs.find((t) => t.id === pane.activeTabId)
+        : undefined;
+      const initialHref =
+        persistedPaneHref(pane.id) ??
+        (activeTab ? hrefForTab(activeTab) : "/code");
+      const instance = createAppRouter({ paneId: pane.id, initialHref });
+      setPaneRouter(pane.id, instance);
+      void instance
+        .load()
+        .catch(() => undefined)
+        .finally(() => {
+          creatingRouter.current = false;
+          if (!cancelled) setPaneRouterInstance(instance);
+        });
+      return true;
+    };
+    if (!tryCreate()) {
+      unsubscribe = browserTabsStore.subscribe(() => {
+        if (tryCreate()) {
+          unsubscribe?.();
+          unsubscribe = undefined;
+        }
       });
+    }
     return () => {
       cancelled = true;
+      unsubscribe?.();
     };
-  }, [readyForMainApp, initialRouteLoaded]);
+  }, [readyForMainApp, paneRouter]);
 
   const mainRef = useRef<HTMLDivElement>(null);
   // Mirrors the "main" branch of renderContent() below; keep the two in sync.
-  const showingMainApp = readyForMainApp && initialRouteLoaded;
+  const showingMainApp = readyForMainApp && paneRouter !== null;
   useAppVisibilityWatchdog(mainRef, showingMainApp);
 
   // Single gate for every state where the whole app is still loading.
   if (
     !isBootstrapped ||
     isCheckingAccess ||
-    (readyForMainApp && !initialRouteLoaded)
+    (readyForMainApp && paneRouter === null)
   ) {
     return <AppLoadingScreen />;
   }
@@ -179,9 +219,14 @@ function App({ devToolbar }: AppProps) {
       );
     }
 
+    if (!paneRouter) return null; // unreachable: gated above
     return (
       <motion.div key="main" ref={mainRef} className="app-fade-in h-full">
-        <RouterProvider router={router} />
+        {/* Window chrome renders OUTSIDE the route tree; the RouterProvider
+            (the pane area) mounts inside the shell's content card. */}
+        <AppShell router={paneRouter}>
+          <RouterProvider router={paneRouter} />
+        </AppShell>
         {/* Surfaces a toast when a backgrounded canvas generation finishes,
             from anywhere in the app. Sibling of the router so it stays mounted
             across every route (not just the canvas space). Renders null. */}

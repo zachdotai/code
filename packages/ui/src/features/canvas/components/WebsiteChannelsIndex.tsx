@@ -12,7 +12,7 @@ import { useState } from "react";
 export function WebsiteChannelsIndex() {
   const { channels, isLoading } = useChannels();
   const [modalOpen, setModalOpen] = useState(false);
-  // A blank "+" tab parks at /website; RootLayout renders the placeholder for
+  // A blank "+" tab parks at /website; PaneChrome renders the placeholder for
   // it. Never redirect to the first channel while it's active.
   const activeTabIsBlank = useActiveTabIsBlank();
   // Guard against TanStack rendering this stale index for a couple of frames

@@ -65,11 +65,12 @@ export function initializePostHog(sessionId?: string) {
     defaults: "2026-05-30",
     api_host: apiHost,
     ui_host: uiHost,
-    // The epoch turns capture_pageview into "history_change". This app routes via
-    // createHashHistory() (packages/ui/src/router/router.ts), so the route lives in
-    // the URL hash and $pathname is identical for every screen — automatic pageviews
-    // would collapse all routes into one and corrupt route-level analytics. Opt out
-    // and rely on explicit instrumentation instead.
+    // The epoch turns capture_pageview into "history_change". This app routes
+    // via per-pane in-memory routers (packages/ui/src/router/createAppRouter.ts),
+    // so the route never reaches window.location and $pathname is identical for
+    // every screen — automatic pageviews would collapse all routes into one and
+    // corrupt route-level analytics. Opt out and rely on explicit
+    // instrumentation instead.
     capture_pageview: false,
     disable_session_recording: false,
     // Never let the project's remote canvasRecording config apply here: our
