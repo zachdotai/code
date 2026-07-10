@@ -7,6 +7,7 @@ import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
 import { boot } from "@posthog/di/contribution";
 import { ServiceProvider } from "@posthog/di/react";
 import App from "@posthog/ui/shell/App";
+import { initializePostHog } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { Providers } from "./Providers";
@@ -29,6 +30,17 @@ if (window.location.pathname === OAUTH_CALLBACK_PATH) {
   void requestPersistentStorage((message, ...args) =>
     console.info(`[web-storage] ${message}`, ...args),
   );
+
+  // Initialize posthog-js for product analytics + error tracking (desktop does
+  // this in its renderer boot). Gated on a real project key so a placeholder or
+  // unset VITE_POSTHOG_API_KEY leaves posthog uninitialized — the bound tracker
+  // and analytics service then no-op gracefully rather than firing at a bogus
+  // endpoint. In production web builds this also enables posthog-js's automatic
+  // unhandled-error/rejection capture and session recording.
+  const posthogKey = import.meta.env.VITE_POSTHOG_API_KEY;
+  if (typeof posthogKey === "string" && posthogKey.startsWith("phc_")) {
+    initializePostHog();
+  }
 
   // Restore any persisted session (desktop does this in main-process
   // bootstrap); flips authState.bootstrapComplete when done.

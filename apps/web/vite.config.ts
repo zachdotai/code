@@ -16,6 +16,11 @@ const subpath = (name: string) => ({
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Load .env from the repo root (mirrors apps/code's loadEnv(mode, "../..")) so
+  // VITE_POSTHOG_API_KEY / _HOST / _UI_HOST resolve here just as they do on
+  // desktop. Without this, envDir defaults to apps/web (no .env) and posthog-js
+  // never gets a key.
+  envDir: path.resolve(dir, "../.."),
   resolve: {
     alias: [
       subpath("di"),

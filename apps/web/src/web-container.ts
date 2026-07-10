@@ -246,6 +246,10 @@ import {
   type DiffWorkerFactory,
 } from "@posthog/ui/shell/diffWorkerHost";
 import {
+  posthogAnalyticsService,
+  posthogAnalyticsTracker,
+} from "@posthog/ui/shell/posthogAnalyticsImpl";
+import {
   HEDGEHOG_MODE_HOST,
   type HedgehogModeHost,
 } from "@posthog/ui/shell/hedgehogModeHost";
@@ -441,40 +445,25 @@ container
   .toDynamicValue(() => getSessionService())
   .inSingletonScope();
 
-// ── Stubbed web ports (TODO: real web adapters — posthog-js, etc.) ──
+// ── Feature flags (still stubbed — posthog-js flag source is a separate task) ──
 container.bind(FEATURE_FLAGS).toConstantValue({
   // Cloud-only host: enable cloud-task sync so __root's reconcile effect
   // registers the current user's cloud tasks into the (localStorage-backed)
-  // workspace store, populating the sidebar. Everything else stays off until a
-  // real flag source (posthog-js) is wired.
+  // workspace store, populating the sidebar. Everything else stays off until the
+  // posthog-js flag source (posthogFeatureFlags) is wired.
   isEnabled: (flagKey: string) => flagKey === SYNC_CLOUD_TASKS_FLAG,
   onFlagsLoaded: () => () => {},
 });
-container.bind(ANALYTICS_TRACKER).toConstantValue({
-  track: () => {},
-  setActiveTaskContext: () => {},
-  captureException: () => {},
-  identifyUser: () => {},
-  setUserGroups: () => {},
-  resetUser: () => {},
-  captureSurveyResponse: () => {},
-});
-let analyticsSessionId: string | null = null;
-container.bind(ANALYTICS_SERVICE).toConstantValue({
-  initialize: () => {},
-  track: () => {},
-  identify: () => {},
-  setCurrentUserId: () => {},
-  getCurrentUserId: () => null,
-  getOrCreateSessionId: () => {
-    if (!analyticsSessionId) analyticsSessionId = crypto.randomUUID();
-    return analyticsSessionId;
-  },
-  resetUser: () => {},
-  captureException: () => {},
-  flush: () => Promise.resolve(),
-  shutdown: () => Promise.resolve(),
-});
+
+// ── Analytics + error tracking (real posthog-js) ──
+// Both ports share the single posthog-js instance initialized in main.tsx (see
+// initializePostHog). ANALYTICS_TRACKER is the UI-wide event/exception port;
+// ANALYTICS_SERVICE is the platform port core services (cloud-task) report
+// through. Desktop backs the platform port with posthog-node in its main
+// process; web has no Node process, so it uses posthog-js for both. Both no-op
+// until posthog is initialized with a real project key.
+container.bind(ANALYTICS_TRACKER).toConstantValue(posthogAnalyticsTracker);
+container.bind(ANALYTICS_SERVICE).toConstantValue(posthogAnalyticsService);
 container.bind(IMPERATIVE_QUERY_CLIENT).toConstantValue(queryClient);
 
 container.bind(AUTH_SIDE_EFFECTS).to(WebAuthSideEffects);
