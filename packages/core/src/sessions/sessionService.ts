@@ -300,7 +300,11 @@ export interface SessionServiceDeps {
     setAdapter(taskRunId: string, adapter: Adapter): void;
     removeAdapter(taskRunId: string): void;
   };
-  readonly settings: { customInstructions?: string | null };
+  readonly settings: {
+    customInstructions?: string | null;
+    rtkEnabledLocal?: boolean;
+    rtkEnabledCloud?: boolean;
+  };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
   taskViewedApi: { markActivity(taskId: string): void };
@@ -1028,11 +1032,12 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const { customInstructions } = this.d.settings;
+      const { customInstructions, rtkEnabledLocal } = this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
         repoPath,
+        rtkEnabled: rtkEnabledLocal,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1363,6 +1368,7 @@ export class SessionService {
       permissionMode: executionMode,
       adapter,
       customInstructions: startCustomInstructions || undefined,
+      rtkEnabled: this.d.settings.rtkEnabledLocal,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
@@ -3088,6 +3094,7 @@ export class SessionService {
             artifactIds.length > 0 ? artifactIds : undefined,
           prAuthorshipMode,
           autoPublish: previousState.auto_publish === true || undefined,
+          rtkEnabled: this.d.settings.rtkEnabledCloud,
           runSource: getCloudRunSource(previousState),
           signalReportId:
             typeof previousState.signal_report_id === "string"

@@ -43,7 +43,10 @@ import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryS
 import type { EditorHandle } from "../../message-editor/types";
 import { toastError } from "../../notifications/errorDetails";
 import { useProvisioningStore } from "../../provisioning/store";
-import { useSettingsStore } from "../../settings/settingsStore";
+import {
+  getEffectiveCustomInstructions,
+  useSettingsStore,
+} from "../../settings/settingsStore";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
 import { useTasks } from "../../tasks/useTasks";
 import { useTourStore } from "../../tour/tourStore";
@@ -342,8 +345,9 @@ export function useTaskCreation({
           channelContext,
           channelName,
           channelId,
-          customInstructions: settings.customInstructions,
+          customInstructions: getEffectiveCustomInstructions(settings),
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
+          rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,
           importedMcpServers: localMcpServers.flatMap((server) =>
             server.remote ? [server.remote] : [],

@@ -788,6 +788,7 @@ export interface SignalSourceConnectedProperties {
     | "signals_scout"
     | "github"
     | "linear"
+    | "jira"
     | "zendesk"
     | "conversations"
     | "pganalyze"
@@ -843,6 +844,7 @@ export type ChannelsSurface =
 export type ChannelActionType =
   | "enter_space"
   | "leave_space"
+  | "toggle_channels"
   | "leave_feedback"
   | "nav_click"
   | "open_channel"

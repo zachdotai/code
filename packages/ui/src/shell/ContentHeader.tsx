@@ -1,7 +1,5 @@
 import { Cloud, Spinner } from "@phosphor-icons/react";
 import { Button as QuillButton } from "@posthog/quill";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { AutoresearchHeaderButton } from "@posthog/ui/features/autoresearch/AutoresearchHeaderButton";
@@ -19,19 +17,13 @@ import { HandoffConfirmDialog } from "@posthog/ui/features/sessions/components/H
 import { useHandoffDialogStore } from "@posthog/ui/features/sessions/handoffDialogStore";
 import { useSessionCallbacks } from "@posthog/ui/features/sessions/hooks/useSessionCallbacks";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
-import { SidebarTrigger } from "@posthog/ui/features/sidebar/components/SidebarTrigger";
-import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { SkillButtonsMenu } from "@posthog/ui/features/skill-buttons/components/SkillButtonsMenu";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useAppView } from "@posthog/ui/router/useAppView";
-import { track } from "@posthog/ui/shell/analytics";
-import { getHeaderSidebarPanelLayout } from "@posthog/ui/shell/headerSidebarPanel";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
-import { isMac, isWindows } from "@posthog/ui/utils/platform";
-import { Box, Flex } from "@radix-ui/themes";
-import { useNavigate } from "@tanstack/react-router";
+import { Flex } from "@radix-ui/themes";
 import { useState } from "react";
 
 const CLOUD_HANDOFF_FLAG = "phc-cloud-handoff";
@@ -135,122 +127,41 @@ function TaskDiffStatsBadge({ task }: { task: Task }) {
   );
 }
 
-// Switches from the Code space to the Channels space (project-bluebird). Sits to
-// the left of the sidebar toggle, replacing the old vertical app rail.
-function BluebirdButton() {
-  const navigate = useNavigate();
-  const bluebirdEnabled = useFeatureFlag(
-    PROJECT_BLUEBIRD_FLAG,
-    import.meta.env.DEV,
-  );
-  if (!bluebirdEnabled) return null;
-  return (
-    <div className="no-drag">
-      <QuillButton
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-            action_type: "enter_space",
-            surface: "header_button",
-          });
-          navigate({ to: "/website" });
-        }}
-      >
-        Bluebird
-      </QuillButton>
-    </div>
-  );
-}
-
-export const HEADER_HEIGHT = 36;
-const WINDOWS_TITLEBAR_INSET = 140;
-
-export function HeaderRow() {
+// The in-pane content header for the unified Bluebird chrome. Shows the active
+// view's title (pushed into the header store by each view) on the left and, on
+// a task detail, that task's action row on the right — the branch selector,
+// review-panel toggle, cloud/local handoff, skill buttons and task actions that
+// used to live in the Code header bar. Renders nothing when neither is present.
+// The /website space keeps its own header (WebsiteLayout), so this is mounted
+// only outside it.
+export function ContentHeader() {
   const content = useHeaderStore((state) => state.content);
   const view = useAppView();
 
-  const sidebarOpen = useSidebarStore((state) => state.open);
-  const sidebarWidth = useSidebarStore((state) => state.width);
-  const isResizing = useSidebarStore((state) => state.isResizing);
-  const setIsResizing = useSidebarStore((state) => state.setIsResizing);
-  const panel = getHeaderSidebarPanelLayout({
-    sidebarOpen,
-    sidebarWidth,
-    isMac,
-  });
-
   const activeTaskId = view.type === "task-detail" ? view.taskId : undefined;
-  // Read the live task from the list cache instead of a stale snapshot off the
-  // memoized view, so header content stays current while the user remains on
-  // the task.
   const { data: tasks } = useTasks();
   const activeTask = activeTaskId
     ? tasks?.find((t) => t.id === activeTaskId)
     : undefined;
   const activeWorkspace = useWorkspace(activeTaskId);
   const isCloudTask = activeWorkspace?.mode === "cloud";
-  const showTaskSection = view.type === "task-detail";
+  const showTaskSection = view.type === "task-detail" && Boolean(activeTask);
 
-  const handleLeftSidebarMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  };
+  if (!content && !showTaskSection) return null;
 
   return (
-    <Flex
-      align="center"
-      className="drag border-b border-b-(--gray-6)"
-      style={{
-        height: `${HEADER_HEIGHT}px`,
-        minHeight: `${HEADER_HEIGHT}px`,
-        paddingRight: isWindows ? `${WINDOWS_TITLEBAR_INSET}px` : undefined,
-      }}
-    >
-      <Flex
-        align="center"
-        justify={panel.justify}
-        px="2"
-        pr="3"
-        style={{
-          width: panel.width,
-          minWidth: panel.minWidth,
-          paddingLeft: panel.paddingLeft,
-          transition: isResizing ? "none" : "width 0.2s ease-in-out",
-        }}
-        className={
-          panel.showBorder
-            ? "relative h-full gap-2 border-r border-r-(--gray-6)"
-            : "relative h-full gap-2"
-        }
-      >
-        <BluebirdButton />
-        <SidebarTrigger />
-        {sidebarOpen && (
-          <Box
-            onMouseDown={handleLeftSidebarMouseDown}
-            className="no-drag absolute top-0 right-0 bottom-0 w-[4px] cursor-col-resize bg-transparent"
-            style={{
-              zIndex: 100,
-            }}
-          />
-        )}
-      </Flex>
-
+    <Flex align="center" className="h-10 shrink-0 border-border border-b px-3">
       {content && (
         <Flex
           align="center"
           justify="between"
-          pl="3"
           className="h-full min-w-0 flex-1 overflow-hidden"
         >
           {content}
         </Flex>
       )}
 
-      {showTaskSection && view.type === "task-detail" && activeTask && (
+      {showTaskSection && activeTask && (
         <Flex
           align="center"
           justify="end"

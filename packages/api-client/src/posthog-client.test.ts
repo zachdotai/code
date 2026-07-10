@@ -77,7 +77,7 @@ describe("PostHogAPIClient", () => {
     );
   });
 
-  it("maps plan to read-only for cloud Codex runs", async () => {
+  it("preserves plan for cloud Codex runs", async () => {
     const client = new PostHogAPIClient(
       "http://localhost:8000",
       async () => "token",
@@ -106,7 +106,7 @@ describe("PostHogAPIClient", () => {
       "/api/projects/{project_id}/tasks/{id}/run/",
       expect.objectContaining({
         body: expect.objectContaining({
-          initial_permission_mode: "read-only",
+          initial_permission_mode: "plan",
         }),
       }),
     );
@@ -275,6 +275,41 @@ describe("PostHogAPIClient", () => {
 
     const body = JSON.parse(fetch.mock.calls[0][0].overrides.body as string);
     expect(body.initial_permission_mode).toBe("plan");
+  });
+
+  it("serializes an rtk opt-out as rtk_enabled false on run creation", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "run-123", environment: "cloud" }),
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await client.createTaskRun("task-123", {
+      environment: "cloud",
+      mode: "interactive",
+      rtkEnabled: false,
+    });
+
+    const request = fetch.mock.calls[0][0] as {
+      overrides: { body: string };
+    };
+    expect(JSON.parse(request.overrides.body)).toMatchObject({
+      rtk_enabled: false,
+    });
   });
 
   it("omits the permission mode from created task runs without an adapter", async () => {
