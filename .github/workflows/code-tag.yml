@@ -61,9 +61,13 @@ jobs:
               --body "$1 Auto-release is limited to Team PostHog Code members, so this will ship with the next scheduled release instead." || true
           }
 
-          LABELER=$(gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/events" --paginate \
-            --jq '.[] | select(.event == "labeled" and (.label.name | ascii_downcase) == "create release") | "\(.id) \(.actor.login)"' \
-            | sort -n | tail -1 | cut -d" " -f2)
+          if ! LABEL_EVENTS=$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/events" --paginate \
+            --jq '.[] | select(.event == "labeled" and (.label.name | ascii_downcase) == "create release") | "\(.id) \(.actor.login)"'); then
+            skip "Could not determine who added the 'Create release' label (GitHub API error)."
+            exit 0
+          fi
+
+          LABELER=$(echo "$LABEL_EVENTS" | sort -n | tail -1 | cut -d" " -f2)
 
           if [ -z "$LABELER" ]; then
             skip "Could not determine who added the 'Create release' label."
