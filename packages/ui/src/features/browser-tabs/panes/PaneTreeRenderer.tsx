@@ -99,14 +99,24 @@ export function PaneTreeRenderer() {
               {renderNode(child, [...path, i])}
             </Panel>
             {i < node.children.length - 1 && (
+              // Chrome-style divider: a visible gutter between panes with a
+              // small centered grab pill (the whole gutter is the hit area).
               <PanelResizeHandle
                 onDragging={(isDragging) => {
                   if (!isDragging) commitSizes(path);
                 }}
-                className={`bg-border data-[resize-handle-state=drag]:bg-accent data-[resize-handle-state=hover]:bg-accent/60 ${
-                  node.direction === "row" ? "w-px" : "h-px"
+                // The `!` overrides globals.css's 1px hairline for the
+                // task-detail panels ([data-panel-resize-handle-enabled]).
+                className={`group flex items-center justify-center bg-chrome ${
+                  node.direction === "row" ? "w-2!" : "h-2!"
                 }`}
-              />
+              >
+                <div
+                  className={`rounded-full bg-border transition-colors duration-150 group-hover:bg-accent/60 group-data-[resize-handle-state=drag]:bg-accent ${
+                    node.direction === "row" ? "h-8 w-1" : "h-1 w-8"
+                  }`}
+                />
+              </PanelResizeHandle>
             )}
           </Fragment>
         ))}
