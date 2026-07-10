@@ -113,4 +113,6 @@ credential).
   the dependency list never reaches any client (desktop only expands local
   on-disk skills). Needs `dependencies` carried end-to-end through
   export → publish → the LlmSkill API (backend) → fetchSkillForInstall.
-- The bundle is not yet code-split (single large chunk).
+- Vendor libraries are split into cacheable chunks (the entry chunk dropped from
+  ~8.6 MB to ~5.1 MB; see `manualChunks` in `vite.config.ts`). Route-level
+  lazy-loading of the app code itself is a possible further optimization.
