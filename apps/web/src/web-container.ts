@@ -248,6 +248,7 @@ import {
 import {
   posthogAnalyticsService,
   posthogAnalyticsTracker,
+  posthogFeatureFlags,
 } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import {
   HEDGEHOG_MODE_HOST,
@@ -445,14 +446,17 @@ container
   .toDynamicValue(() => getSessionService())
   .inSingletonScope();
 
-// ── Feature flags (still stubbed — posthog-js flag source is a separate task) ──
+// ── Feature flags (real posthog-js, with one host-forced flag) ──
 container.bind(FEATURE_FLAGS).toConstantValue({
-  // Cloud-only host: enable cloud-task sync so __root's reconcile effect
-  // registers the current user's cloud tasks into the (localStorage-backed)
-  // workspace store, populating the sidebar. Everything else stays off until the
-  // posthog-js flag source (posthogFeatureFlags) is wired.
-  isEnabled: (flagKey: string) => flagKey === SYNC_CLOUD_TASKS_FLAG,
-  onFlagsLoaded: () => () => {},
+  // Cloud-task sync is a hard requirement of the cloud-only host — __root's
+  // reconcile effect derives the (localStorage-backed) sidebar task list from it
+  // — so force it on regardless of the remote flag, then defer every other flag
+  // to posthog-js. When posthog isn't initialized (no real VITE_POSTHOG_API_KEY),
+  // isEnabled returns false for everything else, so only the forced flag is on —
+  // same behavior as the old stub, but real flags light up once a key is set.
+  isEnabled: (flagKey: string) =>
+    flagKey === SYNC_CLOUD_TASKS_FLAG || posthogFeatureFlags.isEnabled(flagKey),
+  onFlagsLoaded: posthogFeatureFlags.onFlagsLoaded,
 });
 
 // ── Analytics + error tracking (real posthog-js) ──
