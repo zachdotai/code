@@ -1,3 +1,4 @@
+import { partitionLocalMcpServersForRun } from "@posthog/core/local-mcp/localMcpImport";
 import {
   getErrorTitle,
   prepareTaskInput,
@@ -322,6 +323,10 @@ export function useTaskCreation({
         }
 
         const settings = useSettingsStore.getState();
+        const localMcpServersForRun = partitionLocalMcpServersForRun(
+          localMcpServers,
+          adapter,
+        );
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -349,12 +354,8 @@ export function useTaskCreation({
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,
-          importedMcpServers: localMcpServers.flatMap((server) =>
-            server.remote ? [server.remote] : [],
-          ),
-          relayedMcpServers: localMcpServers
-            .filter((server) => server.availability === "requires_desktop")
-            .map((server) => ({ name: server.name })),
+          importedMcpServers: localMcpServersForRun.imported,
+          relayedMcpServers: localMcpServersForRun.relayed,
         });
 
         if (executionMode) {
