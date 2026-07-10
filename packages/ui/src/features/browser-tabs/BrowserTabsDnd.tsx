@@ -1,7 +1,12 @@
 import { type DragDropEvents, DragDropProvider } from "@dnd-kit/react";
 import { browserTabsStore } from "@posthog/core/browser-tabs/browserTabsStore";
 import { useHostTRPC } from "@posthog/host-router/react";
-import { primaryWindow, setTabOrder } from "@posthog/shared";
+import {
+  focusedPane,
+  primaryWindow,
+  setTabOrder,
+  type TabsSnapshot,
+} from "@posthog/shared";
 import { useMutation } from "@tanstack/react-query";
 import { type ReactNode, useRef } from "react";
 import { reorderWithinGroup, storedOrderIds } from "./displayOrder";
@@ -11,6 +16,13 @@ import { applyLocalTransform, persistWrite } from "./tabsSync";
 
 function sameOrder(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+// The strip the drag operates in: the primary window's focused pane (drags
+// start in the strip you interact with, which focuses its pane on pointerdown).
+function dragPaneId(snapshot: TabsSnapshot): string | undefined {
+  const win = primaryWindow(snapshot);
+  return win ? focusedPane(snapshot, win.id)?.id : undefined;
 }
 
 /**
@@ -36,9 +48,9 @@ export function BrowserTabsDndProvider({ children }: { children: ReactNode }) {
   const onDragStart: DragDropEvents["dragstart"] = (event) => {
     if (event.operation.source?.data?.type !== "browser-tab") return;
     const snapshot = browserTabsStore.getState().snapshot;
-    const win = primaryWindow(snapshot);
-    if (!win) return;
-    const order = storedOrderIds(snapshot, win.id);
+    const paneId = dragPaneId(snapshot);
+    if (!paneId) return;
+    const order = storedOrderIds(snapshot, paneId);
     initialOrder.current = order;
     useTabReorderStore.getState().setPreviewOrder(order);
   };
@@ -57,9 +69,9 @@ export function BrowserTabsDndProvider({ children }: { children: ReactNode }) {
     }
     const store = useTabReorderStore.getState();
     const snapshot = browserTabsStore.getState().snapshot;
-    const win = primaryWindow(snapshot);
-    if (!win) return;
-    const cur = store.previewOrder ?? storedOrderIds(snapshot, win.id);
+    const paneId = dragPaneId(snapshot);
+    if (!paneId) return;
+    const cur = store.previewOrder ?? storedOrderIds(snapshot, paneId);
     const pinnedTabIds = usePinnedTabsStore.getState().pinnedTabIds;
     // Reorder within the dragged tab's pin group only; cross-group drags are
     // rejected (pinned pills can't land among unpinned tabs, or vice versa).
@@ -85,15 +97,13 @@ export function BrowserTabsDndProvider({ children }: { children: ReactNode }) {
         return;
       }
       const snapshot = browserTabsStore.getState().snapshot;
-      const win = primaryWindow(snapshot);
-      if (!win) return;
+      const paneId = dragPaneId(snapshot);
+      if (!paneId) return;
       // Apply locally so the strip doesn't flit back to the mirror's pre-drop
       // order for a frame; persist through the tabsSync gate so the echo can't
       // rewind a newer write.
-      applyLocalTransform((s) => setTabOrder(s, win.id, order));
-      void persistWrite(() =>
-        setOrder.mutateAsync({ windowId: win.id, tabIds: order }),
-      );
+      applyLocalTransform((s) => setTabOrder(s, paneId, order));
+      void persistWrite(() => setOrder.mutateAsync({ paneId, tabIds: order }));
     });
   };
 

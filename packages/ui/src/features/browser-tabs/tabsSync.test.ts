@@ -15,12 +15,22 @@ function snap(tabIds: string[]): TabsSnapshot {
         id: "w1",
         isPrimary: true,
         bounds: null,
+        layout: { type: "leaf", paneId: "p1" },
+        focusedPaneId: "p1",
+      },
+    ],
+    panes: [
+      {
+        id: "p1",
+        windowId: "w1",
         activeTabId: tabIds[0] ?? null,
+        createdAt: 0,
       },
     ],
     tabs: tabIds.map((id, i) => ({
       id,
       windowId: "w1",
+      paneId: "p1",
       dashboardId: null,
       taskId: null,
       channelId: `c-${id}`,

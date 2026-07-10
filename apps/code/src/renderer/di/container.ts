@@ -195,8 +195,14 @@ const browserTabsClient: BrowserTabsClient = {
   openOrFocus: (input) => trpcClient.browserTabs.openOrFocus.mutate(input),
   newBlankTab: (input) => trpcClient.browserTabs.newBlankTab.mutate(input),
   setTabTarget: (input) => trpcClient.browserTabs.setTabTarget.mutate(input),
-  close: (tabId) => trpcClient.browserTabs.close.mutate({ tabId }),
+  close: (input) => trpcClient.browserTabs.close.mutate(input),
   setActiveTab: (input) => trpcClient.browserTabs.setActiveTab.mutate(input),
+  splitPane: (input) => trpcClient.browserTabs.splitPane.mutate(input),
+  moveTabToPane: (input) => trpcClient.browserTabs.moveTabToPane.mutate(input),
+  closePane: (input) => trpcClient.browserTabs.closePane.mutate(input),
+  setFocusedPane: (input) =>
+    trpcClient.browserTabs.setFocusedPane.mutate(input),
+  setPaneSizes: (input) => trpcClient.browserTabs.setPaneSizes.mutate(input),
   onSnapshotChange: (sub) =>
     trpcClient.browserTabs.onSnapshotChange.subscribe(undefined, sub),
 };

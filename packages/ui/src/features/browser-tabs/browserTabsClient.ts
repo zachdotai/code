@@ -1,4 +1,4 @@
-import type { TabsSnapshot } from "@posthog/shared";
+import type { SplitDropDirection, TabsSnapshot } from "@posthog/shared";
 
 interface Subscriber<T> {
   onData: (data: T) => void;
@@ -15,7 +15,7 @@ export interface BrowserTabsClient {
   getSnapshot(): Promise<TabsSnapshot>;
   getPrimaryWindowId(): Promise<string>;
   openOrFocus(input: {
-    windowId: string;
+    paneId: string;
     dashboardId: string | null;
     taskId: string | null;
     channelId: string | null;
@@ -25,7 +25,7 @@ export interface BrowserTabsClient {
     tabId?: string;
   }): Promise<TabsSnapshot>;
   newBlankTab(input: {
-    windowId: string;
+    paneId: string;
     /** Renderer-minted id (see openOrFocus.tabId). */
     tabId?: string;
   }): Promise<TabsSnapshot>;
@@ -37,10 +37,39 @@ export interface BrowserTabsClient {
     channelSection?: string | null;
     appView?: string | null;
   }): Promise<TabsSnapshot>;
-  close(tabId: string): Promise<TabsSnapshot>;
-  setActiveTab(input: {
+  close(input: {
+    tabId: string;
+    /** Renderer-minted id for the blank backfilled when a pane empties. */
+    blankTabId?: string;
+  }): Promise<TabsSnapshot>;
+  setActiveTab(input: { paneId: string; tabId: string }): Promise<TabsSnapshot>;
+  splitPane(input: {
     windowId: string;
-    tabId: string | null;
+    targetPaneId: string | null;
+    direction: SplitDropDirection;
+    tabId: string;
+    /** Renderer-minted id for the created pane (idempotent on replay). */
+    paneId?: string;
+  }): Promise<TabsSnapshot>;
+  moveTabToPane(input: {
+    tabId: string;
+    toPaneId: string;
+    index?: number;
+  }): Promise<TabsSnapshot>;
+  closePane(input: {
+    windowId: string;
+    paneId: string;
+    /** Renderer-minted blank id for the primary-window last-pane reset. */
+    blankTabId?: string;
+  }): Promise<TabsSnapshot>;
+  setFocusedPane(input: {
+    windowId: string;
+    paneId: string;
+  }): Promise<TabsSnapshot>;
+  setPaneSizes(input: {
+    windowId: string;
+    path: number[];
+    sizes: number[];
   }): Promise<TabsSnapshot>;
   onSnapshotChange(sub: Subscriber<TabsSnapshot>): { unsubscribe: () => void };
 }

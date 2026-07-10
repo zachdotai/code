@@ -1,12 +1,12 @@
 import type { TabsSnapshot } from "@posthog/shared";
 
-/** A window's tab ids in stored order (by position), pin-agnostic. */
+/** A pane's tab ids in stored order (by position), pin-agnostic. */
 export function storedOrderIds(
   snapshot: TabsSnapshot,
-  windowId: string,
+  paneId: string,
 ): string[] {
   return snapshot.tabs
-    .filter((t) => t.windowId === windowId)
+    .filter((t) => t.paneId === paneId)
     .sort((a, b) => a.position - b.position)
     .map((t) => t.id);
 }
@@ -29,16 +29,16 @@ export function partitionPinnedFirst(
 }
 
 /**
- * The strip's displayed tab order for a window: stored order with the
+ * The strip's displayed tab order for a pane: stored order with the
  * pinned-first partition applied. Shared by the strip's render and the drag
  * handler so drops always commit against what was on screen.
  */
 export function displayedTabIds(
   snapshot: TabsSnapshot,
-  windowId: string,
+  paneId: string,
   pinnedTabIds: string[],
 ): string[] {
-  return partitionPinnedFirst(storedOrderIds(snapshot, windowId), pinnedTabIds);
+  return partitionPinnedFirst(storedOrderIds(snapshot, paneId), pinnedTabIds);
 }
 
 /**
@@ -79,14 +79,12 @@ export function reorderWithinGroup(
  */
 export function frontOfUnpinnedOrder(
   snapshot: TabsSnapshot,
-  windowId: string,
+  paneId: string,
   tabId: string,
   pinnedTabIds: string[],
 ): string[] {
   const remainingPinned = new Set(pinnedTabIds.filter((id) => id !== tabId));
-  const stored = storedOrderIds(snapshot, windowId).filter(
-    (id) => id !== tabId,
-  );
+  const stored = storedOrderIds(snapshot, paneId).filter((id) => id !== tabId);
   const firstUnpinned = stored.findIndex((id) => !remainingPinned.has(id));
   const at = firstUnpinned === -1 ? stored.length : firstUnpinned;
   return [...stored.slice(0, at), tabId, ...stored.slice(at)];

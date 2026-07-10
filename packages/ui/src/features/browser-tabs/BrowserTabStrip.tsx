@@ -12,14 +12,16 @@ import {
   closeTab as closeTabLocal,
   closeTabs as closeTabsLocal,
   decideTabNavigation,
+  focusedPane,
   newBlankTab as newBlankTabLocal,
   openOrFocusTab as openOrFocusLocal,
   PROJECT_BLUEBIRD_FLAG,
   primaryWindow,
+  setPaneActiveTab,
   setTabOrder,
   setTabTarget as setTabTargetLocal,
-  setWindowActiveTab,
   type TabsSnapshot,
+  windowActiveTab,
 } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
@@ -235,6 +237,10 @@ export function BrowserTabStrip() {
 
   const win = primaryWindow(snapshot);
   const windowId = win?.id;
+  // Until the pane tree renders per-pane strips, this strip fronts the primary
+  // window's FOCUSED pane (the only pane in single-pane mode).
+  const pane = win ? focusedPane(snapshot, win.id) : undefined;
+  const paneId = pane?.id;
   // The history state flips the instant you navigate, while the server snapshot
   // round-trips — so prefer it for "which tab is active" to avoid a one-step lag
   // in the highlight and the name. Validate it against the live tab list first:
@@ -244,7 +250,7 @@ export function BrowserTabStrip() {
   const historyTabIsLive =
     !!historyTabId && snapshot.tabs.some((t) => t.id === historyTabId);
   const activeTabId =
-    (historyTabIsLive ? historyTabId : null) ?? win?.activeTabId ?? null;
+    (historyTabIsLive ? historyTabId : null) ?? pane?.activeTabId ?? null;
 
   // Names feed the tab labels. The channel canvas list + all-tasks list cover
   // most tabs; a direct fetch of the *current route's* canvas/task (warm cache
@@ -304,38 +310,43 @@ export function BrowserTabStrip() {
     };
     const mirror = readMirror();
     const mirrorWin = primaryWindow(mirror);
-    const mirrorTabs = mirror.tabs.filter((t) => t.windowId === windowId);
-    const mirrorActive = mirrorWin?.activeTabId
-      ? mirrorTabs.find((t) => t.id === mirrorWin.activeTabId)
+    const mirrorPane = mirrorWin
+      ? focusedPane(mirror, mirrorWin.id)
       : undefined;
+    if (!mirrorPane) return;
+    const mirrorPaneId = mirrorPane.id;
+    const mirrorTabs = mirror.tabs.filter((t) => t.paneId === mirrorPaneId);
+    const mirrorActive = mirrorPane.activeTabId
+      ? mirrorTabs.find((t) => t.id === mirrorPane.activeTabId)
+      : undefined;
+    const identityOf = (t: (typeof mirror.tabs)[number]) => ({
+      id: t.id,
+      dashboardId: t.dashboardId,
+      taskId: t.taskId,
+      channelId: t.channelId,
+      channelSection: t.channelSection,
+      appView: t.appView,
+    });
     const decision = decideTabNavigation({
       historyTabId: historyTabId ?? null,
       // Validates history tags: back/forward can replay an entry tagged with a
       // closed tab; activating that dead id would persist a dangling
       // activeTabId, after which every nav "opens" (no active tab found).
-      windowTabIds: mirrorTabs.map((t) => t.id),
-      // Identities of this window's tabs, so a navigation to a target already
+      paneTabIds: mirrorTabs.map((t) => t.id),
+      // Identities of this pane's tabs, so a navigation to a target already
       // open in another tab focuses it instead of duplicating it (and a rapid
       // switch whose history stamp was lost self-heals to the right tab).
-      windowTabs: mirrorTabs.map((t) => ({
-        id: t.id,
-        dashboardId: t.dashboardId,
-        taskId: t.taskId,
-        channelId: t.channelId,
-        channelSection: t.channelSection,
-        appView: t.appView,
-      })),
-      serverActiveTabId: mirrorWin?.activeTabId ?? null,
-      activeTab: mirrorActive
-        ? {
-            id: mirrorActive.id,
-            dashboardId: mirrorActive.dashboardId,
-            taskId: mirrorActive.taskId,
-            channelId: mirrorActive.channelId,
-            channelSection: mirrorActive.channelSection,
-            appView: mirrorActive.appView,
-          }
-        : null,
+      paneTabs: mirrorTabs.map(identityOf),
+      // Window-level dedup: an identity open in another pane focuses that pane
+      // instead of mounting the same content twice (double PTY attach).
+      otherPanes: mirror.panes
+        .filter((p) => p.windowId === windowId && p.id !== mirrorPaneId)
+        .map((p) => ({
+          paneId: p.id,
+          tabs: mirror.tabs.filter((t) => t.paneId === p.id).map(identityOf),
+        })),
+      paneActiveTabId: mirrorPane.activeTabId ?? null,
+      activeTab: mirrorActive ? identityOf(mirrorActive) : null,
       routeDashboardId: params.dashboardId ?? null,
       routeTaskId: params.taskId ?? null,
       routeChannelId: params.channelId ?? null,
@@ -346,10 +357,13 @@ export function BrowserTabStrip() {
       case "activate": {
         // Focus in the mirror synchronously; persist in the background.
         applyLocalTransform((s) =>
-          setWindowActiveTab(s, windowId, decision.tabId),
+          setPaneActiveTab(s, mirrorPaneId, decision.tabId),
         );
         void persistWrite(() =>
-          setActiveTab.mutateAsync({ windowId, tabId: decision.tabId }),
+          setActiveTab.mutateAsync({
+            paneId: mirrorPaneId,
+            tabId: decision.tabId,
+          }),
         );
         // Heal the history tag to the tab we're activating. Normally it already
         // matches (a tagged switch), so `stamp` no-ops. When the dedup path
@@ -357,6 +371,23 @@ export function BrowserTabStrip() {
         // was lost), the entry still carries the STALE tab — left unhealed, the
         // first branch above would re-activate it next render and ping-pong with
         // the dedup (a "Maximum update depth exceeded" loop). Stamping breaks it.
+        stamp(decision.tabId);
+        break;
+      }
+      case "focusPane": {
+        // The route's identity already lives in another pane: focus that pane
+        // and its tab rather than duplicating the content here. (Unreachable
+        // until the pane tree renders multiple panes, but the decision is
+        // wired so per-pane strips inherit it unchanged.)
+        applyLocalTransform((s) =>
+          setPaneActiveTab(s, decision.paneId, decision.tabId),
+        );
+        void persistWrite(() =>
+          setActiveTab.mutateAsync({
+            paneId: decision.paneId,
+            tabId: decision.tabId,
+          }),
+        );
         stamp(decision.tabId);
         break;
       }
@@ -380,7 +411,7 @@ export function BrowserTabStrip() {
       }
       case "open": {
         const input = {
-          windowId,
+          paneId: mirrorPaneId,
           dashboardId: decision.dashboardId,
           taskId: decision.taskId,
           channelId: decision.channelId,
@@ -435,7 +466,7 @@ export function BrowserTabStrip() {
   }, [channels]);
 
   const tabs: TabView[] = useMemo(() => {
-    if (!windowId) return [];
+    if (!paneId) return [];
     // Reference the reactive sources directly so labels recompute the instant a
     // name resolves — not just when the snapshot changes.
     const resolveCanvas = (id: string) => {
@@ -458,7 +489,7 @@ export function BrowserTabStrip() {
     // Base stored order — during a drag, the transient preview order overrides
     // it (filtered to live tabs; any tab not in the preview is appended in
     // stored order). The pinned-first partition is applied on top.
-    const stored = storedOrderIds(snapshot, windowId);
+    const stored = storedOrderIds(snapshot, paneId);
     let base = stored;
     if (previewOrder) {
       const live = new Set(stored);
@@ -533,7 +564,7 @@ export function BrowserTabStrip() {
       });
   }, [
     snapshot,
-    windowId,
+    paneId,
     pinnedTabIds,
     previewOrder,
     channelName,
@@ -626,31 +657,42 @@ export function BrowserTabStrip() {
 
   const handleSelect = (tabId: string) => {
     const tab = snapshot.tabs.find((t) => t.id === tabId);
-    if (!tab || !windowId) return;
+    if (!tab || !paneId) return;
     // goToTab stamps historyTabId; the navigation effect picks it up and issues
     // setActiveTab via the "activate" path — no need to also fire it here.
     goToTab(tab);
   };
 
-  // Navigate to the close's survivor, or — when the last tab was closed — to the
-  // flag's default landing (#me / new-task), never the /website index (which
-  // would redirect to channels[0], re-opening a random channel tab).
-  const applyCloseResult = (next: TabsSnapshot) => {
+  // Navigate to the close's survivor. When the close emptied the pane, the
+  // survivor is the freshly backfilled blank tab (`backfilledTabId`) — fill it
+  // with the flag's default landing (#me / new-task) instead of parking it,
+  // never via the /website index (whose redirect would hijack it to
+  // channels[0]). A pre-existing blank tab that merely inherits focus keeps
+  // its parked state.
+  const applyCloseResult = (next: TabsSnapshot, backfilledTabId: string) => {
     const w = primaryWindow(next);
-    const active = w?.activeTabId
-      ? next.tabs.find((t) => t.id === w.activeTabId)
-      : null;
-    if (active) goToTab(active);
-    else landOnDefault();
+    const active = w ? windowActiveTab(next, w.id) : undefined;
+    if (!active) return;
+    if (active.id === backfilledTabId) landOnDefault(active.id);
+    else goToTab(active);
   };
 
   // Close applies locally and navigates to the survivor in the same tick — the
   // /website index therefore always renders against the post-close snapshot
-  // and can't redirect (re-opening a tab) mid-flight.
+  // and can't redirect (re-opening a tab) mid-flight. The blank-backfill id is
+  // minted here so the optimistic apply and the persisted state agree on it.
   const handleClose = (tabId: string) => {
-    const next = applyLocalTransform((s) => closeTabLocal(s, tabId).snapshot);
-    applyCloseResult(next);
-    void persistWrite(() => close.mutateAsync({ tabId }));
+    const blankTabId = crypto.randomUUID();
+    const next = applyLocalTransform(
+      (s) =>
+        closeTabLocal(s, tabId, {
+          makeId: () => crypto.randomUUID(),
+          now: Date.now,
+          blankTabId,
+        }).snapshot,
+    );
+    applyCloseResult(next, blankTabId);
+    void persistWrite(() => close.mutateAsync({ tabId, blankTabId }));
   };
 
   // Unpinning re-homes the tab at the front of the unpinned block. Apply the
@@ -659,10 +701,10 @@ export function BrowserTabStrip() {
   const handleTogglePin = (tabId: string) => {
     const wasPinned = pinnedTabIds.includes(tabId);
     togglePinned(tabId);
-    if (!wasPinned || !windowId) return;
-    const order = frontOfUnpinnedOrder(snapshot, windowId, tabId, pinnedTabIds);
-    applyLocalTransform((s) => setTabOrder(s, windowId, order));
-    void persistWrite(() => setOrder.mutateAsync({ windowId, tabIds: order }));
+    if (!wasPinned || !paneId) return;
+    const order = frontOfUnpinnedOrder(snapshot, paneId, tabId, pinnedTabIds);
+    applyLocalTransform((s) => setTabOrder(s, paneId, order));
+    void persistWrite(() => setOrder.mutateAsync({ paneId, tabIds: order }));
   };
 
   // Bulk closes operate on the strip's *displayed* order (pinned-first) and
@@ -670,12 +712,18 @@ export function BrowserTabStrip() {
   // always survives) takes focus if the active tab was among those closed.
   const handleCloseMany = (tabIds: string[], anchorTabId: string) => {
     if (tabIds.length === 0) return;
+    const blankTabId = crypto.randomUUID();
     const next = applyLocalTransform((s) =>
-      closeTabsLocal(s, tabIds, anchorTabId),
+      closeTabsLocal(
+        s,
+        tabIds,
+        { makeId: () => crypto.randomUUID(), now: Date.now, blankTabId },
+        anchorTabId,
+      ),
     );
-    applyCloseResult(next);
+    applyCloseResult(next, blankTabId);
     void persistWrite(() =>
-      closeMany.mutateAsync({ tabIds, focusTabId: anchorTabId }),
+      closeMany.mutateAsync({ tabIds, focusTabId: anchorTabId, blankTabId }),
     );
   };
 
@@ -751,15 +799,15 @@ export function BrowserTabStrip() {
   // same id so the durable state matches. The service is idempotent on the
   // minted id, so a replay can't append a duplicate.
   const handleNewTab = () => {
-    if (!windowId) return;
+    if (!paneId) return;
     const tabId = crypto.randomUUID();
     applyLocalTransform(
       (s) =>
-        newBlankTabLocal(s, { windowId, makeId: () => tabId, now: Date.now })
+        newBlankTabLocal(s, { paneId, makeId: () => tabId, now: Date.now })
           .snapshot,
     );
     landOnDefault(tabId);
-    void persistWrite(() => newBlankTab.mutateAsync({ windowId, tabId }));
+    void persistWrite(() => newBlankTab.mutateAsync({ paneId, tabId }));
   };
 
   // Cmd/Ctrl+T opens a new browser tab. Bound here (not globally) so it only

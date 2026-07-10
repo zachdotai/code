@@ -21,7 +21,7 @@ function snapshotsEqual(a: TabsSnapshot, b: TabsSnapshot): boolean {
 }
 
 export const browserTabsStore = createStore<BrowserTabsState>((set) => ({
-  snapshot: { windows: [], tabs: [] },
+  snapshot: { windows: [], panes: [], tabs: [] },
   // Skip redundant writes: every tab mutation's onSuccess re-applies the
   // authoritative snapshot even when an optimistic write already set an equal
   // value. Without this guard that echo re-renders every subscriber and re-runs

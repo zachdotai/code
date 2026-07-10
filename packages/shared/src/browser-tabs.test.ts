@@ -7,35 +7,84 @@ import {
   newBlankTab,
   openOrFocusTab,
   POSITION_GAP,
+  paneTabs,
   primaryWindow,
-  primaryWindowHasNoTabs,
+  setPaneActiveTab,
   setTabOrder,
   setTabTarget,
-  setWindowActiveTab,
 } from "./browser-tabs";
-import type { TabsSnapshot } from "./browser-tabs-schemas";
+import type {
+  BrowserPane,
+  PaneLayoutNode,
+  TabsSnapshot,
+} from "./browser-tabs-schemas";
 
 let idCounter = 0;
 const makeId = () => `tab-${++idCounter}`;
 let clock = 0;
 const now = () => ++clock;
 
-function snapshot(partial?: Partial<TabsSnapshot>): TabsSnapshot {
-  return {
-    windows: [{ id: "w1", isPrimary: true, bounds: null, activeTabId: null }],
-    tabs: [],
-    ...partial,
-  };
+type WindowSpec = {
+  id: string;
+  isPrimary?: boolean;
+  panes: string[];
+  focusedPaneId?: string;
+};
+
+/** Build a snapshot: each window gets a pane row per pane id, a leaf layout for
+ * a single pane or a row split for several, and focus on its first pane. */
+function snap(
+  specs: WindowSpec[] = [{ id: "w1", panes: ["p1"] }],
+): TabsSnapshot {
+  const panes: BrowserPane[] = [];
+  const windows = specs.map((spec, i) => {
+    for (const paneId of spec.panes) {
+      panes.push({
+        id: paneId,
+        windowId: spec.id,
+        activeTabId: null,
+        createdAt: 0,
+      });
+    }
+    const layout: PaneLayoutNode =
+      spec.panes.length === 1
+        ? { type: "leaf", paneId: spec.panes[0] }
+        : {
+            type: "split",
+            direction: "row",
+            children: spec.panes.map((paneId) => ({
+              type: "leaf" as const,
+              paneId,
+            })),
+            sizes: spec.panes.map(() => 1 / spec.panes.length),
+          };
+    return {
+      id: spec.id,
+      isPrimary: spec.isPrimary ?? i === 0,
+      bounds: null,
+      layout,
+      focusedPaneId: spec.focusedPaneId ?? spec.panes[0],
+    };
+  });
+  return { windows, panes, tabs: [] };
+}
+
+function paneActive(s: TabsSnapshot, paneId: string): string | null {
+  return s.panes.find((p) => p.id === paneId)?.activeTabId ?? null;
+}
+
+function focusedPaneIdOf(s: TabsSnapshot, windowId = "w1"): string | undefined {
+  return s.windows.find((w) => w.id === windowId)?.focusedPaneId;
 }
 
 function open(
   s: TabsSnapshot,
-  windowId: string,
+  paneId: string,
   dashboardId: string,
   channelId: string | null = "c1",
 ) {
   return openOrFocusTab(s, {
-    windowId,
+    paneId,
     dashboardId,
     taskId: null,
     channelId,
@@ -45,38 +94,46 @@ function open(
 }
 
 describe("openOrFocusTab", () => {
-  it("opens a new tab and makes it active", () => {
-    const r = open(snapshot(), "w1", "dash-a");
+  it("opens a new tab and makes it the pane's active tab", () => {
+    const r = open(snap(), "p1", "dash-a");
     expect(r.opened).toBe(true);
     expect(r.snapshot.tabs).toHaveLength(1);
-    expect(r.snapshot.windows[0].activeTabId).toBe(r.tabId);
+    expect(paneActive(r.snapshot, "p1")).toBe(r.tabId);
     expect(r.snapshot.tabs[0].position).toBe(POSITION_GAP);
+    expect(r.snapshot.tabs[0].paneId).toBe("p1");
+    expect(r.snapshot.tabs[0].windowId).toBe("w1");
   });
 
-  it("dedups within a window: focuses the existing tab instead of opening", () => {
-    const first = open(snapshot(), "w1", "dash-a");
-    const second = open(first.snapshot, "w1", "dash-a");
+  it("dedups within a pane: focuses the existing tab instead of opening", () => {
+    const first = open(snap(), "p1", "dash-a");
+    const second = open(first.snapshot, "p1", "dash-a");
     expect(second.opened).toBe(false);
     expect(second.tabId).toBe(first.tabId);
     expect(second.snapshot.tabs).toHaveLength(1);
   });
 
   it("allows the same canvas in two different windows", () => {
-    const twoWindows = snapshot({
-      windows: [
-        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
-        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
-      ],
-    });
-    const a = open(twoWindows, "w1", "dash-a");
-    const b = open(a.snapshot, "w2", "dash-a");
+    const twoWindows = snap([
+      { id: "w1", panes: ["p1"] },
+      { id: "w2", isPrimary: false, panes: ["p2"] },
+    ]);
+    const a = open(twoWindows, "p1", "dash-a");
+    const b = open(a.snapshot, "p2", "dash-a");
+    expect(b.opened).toBe(true);
+    expect(b.snapshot.tabs).toHaveLength(2);
+  });
+
+  it("allows the same canvas in two panes of one window (dedup is per pane)", () => {
+    const s = snap([{ id: "w1", panes: ["p1", "p2"] }]);
+    const a = open(s, "p1", "dash-a");
+    const b = open(a.snapshot, "p2", "dash-a");
     expect(b.opened).toBe(true);
     expect(b.snapshot.tabs).toHaveLength(2);
   });
 
   it("treats a channel's sections as distinct tabs but dedups the same one", () => {
-    const history = openOrFocusTab(snapshot(), {
-      windowId: "w1",
+    const history = openOrFocusTab(snap(), {
+      paneId: "p1",
       dashboardId: null,
       taskId: null,
       channelId: "c1",
@@ -85,7 +142,7 @@ describe("openOrFocusTab", () => {
       now,
     });
     const artifacts = openOrFocusTab(history.snapshot, {
-      windowId: "w1",
+      paneId: "p1",
       dashboardId: null,
       taskId: null,
       channelId: "c1",
@@ -96,7 +153,7 @@ describe("openOrFocusTab", () => {
     expect(artifacts.opened).toBe(true);
     expect(artifacts.snapshot.tabs).toHaveLength(2);
     const historyAgain = openOrFocusTab(artifacts.snapshot, {
-      windowId: "w1",
+      paneId: "p1",
       dashboardId: null,
       taskId: null,
       channelId: "c1",
@@ -109,63 +166,111 @@ describe("openOrFocusTab", () => {
   });
 
   it("appends new tabs after existing ones", () => {
-    const a = open(snapshot(), "w1", "dash-a");
-    const b = open(a.snapshot, "w1", "dash-b");
+    const a = open(snap(), "p1", "dash-a");
+    const b = open(a.snapshot, "p1", "dash-b");
     const positions = b.snapshot.tabs
       .map((t) => t.position)
       .sort((x, y) => x - y);
     expect(positions).toEqual([POSITION_GAP, POSITION_GAP * 2]);
   });
+
+  it("focuses the tab's pane in its window", () => {
+    const s = snap([{ id: "w1", panes: ["p1", "p2"] }]);
+    const r = open(s, "p2", "dash-a");
+    expect(focusedPaneIdOf(r.snapshot)).toBe("p2");
+  });
 });
 
 describe("closeTab", () => {
   it("focuses the neighbouring tab when the active tab closes", () => {
-    let s = snapshot();
-    const a = open(s, "w1", "dash-a");
-    const b = open(a.snapshot, "w1", "dash-b");
-    s = b.snapshot; // active = b
-    const r = closeTab(s, b.tabId);
+    const a = open(snap(), "p1", "dash-a");
+    const b = open(a.snapshot, "p1", "dash-b");
+    const r = closeTab(b.snapshot, b.tabId, { makeId, now });
     expect(r.snapshot.tabs).toHaveLength(1);
     expect(r.nextActiveTabId).toBe(a.tabId);
-    expect(r.snapshot.windows[0].activeTabId).toBe(a.tabId);
+    expect(paneActive(r.snapshot, "p1")).toBe(a.tabId);
   });
 
-  it("closes a secondary window when its last tab closes", () => {
-    const s = snapshot({
-      windows: [
-        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
-        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
-      ],
-    });
-    const t = open(s, "w2", "dash-a");
-    const r = closeTab(t.snapshot, t.tabId);
+  it("closes a single-pane secondary window when its last tab closes", () => {
+    const s = snap([
+      { id: "w1", panes: ["p1"] },
+      { id: "w2", isPrimary: false, panes: ["p2"] },
+    ]);
+    const t = open(s, "p2", "dash-a");
+    const r = closeTab(t.snapshot, t.tabId, { makeId, now });
     expect(r.closedWindowId).toBe("w2");
     expect(r.snapshot.windows.map((w) => w.id)).toEqual(["w1"]);
+    expect(r.snapshot.panes.map((p) => p.id)).toEqual(["p1"]);
   });
 
-  it("shows the landing (null active) when the primary's last tab closes", () => {
-    const t = open(snapshot(), "w1", "dash-a");
-    const r = closeTab(t.snapshot, t.tabId);
+  it("backfills a blank tab when the primary pane's last tab closes", () => {
+    const t = open(snap(), "p1", "dash-a");
+    const r = closeTab(t.snapshot, t.tabId, { makeId, now });
     expect(r.closedWindowId).toBeNull();
-    expect(r.snapshot.windows[0].activeTabId).toBeNull();
-    expect(r.snapshot.tabs).toHaveLength(0);
+    expect(r.snapshot.tabs).toHaveLength(1);
+    const blank = r.snapshot.tabs[0];
+    expect(blank.dashboardId).toBeNull();
+    expect(blank.channelId).toBeNull();
+    expect(r.nextActiveTabId).toBe(blank.id);
+    expect(paneActive(r.snapshot, "p1")).toBe(blank.id);
+  });
+
+  it("mints the blank backfill with deps.blankTabId when provided", () => {
+    const t = open(snap(), "p1", "dash-a");
+    const r = closeTab(t.snapshot, t.tabId, {
+      makeId,
+      now,
+      blankTabId: "blank-9",
+    });
+    expect(r.snapshot.tabs.map((x) => x.id)).toEqual(["blank-9"]);
+    expect(r.nextActiveTabId).toBe("blank-9");
+  });
+
+  it("falls back to makeId for the blank backfill without deps.blankTabId", () => {
+    const t = open(snap(), "p1", "dash-a");
+    const r = closeTab(t.snapshot, t.tabId, { makeId: () => "made-1", now });
+    expect(r.snapshot.tabs.map((x) => x.id)).toEqual(["made-1"]);
+    expect(r.nextActiveTabId).toBe("made-1");
+  });
+
+  it("backfills instead of closing a multi-pane secondary window's pane", () => {
+    const s = snap([
+      { id: "w1", panes: ["p1"] },
+      { id: "w2", isPrimary: false, panes: ["p2", "p3"] },
+    ]);
+    const a = open(s, "p2", "dash-a");
+    const b = open(a.snapshot, "p3", "dash-b");
+    const r = closeTab(b.snapshot, a.tabId, { makeId, now });
+    expect(r.closedWindowId).toBeNull();
+    expect(r.snapshot.windows.map((w) => w.id)).toEqual(["w1", "w2"]);
+    const blank = r.snapshot.tabs.find((t) => t.paneId === "p2");
+    expect(blank?.dashboardId).toBeNull();
+    expect(r.nextActiveTabId).toBe(blank?.id);
+  });
+
+  it("is a no-op for an unknown tab id", () => {
+    const s = snap();
+    const r = closeTab(s, "nope", { makeId, now });
+    expect(r.snapshot).toBe(s);
+    expect(r.nextActiveTabId).toBeNull();
+    expect(r.closedWindowId).toBeNull();
   });
 });
 
 describe("newBlankTab", () => {
   it("appends a focused blank tab with no canvas", () => {
-    const existing = open(snapshot(), "w1", "dash-a");
-    const r = newBlankTab(existing.snapshot, { windowId: "w1", makeId, now });
+    const existing = open(snap(), "p1", "dash-a");
+    const r = newBlankTab(existing.snapshot, { paneId: "p1", makeId, now });
     expect(r.snapshot.tabs).toHaveLength(2);
     const blank = r.snapshot.tabs.find((t) => t.id === r.tabId);
     expect(blank?.dashboardId).toBeNull();
-    expect(r.snapshot.windows[0].activeTabId).toBe(r.tabId);
+    expect(paneActive(r.snapshot, "p1")).toBe(r.tabId);
   });
 });
 
 describe("setTabTarget", () => {
   it("points an existing tab at a canvas and focuses it (in-tab nav)", () => {
-    const blank = newBlankTab(snapshot(), { windowId: "w1", makeId, now });
+    const blank = newBlankTab(snap(), { paneId: "p1", makeId, now });
     const next = setTabTarget(blank.snapshot, {
       tabId: blank.tabId,
       dashboardId: "dash-x",
@@ -177,11 +282,11 @@ describe("setTabTarget", () => {
     expect(tab?.dashboardId).toBe("dash-x");
     expect(tab?.channelId).toBe("c1");
     expect(next.tabs).toHaveLength(1); // replaced contents, no new tab
-    expect(next.windows[0].activeTabId).toBe(blank.tabId);
+    expect(paneActive(next, "p1")).toBe(blank.tabId);
   });
 
   it("points an existing tab at a task (tasks are first-class targets)", () => {
-    const blank = newBlankTab(snapshot(), { windowId: "w1", makeId, now });
+    const blank = newBlankTab(snap(), { paneId: "p1", makeId, now });
     const next = setTabTarget(blank.snapshot, {
       tabId: blank.tabId,
       dashboardId: null,
@@ -195,7 +300,7 @@ describe("setTabTarget", () => {
   });
 
   it("is a no-op for an unknown tab id", () => {
-    const s = snapshot();
+    const s = snap();
     expect(
       setTabTarget(s, {
         tabId: "nope",
@@ -211,7 +316,7 @@ describe("setTabTarget", () => {
 describe("decideTabNavigation", () => {
   const base = {
     historyTabId: null as string | null,
-    serverActiveTabId: null as string | null,
+    paneActiveTabId: null as string | null,
     activeTab: null as {
       id: string;
       dashboardId: string | null;
@@ -227,7 +332,7 @@ describe("decideTabNavigation", () => {
       decideTabNavigation({
         ...base,
         historyTabId: "tab-b",
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
       }),
     ).toEqual({ type: "activate", tabId: "tab-b" });
   });
@@ -239,7 +344,7 @@ describe("decideTabNavigation", () => {
       decideTabNavigation({
         ...base,
         historyTabId: "tab-a",
-        serverActiveTabId: "tab-b",
+        paneActiveTabId: "tab-b",
       }),
     ).toEqual({ type: "activate", tabId: "tab-a" });
   });
@@ -249,7 +354,7 @@ describe("decideTabNavigation", () => {
       decideTabNavigation({
         ...base,
         historyTabId: "tab-a",
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
       }),
     ).toEqual({ type: "noop" });
   });
@@ -258,7 +363,7 @@ describe("decideTabNavigation", () => {
     expect(
       decideTabNavigation({
         ...base,
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
         activeTab: { id: "tab-a", dashboardId: "old", taskId: null },
         routeDashboardId: "new",
         routeChannelId: "c1",
@@ -282,7 +387,7 @@ describe("decideTabNavigation", () => {
       decideTabNavigation({
         ...base,
         historyTabId: "tab-a",
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
         activeTab: { id: "tab-a", dashboardId: "old", taskId: null },
         routeDashboardId: "new",
         routeChannelId: "c1",
@@ -322,7 +427,7 @@ describe("decideTabNavigation", () => {
     expect(
       decideTabNavigation({
         ...base,
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
         activeTab: {
           id: "tab-a",
           dashboardId: null,
@@ -367,7 +472,7 @@ describe("decideTabNavigation", () => {
     expect(
       decideTabNavigation({
         ...base,
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
         activeTab: {
           id: "tab-a",
           dashboardId: null,
@@ -385,7 +490,7 @@ describe("decideTabNavigation", () => {
     expect(
       decideTabNavigation({
         ...base,
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
         activeTab: { id: "tab-a", dashboardId: "same", taskId: null },
         routeDashboardId: "same",
       }),
@@ -396,7 +501,7 @@ describe("decideTabNavigation", () => {
     expect(
       decideTabNavigation({
         ...base,
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
         activeTab: { id: "tab-a", dashboardId: null, taskId: null },
         routeDashboardId: null,
       }),
@@ -404,7 +509,7 @@ describe("decideTabNavigation", () => {
   });
 });
 
-describe("decideTabNavigation: dedup against existing tabs (windowTabs)", () => {
+describe("decideTabNavigation: dedup against existing tabs (paneTabs)", () => {
   const identity = {
     dashboardId: null,
     taskId: null,
@@ -421,8 +526,8 @@ describe("decideTabNavigation: dedup against existing tabs (windowTabs)", () => 
     expect(
       decideTabNavigation({
         historyTabId: "tab-a",
-        serverActiveTabId: "tab-a",
-        windowTabs: [
+        paneActiveTabId: "tab-a",
+        paneTabs: [
           { id: "tab-a", ...identity, channelId: "c1" },
           {
             id: "tab-b",
@@ -449,8 +554,8 @@ describe("decideTabNavigation: dedup against existing tabs (windowTabs)", () => 
     expect(
       decideTabNavigation({
         historyTabId: null,
-        serverActiveTabId: null,
-        windowTabs: [{ id: "tab-b", ...identity, channelId: "c2" }],
+        paneActiveTabId: null,
+        paneTabs: [{ id: "tab-b", ...identity, channelId: "c2" }],
         activeTab: null,
         routeDashboardId: null,
         routeTaskId: null,
@@ -466,8 +571,8 @@ describe("decideTabNavigation: dedup against existing tabs (windowTabs)", () => 
     expect(
       decideTabNavigation({
         historyTabId: "tab-x",
-        serverActiveTabId: "tab-x",
-        windowTabs: [
+        paneActiveTabId: "tab-x",
+        paneTabs: [
           {
             id: "tab-x",
             ...identity,
@@ -503,8 +608,8 @@ describe("decideTabNavigation: dedup against existing tabs (windowTabs)", () => 
     expect(
       decideTabNavigation({
         historyTabId: "tab-blank",
-        serverActiveTabId: "tab-blank",
-        windowTabs: [
+        paneActiveTabId: "tab-blank",
+        paneTabs: [
           { id: "tab-blank", ...identity },
           { id: "tab-me", ...identity, channelId: "me-ch" },
         ],
@@ -529,8 +634,8 @@ describe("decideTabNavigation: dedup against existing tabs (windowTabs)", () => 
     expect(
       decideTabNavigation({
         historyTabId: "tab-a",
-        serverActiveTabId: "tab-a",
-        windowTabs: [{ id: "tab-a", ...identity, channelId: "c1" }],
+        paneActiveTabId: "tab-a",
+        paneTabs: [{ id: "tab-a", ...identity, channelId: "c1" }],
         activeTab: {
           id: "tab-a",
           dashboardId: null,
@@ -555,9 +660,133 @@ describe("decideTabNavigation: dedup against existing tabs (windowTabs)", () => 
   });
 });
 
-function openChannel(s: TabsSnapshot, windowId: string, channelId: string) {
+describe("decideTabNavigation: cross-pane dedup (otherPanes → focusPane)", () => {
+  const identity = {
+    dashboardId: null,
+    taskId: null,
+    channelId: null,
+    channelSection: null,
+    appView: null,
+  };
+
+  it("focuses the other pane when the route identity is already open there", () => {
+    // Untagged nav to c2 while c2 lives in pane p2 → focus that pane, never
+    // mount the same identity live in two panes.
+    expect(
+      decideTabNavigation({
+        historyTabId: null,
+        paneActiveTabId: "tab-a",
+        paneTabs: [{ id: "tab-a", ...identity, channelId: "c1" }],
+        otherPanes: [
+          {
+            paneId: "p2",
+            tabs: [{ id: "tab-z", ...identity, channelId: "c2" }],
+          },
+        ],
+        activeTab: {
+          id: "tab-a",
+          dashboardId: null,
+          taskId: null,
+          channelId: "c1",
+        },
+        routeDashboardId: null,
+        routeTaskId: null,
+        routeChannelId: "c2",
+      }),
+    ).toEqual({ type: "focusPane", paneId: "p2", tabId: "tab-z" });
+  });
+
+  it("prefers a pane-local match over another pane's match", () => {
+    expect(
+      decideTabNavigation({
+        historyTabId: null,
+        paneActiveTabId: "tab-a",
+        paneTabs: [
+          { id: "tab-a", ...identity, channelId: "c1" },
+          { id: "tab-local", ...identity, channelId: "c2" },
+        ],
+        otherPanes: [
+          {
+            paneId: "p2",
+            tabs: [{ id: "tab-z", ...identity, channelId: "c2" }],
+          },
+        ],
+        activeTab: {
+          id: "tab-a",
+          dashboardId: null,
+          taskId: null,
+          channelId: "c1",
+        },
+        routeDashboardId: null,
+        routeTaskId: null,
+        routeChannelId: "c2",
+      }),
+    ).toEqual({ type: "activate", tabId: "tab-local" });
+  });
+
+  it("a blank active tab absorbs the nav even when the identity is open elsewhere", () => {
+    // Blank means "fill me": neither the pane-local nor the cross-pane dedup
+    // may steal the navigation.
+    expect(
+      decideTabNavigation({
+        historyTabId: "tab-blank",
+        paneActiveTabId: "tab-blank",
+        paneTabs: [
+          { id: "tab-blank", ...identity },
+          { id: "tab-dup", ...identity, channelId: "c2" },
+        ],
+        otherPanes: [
+          {
+            paneId: "p2",
+            tabs: [{ id: "tab-z", ...identity, channelId: "c2" }],
+          },
+        ],
+        activeTab: { id: "tab-blank", dashboardId: null, taskId: null },
+        routeDashboardId: null,
+        routeTaskId: null,
+        routeChannelId: "c2",
+      }),
+    ).toEqual({
+      type: "replace",
+      tabId: "tab-blank",
+      dashboardId: null,
+      taskId: null,
+      channelId: "c2",
+      channelSection: null,
+      appView: null,
+      stampTabId: "tab-blank",
+    });
+  });
+
+  it("stamps when the active tab already shows the route despite a cross-pane duplicate", () => {
+    expect(
+      decideTabNavigation({
+        historyTabId: null,
+        paneActiveTabId: "tab-a",
+        paneTabs: [{ id: "tab-a", ...identity, channelId: "c2" }],
+        otherPanes: [
+          {
+            paneId: "p2",
+            tabs: [{ id: "tab-z", ...identity, channelId: "c2" }],
+          },
+        ],
+        activeTab: {
+          id: "tab-a",
+          dashboardId: null,
+          taskId: null,
+          channelId: "c2",
+        },
+        routeDashboardId: null,
+        routeTaskId: null,
+        routeChannelId: "c2",
+      }),
+    ).toEqual({ type: "stamp", stampTabId: "tab-a" });
+  });
+});
+
+function openChannel(s: TabsSnapshot, paneId: string, channelId: string) {
   return openOrFocusTab(s, {
-    windowId,
+    paneId,
     dashboardId: null,
     taskId: null,
     channelId,
@@ -568,56 +797,32 @@ function openChannel(s: TabsSnapshot, windowId: string, channelId: string) {
 
 describe("activeTabIsBlank", () => {
   it("is true when the active tab has no canvas, task, or channel", () => {
-    const t = newBlankTab(snapshot(), { windowId: "w1", makeId, now });
+    const t = newBlankTab(snap(), { paneId: "p1", makeId, now });
     expect(activeTabIsBlank(t.snapshot)).toBe(true);
   });
 
   it("is false when the active tab points at a canvas", () => {
-    const t = open(snapshot(), "w1", "dash-a");
+    const t = open(snap(), "p1", "dash-a");
     expect(activeTabIsBlank(t.snapshot)).toBe(false);
   });
 
   it("is false when the active tab is a channel tab (channel home)", () => {
-    const t = openChannel(snapshot(), "w1", "c1");
+    const t = openChannel(snap(), "p1", "c1");
     expect(activeTabIsBlank(t.snapshot)).toBe(false);
   });
 
   it("is false when there is no active tab", () => {
-    expect(activeTabIsBlank(snapshot())).toBe(false);
-  });
-});
-
-describe("primaryWindowHasNoTabs", () => {
-  it("is true when the primary window's last tab was closed", () => {
-    const opened = open(snapshot(), "w1", "dash-a");
-    const closed = closeTab(opened.snapshot, opened.tabId);
-    expect(primaryWindowHasNoTabs(closed.snapshot)).toBe(true);
-  });
-
-  it("is false while the primary window still has a tab", () => {
-    const t = open(snapshot(), "w1", "dash-a");
-    expect(primaryWindowHasNoTabs(t.snapshot)).toBe(false);
-  });
-
-  it("ignores tabs that belong to other windows", () => {
-    const s = snapshot({
-      windows: [
-        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
-        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
-      ],
-    });
-    const onlyInSecondary = open(s, "w2", "dash-a");
-    expect(primaryWindowHasNoTabs(onlyInSecondary.snapshot)).toBe(true);
+    expect(activeTabIsBlank(snap())).toBe(false);
   });
 });
 
 describe("closeTabs", () => {
-  /** Open n dashboards in w1, returning the snapshot and ordered tab ids. */
+  /** Open n dashboards in p1, returning the snapshot and ordered tab ids. */
   function openMany(n: number) {
-    let s = snapshot();
+    let s = snap();
     const ids: string[] = [];
     for (let i = 0; i < n; i++) {
-      const r = open(s, "w1", `dash-${i}`);
+      const r = open(s, "p1", `dash-${i}`);
       s = r.snapshot;
       ids.push(r.tabId);
     }
@@ -626,81 +831,104 @@ describe("closeTabs", () => {
 
   it("is a noop for an empty or unknown id list", () => {
     const { s } = openMany(2);
-    expect(closeTabs(s, [])).toBe(s);
-    expect(closeTabs(s, ["nope"]).tabs).toHaveLength(2);
+    expect(closeTabs(s, [], { makeId, now })).toBe(s);
+    expect(closeTabs(s, ["nope"], { makeId, now }).tabs).toHaveLength(2);
   });
 
   it("removes the given tabs and keeps the rest", () => {
     const { s, ids } = openMany(4);
-    const r = closeTabs(s, [ids[1], ids[2]]);
+    const r = closeTabs(s, [ids[1], ids[2]], { makeId, now });
     expect(r.tabs.map((t) => t.id)).toEqual([ids[0], ids[3]]);
     expect(r.windows).toHaveLength(1);
   });
 
   it("keeps the active tab focused when it survives", () => {
     const { s, ids } = openMany(3);
-    const focused = closeTabs(setFocus(s, ids[0]), [ids[1], ids[2]]);
-    expect(focused.windows[0].activeTabId).toBe(ids[0]);
+    const focused = closeTabs(
+      setPaneActiveTab(s, "p1", ids[0]),
+      [ids[1], ids[2]],
+      { makeId, now },
+    );
+    expect(paneActive(focused, "p1")).toBe(ids[0]);
   });
 
   it("focuses the anchor when the active tab is closed", () => {
     const { s, ids } = openMany(4);
     // Active is ids[1]; "close others" on anchor ids[0] closes 1,2,3 → the
     // anchor takes focus even though a stored-order neighbour differs.
-    const r = closeTabs(setFocus(s, ids[1]), [ids[1], ids[2], ids[3]], ids[0]);
-    expect(r.windows[0].activeTabId).toBe(ids[0]);
+    const r = closeTabs(
+      setPaneActiveTab(s, "p1", ids[1]),
+      [ids[1], ids[2], ids[3]],
+      { makeId, now },
+      ids[0],
+    );
+    expect(paneActive(r, "p1")).toBe(ids[0]);
   });
 
   it("falls back to closeTab's neighbour when no anchor is given", () => {
     const { s, ids } = openMany(4);
     // Active ids[1]; closing 1,2 leaves [0,3]; the survivor at the old slot is 3.
-    const r = closeTabs(setFocus(s, ids[1]), [ids[1], ids[2]]);
-    expect(r.windows[0].activeTabId).toBe(ids[3]);
+    const r = closeTabs(setPaneActiveTab(s, "p1", ids[1]), [ids[1], ids[2]], {
+      makeId,
+      now,
+    });
+    expect(paneActive(r, "p1")).toBe(ids[3]);
   });
 
   it("ignores an anchor when the active tab survived", () => {
     const { s, ids } = openMany(4);
     // Active ids[0] survives; anchor must not steal focus from it.
-    const r = closeTabs(setFocus(s, ids[0]), [ids[2], ids[3]], ids[1]);
-    expect(r.windows[0].activeTabId).toBe(ids[0]);
+    const r = closeTabs(
+      setPaneActiveTab(s, "p1", ids[0]),
+      [ids[2], ids[3]],
+      { makeId, now },
+      ids[1],
+    );
+    expect(paneActive(r, "p1")).toBe(ids[0]);
   });
 
-  it("lands the primary window on channels when all tabs close", () => {
+  it("backfills one blank with deps.blankTabId when all of the pane's tabs close", () => {
     const { s, ids } = openMany(2);
-    const r = closeTabs(s, ids);
-    expect(r.tabs).toHaveLength(0);
-    expect(r.windows[0].activeTabId).toBeNull();
+    const r = closeTabs(s, ids, { makeId, now, blankTabId: "blank-1" });
+    expect(r.tabs.map((t) => t.id)).toEqual(["blank-1"]);
+    expect(paneActive(r, "p1")).toBe("blank-1");
+  });
+
+  it("anchor focus applies per pane; other panes keep their active tab", () => {
+    const base = snap([{ id: "w1", panes: ["p1", "p2"] }]);
+    const a = open(base, "p1", "dash-a");
+    const b = open(a.snapshot, "p1", "dash-b");
+    const c = open(b.snapshot, "p1", "dash-c");
+    const x = open(c.snapshot, "p2", "dash-x");
+    const withActive = setPaneActiveTab(x.snapshot, "p1", b.tabId);
+    const r = closeTabs(
+      withActive,
+      [b.tabId, c.tabId],
+      { makeId, now },
+      a.tabId,
+    );
+    expect(paneActive(r, "p1")).toBe(a.tabId);
+    expect(paneActive(r, "p2")).toBe(x.tabId);
   });
 
   it("drops an emptied secondary window", () => {
-    const base = snapshot({
-      windows: [
-        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
-        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
-      ],
-    });
-    const a = open(base, "w2", "dash-a");
-    const b = open(a.snapshot, "w2", "dash-b");
-    const r = closeTabs(b.snapshot, [a.tabId, b.tabId]);
+    const base = snap([
+      { id: "w1", panes: ["p1"] },
+      { id: "w2", isPrimary: false, panes: ["p2"] },
+    ]);
+    const a = open(base, "p2", "dash-a");
+    const b = open(a.snapshot, "p2", "dash-b");
+    const r = closeTabs(b.snapshot, [a.tabId, b.tabId], { makeId, now });
     expect(r.windows.map((w) => w.id)).toEqual(["w1"]);
   });
-
-  function setFocus(s: TabsSnapshot, tabId: string): TabsSnapshot {
-    return {
-      ...s,
-      windows: s.windows.map((w) =>
-        w.id === "w1" ? { ...w, activeTabId: tabId } : w,
-      ),
-    };
-  }
 });
 
 describe("setTabOrder", () => {
   function openThree() {
-    let s = snapshot();
+    let s = snap();
     const ids: string[] = [];
     for (const d of ["a", "b", "c"]) {
-      const r = open(s, "w1", `dash-${d}`);
+      const r = open(s, "p1", `dash-${d}`);
       s = r.snapshot;
       ids.push(r.tabId);
     }
@@ -708,60 +936,49 @@ describe("setTabOrder", () => {
   }
 
   function orderOf(s: TabsSnapshot): string[] {
-    return s.tabs
-      .filter((t) => t.windowId === "w1")
-      .sort((a, b) => a.position - b.position)
-      .map((t) => t.id);
+    return paneTabs(s, "p1").map((t) => t.id);
   }
 
   it("persists the given order with clean gap positions", () => {
     const { s, ids } = openThree();
-    const next = setTabOrder(s, "w1", [ids[2], ids[0], ids[1]]);
+    const next = setTabOrder(s, "p1", [ids[2], ids[0], ids[1]]);
     expect(orderOf(next)).toEqual([ids[2], ids[0], ids[1]]);
-    expect(
-      next.tabs
-        .filter((t) => t.windowId === "w1")
-        .sort((a, b) => a.position - b.position)
-        .map((t) => t.position),
-    ).toEqual([POSITION_GAP, 2 * POSITION_GAP, 3 * POSITION_GAP]);
+    expect(paneTabs(next, "p1").map((t) => t.position)).toEqual([
+      POSITION_GAP,
+      2 * POSITION_GAP,
+      3 * POSITION_GAP,
+    ]);
   });
 
   it("ignores unknown ids and appends unlisted tabs in old order", () => {
     const { s, ids } = openThree();
-    const next = setTabOrder(s, "w1", ["nope", ids[1]]);
+    const next = setTabOrder(s, "p1", ["nope", ids[1]]);
     expect(orderOf(next)).toEqual([ids[1], ids[0], ids[2]]);
   });
 
-  it("leaves other windows' tabs untouched", () => {
-    const base = snapshot({
-      windows: [
-        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
-        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
-      ],
-    });
-    const other = open(base, "w2", "dash-z");
-    const r = open(other.snapshot, "w1", "dash-a");
-    const next = setTabOrder(r.snapshot, "w1", [r.tabId]);
-    const w2tab = next.tabs.find((t) => t.windowId === "w2");
-    expect(w2tab?.position).toBe(POSITION_GAP);
+  it("leaves other panes' tabs untouched", () => {
+    const base = snap([{ id: "w1", panes: ["p1", "p2"] }]);
+    const other = open(base, "p2", "dash-z");
+    const r = open(other.snapshot, "p1", "dash-a");
+    const next = setTabOrder(r.snapshot, "p1", [r.tabId]);
+    const p2tab = next.tabs.find((t) => t.paneId === "p2");
+    expect(p2tab?.position).toBe(POSITION_GAP);
   });
 });
 
 describe("primaryWindow", () => {
   it("prefers the primary window, falling back to the first", () => {
-    const s = snapshot({
-      windows: [
-        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
-        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
-      ],
-    });
+    const s = snap([
+      { id: "w2", isPrimary: false, panes: ["p2"] },
+      { id: "w1", isPrimary: true, panes: ["p1"] },
+    ]);
     expect(primaryWindow(s)?.id).toBe("w1");
   });
 });
 
-function openAppView(s: TabsSnapshot, windowId: string, appView: string) {
+function openAppView(s: TabsSnapshot, paneId: string, appView: string) {
   return openOrFocusTab(s, {
-    windowId,
+    paneId,
     dashboardId: null,
     taskId: null,
     channelId: null,
@@ -771,70 +988,69 @@ function openAppView(s: TabsSnapshot, windowId: string, appView: string) {
   });
 }
 
-describe("setWindowActiveTab", () => {
-  it("focuses a tab that exists in the window", () => {
-    const a = open(snapshot(), "w1", "dash-a");
-    const b = open(a.snapshot, "w1", "dash-b");
-    const next = setWindowActiveTab(b.snapshot, "w1", a.tabId);
-    expect(next.windows[0].activeTabId).toBe(a.tabId);
+describe("setPaneActiveTab", () => {
+  it("focuses a tab that exists in the pane and focuses that pane", () => {
+    const base = snap([{ id: "w1", panes: ["p1", "p2"] }]);
+    const a = open(base, "p1", "dash-a");
+    const x = open(a.snapshot, "p2", "dash-x"); // focus now on p2
+    expect(focusedPaneIdOf(x.snapshot)).toBe("p2");
+    const next = setPaneActiveTab(x.snapshot, "p1", a.tabId);
+    expect(paneActive(next, "p1")).toBe(a.tabId);
+    expect(focusedPaneIdOf(next)).toBe("p1");
   });
 
-  it("clears focus with null (landing state)", () => {
-    const a = open(snapshot(), "w1", "dash-a");
-    const next = setWindowActiveTab(a.snapshot, "w1", null);
-    expect(next.windows[0].activeTabId).toBeNull();
+  it("refocuses the pane even when its tab is already active", () => {
+    const base = snap([{ id: "w1", panes: ["p1", "p2"] }]);
+    const a = open(base, "p1", "dash-a");
+    const x = open(a.snapshot, "p2", "dash-x"); // p1 active=a, focus p2
+    const next = setPaneActiveTab(x.snapshot, "p1", a.tabId);
+    expect(paneActive(next, "p1")).toBe(a.tabId);
+    expect(focusedPaneIdOf(next)).toBe("p1");
   });
 
   it("ignores a tab id that does not exist (dead history tag)", () => {
-    const a = open(snapshot(), "w1", "dash-a");
-    const next = setWindowActiveTab(a.snapshot, "w1", "closed-long-ago");
+    const a = open(snap(), "p1", "dash-a");
+    const next = setPaneActiveTab(a.snapshot, "p1", "closed-long-ago");
     expect(next).toBe(a.snapshot);
-    expect(next.windows[0].activeTabId).toBe(a.tabId);
+    expect(paneActive(next, "p1")).toBe(a.tabId);
   });
 
-  it("ignores a tab that belongs to another window", () => {
-    const base = snapshot({
-      windows: [
-        { id: "w1", isPrimary: true, bounds: null, activeTabId: null },
-        { id: "w2", isPrimary: false, bounds: null, activeTabId: null },
-      ],
-    });
-    const foreign = open(base, "w2", "dash-z");
-    const next = setWindowActiveTab(foreign.snapshot, "w1", foreign.tabId);
+  it("ignores a tab that lives in another pane", () => {
+    const base = snap([{ id: "w1", panes: ["p1", "p2"] }]);
+    const foreign = open(base, "p2", "dash-z");
+    const next = setPaneActiveTab(foreign.snapshot, "p1", foreign.tabId);
     expect(next).toBe(foreign.snapshot);
-    expect(next.windows[0].activeTabId).toBeNull();
+    expect(paneActive(next, "p1")).toBeNull();
   });
 
-  it("ignores an unknown window", () => {
-    const a = open(snapshot(), "w1", "dash-a");
-    expect(setWindowActiveTab(a.snapshot, "w-nope", null)).toBe(a.snapshot);
+  it("ignores an unknown pane", () => {
+    const a = open(snap(), "p1", "dash-a");
+    expect(setPaneActiveTab(a.snapshot, "p-nope", a.tabId)).toBe(a.snapshot);
   });
 
-  it("keeps snapshot identity when the tab is already active", () => {
-    const a = open(snapshot(), "w1", "dash-a");
-    expect(setWindowActiveTab(a.snapshot, "w1", a.tabId)).toBe(a.snapshot);
+  it("keeps snapshot identity when the tab is active and the pane focused", () => {
+    const a = open(snap(), "p1", "dash-a");
+    expect(setPaneActiveTab(a.snapshot, "p1", a.tabId)).toBe(a.snapshot);
   });
 
   it("a tab closed then re-activated by a stale id never dangles", () => {
     // The persistence-bug shape: close a tab, then a back/forward replay tries
     // to focus its id. The active tab must survive untouched — a dangling
     // activeTabId makes every later navigation open a new tab.
-    const a = open(snapshot(), "w1", "dash-a");
-    const b = open(a.snapshot, "w1", "dash-b");
-    const closed = closeTab(b.snapshot, b.tabId).snapshot;
-    const next = setWindowActiveTab(closed, "w1", b.tabId);
+    const a = open(snap(), "p1", "dash-a");
+    const b = open(a.snapshot, "p1", "dash-b");
+    const closed = closeTab(b.snapshot, b.tabId, { makeId, now }).snapshot;
+    const next = setPaneActiveTab(closed, "p1", b.tabId);
     expect(next).toBe(closed);
-    expect(next.windows[0].activeTabId).toBe(a.tabId);
-    expect(next.tabs.some((t) => t.id === next.windows[0].activeTabId)).toBe(
-      true,
-    );
+    expect(paneActive(next, "p1")).toBe(a.tabId);
+    expect(next.tabs.some((t) => t.id === paneActive(next, "p1"))).toBe(true);
   });
 });
 
 describe("decideTabNavigation: dead history tags (back/forward over closed tabs)", () => {
   const base = {
     historyTabId: null as string | null,
-    serverActiveTabId: null as string | null,
+    paneActiveTabId: null as string | null,
     activeTab: null as {
       id: string;
       dashboardId: string | null;
@@ -852,8 +1068,8 @@ describe("decideTabNavigation: dead history tags (back/forward over closed tabs)
       decideTabNavigation({
         ...base,
         historyTabId: "tab-closed",
-        windowTabIds: ["tab-a", "tab-b"],
-        serverActiveTabId: "tab-a",
+        paneTabIds: ["tab-a", "tab-b"],
+        paneActiveTabId: "tab-a",
         activeTab: { id: "tab-a", dashboardId: "old", taskId: null },
         routeDashboardId: "from-history",
         routeChannelId: "c1",
@@ -875,8 +1091,8 @@ describe("decideTabNavigation: dead history tags (back/forward over closed tabs)
       decideTabNavigation({
         ...base,
         historyTabId: "tab-closed",
-        windowTabIds: [],
-        serverActiveTabId: null,
+        paneTabIds: [],
+        paneActiveTabId: null,
         routeDashboardId: "d1",
         routeChannelId: "c1",
       }),
@@ -896,8 +1112,8 @@ describe("decideTabNavigation: dead history tags (back/forward over closed tabs)
       decideTabNavigation({
         ...base,
         historyTabId: "tab-closed",
-        windowTabIds: ["tab-a"],
-        serverActiveTabId: "tab-a",
+        paneTabIds: ["tab-a"],
+        paneActiveTabId: "tab-a",
         activeTab: { id: "tab-a", dashboardId: "same", taskId: null },
         routeDashboardId: "same",
         routeChannelId: null,
@@ -905,23 +1121,23 @@ describe("decideTabNavigation: dead history tags (back/forward over closed tabs)
     ).toEqual({ type: "stamp", stampTabId: "tab-a" });
   });
 
-  it("still activates a live tagged tab (windowTabIds provided)", () => {
+  it("still activates a live tagged tab (paneTabIds provided)", () => {
     expect(
       decideTabNavigation({
         ...base,
         historyTabId: "tab-b",
-        windowTabIds: ["tab-a", "tab-b"],
-        serverActiveTabId: "tab-a",
+        paneTabIds: ["tab-a", "tab-b"],
+        paneActiveTabId: "tab-a",
       }),
     ).toEqual({ type: "activate", tabId: "tab-b" });
   });
 
-  it("trusts the tag when windowTabIds is omitted (legacy callers)", () => {
+  it("trusts the tag when paneTabIds is omitted (legacy callers)", () => {
     expect(
       decideTabNavigation({
         ...base,
         historyTabId: "tab-b",
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
       }),
     ).toEqual({ type: "activate", tabId: "tab-b" });
   });
@@ -930,7 +1146,7 @@ describe("decideTabNavigation: dead history tags (back/forward over closed tabs)
 describe("decideTabNavigation: app-view tabs (Inbox, Command center, …)", () => {
   const base = {
     historyTabId: null as string | null,
-    serverActiveTabId: null as string | null,
+    paneActiveTabId: null as string | null,
     activeTab: null,
     routeDashboardId: null as string | null,
     routeTaskId: null as string | null,
@@ -943,7 +1159,7 @@ describe("decideTabNavigation: app-view tabs (Inbox, Command center, …)", () =
     expect(
       decideTabNavigation({
         ...base,
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
         activeTab: {
           id: "tab-a",
           dashboardId: "dash-1",
@@ -967,7 +1183,7 @@ describe("decideTabNavigation: app-view tabs (Inbox, Command center, …)", () =
     expect(
       decideTabNavigation({
         ...base,
-        serverActiveTabId: "tab-blank",
+        paneActiveTabId: "tab-blank",
         activeTab: {
           id: "tab-blank",
           dashboardId: null,
@@ -991,7 +1207,7 @@ describe("decideTabNavigation: app-view tabs (Inbox, Command center, …)", () =
     expect(
       decideTabNavigation({
         ...base,
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
         activeTab: {
           id: "tab-a",
           dashboardId: null,
@@ -1007,7 +1223,7 @@ describe("decideTabNavigation: app-view tabs (Inbox, Command center, …)", () =
     expect(
       decideTabNavigation({
         ...base,
-        serverActiveTabId: "tab-a",
+        paneActiveTabId: "tab-a",
         activeTab: {
           id: "tab-a",
           dashboardId: null,
@@ -1048,23 +1264,23 @@ describe("decideTabNavigation: app-view tabs (Inbox, Command center, …)", () =
 
 describe("openOrFocusTab: app-view identity", () => {
   it("dedups the same app view instead of opening a second tab", () => {
-    const first = openAppView(snapshot(), "w1", "inbox");
-    const second = openAppView(first.snapshot, "w1", "inbox");
+    const first = openAppView(snap(), "p1", "inbox");
+    const second = openAppView(first.snapshot, "p1", "inbox");
     expect(second.opened).toBe(false);
     expect(second.tabId).toBe(first.tabId);
     expect(second.snapshot.tabs).toHaveLength(1);
   });
 
   it("treats different app views as distinct tabs", () => {
-    const inbox = openAppView(snapshot(), "w1", "inbox");
-    const skills = openAppView(inbox.snapshot, "w1", "skills");
+    const inbox = openAppView(snap(), "p1", "inbox");
+    const skills = openAppView(inbox.snapshot, "p1", "skills");
     expect(skills.opened).toBe(true);
     expect(skills.snapshot.tabs).toHaveLength(2);
   });
 
   it("an app-view tab and a blank tab are distinct identities", () => {
-    const blank = newBlankTab(snapshot(), { windowId: "w1", makeId, now });
-    const inbox = openAppView(blank.snapshot, "w1", "inbox");
+    const blank = newBlankTab(snap(), { paneId: "p1", makeId, now });
+    const inbox = openAppView(blank.snapshot, "p1", "inbox");
     expect(inbox.opened).toBe(true);
     expect(inbox.snapshot.tabs).toHaveLength(2);
   });
@@ -1072,7 +1288,7 @@ describe("openOrFocusTab: app-view identity", () => {
 
 describe("setTabTarget: app views", () => {
   it("points a blank tab at an app view and back to blank", () => {
-    const blank = newBlankTab(snapshot(), { windowId: "w1", makeId, now });
+    const blank = newBlankTab(snap(), { paneId: "p1", makeId, now });
     const withView = setTabTarget(blank.snapshot, {
       tabId: blank.tabId,
       dashboardId: null,
@@ -1096,7 +1312,7 @@ describe("setTabTarget: app views", () => {
   });
 
   it("clears the app view when the tab navigates to a canvas", () => {
-    const inbox = openAppView(snapshot(), "w1", "inbox");
+    const inbox = openAppView(snap(), "p1", "inbox");
     const next = setTabTarget(inbox.snapshot, {
       tabId: inbox.tabId,
       dashboardId: "dash-1",
@@ -1114,22 +1330,22 @@ describe("regression: the reported tab-persistence bugs", () => {
   // Three tabs; the third is active (this is the persisted boot state in the
   // report: "my third tab is taking the URL of any URL I try on tab 1/2").
   function threeTabs() {
-    const t1 = open(snapshot(), "w1", "dash-1");
-    const t2 = open(t1.snapshot, "w1", "dash-2");
-    const t3 = open(t2.snapshot, "w1", "dash-3");
+    const t1 = open(snap(), "p1", "dash-1");
+    const t2 = open(t1.snapshot, "p1", "dash-2");
+    const t3 = open(t2.snapshot, "p1", "dash-3");
     return { s: t3.snapshot, ids: [t1.tabId, t2.tabId, t3.tabId] as const };
   }
 
   it("a navigation after a tab switch writes to the switched tab, not the previous one", () => {
     const { s, ids } = threeTabs();
     const [t1, , t3] = ids;
-    expect(s.windows[0].activeTabId).toBe(t3);
+    expect(paneActive(s, "p1")).toBe(t3);
 
     // User clicks tab 1 in the strip → the entry is tagged t1 → activate.
     const clickTab1 = decideTabNavigation({
       historyTabId: t1,
-      windowTabIds: ids,
-      serverActiveTabId: t3,
+      paneTabIds: ids,
+      paneActiveTabId: t3,
       activeTab: null,
       routeDashboardId: "dash-1",
       routeTaskId: null,
@@ -1139,15 +1355,15 @@ describe("regression: the reported tab-persistence bugs", () => {
 
     // The strip applies the focus to its mirror synchronously (the fix): the
     // next decision must see t1 active, NOT the stale t3.
-    const afterSwitch = setWindowActiveTab(s, "w1", t1);
-    expect(afterSwitch.windows[0].activeTabId).toBe(t1);
+    const afterSwitch = setPaneActiveTab(s, "p1", t1);
+    expect(paneActive(afterSwitch, "p1")).toBe(t1);
 
     // User clicks a nav item (untagged navigation). It must replace t1.
     const activeTab = afterSwitch.tabs.find((t) => t.id === t1);
     const navToInbox = decideTabNavigation({
       historyTabId: null,
-      windowTabIds: ids,
-      serverActiveTabId: t1,
+      paneTabIds: ids,
+      paneActiveTabId: t1,
       activeTab: activeTab
         ? {
             id: activeTab.id,
@@ -1188,8 +1404,8 @@ describe("regression: the reported tab-persistence bugs", () => {
     const { s, ids } = threeTabs();
     const [t1, t2] = ids;
     // Switch t3 → t2 → t1: pure focus changes.
-    let cur = setWindowActiveTab(s, "w1", t2);
-    cur = setWindowActiveTab(cur, "w1", t1);
+    let cur = setPaneActiveTab(s, "p1", t2);
+    cur = setPaneActiveTab(cur, "p1", t1);
     expect(cur.tabs.find((t) => t.id === t1)?.dashboardId).toBe("dash-1");
     expect(cur.tabs.find((t) => t.id === t2)?.dashboardId).toBe("dash-2");
     expect(cur.tabs.find((t) => t.id === ids[2])?.dashboardId).toBe("dash-3");
@@ -1201,15 +1417,15 @@ describe("regression: the reported tab-persistence bugs", () => {
     const { s, ids } = threeTabs();
     const [t1, , t3] = ids;
     // Close t1, then replay a history entry tagged with it.
-    const closed = closeTabs(s, [t1]);
+    const closed = closeTabs(s, [t1], { makeId, now });
     const live = closed.tabs.map((t) => t.id);
     const decision = decideTabNavigation({
       historyTabId: t1,
-      windowTabIds: live,
-      serverActiveTabId: closed.windows[0].activeTabId,
+      paneTabIds: live,
+      paneActiveTabId: paneActive(closed, "p1"),
       activeTab: (() => {
         const active = closed.tabs.find(
-          (t) => t.id === closed.windows[0].activeTabId,
+          (t) => t.id === paneActive(closed, "p1"),
         );
         return active
           ? {
@@ -1232,24 +1448,20 @@ describe("regression: the reported tab-persistence bugs", () => {
     expect(live).toContain(decision.tabId);
     expect(decision.tabId).toBe(t3);
 
-    // And even a hostile setActiveTab with the dead id is a validated no-op.
-    expect(setWindowActiveTab(closed, "w1", t1)).toBe(closed);
+    // And even a hostile setPaneActiveTab with the dead id is a validated no-op.
+    expect(setPaneActiveTab(closed, "p1", t1)).toBe(closed);
   });
 
   it("a new blank tab stays blank until the user navigates, then keeps that URL", () => {
-    const withTabs = open(snapshot(), "w1", "dash-1");
-    const blank = newBlankTab(withTabs.snapshot, {
-      windowId: "w1",
-      makeId,
-      now,
-    });
+    const withTabs = open(snap(), "p1", "dash-1");
+    const blank = newBlankTab(withTabs.snapshot, { paneId: "p1", makeId, now });
     expect(activeTabIsBlank(blank.snapshot)).toBe(true);
 
     // The landing route is a noop — nothing may rewrite the blank tab.
     const onLanding = decideTabNavigation({
       historyTabId: blank.tabId,
-      windowTabIds: blank.snapshot.tabs.map((t) => t.id),
-      serverActiveTabId: blank.tabId,
+      paneTabIds: blank.snapshot.tabs.map((t) => t.id),
+      paneActiveTabId: blank.tabId,
       activeTab: {
         id: blank.tabId,
         dashboardId: null,
@@ -1268,8 +1480,8 @@ describe("regression: the reported tab-persistence bugs", () => {
     // First click (Command center) replaces the blank tab in place…
     const firstNav = decideTabNavigation({
       historyTabId: blank.tabId,
-      windowTabIds: blank.snapshot.tabs.map((t) => t.id),
-      serverActiveTabId: blank.tabId,
+      paneTabIds: blank.snapshot.tabs.map((t) => t.id),
+      paneActiveTabId: blank.tabId,
       activeTab: {
         id: blank.tabId,
         dashboardId: null,
@@ -1308,7 +1520,7 @@ describe("regression: the reported tab-persistence bugs", () => {
 
 describe("activeTabIsBlank: app views", () => {
   it("is false when the active tab shows an app view", () => {
-    const t = openAppView(snapshot(), "w1", "inbox");
+    const t = openAppView(snap(), "p1", "inbox");
     expect(activeTabIsBlank(t.snapshot)).toBe(false);
   });
 });

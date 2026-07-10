@@ -3,13 +3,18 @@ import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import { BROWSER_TABS_SERVICE } from "@posthog/workspace-server/di/tokens";
 import {
   browserTabsSnapshotOutput,
+  closePaneInput,
   closeTabInput,
   closeTabsInput,
+  moveTabToPaneInput,
   newBlankTabInput,
   openOrFocusTabInput,
   setActiveTabInput,
+  setFocusedPaneInput,
+  setPaneSizesInput,
   setTabOrderInput,
   setTabTargetInput,
+  splitPaneInput,
 } from "@posthog/workspace-server/services/browser-tabs/schemas";
 import type { IBrowserTabsService } from "@posthog/workspace-server/services/browser-tabs/service";
 import { z } from "zod";
@@ -44,13 +49,19 @@ export const browserTabsRouter = router({
   close: publicProcedure
     .input(closeTabInput)
     .output(browserTabsSnapshotOutput)
-    .mutation(({ ctx, input }) => svc(ctx.container).close(input.tabId)),
+    .mutation(({ ctx, input }) =>
+      svc(ctx.container).close(input.tabId, input.blankTabId),
+    ),
 
   closeMany: publicProcedure
     .input(closeTabsInput)
     .output(browserTabsSnapshotOutput)
     .mutation(({ ctx, input }) =>
-      svc(ctx.container).closeMany(input.tabIds, input.focusTabId),
+      svc(ctx.container).closeMany(
+        input.tabIds,
+        input.focusTabId,
+        input.blankTabId,
+      ),
     ),
 
   setOrder: publicProcedure
@@ -62,6 +73,31 @@ export const browserTabsRouter = router({
     .input(setActiveTabInput)
     .output(browserTabsSnapshotOutput)
     .mutation(({ ctx, input }) => svc(ctx.container).setActiveTab(input)),
+
+  splitPane: publicProcedure
+    .input(splitPaneInput)
+    .output(browserTabsSnapshotOutput)
+    .mutation(({ ctx, input }) => svc(ctx.container).splitPane(input)),
+
+  moveTabToPane: publicProcedure
+    .input(moveTabToPaneInput)
+    .output(browserTabsSnapshotOutput)
+    .mutation(({ ctx, input }) => svc(ctx.container).moveTabToPane(input)),
+
+  closePane: publicProcedure
+    .input(closePaneInput)
+    .output(browserTabsSnapshotOutput)
+    .mutation(({ ctx, input }) => svc(ctx.container).closePane(input)),
+
+  setFocusedPane: publicProcedure
+    .input(setFocusedPaneInput)
+    .output(browserTabsSnapshotOutput)
+    .mutation(({ ctx, input }) => svc(ctx.container).setFocusedPane(input)),
+
+  setPaneSizes: publicProcedure
+    .input(setPaneSizesInput)
+    .output(browserTabsSnapshotOutput)
+    .mutation(({ ctx, input }) => svc(ctx.container).setPaneSizes(input)),
 
   onSnapshotChange: publicProcedure.subscription(async function* (opts) {
     for await (const snapshot of svc(opts.ctx.container).snapshotChangeEvents(

@@ -12,6 +12,7 @@ function tab(id: string, position: number): BrowserTab {
   return {
     id,
     windowId: "w1",
+    paneId: "p1",
     dashboardId: null,
     taskId: null,
     channelId: null,
@@ -27,14 +28,23 @@ function tab(id: string, position: number): BrowserTab {
 /** Snapshot whose stored order (by position) is the given ids. */
 function snap(ids: string[]): TabsSnapshot {
   return {
-    windows: [{ id: "w1", isPrimary: true, bounds: null, activeTabId: null }],
+    windows: [
+      {
+        id: "w1",
+        isPrimary: true,
+        bounds: null,
+        layout: { type: "leaf", paneId: "p1" },
+        focusedPaneId: "p1",
+      },
+    ],
+    panes: [{ id: "p1", windowId: "w1", activeTabId: null, createdAt: 0 }],
     tabs: ids.map((id, i) => tab(id, (i + 1) * 1000)),
   };
 }
 
 describe("storedOrderIds", () => {
-  it("orders a window's tabs by position", () => {
-    expect(storedOrderIds(snap(["a", "b", "c"]), "w1")).toEqual([
+  it("orders a pane's tabs by position", () => {
+    expect(storedOrderIds(snap(["a", "b", "c"]), "p1")).toEqual([
       "a",
       "b",
       "c",
@@ -59,7 +69,7 @@ describe("partitionPinnedFirst", () => {
 
 describe("displayedTabIds", () => {
   it("is stored order with the pinned-first partition applied", () => {
-    expect(displayedTabIds(snap(["a", "b", "c", "p"]), "w1", ["p"])).toEqual([
+    expect(displayedTabIds(snap(["a", "b", "c", "p"]), "p1", ["p"])).toEqual([
       "p",
       "a",
       "b",
@@ -99,14 +109,14 @@ describe("reorderWithinGroup", () => {
 describe("frontOfUnpinnedOrder", () => {
   it("moves the tab just before the first unpinned tab", () => {
     // stored [p, a, b, c] with p still pinned; unpin c → front of unpinned = a.
-    const order = frontOfUnpinnedOrder(snap(["p", "a", "b", "c"]), "w1", "c", [
+    const order = frontOfUnpinnedOrder(snap(["p", "a", "b", "c"]), "p1", "c", [
       "p",
     ]);
     expect(order).toEqual(["p", "c", "a", "b"]);
   });
 
   it("appends when there is no other unpinned tab", () => {
-    const order = frontOfUnpinnedOrder(snap(["p", "c"]), "w1", "c", ["p"]);
+    const order = frontOfUnpinnedOrder(snap(["p", "c"]), "p1", "c", ["p"]);
     expect(order).toEqual(["p", "c"]);
   });
 });

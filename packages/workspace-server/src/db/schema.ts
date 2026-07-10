@@ -214,14 +214,41 @@ export const browserWindows = sqliteTable("browser_windows", {
     width: number;
     height: number;
   } | null>(),
-  /** Focused tab in this window; null = channels landing. */
-  activeTabId: text(),
+  /**
+   * Recursive pane split layout (JSON PaneLayoutNode: leaf {paneId} | split
+   * {direction, children, sizes}). Parsed with a Zod safeParse on load;
+   * unparsable trees are rebuilt by snapshot healing.
+   */
+  layout: text({ mode: "json" }).$type<unknown>(),
+  /** Pane owning focus in this window (a leaf of `layout`; healed on load). */
+  focusedPaneId: text(),
   /** Ordering across windows for deterministic restore. */
   position: integer().notNull().default(0),
   /** Epoch ms. */
   createdAt: integer().notNull(),
   updatedAt: integer().notNull(),
 });
+
+/**
+ * Panes: one tab strip + content area inside a window's split layout. The
+ * window's `layout` JSON carries the geometry; this row carries the mutable
+ * per-pane focus. Deleted with their window (cascade).
+ */
+export const browserPanes = sqliteTable(
+  "browser_panes",
+  {
+    id: id(),
+    windowId: text()
+      .notNull()
+      .references(() => browserWindows.id, { onDelete: "cascade" }),
+    /** Focused tab in this pane. Healed to a live tab of the pane on load. */
+    activeTabId: text(),
+    /** Epoch ms. */
+    createdAt: integer().notNull(),
+    updatedAt: integer().notNull(),
+  },
+  (t) => [index("browser_panes_window_idx").on(t.windowId)],
+);
 
 /**
  * Open tabs in the Channels canvas surface. A tab references a canvas
@@ -235,6 +262,13 @@ export const browserTabs = sqliteTable(
     windowId: text()
       .notNull()
       .references(() => browserWindows.id, { onDelete: "cascade" }),
+    /**
+     * Pane this tab lives in. Deliberately NO foreign key: adding one to an
+     * existing table forces a full SQLite table rebuild, the window FK's
+     * cascade already covers deletion, and saves are full-replace — healing
+     * on load enforces referential integrity instead.
+     */
+    paneId: text(),
     /** Canvas this tab shows. Null for a task tab or a blank tab. */
     dashboardId: text(),
     /** Task this tab shows. Null for a canvas tab or a blank tab. */
@@ -246,7 +280,7 @@ export const browserTabs = sqliteTable(
     /** Top-level app page (inbox/agents/skills/mcp-servers/command-center/home).
      * Null = a canvas / task / channel / blank tab. */
     appView: text(),
-    /** Gap-spaced ordering key within a window. */
+    /** Gap-spaced ordering key within a pane. */
     position: integer().notNull(),
     /** Reserved/unwired. Opaque JSON for future per-tab state. */
     scrollState: text({ mode: "json" }).$type<unknown>(),
@@ -254,5 +288,8 @@ export const browserTabs = sqliteTable(
     createdAt: integer().notNull(),
     lastActiveAt: integer().notNull(),
   },
-  (t) => [index("browser_tabs_window_idx").on(t.windowId)],
+  (t) => [
+    index("browser_tabs_window_idx").on(t.windowId),
+    index("browser_tabs_pane_idx").on(t.paneId),
+  ],
 );
