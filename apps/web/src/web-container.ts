@@ -176,6 +176,11 @@ import {
   REVIEW_HOST,
   type ReviewHost,
 } from "@posthog/ui/features/code-review/reviewHost";
+import {
+  BROWSER_TABS_CLIENT,
+  type BrowserTabsClient,
+} from "@posthog/ui/features/browser-tabs/browserTabsClient";
+import { browserTabsUiModule } from "@posthog/ui/features/browser-tabs/browser-tabs.module";
 import { connectivityUiModule } from "@posthog/ui/features/connectivity/connectivity.module";
 import {
   CONNECTIVITY_CLIENT,
@@ -258,6 +263,7 @@ import {
   webPowerManager,
 } from "./web-auth-adapters";
 import { WebAuthSideEffects } from "./web-auth-side-effects";
+import { webBrowserTabsStore } from "./web-browser-tabs-store";
 import { webConnectivityClient } from "./web-connectivity-client";
 import {
   webExternalAppsFocusCoordinator,
@@ -321,6 +327,7 @@ interface WebBindings {
   [TASK_CREATION_HOST]: ITaskCreationHost;
   [TASK_CREATION_EFFECTS]: TaskCreationEffects;
   [CONNECTIVITY_CLIENT]: ConnectivityClient;
+  [BROWSER_TABS_CLIENT]: BrowserTabsClient;
   [EXTERNAL_APPS_SERVICE]: ExternalAppService;
   [EXTERNAL_APPS_WORKSPACE_CLIENT]: ExternalAppsWorkspaceClient;
   [EXTERNAL_APPS_FOCUS_COORDINATOR]: ExternalAppsFocusCoordinator;
@@ -552,6 +559,35 @@ container.bind(TASK_CREATION_EFFECTS).toConstantValue(taskCreationEffects);
 // module's contributions react to the same status changes.
 container.load(connectivityUiModule);
 container.bind(CONNECTIVITY_CLIENT).toConstantValue(webConnectivityClient);
+
+// ── Browser tabs (BrowserTabStrip at __root) ──
+// The UI module's contribution seeds and keeps the renderer tab mirror live via
+// this client; without it the snapshot never loads, no window exists, and the
+// "+" (new tab) button no-ops on its windowId guard. The client is a passthrough
+// over the localStorage-backed store, which is the same singleton the host-router
+// `browserTabs` slice forwards to — so both access paths stay in sync.
+container.load(browserTabsUiModule);
+const webBrowserTabsClient: BrowserTabsClient = {
+  getSnapshot: () => Promise.resolve(webBrowserTabsStore.getSnapshot()),
+  getPrimaryWindowId: () =>
+    Promise.resolve(webBrowserTabsStore.getPrimaryWindowId()),
+  openOrFocus: (input) =>
+    Promise.resolve(webBrowserTabsStore.openOrFocus(input)),
+  newBlankTab: (input) =>
+    Promise.resolve(webBrowserTabsStore.newBlankTab(input)),
+  setTabTarget: (input) =>
+    Promise.resolve(webBrowserTabsStore.setTabTarget(input)),
+  close: (tabId) => Promise.resolve(webBrowserTabsStore.close(tabId)),
+  setActiveTab: (input) =>
+    Promise.resolve(webBrowserTabsStore.setActiveTab(input)),
+  onSnapshotChange: (sub) => {
+    webBrowserTabsStore.on("snapshotChange", sub.onData);
+    return {
+      unsubscribe: () => webBrowserTabsStore.off("snapshotChange", sub.onData),
+    };
+  },
+};
+container.bind(BROWSER_TABS_CLIENT).toConstantValue(webBrowserTabsClient);
 
 // ── External apps (sidebar's eager useExternalAppAction) ──
 // Local-only feature (open in a local editor / reveal / copy local path). The

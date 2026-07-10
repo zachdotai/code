@@ -5,10 +5,12 @@ import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
+import { tabsSnapshotSchema } from "@posthog/shared";
 import { getAuthenticatedClient } from "@posthog/ui/features/auth/authClientImperative";
 import { z } from "zod";
 import { getWebPreviewConfigOptions } from "./web-agent-config";
 import { webArchiveStore } from "./web-archive-store";
+import { webBrowserTabsStore } from "./web-browser-tabs-store";
 import { putWebAttachment } from "./web-attachment-store";
 import { fetchS3Logs } from "./web-logs";
 import { webTaskMetadataStore } from "./web-task-metadata-store";
@@ -322,12 +324,83 @@ const logsStubRouter = router({
     .mutation(() => undefined),
 });
 
+// Channels browser-tab strip. Desktop backs this with a SQLite-owned service in
+// the Electron main process; web forwards to a localStorage-backed store that
+// runs the SAME shared pure transforms (see web-browser-tabs-store.ts). This is
+// a REAL implementation, not a stub — the "+" (new tab), close, reorder, and
+// in-tab navigation all persist and fan out to the renderer mirror via
+// onSnapshotChange, exactly as on desktop (with a single window).
+const tabTargetFields = {
+  dashboardId: z.string().nullable().default(null),
+  taskId: z.string().nullable().default(null),
+  channelId: z.string().nullable().default(null),
+  channelSection: z.string().nullable().default(null),
+  appView: z.string().nullable().default(null),
+};
+const browserTabsRouter = router({
+  getSnapshot: publicProcedure
+    .output(tabsSnapshotSchema)
+    .query(() => webBrowserTabsStore.getSnapshot()),
+  getPrimaryWindowId: publicProcedure
+    .output(z.string())
+    .query(() => webBrowserTabsStore.getPrimaryWindowId()),
+  openOrFocus: publicProcedure
+    .input(
+      z.object({
+        windowId: z.string(),
+        ...tabTargetFields,
+        tabId: z.string().optional(),
+      }),
+    )
+    .output(tabsSnapshotSchema)
+    .mutation(({ input }) => webBrowserTabsStore.openOrFocus(input)),
+  newBlankTab: publicProcedure
+    .input(z.object({ windowId: z.string(), tabId: z.string().optional() }))
+    .output(tabsSnapshotSchema)
+    .mutation(({ input }) => webBrowserTabsStore.newBlankTab(input)),
+  setTabTarget: publicProcedure
+    .input(z.object({ tabId: z.string(), ...tabTargetFields }))
+    .output(tabsSnapshotSchema)
+    .mutation(({ input }) => webBrowserTabsStore.setTabTarget(input)),
+  close: publicProcedure
+    .input(z.object({ tabId: z.string() }))
+    .output(tabsSnapshotSchema)
+    .mutation(({ input }) => webBrowserTabsStore.close(input.tabId)),
+  closeMany: publicProcedure
+    .input(
+      z.object({
+        tabIds: z.array(z.string()),
+        focusTabId: z.string().nullable().default(null),
+      }),
+    )
+    .output(tabsSnapshotSchema)
+    .mutation(({ input }) =>
+      webBrowserTabsStore.closeMany(input.tabIds, input.focusTabId),
+    ),
+  setOrder: publicProcedure
+    .input(z.object({ windowId: z.string(), tabIds: z.array(z.string()) }))
+    .output(tabsSnapshotSchema)
+    .mutation(({ input }) => webBrowserTabsStore.setOrder(input)),
+  setActiveTab: publicProcedure
+    .input(z.object({ windowId: z.string(), tabId: z.string().nullable() }))
+    .output(tabsSnapshotSchema)
+    .mutation(({ input }) => webBrowserTabsStore.setActiveTab(input)),
+  onSnapshotChange: publicProcedure.subscription(async function* (opts) {
+    for await (const snapshot of webBrowserTabsStore.snapshotChangeEvents(
+      opts.signal ?? undefined,
+    )) {
+      yield snapshot;
+    }
+  }),
+});
+
 export const webHostRouter = router({
   additionalDirectories: additionalDirectoriesStubRouter,
   agent: agentStubRouter,
   analytics: analyticsRouter,
   archive: archiveStubRouter,
   auth: authRouter,
+  browserTabs: browserTabsRouter,
   cloudTask: cloudTaskRouter,
   deepLink: deepLinkStubRouter,
   folders: foldersStubRouter,
