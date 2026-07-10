@@ -28,8 +28,8 @@ import {
   Text,
 } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
-import { HourlyUsageCard } from "./components/HourlyUsageCard";
 import { ModelBreakdownCards } from "./components/ModelBreakdownCards";
+import { RecentUsageCard } from "./components/RecentUsageCard";
 import {
   ProductBreakdownCard,
   ToolBreakdownCard,
@@ -177,7 +177,7 @@ export function UsageView() {
             ) : data ? (
               <>
                 <SpendKpiStrip data={data} filledDays={filledDays} />
-                <HourlyUsageCard product={PRODUCT_SCOPE} />
+                <RecentUsageCard product={PRODUCT_SCOPE} />
                 {filledDays && <SpendOverTimeCard filledDays={filledDays} />}
                 <ModelBreakdownCards
                   rows={data.by_model.items}
