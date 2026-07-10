@@ -58,10 +58,29 @@ credential).
   A CIMD client (the `raycast_metadata.py` / `wizard_metadata.py` pattern in
   `posthog/api/oauth/`) is NOT suitable here: CIMD registrations are capped
   to unprivileged scopes, and Code requires `scope=*` like the desktop app.
+- **S3 artifact-bucket CORS — required for attachment uploads.** Composer
+  attachments upload straight from the browser via an S3 presigned POST
+  (`.../artifacts/prepare_upload/` returns the presigned post, then a `POST` to
+  `s3.<region>.amazonaws.com/<bucket>`). The bucket
+  (`posthog-cloud-prod-us-east-1-app-assets` for US) must return
+  `Access-Control-Allow-Origin` for the web origin or the browser blocks the
+  response — the POST itself returns `204` (it succeeds server-side) but `fetch`
+  rejects with a bare `NetworkError`. Desktop (Electron/Node `fetch`) is not
+  subject to CORS, so this is web-only. Add the deployed web origin (and
+  `http://localhost:5273` for dev) with the `POST` method to the bucket's CORS
+  config. Until then, attaching + preview work but sending a task with an
+  attachment fails at the upload step.
 
 ## Not yet wired
 
-Feature flags and analytics are no-op stubs (posthog-js later). Task
-creation/list views need `TASK_SERVICE`/`TASK_CREATION_HOST` bindings; diff
-review needs `DIFF_WORKER_FACTORY`/`REVIEW_HOST`. Per-device task metadata
-(pins, last-viewed) has no store. The bundle is not yet code-split.
+- **Feature flags** are a no-op stub — only cloud-task sync is forced on; every
+  other flag-gated feature stays off until `posthogFeatureFlags` is wired.
+- **Analytics + error tracking** are wired (posthog-js), but dormant until
+  `VITE_POSTHOG_API_KEY` is a real `phc_…` key (see the guard in `main.tsx`).
+- **Attachment uploads** are blocked in the browser by the S3 artifact-bucket
+  CORS config (see External requirements) until the web host is served from an
+  allowlisted origin. Attaching, preview, and byte-reads all work; only the
+  final presigned-POST upload fails.
+- **Per-device stores** (cloud workspaces, archive, pins, browser tabs) are
+  localStorage-only — not durable across devices or a site-data clear.
+- The bundle is not yet code-split (single large chunk).

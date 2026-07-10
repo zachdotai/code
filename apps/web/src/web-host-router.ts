@@ -11,7 +11,11 @@ import { z } from "zod";
 import { getWebPreviewConfigOptions } from "./web-agent-config";
 import { webArchiveStore } from "./web-archive-store";
 import { webBrowserTabsStore } from "./web-browser-tabs-store";
-import { putWebAttachment } from "./web-attachment-store";
+import {
+  getWebAttachmentBase64,
+  getWebAttachmentDataUrl,
+  putWebAttachment,
+} from "./web-attachment-store";
 import { fetchS3Logs } from "./web-logs";
 import { webTaskMetadataStore } from "./web-task-metadata-store";
 import { webWorkspaceStore } from "./web-workspace-store";
@@ -154,6 +158,26 @@ const osStubRouter = router({
   downscaleImageFile: publicProcedure
     .input(z.object({ filePath: z.string() }))
     .mutation(({ input }) => ({ path: input.filePath, name: "image" })),
+  // The composer image preview reads an attachment by id (our synthetic path)
+  // and expects a data URL. Build it from the stored bytes + mime type.
+  readFileAsDataUrl: publicProcedure
+    .input(
+      z.object({
+        filePath: z.string(),
+        maxSizeBytes: z.number().optional(),
+      }),
+    )
+    .query(({ input }) => getWebAttachmentDataUrl(input.filePath)),
+});
+
+// Attachment bytes read back for cloud upload. Desktop reads a real temp file
+// via Node fs; on web the "filePath" is our synthetic attachment id, resolved to
+// the in-memory bytes. CloudArtifactService (via sessionServiceHost) reads
+// attachments through fs.readFileAsBase64 at task-submit time.
+const fsStubRouter = router({
+  readFileAsBase64: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .query(({ input }) => getWebAttachmentBase64(input.filePath)),
 });
 
 const skillsStubRouter = router({
@@ -404,6 +428,7 @@ export const webHostRouter = router({
   cloudTask: cloudTaskRouter,
   deepLink: deepLinkStubRouter,
   folders: foldersStubRouter,
+  fs: fsStubRouter,
   logs: logsStubRouter,
   os: osStubRouter,
   skills: skillsStubRouter,
