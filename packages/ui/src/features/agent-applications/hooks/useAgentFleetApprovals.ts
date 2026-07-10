@@ -21,8 +21,8 @@ export function useAgentFleetApprovals(params?: AgentApprovalsListParams) {
       enabled: !!projectId,
       staleTime: 10_000,
       // Stop polling once we know the viewer lacks org-admin access.
-      refetchInterval: (query) =>
-        isApprovalsPermissionError(query.state.error) ? false : 10_000,
+      refetchInterval: (q) =>
+        isApprovalsPermissionError(q.state.error) ? false : 10_000,
       // A 404 here is the admin gate, not a transient failure — don't retry.
       retry: (failureCount, error) =>
         !isApprovalsPermissionError(error) && failureCount < 3,

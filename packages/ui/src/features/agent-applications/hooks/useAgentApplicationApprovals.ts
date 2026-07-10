@@ -26,8 +26,8 @@ export function useAgentApplicationApprovals(
       staleTime: 10_000,
       // Queued approvals change as agents run; poll while the tab is focused —
       // but stop once we know the viewer lacks org-admin access.
-      refetchInterval: (query) =>
-        isApprovalsPermissionError(query.state.error) ? false : 10_000,
+      refetchInterval: (q) =>
+        isApprovalsPermissionError(q.state.error) ? false : 10_000,
       // A 404 here is the admin gate, not a transient failure — don't retry.
       retry: (failureCount, error) =>
         !isApprovalsPermissionError(error) && failureCount < 3,
