@@ -115,6 +115,17 @@ export function useGenerateFreeformCanvas(args: {
       } = opts;
       setIsStarting(true);
       try {
+        // Auto-name a still-unnamed canvas from its generation prompt BEFORE
+        // creating the task: the name feeds the task title, the backend task
+        // description (which doubles as the optimistic first-message bubble on
+        // cloud runs), and the generation prompt's header — naming afterwards
+        // would leave all three reading `Untitled canvas`. Runs concurrently
+        // with model resolution below, so the common path adds no latency.
+        // Best-effort: on failure the placeholder name is kept, as before.
+        const namePromise = isPlaceholderCanvasName(name)
+          ? titleGenerator.generateCanvasName(instruction).catch(() => null)
+          : Promise.resolve(null);
+
         // A cloud run requires an explicit adapter + model (the API rejects a
         // cloud runtime without a model). Resolve the caller's pick — or the
         // adapter's server default when none — the same way the inbox one-click
@@ -137,18 +148,26 @@ export function useGenerateFreeformCanvas(args: {
           }
         }
 
+        const generatedName = (await namePromise)?.trim();
+        const canvasName = generatedName || name;
+        if (generatedName) {
+          // Rename fire-and-forget: a failure shouldn't block the run, and the
+          // task carries the real name regardless.
+          void renameDashboard(dashboardId, canvasName).catch(() => {});
+        }
+
         const result = await taskService.createTask(
           {
             content: buildFreeformGenerationPrompt({
               dashboardId,
-              name,
+              name: canvasName,
               channelName,
               templateId,
               instruction,
               currentCode,
               useStarter,
             }),
-            taskDescription: `Generate canvas "${name}"`,
+            taskDescription: `Generate canvas "${canvasName}"`,
             // Unattended generation: run in auto mode so it doesn't stall on edit-approval prompts.
             executionMode: "auto" as const,
             workspaceMode,
@@ -180,31 +199,12 @@ export function useGenerateFreeformCanvas(args: {
         // finishes, even after the user navigates to another canvas.
         useCanvasGenerationTrackerStore
           .getState()
-          .track({ taskId: task.id, dashboardId, channelId, name });
+          .track({ taskId: task.id, dashboardId, channelId, name: canvasName });
         // Refresh the workspace cache so the new cloud workspace row appears and
         // the task view resolves the cloud run instead of the repo-picker prompt.
         void queryClient.invalidateQueries({
           queryKey: trpc.workspace.getAll.queryKey(),
         });
-        // Auto-name a still-unnamed canvas from its generation prompt, using the
-        // same helper model that names tasks. Best-effort: a failure (or a user
-        // who already named the canvas) leaves the existing title untouched.
-        if (isPlaceholderCanvasName(name)) {
-          void titleGenerator
-            .generateCanvasName(instruction)
-            .then(async (generated) => {
-              const title = generated?.trim();
-              if (title) {
-                await renameDashboard(dashboardId, title);
-                // Keep the tracked generation's name in sync so its completion
-                // toast reads the real title, not "Untitled canvas".
-                useCanvasGenerationTrackerStore
-                  .getState()
-                  .updateName(task.id, title);
-              }
-            })
-            .catch(() => {});
-        }
         return task.id;
       } finally {
         setIsStarting(false);
