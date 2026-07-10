@@ -27,9 +27,14 @@ to-do list for widening the web surface.
 `{cloud}/oauth/authorize`, redirect back to `{origin}/callback`, code relayed
 to the opener tab over a BroadcastChannel, token exchange via fetch. Session
 persistence is localStorage (`web-auth-adapters.ts`); the refresh token is
-stored unencrypted — the browser has no machine-bound key, so the origin
-boundary is the protection (same threat model as any origin-scoped
-credential).
+encrypted at rest with AES-GCM under a **non-extractable** Web Crypto key held
+in IndexedDB (`webAuthTokenCipher`). The key round-trips through structured
+clone but its raw bytes are never exposed to JS, so a stolen localStorage dump
+can't be decrypted offline — matching the bar the desktop host's machine-bound
+cipher sets. A live XSS payload can still ask the key to decrypt while it runs
+on the page (httpOnly cookies would need server-side sessions the cloud host
+doesn't have). Tokens written by the earlier plaintext build fail to decrypt
+and are cleared, forcing a clean re-auth.
 
 ### External requirements (status as of 2026-07)
 
