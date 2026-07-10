@@ -496,6 +496,29 @@ describe("conversationTurnsToJsonlEntries", () => {
     expect(conv[1].parentUuid).toBe(conv[0].uuid);
   });
 
+  it("seeds only the last assistant message with the estimated context size", () => {
+    const lines = conversationTurnsToJsonlEntries(
+      [
+        { role: "user", content: [{ type: "text", text: "q".repeat(400) }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "a".repeat(400) }],
+        },
+        { role: "user", content: [{ type: "text", text: "more" }] },
+        { role: "assistant", content: [{ type: "text", text: "final" }] },
+      ],
+      config,
+    );
+
+    const assistants = parseConversationEntries(lines).filter(
+      (entry) => entry.type === "assistant",
+    );
+    expect(assistants.at(-1)?.message.usage.input_tokens).toBeGreaterThan(0);
+    for (const entry of assistants.slice(0, -1)) {
+      expect(entry.message.usage.input_tokens).toBe(0);
+    }
+  });
+
   it("emits one line per assistant block with shared message id", () => {
     const lines = conversationTurnsToJsonlEntries(
       [

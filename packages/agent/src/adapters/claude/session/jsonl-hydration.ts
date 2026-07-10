@@ -584,6 +584,24 @@ export function conversationTurnsToJsonlEntries(
     }
   }
 
+  // Seed the last assistant message with the estimated context size so the
+  // SDK's auto-compact accounting isn't blind until the first API response.
+  const estimatedTokens = turns.reduce(
+    (sum, turn) => sum + estimateTurnTokens(turn),
+    0,
+  );
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const parsed = JSON.parse(lines[i]) as {
+      type?: string;
+      message?: { usage?: { input_tokens?: number } };
+    };
+    if (parsed.type === "assistant" && parsed.message?.usage) {
+      parsed.message.usage.input_tokens = estimatedTokens;
+      lines[i] = JSON.stringify(parsed);
+      break;
+    }
+  }
+
   return lines;
 }
 
