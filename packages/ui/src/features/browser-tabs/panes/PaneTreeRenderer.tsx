@@ -82,6 +82,7 @@ export function PaneTreeRenderer() {
         key={`${node.direction}:${signature}`}
         direction={node.direction === "row" ? "horizontal" : "vertical"}
         onLayout={(sizes) => liveSizes.current.set(pathKey, sizes)}
+        className="p-1"
       >
         {node.children.map((child, i) => (
           <Fragment
@@ -95,6 +96,7 @@ export function PaneTreeRenderer() {
               order={i}
               defaultSize={(node.sizes[i] ?? 1 / node.children.length) * 100}
               minSize={MIN_PANE_SIZE}
+              className="overflow-hidden rounded-xs border border-border"
             >
               {renderNode(child, [...path, i])}
             </Panel>
@@ -107,12 +109,12 @@ export function PaneTreeRenderer() {
                 }}
                 // The `!` overrides globals.css's 1px hairline for the
                 // task-detail panels ([data-panel-resize-handle-enabled]).
-                className={`group flex items-center justify-center bg-chrome ${
+                className={`group flex items-center justify-center bg-background ${
                   node.direction === "row" ? "w-2!" : "h-2!"
                 }`}
               >
                 <div
-                  className={`rounded-full bg-border transition-colors duration-150 group-hover:bg-accent/60 group-data-[resize-handle-state=drag]:bg-accent ${
+                  className={`rounded-full bg-chrome transition-colors duration-150 group-hover:bg-accent/60 group-data-[resize-handle-state=drag]:bg-accent ${
                     node.direction === "row" ? "h-8 w-1" : "h-1 w-8"
                   }`}
                 />

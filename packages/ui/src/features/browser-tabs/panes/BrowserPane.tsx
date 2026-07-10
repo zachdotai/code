@@ -90,13 +90,19 @@ export function BrowserPane({
       data-focused={isFocused || undefined}
       onPointerDownCapture={handlePointerDownCapture}
       className={`relative flex h-full min-h-0 w-full min-w-0 flex-col ${
-        showFocusRing && isFocused ? "ring-1 ring-accent/50 ring-inset" : ""
+        // ring-inset: the Panel wrapper is overflow-hidden, so an outside
+        // ring would be clipped invisible.
+        showFocusRing
+          ? "ring-inset focus-within:ring-1 focus-within:ring-primary"
+          : ""
       }`}
     >
-      {/* Split/move drop zones mount INSIDE the router (PaneChrome), over the
+      <div className="p-1">
+        {/* Split/move drop zones mount INSIDE the router (PaneChrome), over the
           content slot only — overlaying the whole pane would swallow drops
           aimed at the strip bar/pills. */}
-      <RouterProvider router={router} />
+        <RouterProvider router={router} />
+      </div>
     </div>
   );
 }
