@@ -421,6 +421,13 @@ export function conversationTurnsToJsonlEntries(
   const permissionMode = config.permissionMode ?? "default";
   const baseTime = Date.now() - turns.length * 3000;
   let turnIndex = 0;
+  // Seed the last assistant message with the estimated context size so the
+  // SDK's auto-compact accounting isn't blind until the first API response.
+  const estimatedTokens = turns.reduce(
+    (sum, turn) => sum + estimateTurnTokens(turn),
+    0,
+  );
+  const lastAssistantTurn = turns.findLast((turn) => turn.role === "assistant");
 
   for (const turn of turns) {
     const timestamp = new Date(baseTime + turnIndex * 3000).toISOString();
@@ -530,7 +537,8 @@ export function conversationTurnsToJsonlEntries(
               stop_reason: isLast ? lastStopReason : null,
               stop_sequence: null,
               usage: {
-                input_tokens: 0,
+                input_tokens:
+                  turn === lastAssistantTurn && isLast ? estimatedTokens : 0,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
                 output_tokens: 0,
@@ -581,24 +589,6 @@ export function conversationTurnsToJsonlEntries(
           parentUuid = uuid;
         }
       }
-    }
-  }
-
-  // Seed the last assistant message with the estimated context size so the
-  // SDK's auto-compact accounting isn't blind until the first API response.
-  const estimatedTokens = turns.reduce(
-    (sum, turn) => sum + estimateTurnTokens(turn),
-    0,
-  );
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const parsed = JSON.parse(lines[i]) as {
-      type?: string;
-      message?: { usage?: { input_tokens?: number } };
-    };
-    if (parsed.type === "assistant" && parsed.message?.usage) {
-      parsed.message.usage.input_tokens = estimatedTokens;
-      lines[i] = JSON.stringify(parsed);
-      break;
     }
   }
 
