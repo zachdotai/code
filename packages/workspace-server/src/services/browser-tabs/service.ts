@@ -6,6 +6,7 @@ import {
   openOrFocusTab,
   setTabOrder,
   setTabTarget,
+  setWindowActiveTab,
   type TabsSnapshot,
   type TabTarget,
   TypedEventEmitter,
@@ -26,14 +27,17 @@ export interface IBrowserTabsService {
       windowId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
+      tabId?: string;
     },
   ): TabsSnapshot;
-  newBlankTab(input: { windowId: string }): TabsSnapshot;
+  newBlankTab(input: { windowId: string; tabId?: string }): TabsSnapshot;
   setTabTarget(
     input: TabTarget & {
       tabId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
     },
   ): TabsSnapshot;
   close(tabId: string): TabsSnapshot;
@@ -99,20 +103,32 @@ export class BrowserTabsService
       windowId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
+      tabId?: string;
     },
   ): TabsSnapshot {
+    // Honor a renderer-minted id so the caller's optimistic apply and this
+    // persisted state agree on the id. Dedup-by-identity still applies first,
+    // so a replay of the same open focuses the existing tab.
+    const providedId = input.tabId;
     const { snapshot } = openOrFocusTab(this.snapshot, {
       ...input,
-      makeId,
+      makeId: providedId ? () => providedId : makeId,
       now,
     });
     return this.commit(snapshot);
   }
 
-  newBlankTab(input: { windowId: string }): TabsSnapshot {
+  newBlankTab(input: { windowId: string; tabId?: string }): TabsSnapshot {
+    const providedId = input.tabId;
+    // Idempotent on the renderer-minted id: a replay of the same call (blank
+    // tabs have no identity to dedup on) must not append a second tab.
+    if (providedId && this.snapshot.tabs.some((t) => t.id === providedId)) {
+      return this.snapshot;
+    }
     const { snapshot } = newBlankTab(this.snapshot, {
       windowId: input.windowId,
-      makeId,
+      makeId: providedId ? () => providedId : makeId,
       now,
     });
     return this.commit(snapshot);
@@ -123,6 +139,7 @@ export class BrowserTabsService
       tabId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
     },
   ): TabsSnapshot {
     return this.commit(setTabTarget(this.snapshot, { ...input, now }));
@@ -147,12 +164,12 @@ export class BrowserTabsService
     windowId: string;
     tabId: string | null;
   }): TabsSnapshot {
-    const next: TabsSnapshot = {
-      ...this.snapshot,
-      windows: this.snapshot.windows.map((w) =>
-        w.id === input.windowId ? { ...w, activeTabId: input.tabId } : w,
-      ),
-    };
+    // Validated: a tabId that doesn't exist in the window (a stale history tag
+    // replayed after the tab closed) is ignored rather than persisted as a
+    // dangling activeTabId — that dangle makes every later navigation look like
+    // "no active tab" and silently open new tabs.
+    const next = setWindowActiveTab(this.snapshot, input.windowId, input.tabId);
+    if (next === this.snapshot) return this.snapshot;
     return this.commit(next);
   }
 

@@ -514,7 +514,8 @@ container.bind(GITHUB_ISSUE_CLIENT).toConstantValue({
 // desktop adapter owns via @posthog/hedgehog-mode. Web binds a no-op host so
 // the useService call resolves; nothing renders.
 container.bind(HEDGEHOG_MODE_HOST).toConstantValue({
-  mount: () => Promise.resolve({ destroy: () => {} }),
+  mount: () =>
+    Promise.resolve({ destroy: () => {}, isContextLost: () => false }),
 });
 
 // ── GitHub integration: onboarding connect step + __root's useIntegrations() ──

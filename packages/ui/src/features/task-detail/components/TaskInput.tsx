@@ -38,6 +38,7 @@ import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnable
 import { useFileSearchStore } from "../../command/fileSearchStore";
 import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
+import { useFeatureFlagsLoaded } from "../../feature-flags/useFeatureFlagsLoaded";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
 import { GitHubRepoPicker } from "../../folder-picker/GitHubRepoPicker";
@@ -73,9 +74,11 @@ import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSele
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
   type AgentAdapter,
+  DEFAULT_WORKSPACE_MODE,
   useSettingsStore,
 } from "../../settings/settingsStore";
 import { useSkills } from "../../skills/useSkills";
+import { useCloudModeEnabled } from "../hooks/useCloudModeEnabled";
 import {
   areReposReady,
   useInitialRepoSelectionFromFolderId,
@@ -83,6 +86,7 @@ import {
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
+import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { NewTaskSuggestions } from "./ContinueCliSessions";
 import {
@@ -230,6 +234,9 @@ export function TaskInput({
   const [selectedCloudEnvId, setSelectedCloudEnvId] = useState<string | null>(
     null,
   );
+  const [selectedCustomImageId, setSelectedCustomImageId] = useState<
+    string | null
+  >(null);
   const [activeReportAssociation, setActiveReportAssociation] = useState(
     reportAssociation ?? null,
   );
@@ -313,25 +320,62 @@ export function TaskInput({
 
   // Cloud-only hosts (web) can't run local/worktree tasks — force cloud mode.
   const { localWorkspaces } = useHostCapabilities();
+  const cloudModeEnabled = useCloudModeEnabled();
+  const flagsLoaded = useFeatureFlagsLoaded();
+  const reposReady = areReposReady({
+    isLoadingRepos,
+    repositoriesCount: repositories.length,
+    hasGithubIntegration,
+  });
+
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
     if (!localWorkspaces) return "cloud";
-    return lastUsedWorkspaceMode || "local";
+    return resolveWorkspaceModePreference({
+      preferredMode: lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE,
+      cloudModeEnabled,
+      hasGithubIntegration,
+      lastUsedLocalWorkspaceMode,
+    });
   });
+
+  // A positive flag or integration signal is final, but a negative one may
+  // just mean the async flag fetch or integrations query hasn't landed yet, so
+  // a cloud preference only resolves once each negative signal is settled.
+  const cloudSignalsSettled =
+    (cloudModeEnabled || flagsLoaded) &&
+    (hasGithubIntegration || !isLoadingRepos);
 
   const didResolveWorkspaceModeRef = useRef(false);
   useEffect(() => {
     if (didResolveWorkspaceModeRef.current) return;
     if (!settingsHydrated) return;
+    if (initialCloudRepository) {
+      didResolveWorkspaceModeRef.current = true;
+      return;
+    }
+    const preferredMode = lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE;
+    if (preferredMode === "cloud" && !cloudSignalsSettled) return;
     didResolveWorkspaceModeRef.current = true;
-    if (initialCloudRepository) return;
+    // Cloud-only hosts stay on cloud (set in the initializer); never resolve to local.
     if (!localWorkspaces) return;
-    setWorkspaceModeState(lastUsedWorkspaceMode || "local");
+    setWorkspaceModeState(
+      resolveWorkspaceModePreference({
+        preferredMode,
+        cloudModeEnabled,
+        hasGithubIntegration,
+        lastUsedLocalWorkspaceMode,
+      }),
+    );
   }, [
     settingsHydrated,
     lastUsedWorkspaceMode,
     initialCloudRepository,
     localWorkspaces,
+    cloudSignalsSettled,
+    cloudModeEnabled,
+    hasGithubIntegration,
+    lastUsedLocalWorkspaceMode,
   ]);
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
@@ -574,13 +618,10 @@ export function TaskInput({
 
   useInitialRepoSelectionFromFolderId({
     folderId: view.folderId,
+    requestId: view.taskInputRequestId,
     folders,
     repositories,
-    reposLoaded: areReposReady({
-      isLoadingRepos,
-      repositoriesCount: repositories.length,
-      hasGithubIntegration,
-    }),
+    reposLoaded: reposReady,
     currentMode: workspaceMode,
     lastUsedLocalMode: lastUsedLocalWorkspaceMode,
     mostRecentEnvironment: view.folderRunEnvironment,
@@ -791,6 +832,10 @@ export function TaskInput({
     sandboxEnvironmentId:
       effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
         ? selectedCloudEnvId
+        : undefined,
+    customImageId:
+      effectiveWorkspaceMode === "cloud" && selectedCustomImageId
+        ? selectedCustomImageId
         : undefined,
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
@@ -1027,6 +1072,8 @@ export function TaskInput({
                   onChange={setWorkspaceMode}
                   selectedCloudEnvironmentId={selectedCloudEnvId}
                   onCloudEnvironmentChange={setSelectedCloudEnvId}
+                  selectedCustomImageId={selectedCustomImageId}
+                  onCustomImageChange={setSelectedCustomImageId}
                   size="1"
                 />
                 {!allowNoRepo && workspaceMode === "worktree" && (

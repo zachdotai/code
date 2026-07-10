@@ -32,11 +32,6 @@ import {
   spawnChildProcess,
 } from "./process/child-process";
 import { applyAgentOverrides, loadSubagentSettings } from "./settings";
-import {
-  pollSupervisorRequests,
-  type SupervisorRequest,
-  writeSupervisorBridgeExtension,
-} from "./supervisor";
 
 export interface UsageStats {
   input: number;
@@ -115,17 +110,6 @@ async function rmTempDir(dir: string | null): Promise<void> {
 
 export type OnRunUpdate = (partial: SingleRunResult) => void;
 
-/**
- * Called when the child asks the supervisor (parent) something via the
- * `contact_supervisor` tool. Only invoked for runs where the caller is still
- * around to answer live (foreground/parallel/chain) — background runs don't
- * pass this, since there's no live UI once the tool call has already
- * returned.
- */
-export type OnSupervisorRequest = (
-  request: SupervisorRequest,
-) => Promise<string> | string;
-
 export interface RunAgentOptions {
   ctx: ExtensionContext;
   agent: AgentConfig;
@@ -136,7 +120,6 @@ export interface RunAgentOptions {
   /** Explicit context to forward to the child, on top of `task`. Falls back to a small auto-digest of recent parent turns when unset. */
   context?: string;
   onUpdate?: OnRunUpdate;
-  onSupervisorRequest?: OnSupervisorRequest;
   /** Also load `web-access` (web_search/web_fetch) in the child. Default: inferred from `agent.tools`. */
   includeWebAccess?: boolean;
 }
@@ -182,20 +165,16 @@ function parseStdoutLine(
 
 /**
  * Runs one agent against one task in an isolated child pi process and
- * resolves once the child exits. Foreground-only: callers await this
- * directly. (Phase 3 layers background/detached execution on top without
- * changing this function's contract.)
+ * resolves once the child exits. Callers await this directly.
  */
 export async function runAgent(
   options: RunAgentOptions,
 ): Promise<SingleRunResult> {
   const { ctx, agent, task, cwd, step, signal, onUpdate } = options;
   const runId = createRunId();
-  // Every `runAgent` call — whether it's a plain foreground single run, one
-  // task in a parallel fan-out, or one step in a chain — gets its own
-  // lifecycle status + transcript. `background-runner.ts` additionally wraps
-  // a whole dispatch (single/parallel/chain) in its own job-level record
-  // whose `childRunIds` point back at these.
+  // Every `runAgent` call — whether it's a plain single run, one task in a
+  // parallel fan-out, or one step in a chain — gets its own lifecycle status
+  // + transcript for later inspection.
   const lifecycleStatus = startRun({
     runId,
     mode: "single",
@@ -214,10 +193,8 @@ export async function runAgent(
   };
 
   let authBridgeDir: string | null = null;
-  let supervisorBridgeDir: string | null = null;
   let tmpPromptDir: string | null = null;
   let handle: ChildProcessHandle | undefined;
-  let supervisorPoller: { stop: () => void } | undefined;
   const onAbort = () => handle?.kill();
 
   try {
@@ -255,10 +232,6 @@ export async function runAgent(
     const args: string[] = ["--mode", "json", "-p", "--no-session"];
     args.push("-e", authBridge.filePath);
 
-    const supervisorBridge = await writeSupervisorBridgeExtension(runId);
-    supervisorBridgeDir = supervisorBridge.dir;
-    args.push("-e", supervisorBridge.filePath);
-
     const wantsWebAccess =
       options.includeWebAccess ??
       effectiveAgent.tools?.some(
@@ -279,7 +252,11 @@ export async function runAgent(
         effectiveAgent.systemPrompt,
       );
       tmpPromptDir = tmp.dir;
-      args.push("--append-system-prompt", tmp.filePath);
+      // Agent definitions (bundled `bundled-agents/*.md` or project-local
+      // `.pi/agents/*.md`) are standalone personas, not an addendum to pi's
+      // default coding-agent system prompt — `--system-prompt` replaces it
+      // outright rather than appending to it.
+      args.push("--system-prompt", tmp.filePath);
     }
 
     const forwardedContext = resolveContext(ctx, options.context);
@@ -304,13 +281,6 @@ export async function runAgent(
       else signal.addEventListener("abort", onAbort, { once: true });
     }
 
-    if (options.onSupervisorRequest) {
-      supervisorPoller = pollSupervisorRequests(
-        runId,
-        options.onSupervisorRequest,
-      );
-    }
-
     result.exitCode = await handle.exited;
     if (signal?.aborted) {
       result.stopReason = "aborted";
@@ -319,7 +289,6 @@ export async function runAgent(
     return result;
   } finally {
     signal?.removeEventListener("abort", onAbort);
-    supervisorPoller?.stop();
     try {
       writeTranscript(runId, renderTranscriptMarkdown(result));
       endRun(
@@ -343,7 +312,6 @@ export async function runAgent(
       /* lifecycle/transcript persistence is best-effort; never fail the run over it */
     }
     await rmTempDir(authBridgeDir);
-    await rmTempDir(supervisorBridgeDir);
     await rmTempDir(tmpPromptDir);
   }
 }

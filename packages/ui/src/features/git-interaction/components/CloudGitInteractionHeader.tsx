@@ -111,6 +111,7 @@ export function CloudGitInteractionHeader({
   // "Continue locally" hands the task off to a local checkout — impossible on a
   // cloud-only host (no local filesystem).
   if (!cloudHandoffEnabled || !localWorkspaces) return null;
+  if (task.origin_product === "image_builder") return null;
 
   const inProgress = session?.handoffInProgress ?? false;
 

@@ -104,14 +104,6 @@ describe("renderSubagentCall", () => {
     );
     expect(component.constructor.name).toBe("Text");
   });
-
-  it("renders chain mode with a step count", () => {
-    const component = renderSubagentCall(
-      { chain: [{ agent: "scout", task: "a" }] },
-      theme,
-    );
-    expect(component.constructor.name).toBe("Text");
-  });
 });
 
 describe("renderSubagentResult", () => {
@@ -166,27 +158,6 @@ describe("renderSubagentResult", () => {
       theme,
     );
     expect(component.constructor.name).toBe("Text");
-  });
-
-  it("renders the runId hint for a background-dispatch result (runId set, results empty)", () => {
-    const component = renderSubagentResult(
-      {
-        content: [
-          {
-            type: "text",
-            text: "Started in background as run abcdef123456. Check progress with /subagents-fleet.",
-          },
-        ],
-        details: { mode: "parallel", results: [], runId: "abcdef123456" },
-      },
-      { expanded: false, isPartial: false },
-      theme,
-    );
-    expect(component.constructor.name).toBe("Text");
-    const rendered = component.render(200).join("\n");
-    expect(rendered).toContain("started in background");
-    expect(rendered).toContain("run abcdef12");
-    expect(rendered).toContain("/subagents-fleet");
   });
 
   it("marks a failed result distinctly from a running one", () => {
