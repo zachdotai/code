@@ -73,10 +73,12 @@ credential).
 
 ## Not yet wired
 
-- **Feature flags** are a no-op stub — only cloud-task sync is forced on; every
-  other flag-gated feature stays off until `posthogFeatureFlags` is wired.
-- **Analytics + error tracking** are wired (posthog-js), but dormant until
-  `VITE_POSTHOG_API_KEY` is a real `phc_…` key (see the guard in `main.tsx`).
+- **Feature flags + analytics + error tracking** are wired (posthog-js), but
+  dormant until `VITE_POSTHOG_API_KEY` is a real `phc_…` key (see the guard in
+  `main.tsx`). Feature flags force `SYNC_CLOUD_TASKS_FLAG` on (a host
+  requirement) and defer every other flag to posthog-js; with no key, only the
+  forced flag is on. Production web builds also get posthog-js automatic
+  error/rejection capture and session recording.
 - **Attachment uploads** are blocked in the browser by the S3 artifact-bucket
   CORS config (see External requirements) until the web host is served from an
   allowlisted origin. Attaching, preview, and byte-reads all work; only the
