@@ -667,7 +667,7 @@ function TasksSection() {
           title={r.title}
           meta={r.createdAt.slice(0, 10)}
           // A task row's file-system id is NOT the task id; the task id is the
-          // row's ref (ChannelTasksService files it as ref=taskId). Only rows
+          // row's ref (ChannelsService files it as ref=taskId). Only rows
           // with a ref are navigable.
           onClick={r.ref ? () => ph.navigate?.toTask(r.ref as string) : undefined}
         />

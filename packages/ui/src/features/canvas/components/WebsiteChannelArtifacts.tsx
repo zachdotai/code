@@ -1,5 +1,5 @@
 import { CaretRightIcon } from "@phosphor-icons/react";
-import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
+import type { ChannelTaskRecord } from "@posthog/core/channels/schemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import {
   getPrVisualConfig,

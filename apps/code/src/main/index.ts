@@ -9,6 +9,7 @@ import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
 import type { AuthService } from "@posthog/core/auth/auth";
+import type { ChannelLinkService } from "@posthog/core/channels/channel-link";
 import { focusHostModule } from "@posthog/core/focus/focus-host.module";
 import {
   FOCUS_SESSION_STORE,
@@ -24,7 +25,6 @@ import {
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import type { CanvasLinkService } from "@posthog/core/links/canvas-link";
-import type { ChannelLinkService } from "@posthog/core/links/channel-link";
 import type { InboxLinkService } from "@posthog/core/links/inbox-link";
 import type { NewTaskLinkService } from "@posthog/core/links/new-task-link";
 import type { ScoutLinkService } from "@posthog/core/links/scout-link";

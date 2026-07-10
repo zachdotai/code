@@ -1,25 +1,42 @@
-import { inject, injectable } from "inversify";
-import type { ChannelTaskRecord } from "./channelTaskSchemas";
 import {
   DESKTOP_FS_CLIENT,
   type DesktopFsClient,
   type FsEntryBase,
-} from "./desktopFsClient";
+} from "@posthog/core/canvas/desktopFsClient";
+import { inject, injectable } from "inversify";
+import type { ChannelTaskRecord } from "./schemas";
 
 const TASK_TYPE = "task";
 const HOME_FOLDER = "Unfiled/Tasks";
 
 type FsEntry = FsEntryBase;
 
+// Structural service interface the host-router channel router depends on. The
+// concrete implementation is bound to CHANNELS_SERVICE in the host container;
+// the router only needs the method surface.
+export interface IChannelsService {
+  list(channelId: string): Promise<ChannelTaskRecord[]>;
+  file(input: {
+    channelId: string;
+    taskId: string;
+    taskTitle: string;
+  }): Promise<ChannelTaskRecord>;
+  unfile(id: string): Promise<void>;
+}
+
 /**
- * Tracks which tasks are filed to a channel by writing a `task` row to the
- * project's desktop_file_system under the channel folder. The task's "home"
- * row at Unfiled/Tasks/<title> is created by PostHog's FileSystemSyncMixin on
- * task save; these rows are additional filings that posthog preserves via the
- * remaining>0 check on delete.
+ * The channels feature seam. Today it tracks which tasks are filed to a channel
+ * by writing a `task` row to the project's desktop_file_system under the channel
+ * folder. The task's "home" row at Unfiled/Tasks/<title> is created by PostHog's
+ * FileSystemSyncMixin on task save; these rows are additional filings that
+ * posthog preserves via the remaining>0 check on delete.
+ *
+ * This is the single service channel operations route through, so the later
+ * channel-identity unification is a change to this service's internals rather
+ * than to every call site.
  */
 @injectable()
-export class ChannelTasksService {
+export class ChannelsService implements IChannelsService {
   constructor(
     @inject(DESKTOP_FS_CLIENT)
     private readonly fs: DesktopFsClient,

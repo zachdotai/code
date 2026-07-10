@@ -5,7 +5,7 @@ import { useMemo } from "react";
 
 /**
  * Map of taskId → the channel it's filed to. A task is filed to at most one
- * channel (ChannelTasksService moves the row rather than duplicating it), so
+ * channel (ChannelsService moves the row rather than duplicating it), so
  * the mapping is unambiguous. Fans out one `channelTasks.list` query per
  * channel; results are shared with the channel sidebar's per-section queries
  * through the react-query cache.

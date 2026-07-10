@@ -1,5 +1,5 @@
 import { HashIcon, XIcon } from "@phosphor-icons/react";
-import { validateChannelName } from "@posthog/core/canvas/channelName";
+import { validateChannelName } from "@posthog/core/channels/channelName";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";

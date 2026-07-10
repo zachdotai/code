@@ -1,4 +1,3 @@
-import type { ChannelTaskRecord } from "./channelTaskSchemas";
 import type { DashboardRecord, DashboardSummary } from "./dashboardSchemas";
 import type {
   CanvasCaptureConfig,
@@ -59,14 +58,4 @@ export interface ICanvasDataService {
   loadInsight(input: CanvasLoadInsightInput): Promise<CanvasDataResult>;
   capture(input: CanvasCaptureInput): Promise<CanvasCaptureResult>;
   captureConfig(): Promise<CanvasCaptureConfig>;
-}
-
-export interface IChannelTasksService {
-  list(channelId: string): Promise<ChannelTaskRecord[]>;
-  file(input: {
-    channelId: string;
-    taskId: string;
-    taskTitle: string;
-  }): Promise<ChannelTaskRecord>;
-  unfile(id: string): Promise<void>;
 }

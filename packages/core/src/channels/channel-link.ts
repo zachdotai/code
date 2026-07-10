@@ -1,3 +1,4 @@
+import type { LinkLogger } from "@posthog/core/links/identifiers";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
   DEEP_LINK_SERVICE,
@@ -9,7 +10,6 @@ import {
 } from "@posthog/platform/main-window";
 import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
-import type { LinkLogger } from "./identifiers";
 
 export const ChannelLinkEvent = {
   OpenChannel: "openChannel",

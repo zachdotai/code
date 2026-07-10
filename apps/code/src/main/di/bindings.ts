@@ -8,6 +8,8 @@ import type {
   AUTH_TOKEN_CIPHER,
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
+import type { ChannelLinkService } from "@posthog/core/channels/channel-link";
+import type { CHANNEL_LINK_SERVICE } from "@posthog/core/channels/identifiers";
 import type {
   CLOUD_TASK_AUTH,
   ICloudTaskAuth,
@@ -46,11 +48,9 @@ import type {
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import type { CanvasLinkService } from "@posthog/core/links/canvas-link";
-import type { ChannelLinkService } from "@posthog/core/links/channel-link";
 import type {
   APPROVAL_LINK_SERVICE,
   CANVAS_LINK_SERVICE,
-  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   OPEN_TARGET_LINK_SERVICE,

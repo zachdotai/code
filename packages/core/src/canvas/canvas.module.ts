@@ -1,13 +1,11 @@
 import { ContainerModule } from "inversify";
 import { CanvasDataService } from "./canvasDataService";
 import { CanvasTemplatesService } from "./canvasTemplatesService";
-import { ChannelTasksService } from "./channelTasksService";
 import { DashboardsService } from "./dashboardsService";
 import { DESKTOP_FS_CLIENT, DesktopFsClient } from "./desktopFsClient";
 import {
   CANVAS_DATA_SERVICE,
   CANVAS_TEMPLATES_SERVICE,
-  CHANNEL_TASKS_SERVICE,
   DASHBOARDS_SERVICE,
 } from "./identifiers";
 
@@ -23,9 +21,6 @@ export const canvasCoreModule = new ContainerModule(({ bind }) => {
 
   bind(DashboardsService).toSelf().inSingletonScope();
   bind(DASHBOARDS_SERVICE).toService(DashboardsService);
-
-  bind(ChannelTasksService).toSelf().inSingletonScope();
-  bind(CHANNEL_TASKS_SERVICE).toService(ChannelTasksService);
 
   // Canvas templates: host-agnostic (pure prompt strings), no deps. The
   // host-router canvas-templates router resolves it by token.

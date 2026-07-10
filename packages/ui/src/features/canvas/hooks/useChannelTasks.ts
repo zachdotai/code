@@ -1,4 +1,4 @@
-import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
+import type { ChannelTaskRecord } from "@posthog/core/channels/schemas";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";

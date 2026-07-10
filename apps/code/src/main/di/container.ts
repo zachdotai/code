@@ -19,6 +19,9 @@ import {
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
 import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
+import { ChannelLinkService } from "@posthog/core/channels/channel-link";
+import { channelsCoreModule } from "@posthog/core/channels/channels.module";
+import { CHANNEL_LINK_SERVICE } from "@posthog/core/channels/identifiers";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
@@ -48,11 +51,9 @@ import { HANDOFF_HOST } from "@posthog/core/handoff/identifiers";
 import { integrationsModule } from "@posthog/core/integrations/integrations.module";
 import { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import { CanvasLinkService } from "@posthog/core/links/canvas-link";
-import { ChannelLinkService } from "@posthog/core/links/channel-link";
 import {
   APPROVAL_LINK_SERVICE,
   CANVAS_LINK_SERVICE,
-  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   OPEN_TARGET_LINK_SERVICE,
@@ -747,6 +748,11 @@ container.bind(MAIN_DISCORD_PRESENCE_SERVICE).to(DiscordPresenceService);
 // live in @posthog/core (bound via canvasCoreModule) and resolve through
 // ctx.container in the host-router routers.
 container.load(canvasCoreModule);
+
+// Channels feature seam (project-bluebird). Host-agnostic ChannelsService lives
+// in @posthog/core and resolves through ctx.container in the host-router
+// channel router; it composes DesktopFsClient bound by canvasCoreModule above.
+container.load(channelsCoreModule);
 
 // Browser tabs for the Channels canvas surface. Authoritative sqlite-backed
 // service in the main process; resolved by the host-router browserTabs router.

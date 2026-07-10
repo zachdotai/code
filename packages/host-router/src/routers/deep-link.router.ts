@@ -1,4 +1,10 @@
 import {
+  ChannelLinkEvent,
+  type ChannelLinkPayload,
+  type ChannelLinkService,
+} from "@posthog/core/channels/channel-link";
+import { CHANNEL_LINK_SERVICE } from "@posthog/core/channels/identifiers";
+import {
   ApprovalLinkEvent,
   type ApprovalLinkPayload,
   type ApprovalLinkService,
@@ -9,14 +15,8 @@ import {
   type CanvasLinkService,
 } from "@posthog/core/links/canvas-link";
 import {
-  ChannelLinkEvent,
-  type ChannelLinkPayload,
-  type ChannelLinkService,
-} from "@posthog/core/links/channel-link";
-import {
   APPROVAL_LINK_SERVICE,
   CANVAS_LINK_SERVICE,
-  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   OPEN_TARGET_LINK_SERVICE,
