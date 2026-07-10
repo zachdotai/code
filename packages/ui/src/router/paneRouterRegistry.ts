@@ -22,9 +22,17 @@ export type { AppRouter } from "./createAppRouter";
 
 const paneRouters = new Map<string, AppRouter>();
 const listeners = new Set<() => void>();
+let version = 0;
 
 function notify(): void {
+  version++;
   for (const listener of listeners) listener();
+}
+
+/** Monotonic registration counter — a useSyncExternalStore snapshot for
+ * consumers that re-resolve the focused router when the map changes. */
+export function getPaneRoutersVersion(): number {
+  return version;
 }
 
 export function setPaneRouter(paneId: string, router: AppRouter): void {

@@ -11,6 +11,7 @@ const tabs: TabView[] = [
 
 function setup(overrides?: Partial<Parameters<typeof TabStrip>[0]>) {
   const props = {
+    paneId: "p1",
     tabs,
     activeTabId: "t1",
     onSelect: vi.fn(),

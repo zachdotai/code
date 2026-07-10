@@ -24,6 +24,9 @@ export function createAppRouter(opts: { paneId: string; initialHref: string }) {
   const router = createTanStackRouter({
     routeTree,
     history,
+    // Which pane this router belongs to — read by PaneChrome and the strip
+    // via route context (__root is createRootRouteWithContext<{paneId}>).
+    context: { paneId: opts.paneId },
     defaultPreload: "intent",
     // Preloads only warm code imports — never satisfy a navigation's loader.
     // Loaders here are single-frame yields (see yieldToPaint) whose whole point

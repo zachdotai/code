@@ -19,3 +19,21 @@ export function useTabsSnapshot() {
 export function useActiveTabIsBlank(): boolean {
   return activeTabIsBlank(useTabsSnapshot());
 }
+
+/** Per-pane variant of {@link useActiveTabIsBlank}: true when THIS pane's
+ * active tab is a blank "+" tab. Each pane's chrome decides its own blank
+ * placeholder — the window-focused pane is irrelevant to a background pane. */
+export function usePaneActiveTabIsBlank(paneId: string): boolean {
+  const snapshot = useTabsSnapshot();
+  const pane = snapshot.panes.find((p) => p.id === paneId);
+  const tab = pane?.activeTabId
+    ? snapshot.tabs.find((t) => t.id === pane.activeTabId)
+    : undefined;
+  return (
+    !!tab &&
+    tab.dashboardId == null &&
+    tab.taskId == null &&
+    tab.channelId == null &&
+    tab.appView == null
+  );
+}

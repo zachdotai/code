@@ -6,13 +6,20 @@ import {
   RobotIcon,
   SquaresFourIcon,
   TrayIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@posthog/quill";
+import {
+  closePane as closePaneLocal,
   closeTab as closeTabLocal,
   closeTabs as closeTabsLocal,
   decideTabNavigation,
-  focusedPane,
   newBlankTab as newBlankTabLocal,
   openOrFocusTab as openOrFocusLocal,
   PROJECT_BLUEBIRD_FLAG,
@@ -22,6 +29,7 @@ import {
   setTabTarget as setTabTargetLocal,
   type TabsSnapshot,
   windowActiveTab,
+  windowPaneIds,
 } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
@@ -42,6 +50,7 @@ import { getLeafPanel } from "@posthog/ui/features/panels/panelStoreHelpers";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { getPaneRouter } from "@posthog/ui/router/paneRouterRegistry";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -60,6 +69,7 @@ import {
 import { usePinnedTabsStore } from "./pinnedTabsStore";
 import { TabStrip, type TabView } from "./TabStrip";
 import { TaskTabIcon } from "./TaskTabIcon";
+import { hrefForTab } from "./tabHref";
 import { useTabReorderStore } from "./tabReorderStore";
 import { applyLocalTransform, persistWrite, readMirror } from "./tabsSync";
 import { useTabsSnapshot } from "./useBrowserTabs";
@@ -154,7 +164,7 @@ function isAppView(value: string): value is AppView {
   return value in APP_VIEW_META;
 }
 
-export function BrowserTabStrip() {
+export function BrowserTabStrip({ paneId }: { paneId: string }) {
   const snapshot = useTabsSnapshot();
   const navigate = useNavigate();
   const router = useRouter();
@@ -221,6 +231,9 @@ export function BrowserTabStrip() {
   const setActiveTab = useMutation(
     trpc.browserTabs.setActiveTab.mutationOptions(),
   );
+  const closePaneMutation = useMutation(
+    trpc.browserTabs.closePane.mutationOptions(),
+  );
 
   const pinnedTabIds = usePinnedTabsStore((s) => s.pinnedTabIds);
   const togglePinned = usePinnedTabsStore((s) => s.togglePinned);
@@ -235,12 +248,14 @@ export function BrowserTabStrip() {
     prunePinned(snapshot.tabs.map((t) => t.id));
   }, [snapshot, prunePinned]);
 
-  const win = primaryWindow(snapshot);
+  // This strip fronts ONE pane (it mounts inside that pane's router, so every
+  // router hook here reads the pane's own location and history).
+  const pane = snapshot.panes.find((p) => p.id === paneId);
+  const win = snapshot.windows.find((w) => w.id === pane?.windowId);
   const windowId = win?.id;
-  // Until the pane tree renders per-pane strips, this strip fronts the primary
-  // window's FOCUSED pane (the only pane in single-pane mode).
-  const pane = win ? focusedPane(snapshot, win.id) : undefined;
-  const paneId = pane?.id;
+  // Keyboard shortcuts bind in every mounted strip; only the focused pane's
+  // may fire or Cmd+T/W/1-9 would act N times across a split.
+  const isFocusedPane = win?.focusedPaneId === paneId;
   // The history state flips the instant you navigate, while the server snapshot
   // round-trips — so prefer it for "which tab is active" to avoid a one-step lag
   // in the highlight and the name. Validate it against the live tab list first:
@@ -309,10 +324,7 @@ export function BrowserTabStrip() {
       router.history.replace(loc.href, { ...(loc.state as object), tabId });
     };
     const mirror = readMirror();
-    const mirrorWin = primaryWindow(mirror);
-    const mirrorPane = mirrorWin
-      ? focusedPane(mirror, mirrorWin.id)
-      : undefined;
+    const mirrorPane = mirror.panes.find((p) => p.id === paneId);
     if (!mirrorPane) return;
     const mirrorPaneId = mirrorPane.id;
     const mirrorTabs = mirror.tabs.filter((t) => t.paneId === mirrorPaneId);
@@ -375,10 +387,12 @@ export function BrowserTabStrip() {
         break;
       }
       case "focusPane": {
-        // The route's identity already lives in another pane: focus that pane
-        // and its tab rather than duplicating the content here. (Unreachable
-        // until the pane tree renders multiple panes, but the decision is
-        // wired so per-pane strips inherit it unchanged.)
+        // The route's identity already lives in ANOTHER pane: show it there
+        // instead of duplicating the content here (two live mounts of the
+        // same task would double-attach its PTY). Focus that pane + its tab,
+        // point ITS router at the route, and restore THIS pane's location to
+        // its own active tab (the navigation that landed here was a request
+        // to see the content, not to change this pane).
         applyLocalTransform((s) =>
           setPaneActiveTab(s, decision.paneId, decision.tabId),
         );
@@ -388,7 +402,18 @@ export function BrowserTabStrip() {
             tabId: decision.tabId,
           }),
         );
-        stamp(decision.tabId);
+        const targetTab = mirror.tabs.find((t) => t.id === decision.tabId);
+        const targetRouter = getPaneRouter(decision.paneId);
+        if (targetTab && targetRouter) {
+          targetRouter.history.push(hrefForTab(targetTab), {
+            tabId: targetTab.id,
+          });
+        }
+        if (mirrorActive) {
+          router.history.replace(hrefForTab(mirrorActive), {
+            tabId: mirrorActive.id,
+          });
+        }
         break;
       }
       case "replace": {
@@ -448,6 +473,7 @@ export function BrowserTabStrip() {
     // initial route. Everything else here is location; mirror state is read
     // fresh inside, deliberately NOT a dependency (see the comment above).
     windowId,
+    paneId,
     historyTabId,
     params.channelId,
     params.dashboardId,
@@ -810,15 +836,45 @@ export function BrowserTabStrip() {
     void persistWrite(() => newBlankTab.mutateAsync({ paneId, tabId }));
   };
 
+  // Explicit close-pane affordance (split mode only): closes ALL the pane's
+  // tabs and collapses its layout leaf. Focus moves to the first remaining
+  // pane (transform); the pane's router is dropped by BrowserPane's unmount
+  // cleanup once the pane leaves the snapshot.
+  const multiPane = windowId
+    ? windowPaneIds(snapshot, windowId).length > 1
+    : false;
+  const handleClosePane = () => {
+    if (!windowId || !multiPane) return;
+    const blankTabId = crypto.randomUUID();
+    applyLocalTransform(
+      (s) =>
+        closePaneLocal(s, {
+          windowId,
+          paneId,
+          makeId: () => crypto.randomUUID(),
+          now: Date.now,
+          blankTabId,
+        }).snapshot,
+    );
+    void persistWrite(() =>
+      closePaneMutation.mutateAsync({ windowId, paneId, blankTabId }),
+    );
+  };
+
   // Cmd/Ctrl+T opens a new browser tab. Bound here (not globally) so it only
-  // fires where the strip is mounted; the new-task shortcut owns Cmd/Ctrl+N.
+  // fires where the strip is mounted — and only in the FOCUSED pane's strip,
+  // or every pane of a split would act on the same press.
   useHotkeys(
     SHORTCUTS.NEW_TAB,
     (e) => {
       e.preventDefault();
       handleNewTab();
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      enabled: isFocusedPane,
+    },
   );
 
   // Cmd/Ctrl+W closes the active browser tab. Always preventDefault so Electron
@@ -831,7 +887,11 @@ export function BrowserTabStrip() {
       if (taskHasCloseableEditorTab(params.taskId)) return;
       if (activeTabId) handleClose(activeTabId);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      enabled: isFocusedPane,
+    },
   );
 
   // With channels on, Cmd/Ctrl+1-9 switches to the Nth browser tab (in the
@@ -852,13 +912,14 @@ export function BrowserTabStrip() {
       enableOnFormTags: true,
       enableOnContentEditable: true,
       preventDefault: true,
-      enabled: channelsEnabled,
+      enabled: channelsEnabled && isFocusedPane,
     },
     [tabs, handleSelect],
   );
 
   return (
     <TabStrip
+      paneId={paneId}
       tabs={tabs}
       activeTabId={activeTabId}
       onSelect={handleSelect}
@@ -868,6 +929,26 @@ export function BrowserTabStrip() {
       onCloseToRight={handleCloseToRight}
       onCloseToLeft={handleCloseToLeft}
       onNewTab={handleNewTab}
+      trailing={
+        multiPane ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  variant="default"
+                  aria-label="Close pane"
+                  className="shrink-0 opacity-50 hover:opacity-100"
+                  onClick={handleClosePane}
+                >
+                  <XIcon size={14} />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">Close pane</TooltipContent>
+          </Tooltip>
+        ) : null
+      }
     />
   );
 }

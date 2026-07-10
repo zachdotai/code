@@ -1,4 +1,4 @@
-import { RestrictToHorizontalAxis } from "@dnd-kit/abstract/modifiers";
+import { useDroppable } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { PlusIcon, PushPinIcon, XIcon } from "@phosphor-icons/react";
 import {
@@ -38,6 +38,8 @@ interface Closable {
 }
 
 export interface TabStripProps {
+  /** Pane this strip fronts — scopes the sortable groups and drop payloads. */
+  paneId: string;
   tabs: TabView[];
   activeTabId: string | null;
   onSelect: (tabId: string) => void;
@@ -47,6 +49,8 @@ export interface TabStripProps {
   onCloseOthers: (tabId: string) => void;
   onCloseToRight: (tabId: string) => void;
   onCloseToLeft: (tabId: string) => void;
+  /** Trailing controls (e.g. the close-pane affordance in split mode). */
+  trailing?: ReactNode;
 }
 
 /**
@@ -57,6 +61,7 @@ export interface TabStripProps {
  * be an ancestor). All state and resolution is supplied by the container.
  */
 export function TabStrip({
+  paneId,
   tabs,
   activeTabId,
   onSelect,
@@ -66,6 +71,7 @@ export function TabStrip({
   onCloseOthers,
   onCloseToRight,
   onCloseToLeft,
+  trailing,
 }: TabStripProps) {
   // Which bulk closes are live per pill, in a single pass over the strip
   // (each closes only *unpinned* tabs in its range).
@@ -82,11 +88,20 @@ export function TabStrip({
     return c;
   });
 
+  // The strip row itself is a drop target: dropping a pill from ANOTHER pane
+  // here moves the tab into this pane (appended). Mirrors TabbedPanel's
+  // tab-bar droppable.
+  const { ref: barRef } = useDroppable({
+    id: `browser-tab-strip-bar-${paneId}`,
+    data: { type: "browser-tab-strip-bar", paneId },
+  });
+
   return (
     <TooltipProvider delay={400}>
       {/* overflow-hidden: incompressible pinned pills must clip within the
-          strip rather than overlap the title bar's right-side controls. */}
+          strip rather than overlap the strip's right-side controls. */}
       <Flex
+        ref={barRef}
         align="center"
         gap="1"
         className="no-drag h-6 min-w-0 flex-1 overflow-hidden pt-px pr-2"
@@ -95,6 +110,7 @@ export function TabStrip({
         {tabs.map((tab, index) => (
           <SortableTabPill
             key={tab.id}
+            paneId={paneId}
             tab={tab}
             index={index}
             isActive={tab.id === activeTabId}
@@ -122,12 +138,16 @@ export function TabStrip({
           />
           <TooltipContent side="bottom">New tab</TooltipContent>
         </Tooltip>
+        {/* Spacer keeps the bar droppable wide even with few tabs. */}
+        <div className="min-w-4 flex-1" />
+        {trailing}
       </Flex>
     </TooltipProvider>
   );
 }
 
 function SortableTabPill({
+  paneId,
   tab,
   index,
   isActive,
@@ -139,6 +159,7 @@ function SortableTabPill({
   onCloseToRight,
   onCloseToLeft,
 }: {
+  paneId: string;
   tab: TabView;
   index: number;
   isActive: boolean;
@@ -152,16 +173,21 @@ function SortableTabPill({
   | "onCloseToRight"
   | "onCloseToLeft"
 >) {
-  // Pinned and unpinned pills sort in separate groups so a drag can't preview
-  // an insertion across the pin boundary (the drop handler rejects it too).
-  // Drags ride the x-axis only — the pill stays in the strip's row.
+  // Pinned and unpinned pills sort in separate PER-PANE groups: dnd-kit only
+  // runs index-shift previews within one strip's group, a drag can't preview
+  // an insertion across the pin boundary, and cross-pane interactions resolve
+  // as plain droppable hits in onDragEnd (strip bar / pane zones) instead of
+  // sortable transfers. Free 2D movement — the pill must be able to leave the
+  // strip for the pane drop zones; the in-strip shift preview comes from the
+  // reorder store re-render, not from dnd transforms, so nothing is lost.
   const { ref } = useSortable({
     id: tab.id,
     index,
-    group: tab.pinned ? "browser-tab-strip-pinned" : "browser-tab-strip",
-    modifiers: [RestrictToHorizontalAxis],
+    group: tab.pinned
+      ? `browser-tab-strip-pinned:${paneId}`
+      : `browser-tab-strip:${paneId}`,
     transition: { duration: 200, easing: "ease" },
-    data: { type: "browser-tab", tabId: tab.id },
+    data: { type: "browser-tab", tabId: tab.id, paneId },
   });
 
   // A pinned pill collapses to icon + padding (browser-style); its label lives

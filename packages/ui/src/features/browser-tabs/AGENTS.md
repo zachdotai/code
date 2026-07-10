@@ -228,44 +228,38 @@ differ. Desktop ships first.
 - Full back/forward integration across the real router belongs in an E2E
   (Playwright) spec, not a unit test.
 
-## Split view (parked — how to approach it)
+## Split panes (shipped)
 
-A working prototype (July 2026, since removed — recoverable from git history)
-let a pill be dragged off the strip onto right/bottom drop zones over the
-content area, splitting the scene into a resizable two-pane
-`react-resizable-panels` group. What we learned, for whoever picks it up:
+Tabs live in PANES: a window holds a recursive split layout
+(`window.layout`, leaf/split nodes with sizes — pure math in
+`@posthog/shared/browser-pane-layout`), flat pane rows carry each pane's
+`activeTabId`, and `window.focusedPaneId` names the pane that owns keyboard
+shortcuts, the title-bar back/forward buttons, and imperative navigation.
 
-- **The constraint:** one TanStack Router = one location = one `<Outlet>`.
-  Two panes can't both be routes. Three ways out, in order of preference:
-  1. **Router-less target pane** (what the prototype did): the secondary pane
-     renders the tab's target directly by id. `WebsiteDashboard` already takes
-     `dashboardId` as a prop and `TaskDetail` takes a `task` (replicate the
-     cache-first fetch from `routes/website/$channelId/tasks/$taskId.tsx`) —
-     both mount standalone today. **Channel views (inbox/artifacts/…) are the
-     blocker**: they read route params/loaders throughout, so they need a
-     props-parameterization pass before they can render in a pane. That
-     refactor is most of the remaining work.
-  2. **Second router over memory history** — renders any route, but needs a
-     chrome-less root and confuses the tab-strip navigation effect
-     (`decideTabNavigation` assumes one router).
-  3. **Tear-off to a second OS window** — the tabs data model already supports
-     it (`browser_windows`, secondary-window close semantics in
-     `closeTab`/`closeTabs`); Electron-only.
-- **Wiring that already exists and stays:** `BrowserTabsDndProvider` wraps the
-  channels chrome, so drop zones over the content area just register
-  `useDroppable` targets in the same scope; pill drag data is
-  `{ type: "browser-tab", tabId }`. The prototype's pieces were a persisted
-  `splitViewStore` (identity + direction + transient `isDraggingTab`), a
-  `TabSplitLayout` wrapper around the outlet box in `__root.tsx`, and a
-  split-zone branch in the provider's `dragend`.
-- **UX decisions already settled:** zones are right 35% / bottom 35%
-  (non-overlapping), a second drop replaces the split, a blank tab is
-  rejected, the split persists across relaunch, and a header X closes it.
-- **Open questions for the real version:** should the split pane get its own
-  tab strip (it probably wants the panels feature's tree model instead of a
-  single-pane store); how does the active-tab highlight relate to the
-  secondary pane; and whether in-pane navigation should be possible at all
-  without a router.
+- **One router per pane** (`createAppRouter`, memory history), created lazily
+  by `panes/BrowserPane.tsx` and cached in `paneRouterRegistry`. The strip and
+  PaneChrome mount INSIDE the pane's `RouterProvider`, so the navigation
+  effect reconciles each pane against its own location — the single-router
+  constraint the old prototype fought is gone. Chrome (sidebar/title bar)
+  reads the FOCUSED pane's router via AppShell's `RouterContextProvider`.
+- **DnD** (`BrowserTabsDnd.tsx`): same-pane pill-over-pill = reorder preview
+  (transient store, as before); a pill dropped on another pane's strip
+  bar/pills or center zone = `moveTabToPane`; a pane edge zone
+  (`panes/PaneDropZones.tsx`, mounted over the CONTENT slot only — overlaying
+  the strip would swallow strip drops) or a content-area root edge
+  (`panes/RootDropZones.tsx`, high collision priority) = `splitPane`.
+  Structural drops also push the affected panes' routers to their new active
+  tabs' hrefs (`hrefForTab`).
+- **Lifecycle rules:** a pane emptied by a move/split COLLAPSES; a pane whose
+  last tab is CLOSED gets a blank-tab backfill (renderer-minted `blankTabId`,
+  idempotent server-side); panes close explicitly via the strip's X
+  (`closePane`, all its tabs go with it). Navigating to an identity open in
+  another pane focuses that pane (`decideTabNavigation`'s `focusPane`) rather
+  than mounting the same content twice (double PTY attach).
+- **Sizes** persist in the layout's split nodes; the tree renderer
+  (`panes/PaneTreeRenderer.tsx`) keeps panels uncontrolled and commits once
+  on resize-gesture end (per-frame mirror writes would hold the tabsSync
+  in-flight gate open).
 
 ## Known rough edges / follow-ups
 

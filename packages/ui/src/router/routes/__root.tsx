@@ -1,10 +1,11 @@
 import { BlankTabView } from "@posthog/ui/features/browser-tabs/BlankTabView";
 import { BrowserTabStrip } from "@posthog/ui/features/browser-tabs/BrowserTabStrip";
-import { useActiveTabIsBlank } from "@posthog/ui/features/browser-tabs/useBrowserTabs";
+import { PaneDropZones } from "@posthog/ui/features/browser-tabs/panes/PaneDropZones";
+import { usePaneActiveTabIsBlank } from "@posthog/ui/features/browser-tabs/useBrowserTabs";
 import { ContentHeader } from "@posthog/ui/shell/ContentHeader";
 import { Box, Flex } from "@radix-ui/themes";
 import {
-  createRootRoute,
+  createRootRouteWithContext,
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
@@ -14,7 +15,12 @@ import { createPortal } from "react-dom";
 // app's dev toolbar with the floating logo hidden so the toolbar owns the
 // trigger — see RouterDevtools.
 
-export const Route = createRootRoute({
+/** Per-pane router context, supplied by createAppRouter. */
+interface PaneRouterContext {
+  paneId: string;
+}
+
+export const Route = createRootRouteWithContext<PaneRouterContext>()({
   component: PaneChrome,
 });
 
@@ -25,6 +31,7 @@ export const Route = createRootRoute({
  * each pane hosts its own router, and anything here mounts once per pane.
  */
 function PaneChrome() {
+  const { paneId } = Route.useRouteContext();
   // Settings is a full-window surface: it stays a route inside the pane's
   // history (so closeSettings()'s history.back() exits it exactly as before),
   // but renders through a portal covering the whole window — panes and chrome
@@ -49,7 +56,7 @@ function PaneChrome() {
   const onChannelsIndex = useRouterState({
     select: (s) => s.location.pathname === "/website",
   });
-  const activeTabBlank = useActiveTabIsBlank();
+  const activeTabBlank = usePaneActiveTabIsBlank(paneId);
   const showBlankTab = onChannelsIndex && activeTabBlank;
 
   if (isSettingsRoute) {
@@ -72,14 +79,17 @@ function PaneChrome() {
           route→tab effect noops on param-less routes (inbox, agents,
           new-task), so it's safe to mount everywhere. */}
       <Flex align="center" className="h-10 shrink-0 border-border border-b">
-        <BrowserTabStrip />
+        <BrowserTabStrip paneId={paneId} />
       </Flex>
       {/* The /website space renders its own header (WebsiteLayout); everywhere
           else the shared header carries the view title and, on a task, its
           action row. */}
       {!onWebsitePath && <ContentHeader />}
-      <Box flexGrow="1" overflow="hidden">
+      <Box flexGrow="1" overflow="hidden" className="relative">
         {showBlankTab ? <BlankTabView /> : <Outlet />}
+        {/* Split/move drop zones over the CONTENT slot only — overlaying the
+            strip row would swallow drops aimed at its pills/bar. */}
+        <PaneDropZones paneId={paneId} />
       </Box>
     </Flex>
   );

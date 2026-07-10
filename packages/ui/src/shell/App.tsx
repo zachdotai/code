@@ -18,6 +18,7 @@ import { InviteCodeScreen } from "@posthog/ui/features/auth/components/InviteCod
 import { ScopeReauthPrompt } from "@posthog/ui/features/auth/components/ScopeReauthPrompt";
 import { useAuthSession } from "@posthog/ui/features/auth/useAuthSession";
 import { useIsOrgAdmin } from "@posthog/ui/features/auth/useOrgRole";
+import { PaneTreeRenderer } from "@posthog/ui/features/browser-tabs/panes/PaneTreeRenderer";
 import { hrefForTab } from "@posthog/ui/features/browser-tabs/tabHref";
 import { CanvasGenerationToaster } from "@posthog/ui/features/canvas/freeform/useCanvasGenerationToasts";
 import { AddDirectoryDialog } from "@posthog/ui/features/folder-picker/AddDirectoryDialog";
@@ -33,13 +34,13 @@ import {
   persistedPaneHref,
 } from "@posthog/ui/router/createAppRouter";
 import { setPaneRouter } from "@posthog/ui/router/paneRouterRegistry";
+import { useFocusedPaneRouter } from "@posthog/ui/router/useFocusedPaneRouter";
 import { AppLoadingScreen } from "@posthog/ui/shell/AppLoadingScreen";
 import { AppShell } from "@posthog/ui/shell/AppShell";
 import { track } from "@posthog/ui/shell/analytics";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useAppVisibilityWatchdog } from "@posthog/ui/shell/useAppVisibilityWatchdog";
-import { RouterProvider } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
@@ -153,6 +154,10 @@ function App({ devToolbar }: AppProps) {
     };
   }, [readyForMainApp, paneRouter]);
 
+  // The shell's router context follows the focused pane once panes exist;
+  // the boot-created router is the fallback until then.
+  const focusedRouter = useFocusedPaneRouter();
+
   const mainRef = useRef<HTMLDivElement>(null);
   // Mirrors the "main" branch of renderContent() below; keep the two in sync.
   const showingMainApp = readyForMainApp && paneRouter !== null;
@@ -222,10 +227,11 @@ function App({ devToolbar }: AppProps) {
     if (!paneRouter) return null; // unreachable: gated above
     return (
       <motion.div key="main" ref={mainRef} className="app-fade-in h-full">
-        {/* Window chrome renders OUTSIDE the route tree; the RouterProvider
-            (the pane area) mounts inside the shell's content card. */}
-        <AppShell router={paneRouter}>
-          <RouterProvider router={paneRouter} />
+        {/* Window chrome renders OUTSIDE the route tree; the pane tree (a
+            RouterProvider per pane) mounts inside the shell's content card.
+            The shell's own router context follows the focused pane. */}
+        <AppShell router={focusedRouter ?? paneRouter}>
+          <PaneTreeRenderer />
         </AppShell>
         {/* Surfaces a toast when a backgrounded canvas generation finishes,
             from anywhere in the app. Sibling of the router so it stays mounted
