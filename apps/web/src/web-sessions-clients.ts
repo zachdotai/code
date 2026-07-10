@@ -42,9 +42,16 @@ export const webBundleLocalSkill: BundleLocalSkill = async (ref) => {
   return bundleExportedSkill(exported, ref.source);
 };
 
-// Team-skill dependency graphs would need frontmatter parsing of API-fetched
-// content; not resolved on web yet, so pass the tagged skills through as-is (a
-// skill that depends on another must be picked explicitly for now).
+// Dependency-graph expansion is a passthrough on web — and can't be more than
+// that with the current team-skills pipeline. A skill declares dependencies in
+// its SKILL.md frontmatter (`dependencies:`), but the publish path strips
+// frontmatter (SkillsService.exportSkill -> stripFrontmatter) and the team-skills
+// API carries no dependencies field, so a skill fetched via fetchSkillForInstall
+// returns a frontmatter-less body with nothing to expand from. (Desktop only
+// expands LOCAL on-disk skills, reading SKILL.md directly — web has none.)
+// Making this real requires carrying `dependencies` end-to-end: exportSkill ->
+// the publish payload -> the LlmSkill API (backend) -> fetchSkillForInstall.
+// Until then a skill that depends on another must be picked explicitly.
 export const webResolveSkillBundleDependencies: ResolveSkillBundleDependencies =
   (refs) => Promise.resolve(refs);
 

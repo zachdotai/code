@@ -83,4 +83,11 @@ credential).
   final presigned-POST upload fails.
 - **Per-device stores** (cloud workspaces, archive, pins, browser tabs) are
   localStorage-only — not durable across devices or a site-data clear.
+- **Skill dependency expansion** is a passthrough: a skill that declares
+  `dependencies:` on other skills won't pull them in automatically (pick them
+  explicitly). This is a pipeline gap, not just a web gap — `exportSkill` strips
+  SKILL.md frontmatter and the team-skills API has no `dependencies` field, so
+  the dependency list never reaches any client (desktop only expands local
+  on-disk skills). Needs `dependencies` carried end-to-end through
+  export → publish → the LlmSkill API (backend) → fetchSkillForInstall.
 - The bundle is not yet code-split (single large chunk).
