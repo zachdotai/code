@@ -79,6 +79,25 @@ const slackIntegrationStubRouter = router({
     })),
 });
 
+// GitHub integration uses the same desktop deep-link OAuth relay as Slack
+// (posthog-code:// callback), which the browser has no equivalent for. The
+// useGitHubIntegrationCallback hook is mounted app-wide — it polls
+// consumePendingCallback and subscribes to onCallback/onFlowTimedOut on mount —
+// so without this stub it errors on every page (surfaced as a NOT_FOUND on the
+// Agents page). Cloud-task repo access relies on the org-level GitHub
+// integration, not this per-user relay, so a stub is sufficient.
+const githubIntegrationStubRouter = router({
+  consumePendingCallback: publicProcedure.query(() => null),
+  onCallback: neverEmit,
+  onFlowTimedOut: neverEmit,
+  startFlow: publicProcedure
+    .input(z.object({ region: z.string(), projectId: z.number() }))
+    .mutation(() => ({
+      success: false,
+      error: "Connecting GitHub isn't available on the web yet.",
+    })),
+});
+
 const agentStubRouter = router({
   // SessionService subscribes to this in its constructor. No local agent
   // sessions exist on web, so hold the stream open and never emit.
@@ -429,6 +448,7 @@ export const webHostRouter = router({
   deepLink: deepLinkStubRouter,
   folders: foldersStubRouter,
   fs: fsStubRouter,
+  githubIntegration: githubIntegrationStubRouter,
   logs: logsStubRouter,
   os: osStubRouter,
   skills: skillsStubRouter,
