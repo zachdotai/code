@@ -1,6 +1,6 @@
 import { CaretRightIcon } from "@phosphor-icons/react";
-import type { ChannelTaskRecord } from "@posthog/core/channels/schemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
+import type { ChannelTaskRecord } from "@posthog/core/channels/schemas";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
