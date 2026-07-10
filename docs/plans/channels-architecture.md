@@ -24,6 +24,12 @@ The framing we're building toward:
   PRs, canvases and generated UI HTML, pasted images, plans, files — in a
   real data model, so it can be surfaced later in the UI or attached to new
   work as a context piece.
+- **Channels are public to all org/project users.** Anyone in the project
+  can open any channel and see what's going on in full detail — threads,
+  transcripts, artifacts, context. **Joining** a channel makes you a
+  participant: you get its feed and can interact (start threads, post),
+  with limits on steering existing tasks (deferred; see below). Only the
+  personal `#me` channel is private.
 - **The thread creator steers.** Others can request to steer; the owner
   accepts or denies per user.
 - **MCP can pull in all of the above.** The whole channel and its threads are
@@ -136,9 +142,15 @@ One channel identity that owns feed, context, artifacts, and membership.
 - Introduce `packages/core/src/channels/` as a real feature (service, store,
   schemas) instead of channel logic living inside `canvas/`. Move
   `channelTasksService`, `channelName`, channel-link wiring there.
-- Add membership (member list, join/leave, personal vs public vs private) to
-  the canonical row — prerequisite for steering grants, mentions, and MCP
-  auth.
+- Add membership to the canonical row as **participation, not access
+  control**: every non-`personal` channel is project-public — any project
+  user can browse it in full detail without joining. Joining (join/leave,
+  member list) subscribes you to the channel's feed/mentions/notifications
+  and is the write-side gate: members start threads and post to them.
+  Steering *existing* threads stays owner-gated regardless of membership —
+  the accept/deny grant flow is E, deliberately later. `channel_type`
+  already distinguishes `public | personal`; do not build private team
+  channels or ACLs in v1, just leave the enum room.
 - Exit criteria: one channel id in deep links, task rows, artifact parents,
   and the feed; `domain-types.ts` no longer needs the "distinct from the
   desktop file-system channel folders" disclaimer.
@@ -237,9 +249,11 @@ teammates can actually watch.
   command endpoint enforces. Cloud runs already have the command surface
   (`user_message` via `/command/`); the backend gains an authorization check
   beyond "task author".
-- **Shared visibility (L–XL):** teammates need to see the live transcript.
-  Cloud runs: extend `stream_token` issuance to channel members (read-only) —
-  mostly backend auth work, the SSE pipe exists. Local runs are the hard
+- **Shared visibility (L–XL):** teammates need to see the live transcript —
+  and since channels are project-public, read access follows the channel:
+  any project user, member or not, can watch. Cloud runs: extend
+  `stream_token` issuance to project users (read-only) — mostly backend
+  auth work, the SSE pipe exists. Local runs are the hard
   case: either relay local session events up to the cloud feed (making the
   local/cloud transcript residency symmetric), or scope v1 to "shared threads
   run in the cloud" and make that a product stance. Recommendation: take the
@@ -278,9 +292,10 @@ find the right context without slurping everything.
   through raw feeds. Two grains:
   - `search_channel(channel, query)` — threads, messages, transcripts,
     artifacts, and context versions within one channel;
-  - `search_channels(query)` — cross-channel, membership-scoped, returning
-    channel + thread hits ranked so the caller can drill in with one more
-    call.
+  - `search_channels(query)` — cross-channel, project-scoped (channels are
+    project-public; only `personal` channels are excluded for non-owners),
+    returning channel + thread hits ranked so the caller can drill in with
+    one more call.
   This needs a server-side index over thread titles/messages/summaries and
   context versions. Full-transcript indexing is expensive; index the
   per-thread summaries C already produces, with transcript fetch as the
@@ -292,8 +307,9 @@ find the right context without slurping everything.
   follow-on, local threads surface via MCP as metadata + summary only —
   another reason for the "shared threads run in the cloud" stance.
 - The PostHog MCP server already fronts `desktop-file-system`; the new
-  plumbing is the search index and transcript read path, plus auth (channel
-  membership from A).
+  plumbing is the search index and transcript read path, plus auth mirroring
+  the UX model: project access grants reads, channel membership (from A)
+  gates writes, steering rules (E) gate posting into existing threads.
 - Depends on A + B; C feeds the index; D and E make it much more useful.
 
 ### H. Channel creation, organization, and automations-in-channels (M)
