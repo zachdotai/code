@@ -104,7 +104,7 @@ export function BrowserPane({
           path already maintains focusedPaneId (pane pointerdown capture, tab
           activation, in-tab navigation). Below the drop zones (z-100). */}
       {showFocusRing ? (
-        <div className="pointer-events-none absolute inset-0 z-[90] hidden rounded-xs ring-1 ring-primary ring-inset group-data-focused:block" />
+        <div className="pointer-events-none absolute inset-0 z-90 hidden rounded-xs ring-2 ring-primary ring-inset group-data-focused:block" />
       ) : null}
     </div>
   );
