@@ -788,6 +788,7 @@ export interface SignalSourceConnectedProperties {
     | "signals_scout"
     | "github"
     | "linear"
+    | "jira"
     | "zendesk"
     | "conversations"
     | "pganalyze"
