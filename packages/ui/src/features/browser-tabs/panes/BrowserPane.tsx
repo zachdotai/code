@@ -90,19 +90,22 @@ export function BrowserPane({
       data-focused={isFocused || undefined}
       onPointerDownCapture={handlePointerDownCapture}
       className={`relative flex h-full min-h-0 w-full min-w-0 flex-col ${
-        // ring-inset: the Panel wrapper is overflow-hidden, so an outside
-        // ring would be clipped invisible.
+        // Ring driven by the DOMAIN focus (data-focused ← focusedPaneId), not
+        // :focus-within — clicks on non-focusable content move no DOM focus,
+        // and in-pane navigation must keep its pane highlighted. Every path
+        // already maintains focusedPaneId: pane clicks (pointerdown capture
+        // here), tab activation, and in-tab navigation (the shared transforms
+        // all set window.focusedPaneId). ring-inset: the Panel wrapper is
+        // overflow-hidden, so an outside ring would be clipped invisible.
         showFocusRing
-          ? "ring-inset focus-within:ring-1 focus-within:ring-primary"
+          ? "ring-inset data-focused:ring-1 data-focused:ring-primary"
           : ""
       }`}
     >
-      <div className="p-1">
-        {/* Split/move drop zones mount INSIDE the router (PaneChrome), over the
-          content slot only — overlaying the whole pane would swallow drops
-          aimed at the strip bar/pills. */}
-        <RouterProvider router={router} />
-      </div>
+      {/* Split/move drop zones mount INSIDE the router (PaneChrome), over the
+        content slot only — overlaying the whole pane would swallow drops
+        aimed at the strip bar/pills. */}
+      <RouterProvider router={router} />
     </div>
   );
 }
