@@ -15,6 +15,7 @@ import {
   completeOAuthCallbackPage,
   OAUTH_CALLBACK_PATH,
 } from "./web-oauth-flow";
+import { requestPersistentStorage } from "./web-persistent-storage";
 
 if (window.location.pathname === OAUTH_CALLBACK_PATH) {
   // OAuth popup landing: relay code+state to the opener tab and close.
@@ -22,6 +23,13 @@ if (window.location.pathname === OAUTH_CALLBACK_PATH) {
   // rotate the refresh token out from under the main tab.
   completeOAuthCallbackPage();
 } else {
+  // Harden the per-device localStorage stores (cloud-workspace map, archived
+  // tasks, pins) against automatic browser eviction. Best-effort; see the
+  // helper for what it does and doesn't guarantee.
+  void requestPersistentStorage((message, ...args) =>
+    console.info(`[web-storage] ${message}`, ...args),
+  );
+
   // Restore any persisted session (desktop does this in main-process
   // bootstrap); flips authState.bootstrapComplete when done.
   void container.get(AUTH_SERVICE).initialize();

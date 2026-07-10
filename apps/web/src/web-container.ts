@@ -222,6 +222,7 @@ import {
   HEDGEHOG_MODE_HOST,
   type HedgehogModeHost,
 } from "@posthog/ui/shell/hedgehogModeHost";
+import { HOST_LOGGER, type HostLogger } from "@posthog/ui/shell/logger";
 import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
@@ -262,6 +263,7 @@ import { hostTrpcClient } from "./web-trpc";
 interface WebBindings {
   [HOST_TRPC_CLIENT]: HostTrpcClient;
   [ROOT_LOGGER]: RootLogger;
+  [HOST_LOGGER]: HostLogger;
   [FEATURE_FLAGS]: FeatureFlags;
   [ANALYTICS_TRACKER]: AnalyticsTracker;
   [ANALYTICS_SERVICE]: IAnalytics;
@@ -344,6 +346,10 @@ const scoped = (name?: string): RootLogger => ({
   scope: (n: string) => scoped(n),
 });
 container.bind(ROOT_LOGGER).toConstantValue(scoped());
+// @posthog/ui's shell logger resolves HOST_LOGGER separately; bind it to the
+// same console logger so UI-side errors (e.g. failed mutations) actually surface
+// instead of silently no-op'ing.
+container.bind(HOST_LOGGER).toConstantValue(scoped());
 
 // ── Auth: the portable core state machine over web adapters ──
 // Desktop runs AuthService in the Electron main process (SQLite session store,

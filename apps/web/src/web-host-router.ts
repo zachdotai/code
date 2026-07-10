@@ -4,6 +4,8 @@ import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router"
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import { z } from "zod";
 import { getWebPreviewConfigOptions } from "./web-agent-config";
+import { webArchiveStore } from "./web-archive-store";
+import { webTaskMetadataStore } from "./web-task-metadata-store";
 import { webWorkspaceStore } from "./web-workspace-store";
 
 // The in-browser slice of the host router. Electron serves the full hostRouter
@@ -85,7 +87,10 @@ const workspaceStubRouter = router({
     .input(z.object({ taskIds: z.array(z.string()) }))
     .mutation(({ input }) => {
       const created: string[] = [];
+      const archivedIds = new Set(webArchiveStore.ids());
       for (const taskId of input.taskIds) {
+        // Don't resurrect a workspace entry for a task the user archived here.
+        if (archivedIds.has(taskId)) continue;
         if (!webWorkspaceStore.getAll()[taskId]) {
           webWorkspaceStore.addCloud(taskId, null, new Date().toISOString());
           created.push(taskId);
@@ -117,12 +122,71 @@ const workspaceStubRouter = router({
     .mutation(({ input }) => {
       webWorkspaceStore.remove(input.taskId);
     }),
+
+  // ── Per-device task metadata (pins + viewed/activity timestamps) ──
+  // Desktop persists these in a local metadata service. The sidebar and the
+  // archive flow read them (archive awaits getPinnedTaskIds + unpin early, so a
+  // missing procedure rejects the whole archive). Backed by localStorage.
+  togglePin: publicProcedure
+    .input(z.object({ taskId: z.string() }))
+    .mutation(({ input }) => webTaskMetadataStore.togglePin(input.taskId)),
+  markViewed: publicProcedure
+    .input(z.object({ taskId: z.string() }))
+    .mutation(({ input }) => {
+      webTaskMetadataStore.markViewed(input.taskId);
+    }),
+  markActivity: publicProcedure
+    .input(z.object({ taskId: z.string() }))
+    .mutation(({ input }) => {
+      webTaskMetadataStore.markActivity(input.taskId);
+    }),
+  getPinnedTaskIds: publicProcedure.query(() =>
+    webTaskMetadataStore.getPinnedTaskIds(),
+  ),
+  getTaskTimestamps: publicProcedure
+    .input(z.object({ taskId: z.string() }))
+    .query(({ input }) => webTaskMetadataStore.get(input.taskId)),
+  getAllTaskTimestamps: publicProcedure.query(() =>
+    webTaskMetadataStore.getAll(),
+  ),
+});
+
+// Archiving on the web host is a per-device "hide from my sidebar" flag (there
+// is no local worktree to trash). Backed by localStorage; archiving also drops
+// the workspace entry so the task leaves the sidebar's task list.
+const archiveStubRouter = router({
+  archive: publicProcedure
+    .input(z.object({ taskId: z.string() }))
+    .mutation(({ input }) => {
+      const entry = webArchiveStore.add(input.taskId, new Date().toISOString());
+      webWorkspaceStore.remove(input.taskId);
+      return entry;
+    }),
+  unarchive: publicProcedure
+    .input(
+      z.object({ taskId: z.string(), recreateBranch: z.boolean().optional() }),
+    )
+    .mutation(({ input }) => {
+      webArchiveStore.remove(input.taskId);
+      // Re-register a cloud workspace so the task returns to the sidebar.
+      webWorkspaceStore.addCloud(input.taskId, null, new Date().toISOString());
+      return { taskId: input.taskId, worktreeName: null };
+    }),
+  list: publicProcedure.query(() => webArchiveStore.list()),
+  archivedTaskIds: publicProcedure.query(() => webArchiveStore.ids()),
+  delete: publicProcedure
+    .input(z.object({ taskId: z.string() }))
+    .mutation(({ input }) => {
+      webArchiveStore.remove(input.taskId);
+      webWorkspaceStore.remove(input.taskId);
+    }),
 });
 
 export const webHostRouter = router({
   additionalDirectories: additionalDirectoriesStubRouter,
   agent: agentStubRouter,
   analytics: analyticsRouter,
+  archive: archiveStubRouter,
   auth: authRouter,
   cloudTask: cloudTaskRouter,
   folders: foldersStubRouter,
