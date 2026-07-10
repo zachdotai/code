@@ -1,9 +1,9 @@
+import { inject, injectable } from "inversify";
 import {
   DESKTOP_FS_CLIENT,
   type DesktopFsClient,
   type FsEntryBase,
-} from "@posthog/core/canvas/desktopFsClient";
-import { inject, injectable } from "inversify";
+} from "./desktopFsClient";
 import type { ChannelTaskRecord } from "./schemas";
 
 const TASK_TYPE = "task";
@@ -15,13 +15,13 @@ type FsEntry = FsEntryBase;
 // concrete implementation is bound to CHANNELS_SERVICE in the host container;
 // the router only needs the method surface.
 export interface IChannelsService {
-  list(channelId: string): Promise<ChannelTaskRecord[]>;
-  file(input: {
+  listTasks(channelId: string): Promise<ChannelTaskRecord[]>;
+  fileTask(input: {
     channelId: string;
     taskId: string;
     taskTitle: string;
   }): Promise<ChannelTaskRecord>;
-  unfile(id: string): Promise<void>;
+  unfileTask(id: string): Promise<void>;
 }
 
 /**
@@ -42,7 +42,7 @@ export class ChannelsService implements IChannelsService {
     private readonly fs: DesktopFsClient,
   ) {}
 
-  async list(channelId: string): Promise<ChannelTaskRecord[]> {
+  async listTasks(channelId: string): Promise<ChannelTaskRecord[]> {
     const channelPath = await this.channelPath(channelId);
     const entries = await this.listUnderParent(channelPath);
     return entries
@@ -51,7 +51,7 @@ export class ChannelsService implements IChannelsService {
       .sort((a, b) => b.createdAt - a.createdAt);
   }
 
-  async file(input: {
+  async fileTask(input: {
     channelId: string;
     taskId: string;
     taskTitle: string;
@@ -86,7 +86,7 @@ export class ChannelsService implements IChannelsService {
     if (channelRows.length > 0) {
       const [moved, ...extras] = channelRows;
       const movedRow = await this.moveRow(moved.id, targetPath);
-      for (const extra of extras) await this.unfile(extra.id);
+      for (const extra of extras) await this.unfileTask(extra.id);
       return toRecord(movedRow, input.channelId);
     }
 
@@ -94,7 +94,7 @@ export class ChannelsService implements IChannelsService {
     return toRecord(created, input.channelId);
   }
 
-  async unfile(id: string): Promise<void> {
+  async unfileTask(id: string): Promise<void> {
     const res = await this.fs.fetch(`${encodeURIComponent(id)}/`, {
       method: "DELETE",
     });

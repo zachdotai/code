@@ -1,16 +1,16 @@
 import type { AuthService } from "@posthog/core/auth/auth";
 import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
+import {
+  DESKTOP_FS_CLIENT,
+  type DesktopFsClient,
+  type FsEntryBase,
+} from "@posthog/core/channels/desktopFsClient";
 import { inject, injectable } from "inversify";
 import type {
   DashboardFileMeta,
   DashboardRecord,
   DashboardSummary,
 } from "./dashboardSchemas";
-import {
-  DESKTOP_FS_CLIENT,
-  type DesktopFsClient,
-  type FsEntryBase,
-} from "./desktopFsClient";
 import { FREEFORM_TEMPLATE_ID, type FreeformVersion } from "./freeformSchemas";
 import { fetchCurrentUser } from "./posthogApi";
 

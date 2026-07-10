@@ -16,17 +16,19 @@ export const channelTasksRouter = router({
     .query(({ ctx, input }) =>
       ctx.container
         .get<IChannelsService>(CHANNELS_SERVICE)
-        .list(input.channelId),
+        .listTasks(input.channelId),
     ),
   file: publicProcedure
     .input(fileChannelTaskInput)
     .output(channelTaskRecordSchema)
     .mutation(({ ctx, input }) =>
-      ctx.container.get<IChannelsService>(CHANNELS_SERVICE).file(input),
+      ctx.container.get<IChannelsService>(CHANNELS_SERVICE).fileTask(input),
     ),
   unfile: publicProcedure
     .input(channelTaskIdInput)
     .mutation(({ ctx, input }) =>
-      ctx.container.get<IChannelsService>(CHANNELS_SERVICE).unfile(input.id),
+      ctx.container
+        .get<IChannelsService>(CHANNELS_SERVICE)
+        .unfileTask(input.id),
     ),
 });

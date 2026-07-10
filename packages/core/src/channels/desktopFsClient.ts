@@ -3,7 +3,7 @@ import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
 import { inject, injectable } from "inversify";
 
 export const DESKTOP_FS_CLIENT = Symbol.for(
-  "posthog.core.canvas.desktopFsClient",
+  "posthog.core.channels.desktopFsClient",
 );
 
 export interface FsEntryBase {

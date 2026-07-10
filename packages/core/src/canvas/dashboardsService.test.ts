@@ -1,6 +1,9 @@
+import type {
+  DesktopFsClient,
+  FsEntryBase,
+} from "@posthog/core/channels/desktopFsClient";
 import { describe, expect, it, vi } from "vitest";
 import { DashboardsService } from "./dashboardsService";
-import type { DesktopFsClient, FsEntryBase } from "./desktopFsClient";
 
 // ensureHomeCanvas fetches the signed-in user's label via posthogApi; stub it so
 // the service doesn't reach the network in tests.

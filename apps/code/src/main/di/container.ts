@@ -744,15 +744,17 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
 container.bind(MAIN_DISCORD_PRESENCE_SERVICE).to(DiscordPresenceService);
 
+// Channels feature seam (project-bluebird). Host-agnostic ChannelsService lives
+// in @posthog/core and resolves through ctx.container in the host-router channel
+// router. Loaded before canvas because it binds the shared DESKTOP_FS_CLIENT
+// that the canvas dashboard services also depend on.
+container.load(channelsCoreModule);
+
 // Canvas / dashboards (project-bluebird). The host-agnostic dashboard services
 // live in @posthog/core (bound via canvasCoreModule) and resolve through
-// ctx.container in the host-router routers.
+// ctx.container in the host-router routers; they compose DESKTOP_FS_CLIENT bound
+// by channelsCoreModule above.
 container.load(canvasCoreModule);
-
-// Channels feature seam (project-bluebird). Host-agnostic ChannelsService lives
-// in @posthog/core and resolves through ctx.container in the host-router
-// channel router; it composes DesktopFsClient bound by canvasCoreModule above.
-container.load(channelsCoreModule);
 
 // Browser tabs for the Channels canvas surface. Authoritative sqlite-backed
 // service in the main process; resolved by the host-router browserTabs router.
