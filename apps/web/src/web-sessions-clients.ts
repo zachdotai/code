@@ -8,18 +8,21 @@ import type {
   TitleGeneratorLogger,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import type { RootLogger } from "@posthog/di/logger";
+import { getWebAttachmentBase64 } from "./web-attachment-store";
 
 // CloudArtifactService + TitleGeneratorService (sessionsModule) depend on a
 // handful of clients that, on desktop, read the local filesystem or bundle local
 // skills. The cloud-only web host has neither, so these degrade:
-//   - no local file to read for an attachment upload -> null / reject
+//   - attachment bytes come from an in-memory store keyed by the synthetic id
+//     the os.saveClipboard* handlers minted (see web-attachment-store)
 //   - no local skills dir -> bundling rejects; dependency resolution is a no-op
 //     passthrough (skill bundles are always empty on web since skills.list is [])
 // The services themselves are portable core and bind unchanged via sessionsModule.
 
-// Reading a local attachment file as base64: no local files on web.
-export const webReadFileAsBase64: ReadFileAsBase64 = () =>
-  Promise.resolve(null);
+// Resolve an attachment id to its base64 bytes for cloud upload. On web the id
+// is a synthetic key into the in-memory store (not a filesystem path).
+export const webReadFileAsBase64: ReadFileAsBase64 = (filePath: string) =>
+  Promise.resolve(getWebAttachmentBase64(filePath));
 
 export const webBundleLocalSkill: BundleLocalSkill = () =>
   Promise.reject(new Error("Local skill bundling is not available on the web"));

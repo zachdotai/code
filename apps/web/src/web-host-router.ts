@@ -5,6 +5,7 @@ import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import { z } from "zod";
 import { getWebPreviewConfigOptions } from "./web-agent-config";
 import { webArchiveStore } from "./web-archive-store";
+import { putWebAttachment } from "./web-attachment-store";
 import { fetchS3Logs } from "./web-logs";
 import { webTaskMetadataStore } from "./web-task-metadata-store";
 import { webWorkspaceStore } from "./web-workspace-store";
@@ -84,6 +85,53 @@ const osStubRouter = router({
     .mutation(({ input }) => {
       window.open(input.url, "_blank", "noopener,noreferrer");
     }),
+  // Composer attachments. On desktop these write the browser-picked bytes to a
+  // local temp file and return its path (which becomes the attachment id, later
+  // read back for cloud upload). On web there's no filesystem, so stash the
+  // already-base64'd bytes in an in-memory store under a synthetic id — the
+  // upload pipeline reads them back via CLOUD_ARTIFACT_READ_FILE_AS_BASE64.
+  saveClipboardImage: publicProcedure
+    .input(
+      z.object({
+        base64Data: z.string(),
+        mimeType: z.string(),
+        originalName: z.string().optional(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const { path, name, mimeType } = putWebAttachment({
+        base64Data: input.base64Data,
+        name: input.originalName ?? "image",
+        mimeType: input.mimeType,
+      });
+      return { path, name, mimeType: mimeType ?? input.mimeType };
+    }),
+  saveClipboardFile: publicProcedure
+    .input(
+      z.object({
+        base64Data: z.string(),
+        originalName: z.string().optional(),
+      }),
+    )
+    .mutation(({ input }) =>
+      putWebAttachment({
+        base64Data: input.base64Data,
+        name: input.originalName ?? "attachment",
+      }),
+    ),
+  saveClipboardText: publicProcedure
+    .input(z.object({ text: z.string(), originalName: z.string().optional() }))
+    .mutation(({ input }) =>
+      putWebAttachment({
+        base64Data: btoa(unescape(encodeURIComponent(input.text))),
+        name: input.originalName ?? "pasted-text.txt",
+      }),
+    ),
+  // Image downscaling is a desktop optimization over a local file; on web the
+  // "filePath" is already our synthetic id, so pass it through unchanged.
+  downscaleImageFile: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .mutation(({ input }) => ({ path: input.filePath, name: "image" })),
 });
 
 const skillsStubRouter = router({
