@@ -75,8 +75,8 @@ jobs:
           fi
 
           if ! MEMBERS=$(gh api "orgs/${REPOSITORY%%/*}/teams/${TEAM_SLUG}/members" --paginate --jq '.[].login'); then
-            skip "Could not verify ${TEAM_SLUG} membership (GitHub API error)."
-            exit 0
+            echo "::error::Could not verify ${TEAM_SLUG} membership. Grant the Array Releaser GitHub App 'Organization members: read' permission, then approve the updated installation permissions."
+            exit 1
           fi
 
           if echo "$MEMBERS" | grep -qixF "$LABELER"; then
