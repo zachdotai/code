@@ -57,6 +57,22 @@ const deepLinkStubRouter = router({
   onOpenChannel: neverEmit,
 });
 
+// Slack connect uses a desktop deep-link callback relay (Slack redirects to
+// posthog-code://, the main process captures it). No browser equivalent yet, so
+// there's never a pending callback and the event streams never fire. The
+// callback hook is mounted app-wide, so without this it errors on every page.
+const slackIntegrationStubRouter = router({
+  consumePendingCallback: publicProcedure.query(() => null),
+  onCallback: neverEmit,
+  onFlowTimedOut: neverEmit,
+  startFlow: publicProcedure
+    .input(z.object({ region: z.string(), projectId: z.number() }))
+    .mutation(() => ({
+      success: false,
+      error: "Connecting Slack isn't available on the web yet.",
+    })),
+});
+
 const agentStubRouter = router({
   // SessionService subscribes to this in its constructor. No local agent
   // sessions exist on web, so hold the stream open and never emit.
@@ -318,6 +334,7 @@ export const webHostRouter = router({
   logs: logsStubRouter,
   os: osStubRouter,
   skills: skillsStubRouter,
+  slackIntegration: slackIntegrationStubRouter,
   workspace: workspaceStubRouter,
 });
 
