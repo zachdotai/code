@@ -6,6 +6,7 @@ import {
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
 import {
+  Button,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -61,7 +62,7 @@ import {
   pendingTaskPromptStoreApi,
   usePendingTaskPrompt,
 } from "@posthog/ui/shell/pendingTaskPromptStore";
-import { Box, Button, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface SessionViewProps {
@@ -181,7 +182,12 @@ function CloudStreamDisconnectedBanner({
         )}
       </Flex>
       {onRetry && (
-        <Button variant="soft" size="1" color="red" onClick={onRetry}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRetry}
+          className="border-(--red-6) text-(--red-11) hover:bg-(--red-3)"
+        >
           Retry
         </Button>
       )}
@@ -525,7 +531,7 @@ export function SessionView({
                       {onRestoreWorktree && (
                         <Button
                           variant="outline"
-                          size="1"
+                          size="sm"
                           onClick={onRestoreWorktree}
                           disabled={isRestoring}
                         >
@@ -613,16 +619,20 @@ export function SessionView({
                     </Text>
                     <Flex gap="2" mt="2">
                       {onRetry && (
-                        <Button variant="soft" size="2" onClick={onRetry}>
+                        <Button
+                          variant="outline"
+                          size="default"
+                          onClick={onRetry}
+                        >
                           Retry
                         </Button>
                       )}
                       {onNewSession && (
                         <Button
-                          variant="soft"
-                          size="2"
-                          color="green"
+                          variant="outline"
+                          size="default"
                           onClick={onNewSession}
+                          className="border-(--green-6) text-(--green-11) hover:bg-(--green-3)"
                         >
                           New Session
                         </Button>

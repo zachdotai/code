@@ -7,11 +7,14 @@ import {
   PlusIcon,
 } from "@phosphor-icons/react";
 import {
+  Badge,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Spinner,
 } from "@posthog/quill";
 import { getFileExtension } from "@posthog/shared";
 import {
@@ -19,15 +22,7 @@ import {
   type FileChangeType,
 } from "@posthog/shared/analytics-events";
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
-import {
-  Badge,
-  Box,
-  Button,
-  Flex,
-  IconButton,
-  Spinner,
-  Text,
-} from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { PanelMessage } from "../../../primitives/PanelMessage";
 import { Tooltip } from "../../../primitives/Tooltip";
@@ -43,7 +38,10 @@ import {
   usePrChangedFiles,
 } from "../../git-interaction/useGitQueries";
 import { makeFileKey } from "../../git-interaction/utils/fileKey";
-import { getStatusIndicator } from "../../git-interaction/utils/gitStatusUtils";
+import {
+  getStatusIndicator,
+  type StatusColor,
+} from "../../git-interaction/utils/gitStatusUtils";
 import { partitionByStaged } from "../../git-interaction/utils/partitionByStaged";
 import { useFileContextMenu } from "../../sessions/components/useFileContextMenu";
 import { useCwd } from "../../sidebar/useCwd";
@@ -71,6 +69,18 @@ interface ChangedFileItemProps {
   depth?: number;
 }
 
+// The git status colors map onto quill Badge's semantic variants.
+const STATUS_BADGE_VARIANT: Record<
+  StatusColor,
+  "success" | "warning" | "destructive" | "info" | "default"
+> = {
+  green: "success",
+  orange: "warning",
+  red: "destructive",
+  blue: "info",
+  gray: "default",
+};
+
 function CompactIconButton({
   tooltip,
   onClick,
@@ -82,15 +92,14 @@ function CompactIconButton({
 }) {
   return (
     <Tooltip content={tooltip}>
-      <IconButton
-        size="1"
-        variant="ghost"
-        color="gray"
+      <Button
+        variant="link-muted"
+        size="icon-xs"
         onClick={onClick}
         className="mx-0.5 size-[18px] shrink-0 p-0"
       >
         {children}
-      </IconButton>
+      </Button>
     </Tooltip>
   );
 }
@@ -224,10 +233,9 @@ function ChangedFileItem({
             <Tooltip content="Open file">
               <DropdownMenuTrigger
                 render={
-                  <IconButton
-                    size="1"
-                    variant="ghost"
-                    color="gray"
+                  <Button
+                    variant="link-muted"
+                    size="icon-xs"
                     onClick={(e) => e.stopPropagation()}
                     className="h-[18px] w-[18px] shrink-0 p-0"
                   />
@@ -271,8 +279,7 @@ function ChangedFileItem({
       )}
 
       <Badge
-        size="1"
-        color={indicator.color}
+        variant={STATUS_BADGE_VARIANT[indicator.color]}
         className="shrink-0 px-[4px] py-0 text-[10px]"
       >
         {indicator.label}
@@ -333,7 +340,7 @@ function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
       return (
         <PanelMessage detail="Changes will appear once the agent starts writing code">
           <Flex align="center" gap="2">
-            <Spinner size="1" />
+            <Spinner className="size-4" />
             <Text className="text-sm">Waiting for changes...</Text>
           </Flex>
         </PanelMessage>
@@ -352,11 +359,15 @@ function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
         <PanelMessage>
           <Flex direction="column" align="center" gap="2">
             <Text>Could not load file changes</Text>
-            <Button size="1" variant="soft" asChild>
-              <a href={prUrl} target="_blank" rel="noopener noreferrer">
-                View on GitHub
-              </a>
-            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              render={
+                <a href={prUrl} target="_blank" rel="noopener noreferrer">
+                  View on GitHub
+                </a>
+              }
+            />
           </Flex>
         </PanelMessage>
       );
@@ -368,7 +379,7 @@ function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
       return (
         <PanelMessage detail="Changes will appear as the agent modifies files">
           <Flex align="center" gap="2">
-            <Spinner size="1" />
+            <Spinner className="size-4" />
             <Text className="text-sm">Waiting for changes...</Text>
           </Flex>
         </PanelMessage>
@@ -383,7 +394,7 @@ function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
         <ChangesTreeView files={effectiveFiles} renderFile={renderFile} />
         {isRunActive && (
           <Flex align="center" gap="2" px="3" py="2">
-            <Spinner size="1" />
+            <Spinner className="size-4" />
             <Text color="gray" className="text-[13px]">
               Agent is still running...
             </Text>

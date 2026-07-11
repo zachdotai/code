@@ -20,10 +20,19 @@ import type { GithubConnectService } from "@posthog/core/onboarding/githubConnec
 import { GITHUB_CONNECT_SERVICE } from "@posthog/core/onboarding/identifiers";
 import { useService } from "@posthog/di/react";
 import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Skeleton,
 } from "@posthog/quill";
 import type { OnboardingGithubConnectFlow } from "@posthog/shared/analytics-events";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -43,15 +52,7 @@ import { useProjectsWithIntegrations } from "@posthog/ui/features/onboarding/hoo
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { track } from "@posthog/ui/shell/analytics";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import {
-  AlertDialog,
-  Box,
-  Button,
-  Flex,
-  Skeleton,
-  Spinner,
-  Text,
-} from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
@@ -321,8 +322,8 @@ export function GitHubConnectPanel() {
                     <Flex align="center" gap="3" wrap="wrap">
                       {isStale && (
                         <Button
-                          size="1"
-                          variant="solid"
+                          size="sm"
+                          variant="primary"
                           loading={isReconnecting}
                           disabled={
                             reconnectingInstallationId !== null &&
@@ -349,9 +350,8 @@ export function GitHubConnectPanel() {
                         </Button>
                       )}
                       <Button
-                        size="1"
-                        variant="soft"
-                        color="gray"
+                        size="sm"
+                        variant="outline"
                         onClick={() => {
                           openExternalUrl(
                             buildInstallationSettingsUrl(
@@ -365,12 +365,12 @@ export function GitHubConnectPanel() {
                         Settings
                       </Button>
                       <Button
-                        size="1"
-                        variant="soft"
-                        color="red"
+                        size="sm"
+                        variant="outline"
                         onClick={() =>
                           setDisconnectTarget({ installationId, accountName })
                         }
+                        className="border-(--red-6) text-(--red-11) hover:bg-(--red-3)"
                       >
                         Disconnect
                       </Button>
@@ -380,9 +380,8 @@ export function GitHubConnectPanel() {
               })}
               <Flex align="center" gap="3" wrap="wrap">
                 <Button
-                  size="1"
-                  variant="soft"
-                  color="gray"
+                  size="sm"
+                  variant="outline"
                   onClick={() => {
                     queryClient.invalidateQueries({
                       queryKey: ["integrations"],
@@ -396,9 +395,8 @@ export function GitHubConnectPanel() {
                   Refresh
                 </Button>
                 <Button
-                  size="1"
-                  variant="ghost"
-                  color="gray"
+                  size="sm"
+                  variant="link-muted"
                   onClick={() => initiateConnect("user_new")}
                   loading={isConnecting}
                 >
@@ -410,8 +408,8 @@ export function GitHubConnectPanel() {
           ) : !isLoading && !githubUserIntegrationsLoading ? (
             selectedProject?.hasGithubIntegration && canTakeAction ? (
               <Button
-                size="2"
-                variant="solid"
+                size="default"
+                variant="primary"
                 onClick={() => initiateConnect("team_existing")}
                 className="self-start"
               >
@@ -421,17 +419,16 @@ export function GitHubConnectPanel() {
             ) : selectedAlternative && selectedProject && canTakeAction ? (
               <Flex direction="column" gap="2" align="start">
                 <Button
-                  size="2"
-                  variant="solid"
+                  size="default"
+                  variant="primary"
                   onClick={() => initiateConnect("team_alternative")}
                 >
                   Connect GitHub on {selectedProject.name}
                   <ArrowSquareOut size={12} />
                 </Button>
                 <Button
-                  size="1"
-                  variant="ghost"
-                  color="gray"
+                  size="sm"
+                  variant="link-muted"
                   onClick={() => setSelectedProjectId(selectedAlternative.id)}
                 >
                   Switch to {selectedAlternative.name}
@@ -440,8 +437,8 @@ export function GitHubConnectPanel() {
             ) : (
               <Flex gap="2" align="center">
                 <Button
-                  size="2"
-                  variant="solid"
+                  size="default"
+                  variant="primary"
                   onClick={() => {
                     const { isRetry, shouldReset } = deriveConnectButtonState({
                       isConnecting,
@@ -464,9 +461,8 @@ export function GitHubConnectPanel() {
                 </Button>
                 {hasConnectError && (
                   <Button
-                    size="2"
-                    variant="ghost"
-                    color="gray"
+                    size="default"
+                    variant="link-muted"
                     onClick={resetConnect}
                   >
                     Dismiss
@@ -478,7 +474,7 @@ export function GitHubConnectPanel() {
         </Flex>
       </Box>
 
-      <AlertDialog.Root
+      <AlertDialog
         open={disconnectTarget !== null}
         onOpenChange={(next) => {
           if (!next && !isDisconnecting) {
@@ -486,38 +482,39 @@ export function GitHubConnectPanel() {
           }
         }}
       >
-        <AlertDialog.Content maxWidth="450px">
-          <AlertDialog.Title>
-            Disconnect{" "}
-            {disconnectTarget ? disconnectTarget.accountName : "GitHub"}
-          </AlertDialog.Title>
-          <AlertDialog.Description className="text-sm">
-            This removes your personal GitHub authorization from PostHog. You
-            can reconnect at any time. The GitHub App itself stays installed in
-            your org — uninstall it on GitHub if you want to remove that too.
-          </AlertDialog.Description>
-          <Flex gap="3" mt="4" justify="end">
-            <AlertDialog.Cancel>
-              <Button variant="soft" color="gray" disabled={isDisconnecting}>
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
+        <AlertDialogContent className="max-w-[450px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Disconnect{" "}
+              {disconnectTarget ? disconnectTarget.accountName : "GitHub"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm">
+              This removes your personal GitHub authorization from PostHog. You
+              can reconnect at any time. The GitHub App itself stays installed
+              in your org — uninstall it on GitHub if you want to remove that
+              too.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose
+              render={<Button variant="outline" disabled={isDisconnecting} />}
+            >
+              Cancel
+            </AlertDialogClose>
             <Button
-              variant="solid"
-              color="red"
+              variant="destructive"
+              loading={isDisconnecting}
               onClick={() => {
                 if (!disconnectTarget) return;
                 disconnect({ installationId: disconnectTarget.installationId });
                 setDisconnectTarget(null);
               }}
-              disabled={isDisconnecting}
             >
-              {isDisconnecting ? <Spinner size="1" /> : null}
               Disconnect
             </Button>
-          </Flex>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

@@ -8,22 +8,26 @@ import {
   GitFork,
   GitPullRequest,
 } from "@phosphor-icons/react";
-import { getPrVisualConfig } from "@posthog/core/git-interaction/prStatus";
+import {
+  getPrVisualConfig,
+  type PrVisualConfig,
+} from "@posthog/core/git-interaction/prStatus";
 import { parseGithubUrl } from "@posthog/git/utils";
 import {
+  Button,
   ButtonGroup,
+  DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-  Button as QButton,
-  DropdownMenu as QDropdownMenu,
-  DropdownMenuItem as QDropdownMenuItem,
+  Spinner,
 } from "@posthog/quill";
 import type { PrActionType } from "@posthog/shared";
-import { Button, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Flex, Text } from "@radix-ui/themes";
 import { ChevronDown } from "lucide-react";
 import { Tooltip } from "../../../primitives/Tooltip";
 import { toast } from "../../../primitives/toast";
@@ -278,6 +282,17 @@ interface PrBadgeControlProps {
   onOtherPrSelect: (url: string) => void;
 }
 
+// Soft tint for the badge's dropdown chevron, keyed by PR lifecycle color so it
+// matches the adjacent PRBadgeLink (which uses the same Radix color scale).
+const CHEVRON_COLOR_CLASSES: Record<PrVisualConfig["color"], string> = {
+  gray: "bg-(--gray-3) text-(--gray-11) border-(--gray-6) hover:bg-(--gray-4)",
+  green:
+    "bg-(--green-3) text-(--green-11) border-(--green-6) hover:bg-(--green-4)",
+  red: "bg-(--red-3) text-(--red-11) border-(--red-6) hover:bg-(--red-4)",
+  purple:
+    "bg-(--purple-3) text-(--purple-11) border-(--purple-6) hover:bg-(--purple-4)",
+};
+
 function PrBadgeControl({
   prUrl,
   prState,
@@ -317,21 +332,16 @@ function PrBadgeControl({
         attachedRight={hasDropdown}
       />
       {hasDropdown && (
-        <QDropdownMenu>
+        <DropdownMenu>
           <DropdownMenuTrigger
             render={
               <Button
-                size="1"
-                variant="soft"
-                color={config.color}
+                size="sm"
+                variant="default"
                 disabled={isPrPending}
-                style={{
-                  borderTopLeftRadius: 0,
-                  borderBottomLeftRadius: 0,
-                  borderLeft: `1px solid var(--${config.color}-6)`,
-                  paddingLeft: "6px",
-                  paddingRight: "6px",
-                }}
+                // Match the attached PR badge's soft tint and flatten the left
+                // edge so the two read as one control.
+                className={`rounded-l-none border-0 border-l px-1.5 ${CHEVRON_COLOR_CLASSES[config.color]}`}
               />
             }
           >
@@ -349,13 +359,13 @@ function PrBadgeControl({
               <DropdownMenuSeparator />
             )}
             {lifecycleItems.map((action) => (
-              <QDropdownMenuItem
+              <DropdownMenuItem
                 key={action.id}
                 onClick={() => onPrSelect(action.id)}
               >
                 {getPrActionIcon(action.id)}
                 {action.label}
-              </QDropdownMenuItem>
+              </DropdownMenuItem>
             ))}
             {otherPrs.length > 0 && (
               <>
@@ -367,7 +377,7 @@ function PrBadgeControl({
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     {otherPrs.map((otherPr) => (
-                      <QDropdownMenuItem
+                      <DropdownMenuItem
                         key={otherPr.url}
                         onClick={() => onOtherPrSelect(otherPr.url)}
                       >
@@ -385,7 +395,7 @@ function PrBadgeControl({
                             <Text color="gray"> · {otherPr.repoLabel}</Text>
                           )}
                         </Text>
-                      </QDropdownMenuItem>
+                      </DropdownMenuItem>
                     ))}
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
@@ -396,14 +406,14 @@ function PrBadgeControl({
                 {(hasMenuItems || otherPrs.length > 0) && (
                   <DropdownMenuSeparator />
                 )}
-                <QDropdownMenuItem onClick={copyBranchName}>
+                <DropdownMenuItem onClick={copyBranchName}>
                   <Copy size={12} weight="bold" />
                   Copy branch name
-                </QDropdownMenuItem>
+                </DropdownMenuItem>
               </>
             )}
           </DropdownMenuContent>
-        </QDropdownMenu>
+        </DropdownMenu>
       )}
     </Flex>
   );
@@ -438,15 +448,19 @@ function GitActionControl({
   const isPrimaryDisabled = !primaryAction.enabled || isBusy;
 
   const primaryButton = (
-    <QButton
+    <Button
       variant={variant}
       disabled={isPrimaryDisabled}
       onClick={() => onSelect(primaryAction.id)}
       className="bg-primary text-primary-foreground not-disabled:hover:bg-primary/80 hover:text-primary-foreground/80"
     >
-      {isBusy ? <Spinner size="1" /> : getGitActionIcon(primaryAction.id)}
+      {isBusy ? (
+        <Spinner className="size-4" />
+      ) : (
+        getGitActionIcon(primaryAction.id)
+      )}
       {primaryAction.label}
-    </QButton>
+    </Button>
   );
 
   const wrappedPrimaryButton =
@@ -465,10 +479,10 @@ function GitActionControl({
   return (
     <ButtonGroup>
       {wrappedPrimaryButton}
-      <QDropdownMenu>
+      <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <QButton
+            <Button
               className="bg-primary not-disabled:hover:bg-primary/80"
               variant={variant}
               disabled={isBusy}
@@ -486,7 +500,7 @@ function GitActionControl({
             />
           ))}
         </DropdownMenuContent>
-      </QDropdownMenu>
+      </DropdownMenu>
     </ButtonGroup>
   );
 }
@@ -511,14 +525,14 @@ function GitDropdownItem({
   if (!action.enabled && action.disabledReason) {
     return (
       <Tooltip content={action.disabledReason} side="left">
-        <QDropdownMenuItem disabled>{itemContent}</QDropdownMenuItem>
+        <DropdownMenuItem disabled>{itemContent}</DropdownMenuItem>
       </Tooltip>
     );
   }
   return (
-    <QDropdownMenuItem onClick={() => onSelect(action.id)}>
+    <DropdownMenuItem onClick={() => onSelect(action.id)}>
       {itemContent}
-    </QDropdownMenuItem>
+    </DropdownMenuItem>
   );
 }
 
