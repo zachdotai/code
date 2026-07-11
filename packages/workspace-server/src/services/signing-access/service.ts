@@ -32,6 +32,9 @@ interface BrokerResponse {
 
 const BROKER_START_TIMEOUT_MS = 5_000;
 const CONTROL_REQUEST_TIMEOUT_MS = 5_000;
+const MISSING_KEYCHAIN_ENTITLEMENT_ERROR = "OSStatus error -34018";
+const SIGNING_IDENTITY_GUIDANCE =
+  "Secure Enclave signing requires the native helper to be signed with an Apple Development or Developer ID identity. Set APPLE_CODESIGN_IDENTITY, rebuild the desktop app, and restart it.";
 
 @injectable()
 export class SecureEnclaveSigningAccessService implements SigningAccessService {
@@ -87,11 +90,12 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
         error: null,
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         supported: true,
         enabled,
         publicKey: null,
-        error: error instanceof Error ? error.message : String(error),
+        error: this.describeBrokerError(message),
       };
     }
   }
@@ -250,6 +254,13 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
       process.env.POSTHOG_CODE_SECURE_ENCLAVE_SIGNING === "1" ||
       this.workspaceSettings.getSecureEnclaveSigningEnabled()
     );
+  }
+
+  private describeBrokerError(message: string): string {
+    if (message.includes(MISSING_KEYCHAIN_ENTITLEMENT_ERROR)) {
+      return SIGNING_IDENTITY_GUIDANCE;
+    }
+    return message;
   }
 
   private get controlSocketPath(): string {

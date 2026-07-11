@@ -259,9 +259,15 @@ export function buildSigningAgent(): Plugin {
         ],
         { stdio: "inherit" },
       );
-      execFileSync("codesign", ["--force", "--sign", "-", destPath], {
-        stdio: "inherit",
-      });
+      const signingIdentity =
+        process.env.APPLE_CODESIGN_IDENTITY?.trim() || "-";
+      execFileSync(
+        "codesign",
+        ["--force", "--sign", signingIdentity, destPath],
+        {
+          stdio: "inherit",
+        },
+      );
       copyFileSync(destPath, wrapperPath);
       signingAgentBuilt = true;
     },

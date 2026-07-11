@@ -77,6 +77,19 @@ describe("SecureEnclaveSigningAccessService", () => {
     });
   });
 
+  it("explains how to fix an unsigned development helper", async () => {
+    const { service } = createService(true);
+    const internals = service as unknown as SigningAccessServiceInternals;
+    vi.spyOn(internals, "ensureBroker").mockRejectedValue(
+      new Error("OSStatus error -34018 - failed to add key to keychain"),
+    );
+
+    await expect(service.getStatus()).resolves.toMatchObject({
+      publicKey: null,
+      error: expect.stringContaining("APPLE_CODESIGN_IDENTITY"),
+    });
+  });
+
   it("persists enablement before returning the refreshed status", async () => {
     const { service, workspaceSettings } = createService(false);
     vi.spyOn(service, "getStatus").mockResolvedValue({
