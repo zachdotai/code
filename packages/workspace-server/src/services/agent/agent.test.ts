@@ -209,6 +209,7 @@ describe("AgentService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(process, "kill").mockReturnValue(true);
 
     // The Codex MCP reachability probe hits the network; default it to "reachable"
     // so unrelated session tests stay deterministic and offline-safe.
@@ -243,15 +244,38 @@ describe("AgentService", () => {
   describe("MCP servers", () => {
     it("holds managed signing access for the lifetime of a local session", async () => {
       const release = vi.fn().mockResolvedValue(undefined);
+      const registerProcess = vi.fn().mockResolvedValue(undefined);
+      const unregisterProcess = vi.fn().mockResolvedValue(undefined);
       deps.signingAccessService.acquire.mockResolvedValueOnce({
         socketPath: "/mock/signing.sock",
         gitConfig: {},
+        registerProcess,
+        unregisterProcess,
         release,
       });
+      mockAgentRun.mockImplementationOnce(
+        async (_taskId, _taskRunId, options) => {
+          options.processCallbacks?.onProcessSpawned?.({
+            pid: 1234,
+            command: "codex app-server",
+          });
+          options.processCallbacks?.onProcessExited?.(1234);
+          return {
+            clientStreams: {
+              readable: new ReadableStream(),
+              writable: new WritableStream(),
+            },
+          };
+        },
+      );
 
       await service.startSession(baseSessionParams);
 
       expect(deps.signingAccessService.acquire).toHaveBeenCalledWith("run-1");
+      expect(registerProcess).toHaveBeenCalledWith(1234);
+      expect(unregisterProcess).toHaveBeenCalledWith(1234);
+      expect(process.kill).toHaveBeenCalledWith(1234, "SIGSTOP");
+      expect(process.kill).toHaveBeenCalledWith(1234, "SIGCONT");
       expect(release).not.toHaveBeenCalled();
 
       await service.cleanupAll();
@@ -264,6 +288,8 @@ describe("AgentService", () => {
       deps.signingAccessService.acquire.mockResolvedValueOnce({
         socketPath: "/mock/signing.sock",
         gitConfig: {},
+        registerProcess: vi.fn().mockResolvedValue(undefined),
+        unregisterProcess: vi.fn().mockResolvedValue(undefined),
         release,
       });
       mockAgentRun.mockRejectedValueOnce(new Error("startup failed"));
@@ -273,6 +299,120 @@ describe("AgentService", () => {
       );
 
       expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    it("resumes the agent when signing process registration fails", async () => {
+      const registerProcess = vi
+        .fn()
+        .mockRejectedValue(new Error("broker unavailable"));
+      deps.signingAccessService.acquire.mockResolvedValueOnce({
+        socketPath: "/mock/signing.sock",
+        gitConfig: {},
+        registerProcess,
+        unregisterProcess: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      });
+      mockAgentRun.mockImplementationOnce(
+        async (_taskId, _taskRunId, options) => {
+          options.processCallbacks?.onProcessSpawned?.({
+            pid: 1234,
+            command: "codex app-server",
+          });
+          return {
+            clientStreams: {
+              readable: new ReadableStream(),
+              writable: new WritableStream(),
+            },
+          };
+        },
+      );
+
+      await service.startSession(baseSessionParams);
+
+      await vi.waitFor(() => {
+        expect(process.kill).toHaveBeenCalledWith(1234, "SIGCONT");
+      });
+    });
+
+    it("revokes signing after registration when the agent exits immediately", async () => {
+      let finishRegistration: (() => void) | undefined;
+      const registerProcess = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRegistration = resolve;
+          }),
+      );
+      const unregisterProcess = vi.fn().mockResolvedValue(undefined);
+      deps.signingAccessService.acquire.mockResolvedValueOnce({
+        socketPath: "/mock/signing.sock",
+        gitConfig: {},
+        registerProcess,
+        unregisterProcess,
+        release: vi.fn().mockResolvedValue(undefined),
+      });
+      mockAgentRun.mockImplementationOnce(
+        async (_taskId, _taskRunId, options) => {
+          options.processCallbacks?.onProcessSpawned?.({
+            pid: 1234,
+            command: "codex app-server",
+          });
+          options.processCallbacks?.onProcessExited?.(1234);
+          return {
+            clientStreams: {
+              readable: new ReadableStream(),
+              writable: new WritableStream(),
+            },
+          };
+        },
+      );
+
+      await service.startSession(baseSessionParams);
+
+      expect(unregisterProcess).not.toHaveBeenCalled();
+      finishRegistration?.();
+      await vi.waitFor(() => {
+        expect(unregisterProcess).toHaveBeenCalledWith(1234);
+      });
+    });
+
+    it("does not authorize signing when the agent cannot be stopped", async () => {
+      const registerProcess = vi.fn().mockResolvedValue(undefined);
+      deps.signingAccessService.acquire.mockResolvedValueOnce({
+        socketPath: "/mock/signing.sock",
+        gitConfig: {},
+        registerProcess,
+        unregisterProcess: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      });
+      vi.mocked(process.kill).mockImplementationOnce(() => {
+        throw new Error("process exited");
+      });
+      mockAgentRun.mockImplementationOnce(
+        async (_taskId, _taskRunId, options) => {
+          options.processCallbacks?.onProcessSpawned?.({
+            pid: 1234,
+            command: "codex app-server",
+          });
+          return {
+            clientStreams: {
+              readable: new ReadableStream(),
+              writable: new WritableStream(),
+            },
+          };
+        },
+      );
+
+      await service.startSession(baseSessionParams);
+
+      expect(registerProcess).not.toHaveBeenCalled();
+      expect(process.kill).not.toHaveBeenCalledWith(1234, "SIGCONT");
+      expect(deps.processTracking.register).toHaveBeenCalledWith(
+        1234,
+        "agent",
+        "agent:run-1",
+        expect.objectContaining({ taskRunId: "run-1" }),
+        "task-1",
+      );
     });
 
     it("marks desktop sessions as local even though they have a taskRunId", async () => {

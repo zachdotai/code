@@ -1,6 +1,8 @@
 export interface SigningAccessLease {
   socketPath: string;
   gitConfig: Record<string, string>;
+  registerProcess(pid: number): Promise<void>;
+  unregisterProcess(pid: number): Promise<void>;
   release(): Promise<void>;
 }
 

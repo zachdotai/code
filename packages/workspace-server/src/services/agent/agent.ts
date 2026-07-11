@@ -787,6 +787,7 @@ If a repository IS genuinely required, attach one in this priority order:
 
     const signingAccessLease =
       await this.signingAccessService.acquire(taskRunId);
+    const signingProcessRegistrations = new Map<number, Promise<void>>();
 
     const agent = new Agent({
       posthog: {
@@ -855,6 +856,44 @@ If a repository IS genuinely required, attach one in this priority order:
           : undefined,
         processCallbacks: {
           onProcessSpawned: (info) => {
+            if (signingAccessLease) {
+              let processStopped = true;
+              try {
+                process.kill(info.pid, "SIGSTOP");
+              } catch {
+                processStopped = false;
+                this.log.debug("Agent exited before signing authorization", {
+                  pid: info.pid,
+                  taskRunId,
+                });
+              }
+              if (processStopped) {
+                const registration = signingAccessLease
+                  .registerProcess(info.pid)
+                  .catch((error) => {
+                    this.log.warn("Failed to authorize agent signing process", {
+                      pid: info.pid,
+                      taskRunId,
+                      error:
+                        error instanceof Error ? error.message : String(error),
+                    });
+                  })
+                  .finally(() => {
+                    try {
+                      process.kill(info.pid, "SIGCONT");
+                    } catch {
+                      this.log.debug(
+                        "Agent exited during signing authorization",
+                        {
+                          pid: info.pid,
+                          taskRunId,
+                        },
+                      );
+                    }
+                  });
+                signingProcessRegistrations.set(info.pid, registration);
+              }
+            }
             this.processTracking.register(
               info.pid,
               "agent",
@@ -868,6 +907,20 @@ If a repository IS genuinely required, attach one in this priority order:
             );
           },
           onProcessExited: (pid) => {
+            if (signingAccessLease) {
+              const registration = signingProcessRegistrations.get(pid);
+              signingProcessRegistrations.delete(pid);
+              Promise.resolve(registration)
+                .then(() => signingAccessLease.unregisterProcess(pid))
+                .catch((error) => {
+                  this.log.warn("Failed to revoke agent signing process", {
+                    pid,
+                    taskRunId,
+                    error:
+                      error instanceof Error ? error.message : String(error),
+                  });
+                });
+            }
             this.processTracking.unregister(pid, "agent-exited");
           },
           onMcpServersReady: (serverNames) => {

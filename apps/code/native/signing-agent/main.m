@@ -3,6 +3,7 @@
 #import <Security/Security.h>
 #import <sys/socket.h>
 #import <sys/stat.h>
+#import <sys/sysctl.h>
 #import <sys/un.h>
 #import <unistd.h>
 
@@ -83,6 +84,30 @@ static BOOL SessionIsUnlocked(void) {
     return [session[(NSString *)kCGSessionOnConsoleKey] boolValue] &&
         [session[(NSString *)kCGSessionLoginDoneKey] boolValue] &&
         ![session[@"CGSSessionScreenIsLocked"] boolValue];
+}
+
+static pid_t PeerPID(int fd) {
+    pid_t pid = 0;
+    socklen_t length = sizeof(pid);
+    return getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0 ? pid : 0;
+}
+
+static pid_t ParentPID(pid_t pid) {
+    int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
+    struct kinfo_proc process = {0};
+    size_t length = sizeof(process);
+    if (sysctl(mib, 4, &process, &length, NULL, 0) != 0 || length == 0) return 0;
+    return process.kp_eproc.e_ppid;
+}
+
+static BOOL ProcessDescendsFrom(pid_t pid, NSSet<NSNumber *> *roots) {
+    for (NSUInteger depth = 0; pid > 1 && depth < 128; depth++) {
+        if ([roots containsObject:@(pid)]) return YES;
+        pid_t parent = ParentPID(pid);
+        if (parent <= 0 || parent == pid) return NO;
+        pid = parent;
+    }
+    return NO;
 }
 
 static NSData *ReadSSHString(NSData *data, NSUInteger *offset) {
@@ -222,13 +247,31 @@ static NSArray<NSData *> *ParseDERSignature(NSData *signature) {
 }
 @end
 
+@class Broker;
+
+@interface SigningLease : NSObject
+@property(nonatomic, readonly) NSString *agentId;
+@property(nonatomic, readonly) NSMutableSet<NSNumber *> *rootPIDs;
+@property(nonatomic) BOOL signingAuthorized;
+- (instancetype)initWithAgentId:(NSString *)agentId;
+@end
+
+@implementation SigningLease
+- (instancetype)initWithAgentId:(NSString *)agentId {
+    self = [super init];
+    if (!self) return nil;
+    _agentId = [agentId copy];
+    _rootPIDs = [NSMutableSet set];
+    return self;
+}
+@end
+
 @interface Broker : NSObject
 @property(nonatomic, readonly) NSString *controlSocketPath;
 @property(nonatomic, readonly) NSString *agentSocketPath;
 @property(nonatomic, readonly) SecureEnclaveKey *key;
-@property(nonatomic, readonly) NSMutableSet<NSString *> *leases;
+@property(nonatomic, readonly) NSMutableDictionary<NSString *, SigningLease *> *leases;
 @property(nonatomic, readonly) dispatch_queue_t stateQueue;
-@property(nonatomic) BOOL signingAuthorized;
 @property(nonatomic) dispatch_source_t parentMonitor;
 @property(nonatomic, readonly) pid_t parentPID;
 @property(nonatomic, readonly) NSString *controlToken;
@@ -243,12 +286,11 @@ static NSArray<NSData *> *ParseDERSignature(NSData *signature) {
     [[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0700} error:error];
     if (*error) return nil;
     _controlSocketPath = [directory stringByAppendingPathComponent:@"control.sock"];
-    _agentSocketPath = [directory stringByAppendingPathComponent:@"agent.sock"];
+    _agentSocketPath = [directory stringByAppendingPathComponent:[NSString stringWithFormat:@"agent-%@.sock", NSUUID.UUID.UUIDString]];
     unlink(_controlSocketPath.fileSystemRepresentation);
-    unlink(_agentSocketPath.fileSystemRepresentation);
     _key = [[SecureEnclaveKey alloc] initWithError:error];
     if (!_key) return nil;
-    _leases = [NSMutableSet set];
+    _leases = [NSMutableDictionary dictionary];
     _stateQueue = dispatch_queue_create("com.posthog.code.signing-agent", DISPATCH_QUEUE_SERIAL);
     _parentPID = parentPID;
     _controlToken = [controlToken copy];
@@ -274,8 +316,8 @@ static NSArray<NSData *> *ParseDERSignature(NSData *signature) {
     int agent = [self listenAtPath:_agentSocketPath];
     if (control < 0 || agent < 0) exit(1);
     signal(SIGPIPE, SIG_IGN);
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ [self acceptLoop:control control:YES]; });
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ [self acceptLoop:agent control:NO]; });
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ [self acceptControlLoop:control]; });
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ [self acceptAgentLoop:agent]; });
     _parentMonitor = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
     dispatch_source_set_timer(_parentMonitor, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), NSEC_PER_SEC, NSEC_PER_SEC / 10);
     dispatch_source_set_event_handler(_parentMonitor, ^{
@@ -285,12 +327,23 @@ static NSArray<NSData *> *ParseDERSignature(NSData *signature) {
     dispatch_main();
 }
 
-- (void)acceptLoop:(int)listener control:(BOOL)isControl {
+- (void)acceptControlLoop:(int)listener {
     while (YES) {
         int client = accept(listener, NULL, NULL);
         if (client < 0) continue;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-            if (isControl) [self handleControl:client]; else [self handleAgent:client];
+            [self handleControl:client];
+            close(client);
+        });
+    }
+}
+
+- (void)acceptAgentLoop:(int)listener {
+    while (YES) {
+        int client = accept(listener, NULL, NULL);
+        if (client < 0) continue;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            [self handleAgent:client];
             close(client);
         });
     }
@@ -302,7 +355,11 @@ static NSArray<NSData *> *ParseDERSignature(NSData *signature) {
     NSString *action = request[@"action"];
     NSMutableDictionary *response = [@{@"ok": @YES} mutableCopy];
     __block NSString *errorMessage = nil;
+    if (PeerPID(fd) != _parentPID) {
+        errorMessage = @"The signing broker rejected a control request from another process.";
+    }
     dispatch_sync(_stateQueue, ^{
+        if (errorMessage) return;
         if (![request[@"token"] isEqualToString:_controlToken]) {
             errorMessage = @"The signing broker rejected an unauthorized control request.";
             return;
@@ -313,15 +370,26 @@ static NSArray<NSData *> *ParseDERSignature(NSData *signature) {
             return;
         }
         if ([action isEqualToString:@"acquire"] && agentId) {
-            if (_leases.count == 0) _signingAuthorized = SessionIsUnlocked();
-            [_leases addObject:agentId];
+            SigningLease *lease = [[SigningLease alloc] initWithAgentId:agentId];
+            lease.signingAuthorized = SessionIsUnlocked();
+            _leases[agentId] = lease;
             response[@"socketPath"] = _agentSocketPath;
             response[@"publicKey"] = [NSString stringWithFormat:@"%@ %@", KeyAlgorithm, [_key.publicBlob base64EncodedStringWithOptions:0]];
             return;
         }
+        if (([action isEqualToString:@"register"] || [action isEqualToString:@"unregister"]) && agentId) {
+            SigningLease *lease = _leases[agentId];
+            NSNumber *pid = @([request[@"pid"] intValue]);
+            if (!lease || pid.intValue <= 1) {
+                errorMessage = @"The signing broker received an invalid process registration.";
+                return;
+            }
+            if ([action isEqualToString:@"register"]) [lease.rootPIDs addObject:pid];
+            else [lease.rootPIDs removeObject:pid];
+            return;
+        }
         if ([action isEqualToString:@"release"] && agentId) {
-            [_leases removeObject:agentId];
-            if (_leases.count == 0) _signingAuthorized = NO;
+            [_leases removeObjectForKey:agentId];
             return;
         }
         errorMessage = @"The signing broker received an invalid control request.";
@@ -334,6 +402,7 @@ static NSArray<NSData *> *ParseDERSignature(NSData *signature) {
 }
 
 - (void)handleAgent:(int)fd {
+    pid_t peerPID = PeerPID(fd);
     while (YES) {
         NSData *message = ReadFrame(fd);
         if (!message) return;
@@ -353,10 +422,14 @@ static NSArray<NSData *> *ParseDERSignature(NSData *signature) {
             NSData *data = ReadSSHString(message, &offset);
             __block BOOL allowed = NO;
             dispatch_sync(_stateQueue, ^{
-                if (_leases.count > 0 && !_signingAuthorized && SessionIsUnlocked()) {
-                    _signingAuthorized = YES;
+                for (SigningLease *lease in _leases.allValues) {
+                    if (!ProcessDescendsFrom(peerPID, lease.rootPIDs)) continue;
+                    if (!lease.signingAuthorized && SessionIsUnlocked()) {
+                        lease.signingAuthorized = YES;
+                    }
+                    allowed = lease.signingAuthorized;
+                    break;
                 }
-                allowed = _leases.count > 0 && _signingAuthorized;
             });
             if (!allowed || ![requestedKey isEqualToData:_key.publicBlob] || !data) {
                 [response appendBytes:&AgentFailure length:1];
@@ -402,15 +475,21 @@ int main(int argc, const char *argv[]) {
             }
             return 0;
         }
-        if (argc != 5 || strcmp(argv[1], "serve") != 0) {
-            fprintf(stderr, "usage: posthog-code-signing-agent serve <runtime-directory> <parent-pid> <control-token> | ssh-keygen <arguments...>\n");
+        if (argc != 4 || strcmp(argv[1], "serve") != 0) {
+            fprintf(stderr, "usage: posthog-code-signing-agent serve <runtime-directory> <parent-pid> | ssh-keygen <arguments...>\n");
+            return 64;
+        }
+        NSData *controlTokenData = ReadLine(STDIN_FILENO);
+        NSString *controlToken = controlTokenData ? [[NSString alloc] initWithData:controlTokenData encoding:NSUTF8StringEncoding] : nil;
+        if (controlToken.length == 0) {
+            fprintf(stderr, "The signing broker did not receive its control token.\n");
             return 64;
         }
         NSError *error = nil;
         Broker *broker = [[Broker alloc]
             initWithRuntimeDirectory:@(argv[2])
             parentPID:(pid_t)strtol(argv[3], NULL, 10)
-            controlToken:@(argv[4])
+            controlToken:controlToken
             error:&error
         ];
         if (!broker) {
