@@ -121,11 +121,8 @@ Set `SKIP_NOTARIZE=1` if you need to generate signed artifacts without submittin
 SKIP_NOTARIZE=1 pnpm run make
 ```
 
-The managed Secure Enclave commit-signing helper also requires a real Apple
-signature during local development. Set `APPLE_CODESIGN_IDENTITY` before
-running `pnpm dev`; an ad-hoc-signed helper cannot persist Secure Enclave keys
-and reports OSStatus `-34018`. An Apple Development identity is sufficient for
-local testing.
+The managed Secure Enclave commit-signing helper requires local code signing to
+be configured before it can be used in development builds.
 
 ## Workspace Configuration (posthog-code.json)
 

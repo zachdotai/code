@@ -12,13 +12,19 @@ interface SigningAccessServiceInternals {
   }>;
 }
 
-function createService(enabled = false) {
+function createService(enabled = false, isProduction = false) {
   const workspaceSettings = {
     getSecureEnclaveSigningEnabled: vi.fn(() => enabled),
     setSecureEnclaveSigningEnabled: vi.fn(),
   } as unknown as IWorkspaceSettings;
   const service = new SecureEnclaveSigningAccessService(
     { resolve: vi.fn((path: string) => `/bundle/${path}`) },
+    {
+      version: "0.0.0-test",
+      isProduction,
+      platform: "darwin",
+      arch: "arm64",
+    },
     {
       appDataPath: "/app-data",
       logsPath: "/logs",
@@ -77,7 +83,7 @@ describe("SecureEnclaveSigningAccessService", () => {
     });
   });
 
-  it("explains how to fix an unsigned development helper", async () => {
+  it("explains that local code signing is required", async () => {
     const { service } = createService(true);
     const internals = service as unknown as SigningAccessServiceInternals;
     vi.spyOn(internals, "ensureBroker").mockRejectedValue(
@@ -86,8 +92,24 @@ describe("SecureEnclaveSigningAccessService", () => {
 
     await expect(service.getStatus()).resolves.toMatchObject({
       publicKey: null,
-      error: expect.stringContaining("APPLE_CODESIGN_IDENTITY"),
+      error: expect.stringContaining("Local code signing must be configured"),
     });
+  });
+
+  it("does not expose development signing guidance in production", async () => {
+    const { service } = createService(true, true);
+    const internals = service as unknown as SigningAccessServiceInternals;
+    vi.spyOn(internals, "ensureBroker").mockRejectedValue(
+      new Error("OSStatus error -34018 - failed to add key to keychain"),
+    );
+
+    const status = await service.getStatus();
+
+    expect(status.error).toBe(
+      "Secure Enclave signing is unavailable. Please restart PostHog Code and try again.",
+    );
+    expect(status.error).not.toContain("development build");
+    expect(status.error).not.toContain("code signing");
   });
 
   it("persists enablement before returning the refreshed status", async () => {
@@ -117,7 +139,19 @@ describe("SecureEnclaveSigningAccessService", () => {
       publicKey: "ecdsa-sha2-nistp256 AAAATEST",
       socketPath: "/managed.sock",
     });
-    await service.acquire("run-1");
+    const lease = await service.acquire("run-1");
+    await lease?.registerProcess(1234);
+    await lease?.unregisterProcess(1234);
+    expect(internals.request).toHaveBeenCalledWith({
+      action: "register",
+      agentId: "run-1",
+      pid: "1234",
+    });
+    expect(internals.request).toHaveBeenCalledWith({
+      action: "unregister",
+      agentId: "run-1",
+      pid: "1234",
+    });
     vi.spyOn(service, "getStatus").mockResolvedValue({
       supported: true,
       enabled: false,

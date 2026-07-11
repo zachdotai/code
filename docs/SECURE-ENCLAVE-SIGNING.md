@@ -13,30 +13,9 @@ override.
 
 ## Local development
 
-Secure Enclave keys are persisted through the macOS keychain. The native helper
-therefore must have a real Apple code signature; an ad-hoc signature does not
-have the required keychain entitlement and fails with OSStatus `-34018`.
-
-Install an Apple Development or Developer ID certificate with its private key,
-then set the identity before building or starting the app:
-
-```bash
-export APPLE_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)"
-pnpm dev
-```
-
-The existing Developer ID setup also works:
-
-```bash
-set -a
-source apps/code/.env.codesign
-set +a
-pnpm dev
-```
-
-Verify that macOS can see the identity with
-`security find-identity -v -p codesigning`. After changing identities, rebuild
-and restart the app so the helper is re-signed.
+Secure Enclave keys are persisted through the macOS keychain, so local code
+signing must be configured before this feature can be used in a development
+build. Rebuild and restart the app after configuring code signing.
 
 ## Access model
 
@@ -53,8 +32,12 @@ and restart the app so the helper is re-signed.
   cannot sign until the user session is unlocked again.
 - The broker exits when its workspace-server parent exits, so a crash cannot
   leave an authorization lease running.
-- A random control token prevents other same-user processes from acquiring or
-  extending leases through the control socket.
+- The broker exposes a random Unix socket for its lifetime. Signing requests are
+  accepted only from a registered agent process or one of its descendants (for
+  example Git and `ssh-keygen` processes spawned by that agent).
+- The broker authenticates control requests using the workspace-server peer PID
+  and a random token delivered over stdin rather than exposed in process
+  arguments.
 
 If signing is unavailable, the SSH signing wrapper adds this guidance to Git's
 error output:

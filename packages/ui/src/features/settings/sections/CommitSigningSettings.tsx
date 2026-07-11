@@ -23,7 +23,6 @@ export function CommitSigningSettings() {
     trpc.os.openExternal.mutationOptions(),
   );
   const { copied, copy } = useCopy();
-  const { copied: copiedSetup, copy: copySetup } = useCopy();
   const status = statusQuery.data;
   const publicKey = status?.publicKey;
   const error =
@@ -32,9 +31,26 @@ export function CommitSigningSettings() {
     (setEnabledMutation.error instanceof Error
       ? setEnabledMutation.error.message
       : null);
-  const requiresSigningIdentity = error?.includes("APPLE_CODESIGN_IDENTITY");
-  const setupCommand =
-    'export APPLE_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)"';
+
+  if (error) {
+    return (
+      <Callout.Root color="red" size="1" variant="soft" className="w-full">
+        <Callout.Icon>
+          <Warning weight="fill" />
+        </Callout.Icon>
+        <Callout.Text className="w-full min-w-0">
+          <Flex direction="column" gap="2" className="min-w-0">
+            <Text className="font-medium">
+              Secure Enclave signing is unavailable
+            </Text>
+            <Text className="break-words text-[13px] text-gray-11">
+              {error}
+            </Text>
+          </Flex>
+        </Callout.Text>
+      </Callout.Root>
+    );
+  }
 
   return (
     <Flex direction="column">
@@ -57,66 +73,6 @@ export function CommitSigningSettings() {
           />
         )}
       </SettingRow>
-
-      {error ? (
-        <Callout.Root
-          color="red"
-          size="1"
-          variant="soft"
-          className="my-3 w-full"
-        >
-          <Callout.Icon>
-            <Warning weight="fill" />
-          </Callout.Icon>
-          <Callout.Text className="w-full min-w-0">
-            <Flex direction="column" gap="2" className="min-w-0">
-              <Text className="font-medium">
-                Secure Enclave signing is unavailable
-              </Text>
-              <Text className="break-words text-[13px] text-gray-11">
-                {error}
-              </Text>
-              {requiresSigningIdentity ? (
-                <Flex direction="column" gap="2" mt="1" className="min-w-0">
-                  <Text
-                    as="div"
-                    size="1"
-                    className="break-all rounded-md bg-(--red-a3) p-2 font-mono"
-                  >
-                    {setupCommand}
-                  </Text>
-                  <Flex gap="2" wrap="wrap">
-                    <Button
-                      size="1"
-                      variant="soft"
-                      onClick={() => copySetup(setupCommand)}
-                    >
-                      {copiedSetup ? <Check size={14} /> : <Copy size={14} />}
-                      {copiedSetup ? "Copied" : "Copy setup command"}
-                    </Button>
-                    <Button
-                      size="1"
-                      variant="outline"
-                      onClick={() => statusQuery.refetch()}
-                    >
-                      Try again
-                    </Button>
-                  </Flex>
-                </Flex>
-              ) : (
-                <Button
-                  size="1"
-                  variant="soft"
-                  onClick={() => statusQuery.refetch()}
-                  className="self-start"
-                >
-                  Try again
-                </Button>
-              )}
-            </Flex>
-          </Callout.Text>
-        </Callout.Root>
-      ) : null}
 
       <SettingRow
         label="Public key"

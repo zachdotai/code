@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createConnection } from "node:net";
 import { join } from "node:path";
+import { APP_META_SERVICE, type IAppMeta } from "@posthog/platform/app-meta";
 import {
   BUNDLED_RESOURCES_SERVICE,
   type IBundledResources,
@@ -34,7 +35,9 @@ const BROKER_START_TIMEOUT_MS = 5_000;
 const CONTROL_REQUEST_TIMEOUT_MS = 5_000;
 const MISSING_KEYCHAIN_ENTITLEMENT_ERROR = "OSStatus error -34018";
 const SIGNING_IDENTITY_GUIDANCE =
-  "Secure Enclave signing requires the native helper to be signed with an Apple Development or Developer ID identity. Set APPLE_CODESIGN_IDENTITY, rebuild the desktop app, and restart it.";
+  "Local code signing must be configured before Secure Enclave signing can be used in a development build.";
+const PRODUCTION_SIGNING_ERROR =
+  "Secure Enclave signing is unavailable. Please restart PostHog Code and try again.";
 
 @injectable()
 export class SecureEnclaveSigningAccessService implements SigningAccessService {
@@ -49,6 +52,8 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
   constructor(
     @inject(BUNDLED_RESOURCES_SERVICE)
     private readonly bundledResources: IBundledResources,
+    @inject(APP_META_SERVICE)
+    private readonly appMeta: IAppMeta,
     @inject(STORAGE_PATHS_SERVICE)
     private readonly storagePaths: IStoragePaths,
     @inject(WORKSPACE_SETTINGS_SERVICE)
@@ -95,7 +100,11 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
         supported: true,
         enabled,
         publicKey: null,
-        error: this.describeBrokerError(message),
+        error: message.includes(MISSING_KEYCHAIN_ENTITLEMENT_ERROR)
+          ? this.appMeta.isProduction
+            ? PRODUCTION_SIGNING_ERROR
+            : SIGNING_IDENTITY_GUIDANCE
+          : message,
       };
     }
   }
@@ -166,6 +175,28 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
     return {
       socketPath: response.socketPath,
       gitConfig,
+      registerProcess: async (pid) => {
+        const result = await this.request({
+          action: "register",
+          agentId,
+          pid: String(pid),
+        });
+        if (!result.ok) {
+          throw new Error(result.error ?? "Failed to register signing process");
+        }
+      },
+      unregisterProcess: async (pid) => {
+        const result = await this.request({
+          action: "unregister",
+          agentId,
+          pid: String(pid),
+        });
+        if (!result.ok) {
+          throw new Error(
+            result.error ?? "Failed to unregister signing process",
+          );
+        }
+      },
       release: async () => {
         if (released) return;
         released = true;
@@ -256,13 +287,6 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
     );
   }
 
-  private describeBrokerError(message: string): string {
-    if (message.includes(MISSING_KEYCHAIN_ENTITLEMENT_ERROR)) {
-      return SIGNING_IDENTITY_GUIDANCE;
-    }
-    return message;
-  }
-
   private get controlSocketPath(): string {
     return join(this.runtimeDirectory, "control.sock");
   }
@@ -279,12 +303,13 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
       this.controlToken = controlToken;
       const broker = spawn(
         binaryPath,
-        ["serve", this.runtimeDirectory, String(process.pid), controlToken],
+        ["serve", this.runtimeDirectory, String(process.pid)],
         {
           detached: false,
-          stdio: ["ignore", "ignore", "pipe"],
+          stdio: ["pipe", "ignore", "pipe"],
         },
       );
+      broker.stdin?.end(`${controlToken}\n`);
       this.broker = broker;
       broker.once("error", reject);
 
