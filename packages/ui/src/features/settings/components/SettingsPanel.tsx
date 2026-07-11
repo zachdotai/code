@@ -10,6 +10,7 @@ import {
   Folder,
   GearSix,
   GithubLogo,
+  Key,
   Keyboard,
   Palette,
   SignOut,
@@ -30,6 +31,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { AdvancedSettings } from "@posthog/ui/features/settings/sections/AdvancedSettings";
 import { ClaudeCodeSettings } from "@posthog/ui/features/settings/sections/ClaudeCodeSettings";
+import { CommitSigningSettings } from "@posthog/ui/features/settings/sections/CommitSigningSettings";
 import { DiscordSettings } from "@posthog/ui/features/settings/sections/DiscordSettings";
 import { EnvironmentsSettings } from "@posthog/ui/features/settings/sections/environments/EnvironmentsSettings";
 import { GeneralSettings } from "@posthog/ui/features/settings/sections/GeneralSettings";
@@ -72,6 +74,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   },
   { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
   { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
+  { id: "commit-signing", label: "Commit signing", icon: <Key size={16} /> },
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
   { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
   { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
@@ -92,6 +95,7 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   personalization: "Personalization",
   terminal: "Terminal",
   "claude-code": "Claude Code",
+  "commit-signing": "Commit signing",
   shortcuts: "Shortcuts",
   github: "GitHub",
   slack: "Slack integration",
@@ -112,6 +116,7 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   personalization: PersonalizationSettings,
   terminal: TerminalSettings,
   "claude-code": ClaudeCodeSettings,
+  "commit-signing": CommitSigningSettings,
   shortcuts: ShortcutsSettings,
   github: GitHubSettings,
   slack: SlackSettings,
@@ -155,14 +160,15 @@ export function SettingsPanel({
   const { seat, planLabel } = useSeat();
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const logoutMutation = useLogoutMutation();
+  const isDesktop = typeof window !== "undefined" && "electronUtils" in window;
 
-  const sidebarItems = useMemo(
-    () =>
-      billingEnabled
-        ? SIDEBAR_ITEMS
-        : SIDEBAR_ITEMS.filter((item) => item.id !== "plan-usage"),
-    [billingEnabled],
-  );
+  const sidebarItems = useMemo(() => {
+    return SIDEBAR_ITEMS.filter(
+      (item) =>
+        (billingEnabled || item.id !== "plan-usage") &&
+        (isDesktop || item.id !== "commit-signing"),
+    );
+  }, [billingEnabled, isDesktop]);
 
   useHotkeys("escape", close, {
     enabled: true,
@@ -171,12 +177,16 @@ export function SettingsPanel({
     preventDefault: true,
   });
 
-  const ActiveComponent = CATEGORY_COMPONENTS[activeCategory];
+  const resolvedCategory =
+    activeCategory === "commit-signing" && !isDesktop
+      ? "general"
+      : activeCategory;
+  const ActiveComponent = CATEGORY_COMPONENTS[resolvedCategory];
 
   const activeCategoryIcon = SIDEBAR_ITEMS.find(
     (item) =>
-      item.id === activeCategory ||
-      (item.id === "environments" && activeCategory === "cloud-environments"),
+      item.id === resolvedCategory ||
+      (item.id === "environments" && resolvedCategory === "cloud-environments"),
   )?.icon;
 
   const initials = getUserInitials(user);
@@ -224,9 +234,9 @@ export function SettingsPanel({
           <div className="flex flex-col pt-2">
             {sidebarItems.map((item) => {
               const isActive =
-                activeCategory === item.id ||
+                resolvedCategory === item.id ||
                 (item.id === "environments" &&
-                  activeCategory === "cloud-environments");
+                  resolvedCategory === "cloud-environments");
               return (
                 <SidebarNavItem
                   key={item.id}
@@ -296,7 +306,7 @@ export function SettingsPanel({
                       <span className="text-gray-10">{activeCategoryIcon}</span>
                     )}
                     <Text className="font-medium text-lg leading-6.5">
-                      {CATEGORY_TITLES[activeCategory]}
+                      {CATEGORY_TITLES[resolvedCategory]}
                     </Text>
                   </Flex>
                 )}

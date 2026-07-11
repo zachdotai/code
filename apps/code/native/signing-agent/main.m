@@ -308,7 +308,10 @@ static NSArray<NSData *> *ParseDERSignature(NSData *signature) {
             return;
         }
         NSString *agentId = request[@"agentId"];
-        if ([action isEqualToString:@"status"]) return;
+        if ([action isEqualToString:@"status"]) {
+            response[@"publicKey"] = [NSString stringWithFormat:@"%@ %@", KeyAlgorithm, [_key.publicBlob base64EncodedStringWithOptions:0]];
+            return;
+        }
         if ([action isEqualToString:@"acquire"] && agentId) {
             if (_leases.count == 0) _signingAuthorized = SessionIsUnlocked();
             [_leases addObject:agentId];

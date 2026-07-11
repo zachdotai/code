@@ -38,6 +38,7 @@ import { processTrackingRouter } from "./routers/process-tracking.router";
 import { provisioningRouter } from "./routers/provisioning.router";
 import { secureStoreRouter } from "./routers/secure-store.router";
 import { shellRouter } from "./routers/shell.router";
+import { signingAccessRouter } from "./routers/signing-access.router";
 import { skillsRouter } from "./routers/skills.router";
 import { slackIntegrationRouter } from "./routers/slack-integration.router";
 import { sleepRouter } from "./routers/sleep.router";
@@ -87,6 +88,7 @@ export const hostRouter = router({
   provisioning: provisioningRouter,
   secureStore: secureStoreRouter,
   shell: shellRouter,
+  signingAccess: signingAccessRouter,
   skills: skillsRouter,
   slackIntegration: slackIntegrationRouter,
   sleep: sleepRouter,

@@ -10,10 +10,18 @@ import {
   type IStoragePaths,
   STORAGE_PATHS_SERVICE,
 } from "@posthog/platform/storage-paths";
+import {
+  type IWorkspaceSettings,
+  WORKSPACE_SETTINGS_SERVICE,
+} from "@posthog/platform/workspace-settings";
 import { inject, injectable, preDestroy } from "inversify";
 import { AGENT_LOGGER } from "../agent/identifiers";
 import type { AgentLogger, AgentScopedLogger } from "../agent/ports";
-import type { SigningAccessLease, SigningAccessService } from "./contracts";
+import type {
+  SigningAccessLease,
+  SigningAccessService,
+  SigningAccessStatus,
+} from "./contracts";
 
 interface BrokerResponse {
   ok: boolean;
@@ -31,6 +39,8 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
   private broker: ChildProcess | null = null;
   private controlToken: string | null = null;
   private gitEnvironmentConfigured = false;
+  private gitEnvironmentStartIndex: number | null = null;
+  private previousSshAuthSock: string | undefined;
   private startPromise: Promise<void> | null = null;
 
   constructor(
@@ -38,17 +48,66 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
     private readonly bundledResources: IBundledResources,
     @inject(STORAGE_PATHS_SERVICE)
     private readonly storagePaths: IStoragePaths,
+    @inject(WORKSPACE_SETTINGS_SERVICE)
+    private readonly workspaceSettings: IWorkspaceSettings,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
     this.log = loggerFactory.scope("secure-enclave-signing");
   }
 
+  async getStatus(): Promise<SigningAccessStatus> {
+    if (process.platform !== "darwin") {
+      return {
+        supported: false,
+        enabled: false,
+        publicKey: null,
+        error: "Managed Secure Enclave signing is only available on macOS.",
+      };
+    }
+
+    const enabled = this.isEnabled;
+    try {
+      await this.ensureBroker();
+      const response = await this.request({ action: "status" });
+      if (!response.ok || !response.publicKey) {
+        return {
+          supported: true,
+          enabled,
+          publicKey: null,
+          error:
+            response.error ??
+            "The Secure Enclave signing key is not available right now.",
+        };
+      }
+      return {
+        supported: true,
+        enabled,
+        publicKey: response.publicKey,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        supported: true,
+        enabled,
+        publicKey: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async setEnabled(enabled: boolean): Promise<SigningAccessStatus> {
+    if (process.platform === "darwin") {
+      this.workspaceSettings.setSecureEnclaveSigningEnabled(enabled);
+      if (!enabled && process.env.POSTHOG_CODE_SECURE_ENCLAVE_SIGNING !== "1") {
+        this.clearGitEnvironment();
+      }
+    }
+    return this.getStatus();
+  }
+
   async acquire(agentId: string): Promise<SigningAccessLease | null> {
-    if (
-      process.platform !== "darwin" ||
-      process.env.POSTHOG_CODE_SECURE_ENCLAVE_SIGNING !== "1"
-    ) {
+    if (process.platform !== "darwin" || !this.isEnabled) {
       return null;
     }
 
@@ -84,6 +143,9 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
     }
 
     let released = false;
+    if (!this.gitEnvironmentConfigured) {
+      this.previousSshAuthSock = process.env.SSH_AUTH_SOCK;
+    }
     process.env.SSH_AUTH_SOCK = response.socketPath;
     const signingProgram = this.bundledResources.resolve(
       ".vite/build/signing-agent/posthog-code-ssh-keygen",
@@ -115,6 +177,7 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
 
   private applyGitConfigEnvironment(config: Record<string, string>): void {
     const startIndex = Number(process.env.GIT_CONFIG_COUNT ?? "0");
+    this.gitEnvironmentStartIndex = startIndex;
     const entries = Object.entries(config);
     entries.forEach(([key, value], offset) => {
       const index = startIndex + offset;
@@ -124,8 +187,55 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
     process.env.GIT_CONFIG_COUNT = String(startIndex + entries.length);
   }
 
+  private clearGitEnvironment(): void {
+    if (
+      !this.gitEnvironmentConfigured ||
+      this.gitEnvironmentStartIndex === null
+    ) {
+      return;
+    }
+
+    const removedCount = 3;
+    const currentCount = Number(process.env.GIT_CONFIG_COUNT ?? "0");
+    for (
+      let sourceIndex = this.gitEnvironmentStartIndex + removedCount;
+      sourceIndex < currentCount;
+      sourceIndex += 1
+    ) {
+      const targetIndex = sourceIndex - removedCount;
+      process.env[`GIT_CONFIG_KEY_${targetIndex}`] =
+        process.env[`GIT_CONFIG_KEY_${sourceIndex}`];
+      process.env[`GIT_CONFIG_VALUE_${targetIndex}`] =
+        process.env[`GIT_CONFIG_VALUE_${sourceIndex}`];
+    }
+    for (
+      let index = Math.max(
+        this.gitEnvironmentStartIndex,
+        currentCount - removedCount,
+      );
+      index < currentCount;
+      index += 1
+    ) {
+      delete process.env[`GIT_CONFIG_KEY_${index}`];
+      delete process.env[`GIT_CONFIG_VALUE_${index}`];
+    }
+    process.env.GIT_CONFIG_COUNT = String(
+      Math.max(this.gitEnvironmentStartIndex, currentCount - removedCount),
+    );
+
+    if (this.previousSshAuthSock === undefined) {
+      delete process.env.SSH_AUTH_SOCK;
+    } else {
+      process.env.SSH_AUTH_SOCK = this.previousSshAuthSock;
+    }
+    this.previousSshAuthSock = undefined;
+    this.gitEnvironmentConfigured = false;
+    this.gitEnvironmentStartIndex = null;
+  }
+
   @preDestroy()
   dispose(): void {
+    this.clearGitEnvironment();
     this.broker?.kill("SIGTERM");
     this.broker = null;
     this.controlToken = null;
@@ -133,6 +243,13 @@ export class SecureEnclaveSigningAccessService implements SigningAccessService {
 
   private get runtimeDirectory(): string {
     return join(this.storagePaths.appDataPath, "secure-enclave-signing");
+  }
+
+  private get isEnabled(): boolean {
+    return (
+      process.env.POSTHOG_CODE_SECURE_ENCLAVE_SIGNING === "1" ||
+      this.workspaceSettings.getSecureEnclaveSigningEnabled()
+    );
   }
 
   private get controlSocketPath(): string {

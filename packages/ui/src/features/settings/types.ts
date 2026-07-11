@@ -9,6 +9,7 @@ export type SettingsCategory =
   | "personalization"
   | "terminal"
   | "claude-code"
+  | "commit-signing"
   | "shortcuts"
   | "github"
   | "slack"
@@ -28,6 +29,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   "personalization",
   "terminal",
   "claude-code",
+  "commit-signing",
   "shortcuts",
   "github",
   "slack",

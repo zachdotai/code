@@ -14,6 +14,7 @@ interface SettingsSchema {
   discordPresenceEnabled: boolean;
   discordPresenceShowTaskTitle: boolean;
   discordPresenceShowRepoName: boolean;
+  secureEnclaveSigningEnabled: boolean;
 }
 
 function getDefaultWorktreeLocation(): string {
@@ -99,6 +100,10 @@ const schema = {
     type: "boolean" as const,
     default: false,
   },
+  secureEnclaveSigningEnabled: {
+    type: "boolean" as const,
+    default: false,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -114,6 +119,7 @@ export const settingsStore = new Store<SettingsSchema>({
     discordPresenceEnabled: false,
     discordPresenceShowTaskTitle: false,
     discordPresenceShowRepoName: false,
+    secureEnclaveSigningEnabled: false,
   },
 });
 
@@ -191,4 +197,12 @@ export function getPreventSleepWhileRunning(): boolean {
 
 export function setPreventSleepWhileRunning(value: boolean): void {
   settingsStore.set("preventSleepWhileRunning", value);
+}
+
+export function getSecureEnclaveSigningEnabled(): boolean {
+  return settingsStore.get("secureEnclaveSigningEnabled", false);
+}
+
+export function setSecureEnclaveSigningEnabled(value: boolean): void {
+  settingsStore.set("secureEnclaveSigningEnabled", value);
 }

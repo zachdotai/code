@@ -1,0 +1,104 @@
+import { Check, Copy, GithubLogo } from "@phosphor-icons/react";
+import { useHostTRPC } from "@posthog/host-router/react";
+import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
+import { useCopy } from "@posthog/ui/primitives/useCopy";
+import { Badge, Button, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+export function CommitSigningSettings() {
+  const trpc = useHostTRPC();
+  const queryClient = useQueryClient();
+  const statusQuery = useQuery(trpc.signingAccess.getStatus.queryOptions());
+  const setEnabledMutation = useMutation(
+    trpc.signingAccess.setEnabled.mutationOptions({
+      onSuccess: (status) => {
+        queryClient.setQueryData(
+          trpc.signingAccess.getStatus.queryKey(),
+          status,
+        );
+      },
+    }),
+  );
+  const openGitHubMutation = useMutation(
+    trpc.os.openExternal.mutationOptions(),
+  );
+  const { copied, copy } = useCopy();
+  const status = statusQuery.data;
+  const publicKey = status?.publicKey;
+
+  return (
+    <Flex direction="column">
+      <SettingRow
+        label="Managed Secure Enclave signing"
+        description="Use a hardware-backed, non-exportable key for commits created by local Claude and Codex sessions."
+      >
+        {statusQuery.isLoading ? (
+          <Spinner size="1" />
+        ) : (
+          <Switch
+            checked={status?.enabled ?? false}
+            disabled={
+              status?.supported === false || setEnabledMutation.isPending
+            }
+            onCheckedChange={(enabled) =>
+              setEnabledMutation.mutate({ enabled })
+            }
+            size="1"
+          />
+        )}
+      </SettingRow>
+
+      <SettingRow
+        label="Public key"
+        description="Add this same key to GitHub twice: once as an Authentication Key and once as a Signing Key."
+      >
+        <Flex direction="column" gap="2" align="end" className="max-w-[420px]">
+          {publicKey ? (
+            <>
+              <Text
+                as="div"
+                size="1"
+                className="max-w-[420px] break-all rounded-md bg-(--gray-3) p-2 font-mono"
+              >
+                {publicKey}
+              </Text>
+              <Flex gap="2">
+                <Button size="1" variant="soft" onClick={() => copy(publicKey)}>
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  {copied ? "Copied" : "Copy public key"}
+                </Button>
+                <Button
+                  size="1"
+                  variant="outline"
+                  onClick={() =>
+                    openGitHubMutation.mutate({
+                      url: "https://github.com/settings/keys",
+                    })
+                  }
+                >
+                  <GithubLogo size={14} />
+                  Open GitHub keys
+                </Button>
+              </Flex>
+            </>
+          ) : (
+            <Badge color={status?.error ? "red" : "gray"} variant="soft">
+              {status?.error ?? "Public key unavailable"}
+            </Badge>
+          )}
+        </Flex>
+      </SettingRow>
+
+      <SettingRow
+        label="GitHub key types"
+        description="GitHub uses separate registrations for SSH authentication and verified commit signing."
+        noBorder
+      >
+        <Flex direction="column" gap="1" align="end">
+          <Text size="1">1. New SSH key → Authentication Key</Text>
+          <Text size="1">2. New SSH key → Signing Key</Text>
+        </Flex>
+      </SettingRow>
+    </Flex>
+  );
+}

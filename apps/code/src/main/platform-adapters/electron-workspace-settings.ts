@@ -6,11 +6,13 @@ import {
   getAutoSuspendEnabled,
   getMaxActiveWorktrees,
   getPreventSleepWhileRunning,
+  getSecureEnclaveSigningEnabled,
   getWorktreeLocation,
   setAutoSuspendAfterDays,
   setAutoSuspendEnabled,
   setMaxActiveWorktrees,
   setPreventSleepWhileRunning,
+  setSecureEnclaveSigningEnabled,
   setWorktreeLocation,
 } from "../services/settingsStore";
 
@@ -58,5 +60,13 @@ export class ElectronWorkspaceSettings implements IWorkspaceSettings {
 
   setPreventSleepWhileRunning(value: boolean): void {
     setPreventSleepWhileRunning(value);
+  }
+
+  getSecureEnclaveSigningEnabled(): boolean {
+    return getSecureEnclaveSigningEnabled();
+  }
+
+  setSecureEnclaveSigningEnabled(value: boolean): void {
+    setSecureEnclaveSigningEnabled(value);
   }
 }

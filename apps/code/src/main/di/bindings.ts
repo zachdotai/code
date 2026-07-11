@@ -186,6 +186,8 @@ import type {
   ISecureStoreService,
   SECURE_STORE_SERVICE,
 } from "@posthog/workspace-server/services/secure-store/identifiers";
+import type { SigningAccessService } from "@posthog/workspace-server/services/signing-access/contracts";
+import type { SIGNING_ACCESS_SERVICE } from "@posthog/workspace-server/services/signing-access/identifiers";
 import type {
   SUSPENSION_FILE_WATCHER,
   SUSPENSION_SERVICE,
@@ -489,6 +491,7 @@ export interface MainBindings {
 
   // Typed container.get-only tokens (bound via loaded modules)
   [AGENT_SERVICE]: AgentService;
+  [SIGNING_ACCESS_SERVICE]: SigningAccessService;
   [OAUTH_SERVICE]: OAuthService;
   [GITHUB_INTEGRATION_SERVICE]: GitHubIntegrationService;
   [SLACK_INTEGRATION_SERVICE]: SlackIntegrationService;

@@ -5,10 +5,11 @@ key in the Secure Enclave. Local Claude and Codex sessions inherit its
 `SSH_AUTH_SOCK`, so Git commit signing and SSH authentication do not depend on
 Secretive or another user-launched agent.
 
-The feature is currently gated behind
-`POSTHOG_CODE_SECURE_ENCLAVE_SIGNING=1`. It must remain opt-in until onboarding
-can register the new public key with GitHub; enabling it silently would replace
-a user's working SSH identity before GitHub recognizes the managed key.
+The feature is opt-in under **Settings → Commit signing**. Opening the page
+creates or loads the Secure Enclave key so its public key can be registered;
+enabling it configures future local agent sessions to use that key.
+`POSTHOG_CODE_SECURE_ENCLAVE_SIGNING=1` remains available as a local development
+override.
 
 ## Access model
 
@@ -38,17 +39,17 @@ The agent task itself continues when the broker cannot start or acquire access.
 
 ## GitHub setup
 
-The broker exposes one OpenSSH public key and configures it as Git's
-`user.signingkey`. Replacing Secretive completely also requires registering the
-same public key with GitHub as:
+The settings page displays and copies the broker's OpenSSH public key. The
+broker configures that key as Git's `user.signingkey`. Replacing Secretive
+completely also requires registering the same public key with GitHub as:
 
 1. an authentication key, for SSH pushes; and
 2. a signing key, for verified commits.
 
 GitHub treats adding account keys as an elevated account operation. PostHog
-Code must add an explicit, user-approved onboarding flow before it can upload
-these keys automatically. The local key, broker, signing, and lease behavior do
-not require GitHub access.
+Code links directly to GitHub's SSH keys page, but adding keys remains an
+explicit account operation. The local key, broker, signing, and lease behavior
+do not require GitHub access.
 
 ## Packaging
 
