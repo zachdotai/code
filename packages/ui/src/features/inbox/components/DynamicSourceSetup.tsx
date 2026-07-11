@@ -3,20 +3,19 @@ import type {
   SourceFieldConfig,
   SourceFieldInputConfig,
 } from "@posthog/api-client/posthog-client";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useSourceConfig } from "@posthog/ui/features/inbox/hooks/useSourceConfig";
 import { toast } from "@posthog/ui/primitives/toast";
-import {
-  Box,
-  Flex,
-  Select,
-  Switch,
-  Text,
-  TextArea,
-  TextField,
-} from "@radix-ui/themes";
+import { Box, Flex, Switch, Text, TextArea, TextField } from "@radix-ui/themes";
 import { useCallback, useMemo, useState } from "react";
 
 interface SchemaPayload {
@@ -282,19 +281,21 @@ function SourceField({
     return (
       <Flex direction="column" gap="2">
         <Text className="text-gray-12 text-sm">{field.label}</Text>
-        <Select.Root
+        <Select
           value={selected}
-          onValueChange={(value) => setValue(field.name, value)}
+          onValueChange={(value) => setValue(field.name, value ?? "")}
         >
-          <Select.Trigger placeholder={field.label} />
-          <Select.Content>
+          <SelectTrigger>
+            <SelectValue placeholder={field.label} />
+          </SelectTrigger>
+          <SelectContent>
             {field.options.map((o) => (
-              <Select.Item key={o.value} value={o.value}>
+              <SelectItem key={o.value} value={o.value}>
                 {o.label}
-              </Select.Item>
+              </SelectItem>
             ))}
-          </Select.Content>
-        </Select.Root>
+          </SelectContent>
+        </Select>
         {option?.fields?.map((nested) => (
           <SourceField
             key={nested.name}

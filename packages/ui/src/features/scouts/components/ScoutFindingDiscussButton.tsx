@@ -2,8 +2,13 @@ import { ChatCircleIcon } from "@phosphor-icons/react";
 import type { ScoutEmission } from "@posthog/api-client/posthog-client";
 import { prettifyScoutSkillName } from "@posthog/core/scouts/scoutPresentation";
 import { buildScoutFindingDiscussPrompt } from "@posthog/core/scouts/scoutPrompts";
-import { Button } from "@posthog/quill";
-import { Flex, Popover, Spinner, Text, TextArea } from "@radix-ui/themes";
+import {
+  Button,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@posthog/quill";
+import { Flex, Spinner, Text, TextArea } from "@radix-ui/themes";
 import { useCallback, useMemo, useState } from "react";
 import { useScoutChatTask } from "../hooks/useScoutChatTask";
 
@@ -74,25 +79,27 @@ export function ScoutFindingDiscussButton({
   }, [isRunning, runTask]);
 
   return (
-    <Popover.Root
+    <Popover
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setQuestion("");
       }}
     >
-      <Popover.Trigger>
-        <button
-          type="button"
-          disabled={isRunning}
-          title="Discuss this finding with your agent"
-          className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline transition-colors hover:text-accent-12 disabled:cursor-default disabled:opacity-60"
-        >
-          {isRunning ? <Spinner size="1" /> : <ChatCircleIcon size={11} />}
-          Discuss
-        </button>
-      </Popover.Trigger>
-      <Popover.Content
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            disabled={isRunning}
+            title="Discuss this finding with your agent"
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline transition-colors hover:text-accent-12 disabled:cursor-default disabled:opacity-60"
+          >
+            {isRunning ? <Spinner size="1" /> : <ChatCircleIcon size={11} />}
+            Discuss
+          </button>
+        }
+      />
+      <PopoverContent
         align="start"
         side="bottom"
         sideOffset={6}
@@ -145,7 +152,7 @@ export function ScoutFindingDiscussButton({
             </Flex>
           </Flex>
         </form>
-      </Popover.Content>
-    </Popover.Root>
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -1,11 +1,11 @@
 import {
-  Button,
-  Flex,
   Select,
-  Switch,
-  Text,
-  TextField,
-} from "@radix-ui/themes";
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
+import { Button, Flex, Switch, Text, TextField } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { Copy, Pause, Play } from "lucide-react";
@@ -91,21 +91,22 @@ export function LogsPanel({ enabled }: LogsPanelProps) {
           onChange={(e) => setFilter(e.target.value)}
           className="min-w-[180px] flex-1"
         />
-        <Select.Root
-          size="1"
+        <Select
           value={levelFilter}
           onValueChange={(v) => setLevelFilter(v as LevelFilter)}
         >
-          <Select.Trigger />
-          <Select.Content>
-            <Select.Item value="all">All levels</Select.Item>
+          <SelectTrigger size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All levels</SelectItem>
             {LEVELS.map((l) => (
-              <Select.Item key={l} value={l}>
+              <SelectItem key={l} value={l}>
                 {l}
-              </Select.Item>
+              </SelectItem>
             ))}
-          </Select.Content>
-        </Select.Root>
+          </SelectContent>
+        </Select>
         <Button
           size="1"
           variant="soft"

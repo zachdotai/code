@@ -5,13 +5,13 @@ import {
   canSubmitCustomServer,
 } from "@posthog/core/mcp-servers/customServerForm";
 import {
-  Button,
-  Flex,
   Select,
-  Spinner,
-  Text,
-  TextField,
-} from "@radix-ui/themes";
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
+import { Button, Flex, Spinner, Text, TextField } from "@radix-ui/themes";
 import { useCallback, useState } from "react";
 
 interface AddCustomServerFormProps {
@@ -156,19 +156,21 @@ export function AddCustomServerForm({
 
           <Flex direction="column" gap="1">
             <Text className="font-medium text-sm">Auth type</Text>
-            <Select.Root
+            <Select
               value={authType}
               onValueChange={(val) => {
                 setAuthType(val as McpAuthType);
                 if (val !== "api_key") setApiKey("");
               }}
             >
-              <Select.Trigger />
-              <Select.Content>
-                <Select.Item value="oauth">OAuth</Select.Item>
-                <Select.Item value="api_key">API key</Select.Item>
-              </Select.Content>
-            </Select.Root>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="oauth">OAuth</SelectItem>
+                <SelectItem value="api_key">API key</SelectItem>
+              </SelectContent>
+            </Select>
           </Flex>
 
           {authType === "api_key" && (

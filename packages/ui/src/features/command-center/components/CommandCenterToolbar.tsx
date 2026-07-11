@@ -4,7 +4,14 @@ import {
   Trash,
 } from "@phosphor-icons/react";
 import { getCellCount } from "@posthog/core/command-center/grid";
-import { Flex, Select, Text } from "@radix-ui/themes";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
+import { Flex, Text } from "@radix-ui/themes";
 import { useCallback } from "react";
 import {
   type LayoutPreset,
@@ -113,22 +120,24 @@ export function CommandCenterToolbar({ summary }: CommandCenterToolbarProps) {
       py="2"
       className="no-drag shrink-0 border-gray-6 border-b"
     >
-      <Select.Root
+      <Select
         value={layout}
         onValueChange={(v) => handleSetLayout(v as LayoutPreset)}
       >
-        <Select.Trigger variant="ghost" className="text-[12px]" />
-        <Select.Content position="popper">
+        <SelectTrigger className="text-[12px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
           {LAYOUT_OPTIONS.map((opt) => (
-            <Select.Item key={opt.value} value={opt.value}>
+            <SelectItem key={opt.value} value={opt.value}>
               <Flex align="center" gap="2">
                 <LayoutIcon cols={opt.cols} rows={opt.rows} />
                 {opt.label}
               </Flex>
-            </Select.Item>
+            </SelectItem>
           ))}
-        </Select.Content>
-      </Select.Root>
+        </SelectContent>
+      </Select>
 
       <StatusSummaryText summary={summary} />
 

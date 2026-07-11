@@ -24,6 +24,13 @@ import type {
   McpApprovalState,
   McpInstallationTool,
 } from "@posthog/api-client/posthog-client";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
 import type {
   AgentRevisionState,
   AgentSpec,
@@ -39,7 +46,7 @@ import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
 import { toast } from "@posthog/ui/primitives/toast";
-import { Flex, Select, Switch, Text } from "@radix-ui/themes";
+import { Flex, Switch, Text } from "@radix-ui/themes";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { AGENT_PLATFORM_FLAG } from "../featureFlag";
 import { useAgentApplication } from "../hooks/useAgentApplication";
@@ -1516,23 +1523,24 @@ function McpsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
       {canEdit ? (
         <Flex align="center" gap="2" className="mt-1" wrap="wrap">
           {(installations ?? []).length > 0 ? (
-            <Select.Root
+            <Select
               value=""
-              onValueChange={addFromConnection}
+              onValueChange={(v) => {
+                if (v != null) addFromConnection(v);
+              }}
               disabled={applySpec.isPending}
             >
-              <Select.Trigger
-                placeholder="+ Add from a connection"
-                className="min-w-[220px]"
-              />
-              <Select.Content>
+              <SelectTrigger className="min-w-[220px]">
+                <SelectValue placeholder="+ Add from a connection" />
+              </SelectTrigger>
+              <SelectContent>
                 {(installations ?? []).map((i) => (
-                  <Select.Item key={i.id} value={i.id}>
+                  <SelectItem key={i.id} value={i.id}>
                     {i.display_name || i.url || i.id}
-                  </Select.Item>
+                  </SelectItem>
                 ))}
-              </Select.Content>
-            </Select.Root>
+              </SelectContent>
+            </Select>
           ) : (
             <Muted>No connected MCP servers yet.</Muted>
           )}
@@ -1766,21 +1774,23 @@ function McpBody({
   return (
     <Flex direction="column" gap="3">
       <Flex align="center" justify="between" gap="2">
-        <Select.Root
+        <Select
           value={authMode}
           onValueChange={(v) => setAuthMode(v as "agent" | "principal")}
           disabled={!canEdit || saving}
         >
-          <Select.Trigger className="min-w-60" />
-          <Select.Content>
-            <Select.Item value="agent">
+          <SelectTrigger className="min-w-60">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="agent">
               Agent-level — shared credential
-            </Select.Item>
-            <Select.Item value="principal">
+            </SelectItem>
+            <SelectItem value="principal">
               Principal-level — per-asker identity
-            </Select.Item>
-          </Select.Content>
-        </Select.Root>
+            </SelectItem>
+          </SelectContent>
+        </Select>
         {canEdit ? (
           <Button
             size="1"
@@ -1809,24 +1819,25 @@ function McpBody({
             own token via secrets + headers.
           </Muted>
           <Flex align="center" gap="2" className="mt-1.5">
-            <Select.Root
+            <Select
               value={connection ?? "none"}
-              onValueChange={setConnection}
+              onValueChange={(v) => {
+                if (v != null) setConnection(v);
+              }}
               disabled={!canEdit || saving || installationsLoading}
             >
-              <Select.Trigger
-                placeholder="No connection"
-                className="min-w-[220px]"
-              />
-              <Select.Content>
-                <Select.Item value="none">No connection</Select.Item>
+              <SelectTrigger className="min-w-[220px]">
+                <SelectValue placeholder="No connection" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No connection</SelectItem>
                 {(installations ?? []).map((i) => (
-                  <Select.Item key={i.id} value={i.id}>
+                  <SelectItem key={i.id} value={i.id}>
                     {i.display_name || i.url || i.id}
-                  </Select.Item>
+                  </SelectItem>
                 ))}
-              </Select.Content>
-            </Select.Root>
+              </SelectContent>
+            </Select>
             <Button
               size="1"
               variant="soft"
@@ -1853,29 +1864,30 @@ function McpBody({
           </Muted>
           {providers.length > 0 ? (
             <Flex direction="column" gap="2" className="mt-1.5">
-              <Select.Root
+              <Select
                 value={provider}
-                onValueChange={setIdentityProvider}
+                onValueChange={(v) => {
+                  if (v != null) setIdentityProvider(v);
+                }}
                 disabled={!canEdit || saving}
               >
-                <Select.Trigger
-                  placeholder="Choose an identity"
-                  className="min-w-60"
-                />
-                <Select.Content>
+                <SelectTrigger className="min-w-60">
+                  <SelectValue placeholder="Choose an identity" />
+                </SelectTrigger>
+                <SelectContent>
                   {providers.map((p) => {
                     const pid = providerId(p);
                     return (
-                      <Select.Item key={pid} value={pid}>
+                      <SelectItem key={pid} value={pid}>
                         <Flex align="center" gap="2">
                           <FingerprintIcon {...ICON} />
                           {pid}
                         </Flex>
-                      </Select.Item>
+                      </SelectItem>
                     );
                   })}
-                </Select.Content>
-              </Select.Root>
+                </SelectContent>
+              </Select>
               {provider ? (
                 <JumpRow
                   icon={<FingerprintIcon {...ICON} />}

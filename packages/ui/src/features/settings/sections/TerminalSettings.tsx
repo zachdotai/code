@@ -1,3 +1,10 @@
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
@@ -6,7 +13,7 @@ import {
 } from "@posthog/ui/features/settings/settingsStore";
 import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
 import { track } from "@posthog/ui/shell/analytics";
-import { Flex, Select, Switch, Text, TextField } from "@radix-ui/themes";
+import { Flex, Switch, Text, TextField } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 
 export function TerminalSettings() {
@@ -75,19 +82,20 @@ export function TerminalSettings() {
         label="Font"
         description="Font used to render the terminal output"
       >
-        <Select.Root
+        <Select
           value={terminalFont}
           onValueChange={(value) => handleFontChange(value as TerminalFont)}
-          size="1"
         >
-          <Select.Trigger className="min-w-[160px]" />
-          <Select.Content>
-            <Select.Item value="berkeley-mono">Berkeley Mono</Select.Item>
-            <Select.Item value="jetbrains-mono">JetBrains Mono</Select.Item>
-            <Select.Item value="system">System monospace</Select.Item>
-            <Select.Item value="custom">Custom</Select.Item>
-          </Select.Content>
-        </Select.Root>
+          <SelectTrigger size="sm" className="min-w-[160px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="berkeley-mono">Berkeley Mono</SelectItem>
+            <SelectItem value="jetbrains-mono">JetBrains Mono</SelectItem>
+            <SelectItem value="system">System monospace</SelectItem>
+            <SelectItem value="custom">Custom</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingRow>
 
       {showCustomInput && (

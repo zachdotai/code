@@ -6,6 +6,7 @@ import {
   FlagIcon,
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
+import { Popover, PopoverContent, PopoverTrigger } from "@posthog/quill";
 import {
   INBOX_PRIORITY_OPTIONS,
   INBOX_SORT_OPTIONS,
@@ -15,7 +16,7 @@ import {
   inboxSourceFilterLabel,
 } from "@posthog/ui/features/inbox/filterOptions";
 import { useInboxSignalsFilterStore } from "@posthog/ui/features/inbox/stores/inboxSignalsFilterStore";
-import { Flex, Popover } from "@radix-ui/themes";
+import { Flex } from "@radix-ui/themes";
 import { type ReactNode, useId } from "react";
 
 interface InboxSearchFilterBarProps {
@@ -174,31 +175,33 @@ function InboxFilterPopover({
   children: ReactNode;
 }) {
   return (
-    <Popover.Root>
-      <Popover.Trigger>
-        <button
-          type="button"
-          aria-label={`${label}: ${value}`}
-          className="flex h-8 shrink-0 items-center gap-1.5 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2.5 transition-colors hover:border-(--gray-6) hover:bg-(--gray-2) focus-visible:outline-none"
-        >
-          {icon}
-          <span className="max-w-[150px] truncate text-[12.5px] text-gray-12">
-            {value}
-          </span>
-          {active ? (
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--primary)" />
-          ) : null}
-          <CaretDownIcon size={10} className="shrink-0 text-(--gray-9)" />
-        </button>
-      </Popover.Trigger>
-      <Popover.Content
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`${label}: ${value}`}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2.5 transition-colors hover:border-(--gray-6) hover:bg-(--gray-2) focus-visible:outline-none"
+          >
+            {icon}
+            <span className="max-w-[150px] truncate text-[12.5px] text-gray-12">
+              {value}
+            </span>
+            {active ? (
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--primary)" />
+            ) : null}
+            <CaretDownIcon size={10} className="shrink-0 text-(--gray-9)" />
+          </button>
+        }
+      />
+      <PopoverContent
         align="start"
         side="bottom"
         sideOffset={6}
         className="min-w-[220px] p-1.5"
       >
         {children}
-      </Popover.Content>
-    </Popover.Root>
+      </PopoverContent>
+    </Popover>
   );
 }

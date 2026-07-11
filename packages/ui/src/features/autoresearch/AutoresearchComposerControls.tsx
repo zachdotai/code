@@ -17,10 +17,10 @@ import type {
   AutoresearchDirection,
   AutoresearchDraftConfig,
 } from "@posthog/core/autoresearch/schemas";
+import { Popover, PopoverContent, PopoverTrigger } from "@posthog/quill";
 import {
   Button,
   Dialog,
-  Popover,
   SegmentedControl,
   Text,
   TextField,
@@ -566,21 +566,23 @@ function AdvancedSettings({
   const hasTarget = draft.targetValue !== null;
 
   return (
-    <Popover.Root>
-      <Popover.Trigger>
-        <Button
-          size="1"
-          variant="ghost"
-          color="gray"
-          disabled={disabled}
-          aria-label="Advanced autoresearch settings"
-        >
-          <SlidersHorizontal size={14} />
-          Advanced
-          {(split || hasTarget) && <span aria-hidden>•</span>}
-        </Button>
-      </Popover.Trigger>
-      <Popover.Content size="2" width="360px">
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            size="1"
+            variant="ghost"
+            color="gray"
+            disabled={disabled}
+            aria-label="Advanced autoresearch settings"
+          >
+            <SlidersHorizontal size={14} />
+            Advanced
+            {(split || hasTarget) && <span aria-hidden>•</span>}
+          </Button>
+        }
+      />
+      <PopoverContent className="w-[360px]">
         <div className="flex flex-col gap-4">
           <div>
             <Text as="div" size="2" weight="medium">
@@ -663,8 +665,8 @@ function AdvancedSettings({
             </Text>
           )}
         </div>
-      </Popover.Content>
-    </Popover.Root>
+      </PopoverContent>
+    </Popover>
   );
 }
 

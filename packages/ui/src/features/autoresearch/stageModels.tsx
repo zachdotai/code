@@ -1,6 +1,12 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { AUTORESEARCH_MAX_ITERATIONS_LIMIT } from "@posthog/core/autoresearch/schemas";
-import { Select } from "@radix-ui/themes";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
 import { flattenSelectOptions } from "../sessions/sessionStore";
 
 /** A session model choice offered for a stage: value plus a display label. */
@@ -74,7 +80,6 @@ export function StageModelSelect({
   ariaLabel,
   id,
   size,
-  variant,
   className,
   disabled,
 }: {
@@ -85,31 +90,31 @@ export function StageModelSelect({
   ariaLabel?: string;
   id?: string;
   size?: "1" | "2" | "3";
-  variant?: "surface" | "soft";
   className?: string;
   disabled?: boolean;
 }) {
   return (
-    <Select.Root
-      size={size}
+    <Select
       value={selectValueFromStageModel(value)}
-      onValueChange={(next) => onChange(stageModelFromSelectValue(next))}
+      onValueChange={(next) => onChange(stageModelFromSelectValue(next ?? ""))}
       disabled={disabled}
     >
-      <Select.Trigger
+      <SelectTrigger
         id={id}
-        variant={variant}
+        size={size === "1" ? "sm" : size ? "default" : undefined}
         className={className}
         aria-label={ariaLabel}
-      />
-      <Select.Content>
-        <Select.Item value={NO_STAGE_MODEL}>{noneLabel}</Select.Item>
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_STAGE_MODEL}>{noneLabel}</SelectItem>
         {options.map((option) => (
-          <Select.Item key={option.value} value={option.value}>
+          <SelectItem key={option.value} value={option.value}>
             {option.label}
-          </Select.Item>
+          </SelectItem>
         ))}
-      </Select.Content>
-    </Select.Root>
+      </SelectContent>
+    </Select>
   );
 }

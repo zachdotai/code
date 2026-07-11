@@ -19,6 +19,7 @@ import {
   withRepoNames,
 } from "@posthog/core/archive/archiveListView";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { Popover, PopoverContent, PopoverTrigger } from "@posthog/quill";
 import type { WorkspaceMode } from "@posthog/shared";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import {
@@ -27,7 +28,6 @@ import {
   Button,
   Dialog,
   Flex,
-  Popover,
   Table,
   Text,
   TextField,
@@ -121,20 +121,22 @@ function RepositoryFilterHeader({
 }) {
   return (
     <Table.ColumnHeaderCell className="w-[20%] font-normal text-[13px] text-gray-11">
-      <Popover.Root>
-        <Popover.Trigger>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-gray-11 transition-colors hover:text-gray-12"
-          >
-            Repository
-            <CaretDown size={10} />
-            {selectedRepo !== null && (
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-9" />
-            )}
-          </button>
-        </Popover.Trigger>
-        <Popover.Content
+      <Popover>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-gray-11 transition-colors hover:text-gray-12"
+            >
+              Repository
+              <CaretDown size={10} />
+              {selectedRepo !== null && (
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-9" />
+              )}
+            </button>
+          }
+        />
+        <PopoverContent
           align="start"
           side="bottom"
           sideOffset={4}
@@ -165,8 +167,8 @@ function RepositoryFilterHeader({
               </button>
             ))}
           </Flex>
-        </Popover.Content>
-      </Popover.Root>
+        </PopoverContent>
+      </Popover>
     </Table.ColumnHeaderCell>
   );
 }

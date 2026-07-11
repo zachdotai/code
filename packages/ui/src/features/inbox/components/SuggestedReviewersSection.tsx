@@ -5,6 +5,7 @@ import {
   User,
   XIcon,
 } from "@phosphor-icons/react";
+import { Popover, PopoverContent, PopoverTrigger } from "@posthog/quill";
 import type {
   AvailableSuggestedReviewer,
   SignalReport,
@@ -27,7 +28,7 @@ import {
   useUpdateSuggestedReviewers,
 } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useReportActionTracker } from "@posthog/ui/features/inbox/hooks/useReportActionTracker";
-import { Flex, Popover, Spinner, Text } from "@radix-ui/themes";
+import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useDeferredValue, useMemo, useState } from "react";
 
 function reviewerMatchesAvailable(
@@ -337,18 +338,20 @@ function AddReviewerPopover({
   hasResults: boolean;
 }) {
   return (
-    <Popover.Root modal open={open} onOpenChange={onOpenChange}>
-      <Popover.Trigger>
-        <button
-          type="button"
-          aria-label="Add suggested reviewer"
-          className="flex h-5 items-center gap-1 rounded-(--radius-1) px-1 text-[11px] text-gray-10 transition-colors hover:bg-(--gray-3) hover:text-gray-12"
-        >
-          <PlusIcon size={11} />
-          Add
-        </button>
-      </Popover.Trigger>
-      <Popover.Content
+    <Popover modal open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Add suggested reviewer"
+            className="flex h-5 items-center gap-1 rounded-(--radius-1) px-1 text-[11px] text-gray-10 transition-colors hover:bg-(--gray-3) hover:text-gray-12"
+          >
+            <PlusIcon size={11} />
+            Add
+          </button>
+        }
+      />
+      <PopoverContent
         align="end"
         side="bottom"
         sideOffset={6}
@@ -426,7 +429,7 @@ function AddReviewerPopover({
             )}
           </div>
         </Flex>
-      </Popover.Content>
-    </Popover.Root>
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -14,11 +14,18 @@ import {
 } from "@posthog/core/scouts/scoutFindings";
 import { prettifyScoutSkillName } from "@posthog/core/scouts/scoutPresentation";
 import { SCOUT_RUNS_WINDOW_SPAN } from "@posthog/core/scouts/scoutRunsWindow";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { track } from "@posthog/ui/shell/analytics";
-import { Box, Flex, Select, Text, TextField } from "@radix-ui/themes";
+import { Box, Flex, Text, TextField } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useScoutFindings } from "../hooks/useScoutFindings";
@@ -171,10 +178,10 @@ export function ScoutFindingsView() {
                 </TextField.Slot>
               </TextField.Root>
 
-              <Select.Root
+              <Select
                 value={scoutFilter}
-                size="2"
                 onValueChange={(value) => {
+                  if (value == null) return;
                   setScoutFilter(value);
                   track(ANALYTICS_EVENTS.SCOUT_ACTION, {
                     action_type: "filter_findings",
@@ -183,26 +190,29 @@ export function ScoutFindingsView() {
                   });
                 }}
               >
-                <Select.Trigger
+                <SelectTrigger
+                  size="default"
                   aria-label="Filter by scout"
                   className="min-w-[9rem]"
-                />
-                <Select.Content>
-                  <Select.Item value={SCOUT_FINDINGS_SCOUT_FILTER_ALL}>
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SCOUT_FINDINGS_SCOUT_FILTER_ALL}>
                     All scouts
-                  </Select.Item>
+                  </SelectItem>
                   {availableScouts.map((scout) => (
-                    <Select.Item key={scout.skillName} value={scout.skillName}>
+                    <SelectItem key={scout.skillName} value={scout.skillName}>
                       {scout.label} ({scout.count})
-                    </Select.Item>
+                    </SelectItem>
                   ))}
-                </Select.Content>
-              </Select.Root>
+                </SelectContent>
+              </Select>
 
-              <Select.Root
+              <Select
                 value={severityFilter}
-                size="2"
                 onValueChange={(value) => {
+                  if (value == null) return;
                   setSeverityFilter(value);
                   track(ANALYTICS_EVENTS.SCOUT_ACTION, {
                     action_type: "filter_findings",
@@ -211,22 +221,23 @@ export function ScoutFindingsView() {
                   });
                 }}
               >
-                <Select.Trigger aria-label="Filter by severity" />
-                <Select.Content>
-                  <Select.Item value={SCOUT_FINDINGS_SEVERITY_FILTER_ALL}>
+                <SelectTrigger size="default" aria-label="Filter by severity">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SCOUT_FINDINGS_SEVERITY_FILTER_ALL}>
                     All severities
-                  </Select.Item>
+                  </SelectItem>
                   {SCOUT_FINDINGS_SEVERITY_OPTIONS.map((severity) => (
-                    <Select.Item key={severity} value={severity}>
+                    <SelectItem key={severity} value={severity}>
                       {severity}
-                    </Select.Item>
+                    </SelectItem>
                   ))}
-                </Select.Content>
-              </Select.Root>
+                </SelectContent>
+              </Select>
 
-              <Select.Root
+              <Select
                 value={sortKey}
-                size="2"
                 onValueChange={(value) => {
                   const next = value as ScoutFindingsSortKey;
                   setSortKey(next);
@@ -237,15 +248,17 @@ export function ScoutFindingsView() {
                   });
                 }}
               >
-                <Select.Trigger aria-label="Sort findings" />
-                <Select.Content>
+                <SelectTrigger size="default" aria-label="Sort findings">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
                   {SORT_OPTIONS.map((option) => (
-                    <Select.Item key={option.value} value={option.value}>
+                    <SelectItem key={option.value} value={option.value}>
                       Sort: {option.label}
-                    </Select.Item>
+                    </SelectItem>
                   ))}
-                </Select.Content>
-              </Select.Root>
+                </SelectContent>
+              </Select>
             </Flex>
 
             {hasLoadedOnce &&

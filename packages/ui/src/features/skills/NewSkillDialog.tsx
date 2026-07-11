@@ -1,13 +1,12 @@
-import { toast } from "@posthog/ui/primitives/toast";
 import {
-  Box,
-  Button,
-  Dialog,
-  Flex,
   Select,
-  Text,
-  TextField,
-} from "@radix-ui/themes";
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
+import { toast } from "@posthog/ui/primitives/toast";
+import { Box, Button, Dialog, Flex, Text, TextField } from "@radix-ui/themes";
 import { useState } from "react";
 import { useFolders } from "../folders/useFolders";
 import { skillErrorDescription } from "./skillErrors";
@@ -73,17 +72,24 @@ export function NewSkillDialog({
             <Text className="mb-1 block text-[12px] text-gray-10">
               Location
             </Text>
-            <Select.Root value={scope} onValueChange={setScope}>
-              <Select.Trigger className="w-full" />
-              <Select.Content>
-                <Select.Item value={USER_SCOPE}>Your skills</Select.Item>
+            <Select
+              value={scope}
+              onValueChange={(v) => {
+                if (v != null) setScope(v);
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={USER_SCOPE}>Your skills</SelectItem>
                 {folders.map((folder) => (
-                  <Select.Item key={folder.path} value={folder.path}>
+                  <SelectItem key={folder.path} value={folder.path}>
                     Repository: {folder.name}
-                  </Select.Item>
+                  </SelectItem>
                 ))}
-              </Select.Content>
-            </Select.Root>
+              </SelectContent>
+            </Select>
           </Box>
           <Flex justify="end" gap="2" mt="2">
             <Dialog.Close>

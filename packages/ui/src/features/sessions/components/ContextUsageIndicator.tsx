@@ -1,9 +1,10 @@
+import { Popover, PopoverContent, PopoverTrigger } from "@posthog/quill";
 import {
   formatTokensCompact,
   getOverallUsageColor,
 } from "@posthog/ui/features/sessions/contextColors";
 import type { ContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
-import { Flex, Popover, Text } from "@radix-ui/themes";
+import { Flex, Text } from "@radix-ui/themes";
 import { ContextBreakdownPopover } from "./ContextBreakdownPopover";
 
 const CIRCLE_SIZE = 20;
@@ -26,56 +27,58 @@ export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
   const color = getOverallUsageColor(percentage);
 
   return (
-    <Popover.Root>
-      <Popover.Trigger>
-        <button
-          type="button"
-          className="flex cursor-pointer select-none items-center gap-1 bg-transparent"
-          aria-label={
-            hasSize
-              ? `Context usage: ${percentage}%`
-              : `Context usage: ${formatTokensCompact(used)} tokens`
-          }
-        >
-          <Flex align="center" gap="1">
-            <svg
-              width={CIRCLE_SIZE}
-              height={CIRCLE_SIZE}
-              className="-rotate-90 shrink-0"
-              role="img"
-              aria-hidden="true"
-            >
-              <circle
-                cx={CIRCLE_SIZE / 2}
-                cy={CIRCLE_SIZE / 2}
-                r={RADIUS}
-                fill="none"
-                stroke="var(--gray-5)"
-                strokeWidth={STROKE_WIDTH}
-              />
-              <circle
-                cx={CIRCLE_SIZE / 2}
-                cy={CIRCLE_SIZE / 2}
-                r={RADIUS}
-                fill="none"
-                stroke={color}
-                strokeWidth={STROKE_WIDTH}
-                strokeDasharray={CIRCUMFERENCE}
-                strokeDashoffset={strokeDashoffset}
-                strokeLinecap="round"
-              />
-            </svg>
-            <Text className="text-[13px] text-muted-foreground tabular-nums">
-              {hasSize
-                ? `${formatTokensCompact(used)}/${formatTokensCompact(size)} · ${percentage}%`
-                : formatTokensCompact(used)}
-            </Text>
-          </Flex>
-        </button>
-      </Popover.Trigger>
-      <Popover.Content size="2" side="top" align="end" sideOffset={6}>
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className="flex cursor-pointer select-none items-center gap-1 bg-transparent"
+            aria-label={
+              hasSize
+                ? `Context usage: ${percentage}%`
+                : `Context usage: ${formatTokensCompact(used)} tokens`
+            }
+          >
+            <Flex align="center" gap="1">
+              <svg
+                width={CIRCLE_SIZE}
+                height={CIRCLE_SIZE}
+                className="-rotate-90 shrink-0"
+                role="img"
+                aria-hidden="true"
+              >
+                <circle
+                  cx={CIRCLE_SIZE / 2}
+                  cy={CIRCLE_SIZE / 2}
+                  r={RADIUS}
+                  fill="none"
+                  stroke="var(--gray-5)"
+                  strokeWidth={STROKE_WIDTH}
+                />
+                <circle
+                  cx={CIRCLE_SIZE / 2}
+                  cy={CIRCLE_SIZE / 2}
+                  r={RADIUS}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={STROKE_WIDTH}
+                  strokeDasharray={CIRCUMFERENCE}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <Text className="text-[13px] text-muted-foreground tabular-nums">
+                {hasSize
+                  ? `${formatTokensCompact(used)}/${formatTokensCompact(size)} · ${percentage}%`
+                  : formatTokensCompact(used)}
+              </Text>
+            </Flex>
+          </button>
+        }
+      />
+      <PopoverContent side="top" align="end" sideOffset={6}>
         <ContextBreakdownPopover usage={usage} />
-      </Popover.Content>
-    </Popover.Root>
+      </PopoverContent>
+    </Popover>
   );
 }

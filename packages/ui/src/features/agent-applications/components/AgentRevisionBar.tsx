@@ -1,4 +1,5 @@
 import { CaretDownIcon } from "@phosphor-icons/react";
+import { Popover, PopoverContent, PopoverTrigger } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type {
   AgentApplication,
@@ -7,7 +8,7 @@ import type {
 } from "@posthog/shared/agent-platform-types";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
-import { AlertDialog, Flex, Popover, Text } from "@radix-ui/themes";
+import { AlertDialog, Flex, Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useAgentRevisionLifecycle } from "../hooks/useAgentRevisionLifecycle";
@@ -173,25 +174,27 @@ export function AgentRevisionBar({
       gap="3"
       className="shrink-0 border-(--gray-5) border-b px-4 py-2"
     >
-      <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-        <Popover.Trigger>
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2.5 py-1.5 text-left hover:border-(--gray-7)"
-          >
-            <Badge color={revisionStateColor(selected.state)}>
-              {stateLabel(selected, isLive)}
-            </Badge>
-            <code className="text-[12px] text-gray-12 [font-family:var(--font-mono)]">
-              {shortId(selected.id)}
-            </code>
-            <Text className="text-[11px] text-gray-10">
-              {formatRelativeTimeShort(selected.updated_at)}
-            </Text>
-            <CaretDownIcon size={12} className="text-gray-10" />
-          </button>
-        </Popover.Trigger>
-        <Popover.Content size="1" width="320px" className="p-0">
+      <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2.5 py-1.5 text-left hover:border-(--gray-7)"
+            >
+              <Badge color={revisionStateColor(selected.state)}>
+                {stateLabel(selected, isLive)}
+              </Badge>
+              <code className="text-[12px] text-gray-12 [font-family:var(--font-mono)]">
+                {shortId(selected.id)}
+              </code>
+              <Text className="text-[11px] text-gray-10">
+                {formatRelativeTimeShort(selected.updated_at)}
+              </Text>
+              <CaretDownIcon size={12} className="text-gray-10" />
+            </button>
+          }
+        />
+        <PopoverContent className="w-[320px] p-0">
           <div className="border-(--gray-5) border-b px-2 py-2">
             <Flex gap="1" wrap="wrap">
               {STATE_FILTERS.map((f) => {
@@ -257,8 +260,8 @@ export function AgentRevisionBar({
               })
             )}
           </ul>
-        </Popover.Content>
-      </Popover.Root>
+        </PopoverContent>
+      </Popover>
 
       <Flex gap="2">
         {/*

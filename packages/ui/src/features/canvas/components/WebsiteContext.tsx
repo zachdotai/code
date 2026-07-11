@@ -13,6 +13,11 @@ import {
   EmptyMedia,
   EmptyTitle,
   Button as QuillButton,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -47,7 +52,6 @@ import {
   Flex,
   ScrollArea,
   SegmentedControl,
-  Select,
   Spinner,
   Text,
   TextArea,
@@ -266,8 +270,7 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
           ) : null}
 
           {versions.length > 0 ? (
-            <Select.Root
-              size="1"
+            <Select
               value={selectedVersionId ?? "latest"}
               onValueChange={(value) => {
                 if (value === "latest") {
@@ -279,20 +282,22 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
               }}
               disabled={isLoadingVersions}
             >
-              <Select.Trigger />
-              <Select.Content>
-                <Select.Item value="latest">
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="latest">
                   Latest (v{latest?.version ?? "—"})
-                </Select.Item>
+                </SelectItem>
                 {versions
                   .filter((v) => !v.is_latest)
                   .map((v) => (
-                    <Select.Item key={v.id} value={v.id}>
+                    <SelectItem key={v.id} value={v.id}>
                       v{v.version} · {formatTimestamp(v.created_at)}
-                    </Select.Item>
+                    </SelectItem>
                   ))}
-              </Select.Content>
-            </Select.Root>
+              </SelectContent>
+            </Select>
           ) : null}
         </Flex>
 

@@ -13,10 +13,15 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@posthog/quill";
 import { MetricCard } from "@posthog/quill-charts";
 import type { AcpMessage } from "@posthog/shared";
-import { Badge, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
+import { Badge, Button, Callout, Flex, Text } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 import { useContextUsage } from "../sessions/hooks/useContextUsage";
 import {
@@ -300,16 +305,23 @@ function RunHeader({
         </Flex>
         <Flex align="center" gap="2" className="shrink-0">
           {runs.length > 1 && (
-            <Select.Root value={run.id} onValueChange={onSelectRun} size="1">
-              <Select.Trigger variant="soft" />
-              <Select.Content>
+            <Select
+              value={run.id}
+              onValueChange={(v) => {
+                if (v != null) onSelectRun(v);
+              }}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
                 {runs.map((candidate, index) => (
-                  <Select.Item key={candidate.id} value={candidate.id}>
+                  <SelectItem key={candidate.id} value={candidate.id}>
                     Run {index + 1}: {STATUS_BADGE[candidate.status].label}
-                  </Select.Item>
+                  </SelectItem>
                 ))}
-              </Select.Content>
-            </Select.Root>
+              </SelectContent>
+            </Select>
           )}
           {(run.status === "running" || run.status === "interrupted") && (
             <Button

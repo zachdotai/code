@@ -9,6 +9,7 @@ import {
   ScalesIcon,
   SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
+import { Popover, PopoverContent, PopoverTrigger } from "@posthog/quill";
 import type {
   AgentModelEntry,
   AgentModelLevel,
@@ -21,7 +22,7 @@ import type {
 } from "@posthog/shared/agent-platform-types";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
-import { Flex, Popover, Text } from "@radix-ui/themes";
+import { Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, type RefCallback, useMemo, useState } from "react";
 import { useApplyAgentSpec } from "../hooks/useApplyAgentSpec";
 import { useModelCatalog } from "../hooks/useModelCatalog";
@@ -601,19 +602,21 @@ function Select({
           {icon}
           <Text className="text-[11px] uppercase tracking-wide">{label}</Text>
         </Flex>
-        <Popover.Root open={open} onOpenChange={setOpen}>
-          <Popover.Trigger>
-            <button
-              type="button"
-              className="inline-flex w-fit items-center gap-2 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2.5 py-1.5 text-left hover:border-(--gray-7)"
-            >
-              <Text className="text-[12.5px] text-gray-12">
-                {current?.title}
-              </Text>
-              <CaretDownIcon size={12} className="shrink-0 text-gray-10" />
-            </button>
-          </Popover.Trigger>
-          <Popover.Content size="1" width="360px" className="p-0">
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger
+            render={
+              <button
+                type="button"
+                className="inline-flex w-fit items-center gap-2 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2.5 py-1.5 text-left hover:border-(--gray-7)"
+              >
+                <Text className="text-[12.5px] text-gray-12">
+                  {current?.title}
+                </Text>
+                <CaretDownIcon size={12} className="shrink-0 text-gray-10" />
+              </button>
+            }
+          />
+          <PopoverContent className="w-[360px] p-0">
             <ul className="max-h-72 divide-y divide-(--gray-4) overflow-auto">
               {options.map((o) => (
                 <li key={o.value}>
@@ -640,8 +643,8 @@ function Select({
                 </li>
               ))}
             </ul>
-          </Popover.Content>
-        </Popover.Root>
+          </PopoverContent>
+        </Popover>
       </Flex>
       {current?.description ? (
         <Text className="text-[11px] text-gray-10 leading-snug">

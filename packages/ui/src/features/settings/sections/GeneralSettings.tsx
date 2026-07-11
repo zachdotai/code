@@ -1,6 +1,13 @@
 import { ArrowSquareOut } from "@phosphor-icons/react";
 import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import { useHostTRPC } from "@posthog/host-router/react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
@@ -20,7 +27,7 @@ import {
 import { track } from "@posthog/ui/shell/analytics";
 import type { ThemePreference } from "@posthog/ui/shell/themeStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
-import { Button, Flex, Link, Select, Switch, Text } from "@radix-ui/themes";
+import { Button, Flex, Link, Switch, Text } from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
 
@@ -254,18 +261,19 @@ export function GeneralSettings() {
         label="Theme"
         description="Choose light, dark, or follow your system preference"
       >
-        <Select.Root
+        <Select
           value={theme}
           onValueChange={(v) => handleThemeChange(v as ThemePreference)}
-          size="1"
         >
-          <Select.Trigger className="min-w-[100px]" />
-          <Select.Content>
-            <Select.Item value="light">Light</Select.Item>
-            <Select.Item value="dark">Dark</Select.Item>
-            <Select.Item value="system">System</Select.Item>
-          </Select.Content>
-        </Select.Root>
+          <SelectTrigger size="sm" className="min-w-[100px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="light">Light</SelectItem>
+            <SelectItem value="dark">Dark</SelectItem>
+            <SelectItem value="system">System</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingRow>
 
       {/* Input */}
@@ -277,102 +285,107 @@ export function GeneralSettings() {
         label="Initial task mode"
         description="Choose whether new tasks always start in Plan mode or remember your last-used mode"
       >
-        <Select.Root
+        <Select
           value={defaultInitialTaskMode}
           onValueChange={(value) =>
             handleDefaultInitialTaskModeChange(value as DefaultInitialTaskMode)
           }
-          size="1"
         >
-          <Select.Trigger className="min-w-[100px]" />
-          <Select.Content>
-            <Select.Item value="plan">Plan</Select.Item>
-            <Select.Item value="last_used">Last used</Select.Item>
-          </Select.Content>
-        </Select.Root>
+          <SelectTrigger size="sm" className="min-w-[100px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="plan">Plan</SelectItem>
+            <SelectItem value="last_used">Last used</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingRow>
 
       <SettingRow
         label="Default messaging mode"
         description="Mode new sessions start in. Steer applies messages mid-turn. Queue holds them until the turn ends."
       >
-        <Select.Root
+        <Select
           value={defaultMessagingMode}
           onValueChange={(value) =>
             handleDefaultMessagingModeChange(value as DefaultMessagingMode)
           }
-          size="1"
         >
-          <Select.Trigger className="min-w-[100px]" />
-          <Select.Content>
-            <Select.Item value="queue">Queue</Select.Item>
-            <Select.Item value="steer">Steer</Select.Item>
-          </Select.Content>
-        </Select.Root>
+          <SelectTrigger size="sm" className="min-w-[100px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="queue">Queue</SelectItem>
+            <SelectItem value="steer">Steer</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingRow>
 
       <SettingRow
         label="Default effort level"
         description="Choose the default reasoning effort for new tasks, or remember your last-used level"
       >
-        <Select.Root
+        <Select
           value={defaultReasoningEffort}
           onValueChange={(value) =>
             handleDefaultReasoningEffortChange(value as DefaultReasoningEffort)
           }
-          size="1"
         >
-          <Select.Trigger className="min-w-[100px]" />
-          <Select.Content>
-            <Select.Item value="last_used">Last used</Select.Item>
-            <Select.Item value="low">Low</Select.Item>
-            <Select.Item value="medium">Medium</Select.Item>
-            <Select.Item value="high">High</Select.Item>
-            <Select.Item value="xhigh">Extra High</Select.Item>
-            <Select.Item value="max">Max</Select.Item>
-          </Select.Content>
-        </Select.Root>
+          <SelectTrigger size="sm" className="min-w-[100px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="last_used">Last used</SelectItem>
+            <SelectItem value="low">Low</SelectItem>
+            <SelectItem value="medium">Medium</SelectItem>
+            <SelectItem value="high">High</SelectItem>
+            <SelectItem value="xhigh">Extra High</SelectItem>
+            <SelectItem value="max">Max</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingRow>
 
       <SettingRow
         label="Send messages with"
         description="Choose which key combination sends messages. Use Shift+Enter for new lines"
       >
-        <Select.Root
+        <Select
           value={sendMessagesWith}
           onValueChange={(value) =>
             handleSendMessagesWithChange(value as SendMessagesWith)
           }
-          size="1"
         >
-          <Select.Trigger className="min-w-[100px]" />
-          <Select.Content>
-            <Select.Item value="enter">Enter</Select.Item>
-            <Select.Item value="cmd+enter">⌘ Enter</Select.Item>
-          </Select.Content>
-        </Select.Root>
+          <SelectTrigger size="sm" className="min-w-[100px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="enter">Enter</SelectItem>
+            <SelectItem value="cmd+enter">⌘ Enter</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingRow>
 
       <SettingRow
         label="Auto-convert long text"
         description="Automatically convert pasted text over this length into an attachment"
       >
-        <Select.Root
+        <Select
           value={autoConvertLongText}
           onValueChange={(value) =>
             handleAutoConvertLongTextChange(value as AutoConvertLongText)
           }
-          size="1"
         >
-          <Select.Trigger className="min-w-[120px]" />
-          <Select.Content>
-            <Select.Item value="off">Off</Select.Item>
-            <Select.Item value="1000">1,000 chars</Select.Item>
-            <Select.Item value="2500">2,500 chars</Select.Item>
-            <Select.Item value="5000">5,000 chars</Select.Item>
-            <Select.Item value="10000">10,000 chars</Select.Item>
-          </Select.Content>
-        </Select.Root>
+          <SelectTrigger size="sm" className="min-w-[120px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="off">Off</SelectItem>
+            <SelectItem value="1000">1,000 chars</SelectItem>
+            <SelectItem value="2500">2,500 chars</SelectItem>
+            <SelectItem value="5000">5,000 chars</SelectItem>
+            <SelectItem value="10000">10,000 chars</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingRow>
 
       {/* Editor */}
@@ -385,21 +398,22 @@ export function GeneralSettings() {
         description="Choose how file diffs open when clicking a changed file"
         noBorder
       >
-        <Select.Root
+        <Select
           value={diffOpenMode}
           onValueChange={(value) =>
             handleDiffOpenModeChange(value as DiffOpenMode)
           }
-          size="1"
         >
-          <Select.Trigger className="min-w-[140px]" />
-          <Select.Content>
-            <Select.Item value="auto">Auto</Select.Item>
-            <Select.Item value="split">Split pane</Select.Item>
-            <Select.Item value="same-pane">Same pane</Select.Item>
-            <Select.Item value="last-active-pane">Last active pane</Select.Item>
-          </Select.Content>
-        </Select.Root>
+          <SelectTrigger size="sm" className="min-w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Auto</SelectItem>
+            <SelectItem value="split">Split pane</SelectItem>
+            <SelectItem value="same-pane">Same pane</SelectItem>
+            <SelectItem value="last-active-pane">Last active pane</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingRow>
 
       {/* Conversation */}
@@ -412,22 +426,23 @@ export function GeneralSettings() {
         description="Group each turn's tool calls into a collapsible summary. Partial keeps the active turn expanded and folds completed turns."
         noBorder
       >
-        <Select.Root
+        <Select
           value={conversationCollapseMode}
           onValueChange={(value) =>
             handleConversationCollapseModeChange(value as CollapseMode)
           }
-          size="1"
         >
-          <Select.Trigger className="min-w-[140px]" />
-          <Select.Content>
+          <SelectTrigger size="sm" className="min-w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
             {COLLAPSE_MODE_OPTIONS.map((opt) => (
-              <Select.Item key={opt.value} value={opt.value}>
+              <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
-              </Select.Item>
+              </SelectItem>
             ))}
-          </Select.Content>
-        </Select.Root>
+          </SelectContent>
+        </Select>
       </SettingRow>
 
       {/* Power */}

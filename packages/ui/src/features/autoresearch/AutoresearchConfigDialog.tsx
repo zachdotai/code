@@ -1,9 +1,15 @@
 import type { AutoresearchDirection } from "@posthog/core/autoresearch/schemas";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
+import {
   Button,
   Dialog,
   Flex,
-  Select,
   Text,
   TextArea,
   TextField,
@@ -172,18 +178,20 @@ function ConfigForm({
             >
               Direction
             </Text>
-            <Select.Root
+            <Select
               value={values.direction}
               onValueChange={(value) =>
                 setField("direction", value as AutoresearchDirection)
               }
             >
-              <Select.Trigger id="autoresearch-direction" className="w-full" />
-              <Select.Content>
-                <Select.Item value="maximize">Maximize</Select.Item>
-                <Select.Item value="minimize">Minimize</Select.Item>
-              </Select.Content>
-            </Select.Root>
+              <SelectTrigger id="autoresearch-direction" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="maximize">Maximize</SelectItem>
+                <SelectItem value="minimize">Minimize</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex-1">
             <Text

@@ -4,6 +4,15 @@ import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
 } from "@posthog/platform/notifications";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -26,7 +35,6 @@ import {
   Button,
   Flex,
   IconButton,
-  Select,
   Slider,
   Switch,
   Text,
@@ -232,46 +240,47 @@ export function NotificationsSettings() {
         noBorder={completionSound === "none"}
       >
         <Flex align="center" gap="2">
-          <Select.Root
+          <Select
             value={completionSound}
             onValueChange={(value) =>
               handleCompletionSoundChange(value as CompletionSound)
             }
-            size="1"
           >
-            <Select.Trigger className="min-w-[100px]" />
-            <Select.Content>
-              <Select.Item value="none">None</Select.Item>
-              <Select.Item value="random-all">Random (all)</Select.Item>
+            <SelectTrigger size="sm" className="min-w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="random-all">Random (all)</SelectItem>
               {customSounds.length > 0 && (
-                <Select.Item value="random-custom">Random (custom)</Select.Item>
+                <SelectItem value="random-custom">Random (custom)</SelectItem>
               )}
-              <Select.Item value="guitar">Guitar solo</Select.Item>
-              <Select.Item value="danilo">I'm ready</Select.Item>
-              <Select.Item value="revi">Cute noise</Select.Item>
-              <Select.Item value="meep">Meep</Select.Item>
-              <Select.Item value="meep-smol">Meep (smol)</Select.Item>
-              <Select.Item value="bubbles">Bubbles</Select.Item>
-              <Select.Item value="drop">Drop</Select.Item>
-              <Select.Item value="knock">Knock</Select.Item>
-              <Select.Item value="ring">Ring</Select.Item>
-              <Select.Item value="shoot">Shoot</Select.Item>
-              <Select.Item value="slide">Slide</Select.Item>
-              <Select.Item value="switch">Switch</Select.Item>
-              <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
-              <Select.Item value="icq">ICQ</Select.Item>
+              <SelectItem value="guitar">Guitar solo</SelectItem>
+              <SelectItem value="danilo">I'm ready</SelectItem>
+              <SelectItem value="revi">Cute noise</SelectItem>
+              <SelectItem value="meep">Meep</SelectItem>
+              <SelectItem value="meep-smol">Meep (smol)</SelectItem>
+              <SelectItem value="bubbles">Bubbles</SelectItem>
+              <SelectItem value="drop">Drop</SelectItem>
+              <SelectItem value="knock">Knock</SelectItem>
+              <SelectItem value="ring">Ring</SelectItem>
+              <SelectItem value="shoot">Shoot</SelectItem>
+              <SelectItem value="slide">Slide</SelectItem>
+              <SelectItem value="switch">Switch</SelectItem>
+              <SelectItem value="wilhelm">Wilhelm scream</SelectItem>
+              <SelectItem value="icq">ICQ</SelectItem>
               {customSounds.length > 0 && (
-                <Select.Group>
-                  <Select.Label>Custom</Select.Label>
+                <SelectGroup>
+                  <SelectGroupLabel>Custom</SelectGroupLabel>
                   {customSounds.map((sound) => (
-                    <Select.Item key={sound.id} value={`custom:${sound.id}`}>
+                    <SelectItem key={sound.id} value={`custom:${sound.id}`}>
                       {sound.name}
-                    </Select.Item>
+                    </SelectItem>
                   ))}
-                </Select.Group>
+                </SelectGroup>
               )}
-            </Select.Content>
-          </Select.Root>
+            </SelectContent>
+          </Select>
           {completionSound !== "none" && (
             <Tooltip content="Test sound">
               <IconButton

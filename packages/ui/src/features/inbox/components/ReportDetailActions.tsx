@@ -6,7 +6,12 @@ import {
 } from "@phosphor-icons/react";
 import { extractRepoSelectionRepository } from "@posthog/core/inbox/artefacts";
 import { canCreateImplementationPr } from "@posthog/core/inbox/reportActions";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
 import { useCreatePrReport } from "@posthog/ui/features/inbox/hooks/useCreatePrReport";
 import { useDiscussReport } from "@posthog/ui/features/inbox/hooks/useDiscussReport";
@@ -18,7 +23,7 @@ import {
   useReportTasks,
 } from "@posthog/ui/features/inbox/hooks/useReportTasks";
 import { useOpenTask } from "@posthog/ui/router/useOpenTask";
-import { Flex, Popover, Spinner, Text, TextArea } from "@radix-ui/themes";
+import { Flex, Spinner, Text, TextArea } from "@radix-ui/themes";
 import { useCallback, useState } from "react";
 
 interface ReportDetailActionsProps {
@@ -116,28 +121,34 @@ export function ReportDetailActions({ report }: ReportDetailActionsProps) {
 
   return (
     <>
-      <Popover.Root
+      <Popover
         open={discussOpen}
         onOpenChange={(next) => {
           setDiscussOpen(next);
           if (!next) setDiscussQuestion("");
         }}
       >
-        <Popover.Trigger>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isDiscussing}
-            className="gap-1"
-            title="Discuss this report with your agent"
-          >
-            {isDiscussing ? <Spinner size="1" /> : <ChatCircleIcon size={12} />}
-            Discuss
-            <CaretDownIcon size={12} />
-          </Button>
-        </Popover.Trigger>
-        <Popover.Content
+        <PopoverTrigger
+          render={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isDiscussing}
+              className="gap-1"
+              title="Discuss this report with your agent"
+            >
+              {isDiscussing ? (
+                <Spinner size="1" />
+              ) : (
+                <ChatCircleIcon size={12} />
+              )}
+              Discuss
+              <CaretDownIcon size={12} />
+            </Button>
+          }
+        />
+        <PopoverContent
           align="end"
           side="bottom"
           sideOffset={6}
@@ -190,40 +201,42 @@ export function ReportDetailActions({ report }: ReportDetailActionsProps) {
               </Flex>
             </Flex>
           </form>
-        </Popover.Content>
-      </Popover.Root>
+        </PopoverContent>
+      </Popover>
 
       {showPr && (
-        <Popover.Root
+        <Popover
           open={prOpen}
           onOpenChange={(next) => {
             setPrOpen(next);
             if (!next) setPrFeedback("");
           }}
         >
-          <Popover.Trigger>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              disabled={isCreatingPr}
-              className="gap-1"
-              title={
-                hasExistingPr
-                  ? "Continue the existing PR or open a new one"
-                  : "Have Self-driving open a pull request for this report"
-              }
-            >
-              {isCreatingPr ? (
-                <Spinner size="1" />
-              ) : (
-                <GitPullRequestIcon size={12} />
-              )}
-              {hasExistingPr ? "Continue PR" : "Create PR"}
-              <CaretDownIcon size={12} />
-            </Button>
-          </Popover.Trigger>
-          <Popover.Content
+          <PopoverTrigger
+            render={
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                disabled={isCreatingPr}
+                className="gap-1"
+                title={
+                  hasExistingPr
+                    ? "Continue the existing PR or open a new one"
+                    : "Have Self-driving open a pull request for this report"
+                }
+              >
+                {isCreatingPr ? (
+                  <Spinner size="1" />
+                ) : (
+                  <GitPullRequestIcon size={12} />
+                )}
+                {hasExistingPr ? "Continue PR" : "Create PR"}
+                <CaretDownIcon size={12} />
+              </Button>
+            }
+          />
+          <PopoverContent
             align="end"
             side="bottom"
             sideOffset={6}
@@ -302,8 +315,8 @@ export function ReportDetailActions({ report }: ReportDetailActionsProps) {
                 </Button>
               </Flex>
             </Flex>
-          </Popover.Content>
-        </Popover.Root>
+          </PopoverContent>
+        </Popover>
       )}
     </>
   );
