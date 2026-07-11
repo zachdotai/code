@@ -111,7 +111,7 @@ function EnvironmentBadge({ mode }: { mode: WorkspaceMode | null }) {
 
 function EmptyCell({ cellIndex }: { cellIndex: number }) {
   const [selectorOpen, setSelectorOpen] = useState(false);
-  // The command-center terminal is a local PTY; unavailable on cloud-only hosts.
+  // The command-center terminal is unavailable on cloud-only hosts.
   const { localWorkspaces } = useHostCapabilities();
   const isCreating = useCommandCenterStore((s) =>
     s.creatingCells.includes(cellIndex),

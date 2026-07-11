@@ -14,12 +14,12 @@ import { getAuthenticatedClient } from "@posthog/ui/features/auth/authClientImpe
 import { z } from "zod";
 import { getWebPreviewConfigOptions } from "./web-agent-config";
 import { webArchiveStore } from "./web-archive-store";
-import { webBrowserTabsStore } from "./web-browser-tabs-store";
 import {
   getWebAttachmentBase64,
   getWebAttachmentDataUrl,
   putWebAttachment,
 } from "./web-attachment-store";
+import { webBrowserTabsStore } from "./web-browser-tabs-store";
 import { fetchS3Logs } from "./web-logs";
 import { webTaskMetadataStore } from "./web-task-metadata-store";
 import { webWorkspaceStore } from "./web-workspace-store";

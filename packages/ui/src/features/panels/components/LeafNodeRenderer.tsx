@@ -43,8 +43,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
 }) => {
   const isCloud = useIsWorkspaceCloudRun(taskId);
   const { localWorkspaces } = useHostCapabilities();
-  // The terminal is a local PTY. Hide it for cloud runs, and on cloud-only hosts
-  // (web) where no local shell exists at all.
+  // Hide the terminal for cloud runs, and on cloud-only hosts (web).
   const hideTerminal = isCloud || !localWorkspaces;
   const inputTabs = useMemo(
     () =>

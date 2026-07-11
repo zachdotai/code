@@ -172,15 +172,15 @@ import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
 } from "@posthog/ui/features/auth/identifiers";
-import {
-  REVIEW_HOST,
-  type ReviewHost,
-} from "@posthog/ui/features/code-review/reviewHost";
+import { browserTabsUiModule } from "@posthog/ui/features/browser-tabs/browser-tabs.module";
 import {
   BROWSER_TABS_CLIENT,
   type BrowserTabsClient,
 } from "@posthog/ui/features/browser-tabs/browserTabsClient";
-import { browserTabsUiModule } from "@posthog/ui/features/browser-tabs/browser-tabs.module";
+import {
+  REVIEW_HOST,
+  type ReviewHost,
+} from "@posthog/ui/features/code-review/reviewHost";
 import { connectivityUiModule } from "@posthog/ui/features/connectivity/connectivity.module";
 import {
   CONNECTIVITY_CLIENT,
@@ -246,15 +246,15 @@ import {
   type DiffWorkerFactory,
 } from "@posthog/ui/shell/diffWorkerHost";
 import {
-  posthogAnalyticsService,
-  posthogAnalyticsTracker,
-  posthogFeatureFlags,
-} from "@posthog/ui/shell/posthogAnalyticsImpl";
-import {
   HEDGEHOG_MODE_HOST,
   type HedgehogModeHost,
 } from "@posthog/ui/shell/hedgehogModeHost";
 import { HOST_LOGGER, type HostLogger } from "@posthog/ui/shell/logger";
+import {
+  posthogAnalyticsService,
+  posthogAnalyticsTracker,
+  posthogFeatureFlags,
+} from "@posthog/ui/shell/posthogAnalyticsImpl";
 import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,

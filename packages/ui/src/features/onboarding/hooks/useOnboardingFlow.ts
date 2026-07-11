@@ -43,8 +43,7 @@ export function useOnboardingFlow() {
   const hasRehydrated = useRef(false);
 
   useEffect(() => {
-    // Cloud-only hosts have no local git to detect against; the selected value
-    // is a remote "owner/repo" string, not a filesystem path.
+    // Cloud-only hosts have no local git to detect against.
     if (!localWorkspaces) return;
     if (hasRehydrated.current || !selectedDirectory) return;
     hasRehydrated.current = true;
@@ -62,8 +61,7 @@ export function useOnboardingFlow() {
       setDetectedRepo(null);
 
       // Cloud-only: `path` is a remote "owner/repo" reference. Persist it as the
-      // last-used cloud repository so the task input prefills it, and skip the
-      // local git detection (there is no local repo to inspect on web).
+      // last-used cloud repository so the task input prefills it.
       if (!localWorkspaces) {
         setLastUsedCloudRepository(path || null);
         track(ANALYTICS_EVENTS.ONBOARDING_FOLDER_SELECTED, {

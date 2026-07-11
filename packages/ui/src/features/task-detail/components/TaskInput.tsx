@@ -318,7 +318,7 @@ export function TaskInput({
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
 
-  // Cloud-only hosts (web) can't run local/worktree tasks — force cloud mode.
+  // Force cloud mode on cloud-only hosts (web).
   const { localWorkspaces } = useHostCapabilities();
   const cloudModeEnabled = useCloudModeEnabled();
   const flagsLoaded = useFeatureFlagsLoaded();
@@ -357,7 +357,6 @@ export function TaskInput({
     const preferredMode = lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE;
     if (preferredMode === "cloud" && !cloudSignalsSettled) return;
     didResolveWorkspaceModeRef.current = true;
-    // Cloud-only hosts stay on cloud (set in the initializer); never resolve to local.
     if (!localWorkspaces) return;
     setWorkspaceModeState(
       resolveWorkspaceModePreference({

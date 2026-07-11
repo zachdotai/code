@@ -64,7 +64,7 @@ export function NotificationsSettings() {
   const notifications = useServiceOptional<INotifications>(
     NOTIFICATIONS_SERVICE,
   );
-  // Dock badge/bounce are macOS desktop-dock features — irrelevant in a browser.
+  // Dock badge/bounce are macOS desktop-dock features.
   const { localWorkspaces } = useHostCapabilities();
 
   // Canvases only exist behind the bluebird flag, so only mention them when on.

@@ -56,9 +56,8 @@ export async function resolveAndAttachDroppedFiles(
     const file = files[i];
     // On desktop a dropped file carries a real OS path, so resolveDroppedFile
     // attaches it in place (downscaling images). In a browser dropped files
-    // have no path, so resolveDroppedFile returns null; fall back to reading the
-    // bytes and persisting them like paste and the file picker do (the picker in
-    // AttachmentMenu uses the same fallback).
+    // have no path, so resolveDroppedFile returns null. Fall back to reading the
+    // bytes and persisting them like paste and the file picker do.
     const attachment =
       (await resolveDroppedFile(file)) ?? (await persistBrowserFile(file));
     addAttachment(attachment);

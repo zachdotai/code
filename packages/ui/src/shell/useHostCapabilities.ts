@@ -5,8 +5,8 @@ import {
 } from "@posthog/platform/host-capabilities";
 
 // Hosts that predate the token (and Storybook/tests, which have no host binding)
-// default to the desktop posture — full local capability — so existing behavior
-// is unchanged unless a host explicitly opts out.
+// default to the desktop posture, so existing behavior is unchanged unless a host
+// explicitly opts out.
 const DEFAULT_CAPABILITIES: HostCapabilities = { localWorkspaces: true };
 
 /** Read the current host's coarse capabilities. Safe when unbound. */

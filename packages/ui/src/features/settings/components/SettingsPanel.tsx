@@ -84,8 +84,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
 
 // Settings that only make sense with a local filesystem/host (local worktrees,
 // terminal, the local `claude` CLI, the desktop app itself). Hidden on the
-// cloud-only web host — several also call host routers it doesn't serve, and
-// Discord uses a non-optional useService that would hard-crash if rendered.
+// cloud-only web host.
 const LOCAL_ONLY_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
   "workspaces",
   "worktrees",
@@ -183,8 +182,8 @@ export function SettingsPanel({
   );
 
   // Guard direct navigation (URL, deep link, programmatic openSettings) to a
-  // category hidden on this host — fall back to General so a hidden section is
-  // never rendered (Discord in particular would crash on web).
+  // category hidden on this host. Fall back to General so a hidden section is
+  // never rendered.
   const resolvedCategory: SettingsCategory =
     !localWorkspaces && LOCAL_ONLY_CATEGORIES.has(activeCategory)
       ? "general"

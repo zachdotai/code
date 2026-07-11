@@ -344,7 +344,6 @@ container
 
 container.bind(SETUP_STORE).toConstantValue(setupStore);
 
-// Desktop is a full local host: local folders, git worktrees, and a terminal.
 container
   .bind(HOST_CAPABILITIES)
   .toConstantValue({ localWorkspaces: true } satisfies HostCapabilities);

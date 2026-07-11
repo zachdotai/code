@@ -98,7 +98,7 @@ export function WorkspaceModeSelect({
 
   const localModes = useMemo(
     () =>
-      // Cloud-only hosts have no local filesystem — hide worktree/local modes.
+      // Hide worktree/local modes on cloud-only hosts.
       localWorkspaces
         ? LOCAL_MODES.filter(
             (m) => !overrideModes || overrideModes.includes(m.mode),

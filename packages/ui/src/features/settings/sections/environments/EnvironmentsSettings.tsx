@@ -11,8 +11,8 @@ type Segment = "local" | "cloud";
 
 export function EnvironmentsSettings() {
   const formMode = useSettingsPageStore((s) => s.formMode);
-  // Cloud-only hosts (web) have no local project environments — only cloud
-  // sandboxes — so drop the local/cloud toggle and show cloud environments only.
+  // Cloud-only hosts (web) have no local project environments (only sandboxes),
+  // so drop the local/cloud toggle and show cloud environments only.
   const { localWorkspaces } = useHostCapabilities();
   const activeCategory = useRouterState({
     select: (s) => {

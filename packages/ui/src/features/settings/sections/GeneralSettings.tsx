@@ -35,8 +35,7 @@ export function GeneralSettings() {
   // Appearance state
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
-  // Power state. Prevent-sleep is a desktop OS capability (no `sleep` host
-  // router on web), so gate the queries and hide the row on cloud-only hosts.
+  // Power state
   const { localWorkspaces } = useHostCapabilities();
   const { preventSleepWhileRunning, setPreventSleepWhileRunning } =
     useSettingsStore();
@@ -437,7 +436,7 @@ export function GeneralSettings() {
         </Select.Root>
       </SettingRow>
 
-      {/* Power (desktop only — no OS sleep control in a browser) */}
+      {/* Power */}
       {localWorkspaces && (
         <>
           <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
