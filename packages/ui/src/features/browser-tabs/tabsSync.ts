@@ -37,14 +37,26 @@ export function registerSnapshotFetcher(
 }
 
 function reconcileAuthoritative(): void {
+  void reseedMirror().catch(() => undefined);
+}
+
+/**
+ * Pull the authoritative snapshot and apply it to the mirror. Used to heal a
+ * mirror that never seeded (the boot fetch raced or failed) — e.g. from the
+ * new-tab handler when it finds no window to append into. Applies only if no
+ * local write or newer remote push landed meanwhile, but always RETURNS the
+ * fetched snapshot (null if no fetcher is registered) so a caller can act on
+ * the server state even when the store apply was skipped. Rejects when the
+ * fetch fails so callers can chain on success.
+ */
+export async function reseedMirror(): Promise<TabsSnapshot | null> {
+  if (!fetchAuthoritative) return null;
   const versionAtRequest = remoteSnapshotVersion;
-  void fetchAuthoritative?.()
-    .then((server) => {
-      if (inFlight === 0 && remoteSnapshotVersion === versionAtRequest) {
-        browserTabsStore.getState().setSnapshot(server);
-      }
-    })
-    .catch(() => undefined);
+  const server = await fetchAuthoritative();
+  if (inFlight === 0 && remoteSnapshotVersion === versionAtRequest) {
+    browserTabsStore.getState().setSnapshot(server);
+  }
+  return server;
 }
 
 /** Read the mirror's current snapshot (non-reactive; for event handlers and

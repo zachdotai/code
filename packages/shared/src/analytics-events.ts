@@ -831,6 +831,7 @@ export type ChannelsSurface =
   | "sidebar"
   | "command_menu"
   | "new_task"
+  | "task_input"
   | "channel_home"
   | "channel_history"
   | "channel_artifacts"
@@ -871,7 +872,8 @@ export type ChannelActionType =
   | "copy_link"
   | "mention_member"
   | "view_activity"
-  | "open_mention";
+  | "open_mention"
+  | "canvas_mode_toggle";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
@@ -888,6 +890,8 @@ export interface ChannelActionProperties {
   mentioned_user_id?: string;
   /** For new_task_suggestion: the starter-prompt card label. */
   suggestion_label?: string;
+  /** For canvas_mode_toggle: whether canvas mode is being armed. */
+  armed?: boolean;
   /** Whether the underlying mutation resolved successfully. */
   success?: boolean;
 }
@@ -959,11 +963,16 @@ export interface ChannelsSpaceViewedProperties {
 
 // Subscription / billing events
 
-export type UpgradePromptShownSurface = "usage_limit_modal" | "upgrade_dialog";
+export type UpgradePromptShownSurface =
+  | "usage_limit_modal"
+  | "upgrade_dialog"
+  | "titlebar_card";
 
 export type UpgradePromptClickedSurface =
   | "usage_limit_modal"
   | "sidebar"
+  | "titlebar"
+  | "titlebar_card"
   | "plan_page_card"
   | "upgrade_dialog";
 

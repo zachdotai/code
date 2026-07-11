@@ -13,10 +13,13 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
   ANALYTICS_EVENTS,
+  PROJECT_BLUEBIRD_FLAG,
   type TaskCreationInput,
   type WorkspaceMode,
 } from "@posthog/shared";
 import type { ExecutionMode, Task } from "@posthog/shared/domain-types";
+import { useTaskChannels } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -201,6 +204,17 @@ export function useTaskCreation({
   // Used to name the task occupying a branch's worktree when reuse is blocked.
   const { data: tasks } = useTasks();
 
+  // Tasks created without a channel default into the user's private #me
+  // backend channel so they still surface in the Channels space instead of
+  // staying unfiled. The personal channel is per-user and provisioned lazily
+  // server-side on first list, so this can't collide across teammates. If it
+  // hasn't loaded yet the task is created unfiled, as before.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const { personalChannel } = useTaskChannels({ enabled: bluebirdEnabled });
+
   const hasRequiredPath = allowNoRepo
     ? true
     : workspaceMode === "cloud"
@@ -307,6 +321,11 @@ export function useTaskCreation({
         }
 
         const settings = useSettingsStore.getState();
+        const defaultedChannelId =
+          bluebirdEnabled && !channelId && !channelName
+            ? personalChannel?.id
+            : undefined;
+
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -329,7 +348,7 @@ export function useTaskCreation({
           additionalDirectories,
           channelContext,
           channelName,
-          channelId,
+          channelId: channelId ?? defaultedChannelId,
           customInstructions: getEffectiveCustomInstructions(settings),
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
@@ -375,6 +394,15 @@ export function useTaskCreation({
             // before the persisted draft is wiped, leaving stale text behind.
             if (!pendingTaskKey && !contentOverride) {
               editor.clear();
+            }
+            if (defaultedChannelId) {
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: "file_task",
+                surface: "task_input",
+                channel_id: defaultedChannelId,
+                task_id: output.task.id,
+                success: true,
+              });
             }
             onTaskCreatedEffect?.(output.task);
             if (onTaskCreated) {
@@ -493,6 +521,8 @@ export function useTaskCreation({
       channelName,
       channelId,
       allowNoRepo,
+      bluebirdEnabled,
+      personalChannel?.id,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
