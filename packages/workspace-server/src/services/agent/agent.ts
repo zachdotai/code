@@ -82,6 +82,11 @@ import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { loadSessionEnvOverrides } from "../session-env/loader";
+import type {
+  SigningAccessLease,
+  SigningAccessService,
+} from "../signing-access/contracts";
+import { SIGNING_ACCESS_SERVICE } from "../signing-access/identifiers";
 import { isScratchPath } from "../workspace/scratch";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { cleanupCodexHome, prepareCodexHome } from "./codex-home";
@@ -323,6 +328,7 @@ interface ManagedSession {
   // cycles can't drop each other's URLs from the accumulated list.
   evaluatedPrUrls: Set<string>;
   prAttachChain: Promise<void>;
+  signingAccessLease: SigningAccessLease | null;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -405,6 +411,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly workspaceSettings: IWorkspaceSettings,
     @inject(FOLDERS_SERVICE)
     private readonly foldersService: FoldersService,
+    @inject(SIGNING_ACCESS_SERVICE)
+    private readonly signingAccessService: SigningAccessService,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
@@ -777,6 +785,9 @@ If a repository IS genuinely required, attach one in this priority order:
 
     const isPreview = taskId === "__preview__";
 
+    const signingAccessLease =
+      await this.signingAccessService.acquire(taskRunId);
+
     const agent = new Agent({
       posthog: {
         ...this.agentAuthAdapter.createPosthogConfig(credentials),
@@ -1102,6 +1113,7 @@ If a repository IS genuinely required, attach one in this priority order:
         toolInstallations,
         evaluatedPrUrls: new Set(),
         prAttachChain: Promise.resolve(),
+        signingAccessLease,
       };
 
       this.sessions.set(taskRunId, session);
@@ -1119,6 +1131,7 @@ If a repository IS genuinely required, attach one in this priority order:
           taskRunId,
         });
       }
+      await signingAccessLease?.release();
 
       if (!isRetry && isAuthError(err)) {
         this.log.warn(
@@ -1452,10 +1465,10 @@ If a repository IS genuinely required, attach one in this priority order:
    * recently active agent session for `taskId`.
    *
    * Used by git/gh operations triggered from the UI (Commit, Create PR) so
-   * they pick up the same hook env the agent itself sees — most importantly
-   * the SSH_AUTH_SOCK that Secretive's hook re-points at the Secretive agent
-   * for commit signing. Returns an empty object when there is no session for
-   * the task or when no hook output is available.
+   * they pick up the same hook env the agent itself sees. The managed Secure
+   * Enclave broker is configured process-wide before the session starts; hook
+   * overrides remain useful for user-defined environment changes. Returns an
+   * empty object when no session or hook output is available.
    */
   public async getSessionEnvForTask(
     taskId: string,
@@ -1625,6 +1638,7 @@ For git operations while detached:
       } catch {
         this.log.debug("Agent cleanup failed", { taskRunId });
       }
+      await session.signingAccessLease?.release();
 
       await cleanupCodexHome(this.storagePaths.appDataPath, taskRunId).catch(
         () => this.log.debug("Codex home cleanup failed", { taskRunId }),

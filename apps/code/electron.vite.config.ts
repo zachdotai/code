@@ -17,6 +17,7 @@ import {
   rendererAliases,
 } from "./vite.shared.mjs";
 import {
+  buildSigningAgent,
   CONTEXT_MILL_ZIP_URL,
   copyClaudeExecutable,
   copyCodexAcpBinaries,
@@ -92,6 +93,7 @@ export default defineConfig(({ mode }) => {
         tsconfigPaths({ ignoreConfigErrors: true }),
         autoServicesPlugin(path.join(__dirname, "src/main/services")),
         fixFilenameCircularRef(),
+        buildSigningAgent(),
         copyClaudeExecutable(),
         copyPosthogPlugin(isDev),
         copyDrizzleMigrations(),

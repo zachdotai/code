@@ -1,4 +1,4 @@
-import { execFile, execSync } from "node:child_process";
+import { execFile, execFileSync, execSync } from "node:child_process";
 import {
   closeSync,
   copyFileSync,
@@ -214,6 +214,56 @@ export function copyClaudeExecutable(): Plugin {
       verifyBinaryArch(destBinary);
       signClaudeBinary(destBinary);
       claudeCliCopied = true;
+    },
+  };
+}
+
+let signingAgentBuilt = false;
+
+export function buildSigningAgent(): Plugin {
+  return {
+    name: "build-signing-agent",
+    writeBundle() {
+      if (targetPlatform() !== "darwin") return;
+
+      const sourcePath = join(__dirname, "native/signing-agent/main.m");
+      const destDir = join(__dirname, ".vite/build/signing-agent");
+      const destPath = join(destDir, "posthog-code-signing-agent");
+      const wrapperPath = join(destDir, "posthog-code-ssh-keygen");
+      const architecture = targetArch() === "x64" ? "x86_64" : targetArch();
+      if (
+        signingAgentBuilt &&
+        existsSync(destPath) &&
+        statSync(destPath).mtimeMs >= statSync(sourcePath).mtimeMs
+      ) {
+        return;
+      }
+
+      mkdirSync(destDir, { recursive: true });
+      execFileSync(
+        "xcrun",
+        [
+          "clang",
+          "-fobjc-arc",
+          "-arch",
+          architecture,
+          sourcePath,
+          "-o",
+          destPath,
+          "-framework",
+          "Foundation",
+          "-framework",
+          "Security",
+          "-framework",
+          "ApplicationServices",
+        ],
+        { stdio: "inherit" },
+      );
+      execFileSync("codesign", ["--force", "--sign", "-", destPath], {
+        stdio: "inherit",
+      });
+      copyFileSync(destPath, wrapperPath);
+      signingAgentBuilt = true;
     },
   };
 }

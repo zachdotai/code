@@ -46,6 +46,7 @@ const config: Configuration = {
     "**/*.node",
     "**/spawn-helper",
     ".vite/build/claude-cli/**",
+    ".vite/build/signing-agent/**",
     ".vite/build/plugins/posthog/**",
     ".vite/build/codex-acp/**",
     ".vite/build/grammars/**",

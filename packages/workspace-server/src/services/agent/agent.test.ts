@@ -178,6 +178,9 @@ function createMockDependencies() {
     workspaceSettings: {
       getWorktreeLocation: () => "/mock/worktrees",
     },
+    signingAccessService: {
+      acquire: vi.fn().mockResolvedValue(null),
+    },
     foldersService: {
       getFolders: vi.fn().mockResolvedValue([]),
     },
@@ -226,6 +229,7 @@ describe("AgentService", () => {
       deps.workspaceRepository as never,
       deps.workspaceSettings as never,
       deps.foldersService as never,
+      deps.signingAccessService as never,
       deps.loggerFactory as never,
     );
     vi.spyOn(service, "emit");
@@ -237,6 +241,40 @@ describe("AgentService", () => {
   });
 
   describe("MCP servers", () => {
+    it("holds managed signing access for the lifetime of a local session", async () => {
+      const release = vi.fn().mockResolvedValue(undefined);
+      deps.signingAccessService.acquire.mockResolvedValueOnce({
+        socketPath: "/mock/signing.sock",
+        gitConfig: {},
+        release,
+      });
+
+      await service.startSession(baseSessionParams);
+
+      expect(deps.signingAccessService.acquire).toHaveBeenCalledWith("run-1");
+      expect(release).not.toHaveBeenCalled();
+
+      await service.cleanupAll();
+
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    it("releases managed signing access when session startup fails", async () => {
+      const release = vi.fn().mockResolvedValue(undefined);
+      deps.signingAccessService.acquire.mockResolvedValueOnce({
+        socketPath: "/mock/signing.sock",
+        gitConfig: {},
+        release,
+      });
+      mockAgentRun.mockRejectedValueOnce(new Error("startup failed"));
+
+      await expect(service.startSession(baseSessionParams)).rejects.toThrow(
+        "startup failed",
+      );
+
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
     it("marks desktop sessions as local even though they have a taskRunId", async () => {
       await service.startSession({
         ...baseSessionParams,

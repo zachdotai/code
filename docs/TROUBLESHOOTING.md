@@ -172,6 +172,11 @@ This is cosmetic noise — nothing is broken. It's caused by `node-linker=hoiste
 
 ## Commit signing fails with Secretive ("private key not available")
 
+> This section applies to older builds and users who have not switched to the
+> managed Secure Enclave signing key. See
+> [Managed Secure Enclave signing](./SECURE-ENCLAVE-SIGNING.md) for the built-in
+> replacement.
+
 We require signed commits, and many of us sign via [Secretive](https://github.com/maxgoedjen/secretive) (SSH keys held in the macOS Secure Enclave). A commit — most often one an agent like Claude Code or Codex runs for you — fails with something like:
 
 ```
