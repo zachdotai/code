@@ -8,7 +8,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 export function CommitSigningSettings() {
   const trpc = useHostTRPC();
   const queryClient = useQueryClient();
-  const statusQuery = useQuery(trpc.signingAccess.getStatus.queryOptions());
+  const {
+    data: status,
+    error: statusError,
+    isLoading: isStatusLoading,
+  } = useQuery(trpc.signingAccess.getStatus.queryOptions());
   const setEnabledMutation = useMutation(
     trpc.signingAccess.setEnabled.mutationOptions({
       onSuccess: (status) => {
@@ -23,11 +27,10 @@ export function CommitSigningSettings() {
     trpc.os.openExternal.mutationOptions(),
   );
   const { copied, copy } = useCopy();
-  const status = statusQuery.data;
   const publicKey = status?.publicKey;
   const error =
     status?.error ??
-    (statusQuery.error instanceof Error ? statusQuery.error.message : null) ??
+    (statusError instanceof Error ? statusError.message : null) ??
     (setEnabledMutation.error instanceof Error
       ? setEnabledMutation.error.message
       : null);
@@ -58,7 +61,7 @@ export function CommitSigningSettings() {
         label="Managed Secure Enclave signing"
         description="Use a hardware-backed, non-exportable key for commits created by local Claude and Codex sessions."
       >
-        {statusQuery.isLoading ? (
+        {isStatusLoading ? (
           <Spinner size="1" />
         ) : (
           <Switch
