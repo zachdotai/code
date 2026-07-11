@@ -10,13 +10,20 @@ import {
 } from "@phosphor-icons/react";
 import type { PrCiStatus } from "@posthog/core/home/prSnapshot";
 import type { SituationId } from "@posthog/core/workflow/schemas";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@posthog/quill";
 import type { BoundAction } from "@posthog/ui/features/home/hooks/useBoundActions";
 import {
   SITUATION_VISUAL,
   situationCss,
 } from "@posthog/ui/features/home/utils/situationDisplay";
-import { DropdownMenu, Text } from "@radix-ui/themes";
+import { Text } from "@radix-ui/themes";
 import { Fragment } from "react";
 
 /** The tinted square status tile that leads every row / card, glyphed by primary situation. */
@@ -157,52 +164,54 @@ export function WorkstreamOverflowMenu({
   const sparkleSize = size === "xs" ? 11 : 12;
   const dotsSize = size === "xs" ? 15 : 16;
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger>
-        <Button variant="link-muted" size={size} title="More actions">
-          <DotsThree size={dotsSize} weight="bold" />
-        </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="end">
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="link-muted" size={size} title="More actions" />
+        }
+      >
+        <DotsThree size={dotsSize} weight="bold" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
         {restBound.map((action) => (
-          <DropdownMenu.Item
+          <DropdownMenuItem
             key={`${action.situationId}::${action.id}`}
             disabled={runDisabled}
-            onSelect={() => onRun(action)}
+            onClick={() => onRun(action)}
           >
             <Sparkle size={sparkleSize} />
             {action.label}
             <Text className="ml-auto pl-3 text-(--gray-10) text-[10px]">
               {action.situationLabel}
             </Text>
-          </DropdownMenu.Item>
+          </DropdownMenuItem>
         ))}
         {restBound.length > 0 && (showPrInMenu || showTaskInMenu) ? (
-          <DropdownMenu.Separator />
+          <DropdownMenuSeparator />
         ) : null}
         {showPrInMenu ? (
-          <DropdownMenu.Item onSelect={onOpenPr}>
+          <DropdownMenuItem onClick={onOpenPr}>
             <GitPullRequest size={12} />
             Open PR in browser
             <ArrowSquareOut size={10} className="ml-auto pl-3" />
-          </DropdownMenu.Item>
+          </DropdownMenuItem>
         ) : null}
         {showTaskInMenu ? (
-          <DropdownMenu.Item onSelect={onOpenTask}>Open task</DropdownMenu.Item>
+          <DropdownMenuItem onClick={onOpenTask}>Open task</DropdownMenuItem>
         ) : null}
         {showArchive && onArchive ? (
           <>
             {restBound.length > 0 || showPrInMenu || showTaskInMenu ? (
-              <DropdownMenu.Separator />
+              <DropdownMenuSeparator />
             ) : null}
-            <DropdownMenu.Item onSelect={onArchive}>
+            <DropdownMenuItem onClick={onArchive}>
               <Archive size={12} />
               Archive
-            </DropdownMenu.Item>
+            </DropdownMenuItem>
           </>
         ) : null}
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

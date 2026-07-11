@@ -18,7 +18,14 @@ import type {
   HomeWorkstream,
   HomeWorkstreamTask,
 } from "@posthog/core/home/schemas";
-import { Badge, Button } from "@posthog/quill";
+import {
+  Badge,
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import {
@@ -30,7 +37,7 @@ import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActio
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
-import { Box, DropdownMenu, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { SituationChip } from "./SituationChip";
 import { CiIndicator } from "./WorkstreamBits";
 
@@ -141,29 +148,29 @@ export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
                   </Button>
                 ) : null}
                 {overflowActions.length > 0 ? (
-                  <DropdownMenu.Root>
-                    <DropdownMenu.Trigger>
-                      <Button variant="outline" size="sm">
-                        +{overflowActions.length}
-                        <CaretDown size={10} />
-                      </Button>
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Content>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={<Button variant="outline" size="sm" />}
+                    >
+                      +{overflowActions.length}
+                      <CaretDown size={10} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
                       {overflowActions.map((action: BoundAction) => (
-                        <DropdownMenu.Item
+                        <DropdownMenuItem
                           key={`${action.situationId}::${action.id}`}
                           disabled={isRunningAction}
-                          onSelect={() => runAction(action, workstream)}
+                          onClick={() => runAction(action, workstream)}
                         >
                           <Sparkle size={11} />
                           {action.label}
                           <Text className="ml-auto pl-3 text-(--gray-10) text-[10px]">
                             {action.situationLabel}
                           </Text>
-                        </DropdownMenu.Item>
+                        </DropdownMenuItem>
                       ))}
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Root>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 ) : null}
               </Flex>
             </Section>

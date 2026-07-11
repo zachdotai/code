@@ -19,6 +19,12 @@ import {
 import type { GithubConnectService } from "@posthog/core/onboarding/githubConnectService";
 import { GITHUB_CONNECT_SERVICE } from "@posthog/core/onboarding/identifiers";
 import { useService } from "@posthog/di/react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@posthog/quill";
 import type { OnboardingGithubConnectFlow } from "@posthog/shared/analytics-events";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -41,7 +47,6 @@ import {
   AlertDialog,
   Box,
   Button,
-  DropdownMenu,
   Flex,
   Skeleton,
   Spinner,
@@ -222,30 +227,32 @@ export function GitHubConnectPanel() {
                 <Text className="text-(--gray-11) text-sm">
                   GitHub is already connected on{" "}
                   {alternativeConnectedProjects.length > 1 ? (
-                    <DropdownMenu.Root>
-                      <DropdownMenu.Trigger>
-                        <button
-                          type="button"
-                          className="cursor-pointer border-0 bg-transparent p-0 font-bold text-(--gray-12) underline"
-                        >
-                          {selectedAlternative.name} +{" "}
-                          {alternativeConnectedProjects.length - 1} more
-                        </button>
-                      </DropdownMenu.Trigger>
-                      <DropdownMenu.Content size="1" align="start">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <button
+                            type="button"
+                            className="cursor-pointer border-0 bg-transparent p-0 font-bold text-(--gray-12) underline"
+                          />
+                        }
+                      >
+                        {selectedAlternative.name} +{" "}
+                        {alternativeConnectedProjects.length - 1} more
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
                         {alternativeConnectedProjects.map((p) => (
-                          <DropdownMenu.Item
+                          <DropdownMenuItem
                             key={p.id}
-                            onSelect={() => setSelectedAlternativeId(p.id)}
+                            onClick={() => setSelectedAlternativeId(p.id)}
                           >
                             <Text className="text-[13px]">{p.name}</Text>
                             <Text className="ml-2 text-(--gray-10) text-[13px]">
                               {p.organization.name}
                             </Text>
-                          </DropdownMenu.Item>
+                          </DropdownMenuItem>
                         ))}
-                      </DropdownMenu.Content>
-                    </DropdownMenu.Root>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   ) : (
                     <>
                       <Text className="font-bold">

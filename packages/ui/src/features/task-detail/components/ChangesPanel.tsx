@@ -6,6 +6,13 @@ import {
   MinusIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@posthog/quill";
 import { getFileExtension } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
@@ -16,7 +23,6 @@ import {
   Badge,
   Box,
   Button,
-  DropdownMenu,
   Flex,
   IconButton,
   Spinner,
@@ -214,58 +220,53 @@ function ChangedFileItem({
             </CompactIconButton>
           )}
 
-          <DropdownMenu.Root
-            open={isDropdownOpen}
-            onOpenChange={setIsDropdownOpen}
-          >
+          <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
             <Tooltip content="Open file">
-              <DropdownMenu.Trigger>
-                <IconButton
-                  size="1"
-                  variant="ghost"
-                  color="gray"
-                  onClick={(e) => e.stopPropagation()}
-                  className="h-[18px] w-[18px] shrink-0 p-0"
-                >
-                  <FilePlus size={12} weight="regular" />
-                </IconButton>
-              </DropdownMenu.Trigger>
+              <DropdownMenuTrigger
+                render={
+                  <IconButton
+                    size="1"
+                    variant="ghost"
+                    color="gray"
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-[18px] w-[18px] shrink-0 p-0"
+                  />
+                }
+              >
+                <FilePlus size={12} weight="regular" />
+              </DropdownMenuTrigger>
             </Tooltip>
-            <DropdownMenu.Content size="1" align="end">
+            <DropdownMenuContent align="end">
               {detectedApps
                 .filter(
                   (app) => app.type !== "terminal" && app.type !== "git-client",
                 )
                 .map((app) => (
-                  <DropdownMenu.Item
+                  <DropdownMenuItem
                     key={app.id}
-                    onSelect={() => handleOpenWith(app.id)}
+                    onClick={() => handleOpenWith(app.id)}
                   >
-                    <Flex align="center" gap="2">
-                      {app.icon ? (
-                        <img
-                          src={app.icon}
-                          width={16}
-                          height={16}
-                          alt=""
-                          className="rounded-[2px]"
-                        />
-                      ) : (
-                        <CodeIcon size={16} weight="regular" />
-                      )}
-                      <Text className="text-[13px]">{app.name}</Text>
-                    </Flex>
-                  </DropdownMenu.Item>
+                    {app.icon ? (
+                      <img
+                        src={app.icon}
+                        width={16}
+                        height={16}
+                        alt=""
+                        className="rounded-[2px]"
+                      />
+                    ) : (
+                      <CodeIcon size={16} weight="regular" />
+                    )}
+                    {app.name}
+                  </DropdownMenuItem>
                 ))}
-              <DropdownMenu.Separator />
-              <DropdownMenu.Item onSelect={handleCopyPath}>
-                <Flex align="center" gap="2">
-                  <CopyIcon size={16} weight="regular" />
-                  <Text className="text-[13px]">Copy Path</Text>
-                </Flex>
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleCopyPath}>
+                <CopyIcon size={16} weight="regular" />
+                Copy Path
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </Flex>
       )}
 

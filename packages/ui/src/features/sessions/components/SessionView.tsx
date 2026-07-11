@@ -5,6 +5,13 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@posthog/quill";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
@@ -54,7 +61,7 @@ import {
   pendingTaskPromptStoreApi,
   usePendingTaskPrompt,
 } from "@posthog/ui/shell/pendingTaskPromptStore";
-import { Box, Button, ContextMenu, Flex, Text } from "@radix-ui/themes";
+import { Box, Button, Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface SessionViewProps {
@@ -451,8 +458,8 @@ export function SessionView({
   }, []);
 
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger>
+    <ContextMenu>
+      <ContextMenuTrigger>
         {showRawLogs ? (
           <Flex
             direction="column"
@@ -709,10 +716,10 @@ export function SessionView({
             )}
           </Flex>
         )}
-      </ContextMenu.Trigger>
-      <ContextMenu.Content size="1">
-        <ContextMenu.Item
-          onSelect={() => {
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem
+          onClick={() => {
             const url = copyTargetUrlRef.current;
             const text = url ?? window.getSelection()?.toString();
             if (!text) {
@@ -725,12 +732,12 @@ export function SessionView({
           }}
         >
           Copy
-        </ContextMenu.Item>
-        <ContextMenu.Separator />
-        <ContextMenu.Item onSelect={() => setShowRawLogs(!showRawLogs)}>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => setShowRawLogs(!showRawLogs)}>
           {showRawLogs ? "Back to conversation" : "Show raw logs"}
-        </ContextMenu.Item>
-      </ContextMenu.Content>
-    </ContextMenu.Root>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

@@ -12,7 +12,13 @@ import {
   deriveHeadline,
   parsePrUrl,
 } from "@posthog/core/inbox/reportPresentation";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@posthog/quill";
 import {
   isTerminalStatus,
   type SignalReport,
@@ -54,7 +60,7 @@ import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxR
 import { TaskLogsPanel } from "@posthog/ui/features/task-detail/components/TaskLogsPanel";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { openTask } from "@posthog/ui/router/useOpenTask";
-import { DropdownMenu, Flex, Text } from "@radix-ui/themes";
+import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
@@ -450,41 +456,42 @@ function TaskLogRightSlot({
     );
   }
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 rounded-(--radius-1) px-1.5 py-0.5 font-medium text-[12px] text-gray-11 hover:bg-(--gray-3) hover:text-gray-12 focus-visible:bg-(--gray-3) focus-visible:outline-none"
-          aria-label="Switch task"
-        >
-          <TaskRunStatusDot
-            status={selectedEntry.task.latest_run?.status ?? "not_started"}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-(--radius-1) px-1.5 py-0.5 font-medium text-[12px] text-gray-11 hover:bg-(--gray-3) hover:text-gray-12 focus-visible:bg-(--gray-3) focus-visible:outline-none"
+            aria-label="Switch task"
           />
-          {selectedEntry.purposeLabel}
-          <CaretDownIcon size={12} className="text-gray-10" />
-        </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="end" sideOffset={4}>
+        }
+      >
+        <TaskRunStatusDot
+          status={selectedEntry.task.latest_run?.status ?? "not_started"}
+        />
+        {selectedEntry.purposeLabel}
+        <CaretDownIcon size={12} className="text-gray-10" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={4}>
         {entries.map((entry) => {
           const status = entry.task.latest_run?.status ?? "not_started";
           return (
-            <DropdownMenu.Item
+            <DropdownMenuItem
               key={entry.task.id}
-              onSelect={() => onSelect(entry.task.id)}
+              onClick={() => onSelect(entry.task.id)}
+              className="min-w-[200px]"
             >
-              <Flex align="center" gap="2" className="min-w-[200px]">
-                <TaskRunStatusDot status={status} />
-                <Text className="font-medium text-[12.5px]">
-                  {entry.purposeLabel}
-                </Text>
-                <Text className="ml-auto font-mono text-[11px] text-gray-10">
-                  {entry.task.id.slice(0, 8)}
-                </Text>
-              </Flex>
-            </DropdownMenu.Item>
+              <TaskRunStatusDot status={status} />
+              <Text className="font-medium text-[12.5px]">
+                {entry.purposeLabel}
+              </Text>
+              <Text className="ml-auto font-mono text-[11px] text-gray-10">
+                {entry.task.id.slice(0, 8)}
+              </Text>
+            </DropdownMenuItem>
           );
         })}
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

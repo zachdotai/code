@@ -1,9 +1,15 @@
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@posthog/quill";
 import { GithubRefChip } from "@posthog/ui/features/editor/components/GithubRefChip";
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
 } from "@posthog/ui/features/sessions/components/copyContextTarget";
-import { ContextMenu, Theme } from "@radix-ui/themes";
+import { Theme } from "@radix-ui/themes";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useRef } from "react";
@@ -11,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const PR_URL = "https://github.com/PostHog/posthog/pull/63995";
 
-// Radix's menu content mounts a scroll-area that observes resizes; jsdom lacks it.
+// The menu content mounts a scroll-area that observes resizes; jsdom lacks it.
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
     observe() {}
@@ -21,7 +27,7 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 }
 
 /**
- * Mirrors the exact context-menu wiring in SessionView: a ContextMenu.Trigger
+ * Mirrors the exact context-menu wiring in SessionView: a ContextMenuTrigger
  * whose child captures the right-clicked URL in a ref, and a "Copy" item that
  * copies the captured URL (falling back to the text selection).
  */
@@ -32,8 +38,8 @@ function Harness() {
   };
   return (
     <Theme>
-      <ContextMenu.Root>
-        <ContextMenu.Trigger>
+      <ContextMenu>
+        <ContextMenuTrigger>
           {/** biome-ignore lint/a11y/noStaticElementInteractions: test harness */}
           <div onContextMenu={handleContextMenu}>
             <span>The draft PR is up: </span>
@@ -41,10 +47,10 @@ function Harness() {
               PostHog/posthog#63995
             </GithubRefChip>
           </div>
-        </ContextMenu.Trigger>
-        <ContextMenu.Content>
-          <ContextMenu.Item
-            onSelect={() => {
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem
+            onClick={() => {
               const url = copyTargetUrlRef.current;
               const text = url ?? window.getSelection()?.toString();
               if (!text) {
@@ -54,9 +60,9 @@ function Harness() {
             }}
           >
             Copy
-          </ContextMenu.Item>
-        </ContextMenu.Content>
-      </ContextMenu.Root>
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     </Theme>
   );
 }
