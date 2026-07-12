@@ -6,9 +6,11 @@ import {
   primaryWindow,
   type SplitDropDirection,
   setTabOrder,
+  TAB_SPLIT_PANES_FLAG,
 } from "@posthog/shared";
 import { useMutation } from "@tanstack/react-query";
 import { type ReactNode, useRef } from "react";
+import { useFeatureFlag } from "../feature-flags/useFeatureFlag";
 import { reorderWithinGroup, storedOrderIds } from "./displayOrder";
 import { usePaneDragStore } from "./panes/paneDragStore";
 import { usePinnedTabsStore } from "./pinnedTabsStore";
@@ -44,6 +46,9 @@ export function BrowserTabsDndProvider({ children }: { children: ReactNode }) {
   const mergeMutation = useMutation(
     trpc.browserTabs.mergeTabIntoTab.mutationOptions(),
   );
+  // Split panes are flag-gated: when off, merge drop zones never arm, so a
+  // pill drag can only reorder within the strip.
+  const splitPanesEnabled = useFeatureFlag(TAB_SPLIT_PANES_FLAG);
   /** Stored order captured at dragstart — used to skip a no-op persist. */
   const initialOrder = useRef<string[] | null>(null);
 
@@ -58,7 +63,7 @@ export function BrowserTabsDndProvider({ children }: { children: ReactNode }) {
     useTabReorderStore.getState().setPreviewOrder(order);
     // Arm the merge drop zones — but never for the ACTIVE tab's own pill
     // (a tab can't merge into itself; PaneChrome double-checks per pane).
-    if (src.tabId !== win.activeTabId) {
+    if (splitPanesEnabled && src.tabId !== win.activeTabId) {
       usePaneDragStore.getState().setDrag({ tabId: src.tabId });
     }
   };
@@ -122,7 +127,12 @@ export function BrowserTabsDndProvider({ children }: { children: ReactNode }) {
                 direction: tgt.zone as SplitDropDirection,
               }
             : null;
-      if (merge && win.activeTabId && win.activeTabId !== tabId) {
+      if (
+        splitPanesEnabled &&
+        merge &&
+        win.activeTabId &&
+        win.activeTabId !== tabId
+      ) {
         const targetTabId = win.activeTabId;
         const input = {
           windowId: win.id,

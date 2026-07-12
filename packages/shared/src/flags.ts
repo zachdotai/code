@@ -12,3 +12,6 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
 export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";
 export const GLM_MODEL_FLAG = "posthog-code-glm-model";
+// Gates tab-owned split panes: dragging a tab pill onto pane/root drop zones
+// to merge it into the active tab as a split. Off = no drop zones, no merge.
+export const TAB_SPLIT_PANES_FLAG = "posthog-code-tab-split-panes";

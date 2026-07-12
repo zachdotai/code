@@ -100,6 +100,12 @@ pane   { tabId, identity… }       — content unit; one router each
   Cmd+1-9 switch (channels on). All are store mutations — no navigation.
 
 ### Splitting (merge a tab into another)
+- **Flag-gated** by `TAB_SPLIT_PANES_FLAG` (`posthog-code-tab-split-panes`,
+  `@posthog/shared`). Off (default): `BrowserTabsDnd` never arms
+  `paneDragStore`, so no merge zones mount and pill drags can only reorder;
+  the drag-end merge branch is also guarded. Existing multi-pane tabs still
+  render (and can be closed back to single-pane) — only creating new splits
+  is gated. No `import.meta.env.DEV` override — off means off in dev too.
 - **Drag tab B's pill onto the content area** while tab A is active: 5 zones
   per pane (4 edges = split that side, center = merge to the right of that
   pane) + 4 thin root-edge zones (split at the layout root). Drop → B's whole
