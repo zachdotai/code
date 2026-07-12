@@ -43,9 +43,7 @@
     "apps/code/src/renderer/contributions/app-boot.contributions.ts": [
       "injectable-outside-host"
     ],
-    "apps/code/src/renderer/desktop-services.ts": [
-      "cloud-client-in-renderer"
-    ],
+    "apps/code/src/renderer/desktop-services.ts": ["cloud-client-in-renderer"],
     "apps/code/src/renderer/features/code-review/reviewHost.tsx": [
       "feature-ui-in-host"
     ],
