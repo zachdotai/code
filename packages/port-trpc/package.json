@@ -1,0 +1,29 @@
+{
+  "name": "@posthog/port-trpc",
+  "version": "1.0.0",
+  "description": "tRPC-over-MessagePort transport. Runtime-neutral core (no electron, no node imports): the link side runs against DOM MessagePorts (Electron renderer today, Web Worker on web later) and the server side against Electron MessagePortMain or worker_threads ports via structural adapters. Reuses the electron-trpc wire envelope so both transports stay protocol-compatible.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": [
+      "./src/*.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "node ../../scripts/rimraf.mjs .turbo"
+  },
+  "dependencies": {
+    "@trpc/client": "catalog:",
+    "@trpc/server": "catalog:"
+  },
+  "devDependencies": {
+    "@posthog/tsconfig": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "catalog:",
+    "vitest": "^4.1.8",
+    "zod": "^4.4.3"
+  }
+}
