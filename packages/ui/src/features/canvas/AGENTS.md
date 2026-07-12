@@ -10,10 +10,13 @@ The root `AGENTS.md` architecture rules still apply.
 - **Use `@posthog/quill`, not Radix.** New UI in this space pulls components from
   `@posthog/quill` (`Button`, `Dialog*`, `AlertDialog*`, `DropdownMenu*`,
   `ContextMenu*`, `Tooltip*`, `Collapsible*`, …). Do **not** reach for
-  `@radix-ui/themes` or `@radix-ui/react-*`. Some older code here still imports
-  `@radix-ui/themes` (`Box`, `Flex`, `Text`, `AlertDialog`) — that's legacy to be
-  migrated, not a pattern to copy. When you touch such code, prefer swapping to
-  the Quill equivalent.
+  `@radix-ui/themes` or `@radix-ui/react-*`. This is now enforced repo-wide: the
+  Radix freeze (root `AGENTS.md`, `scripts/check-radix-imports.mjs`) fails CI on
+  any new Radix import beyond `Box`/`Flex`/`Text` from `@radix-ui/themes`. Some
+  older code here still imports frozen Radix components (`AlertDialog`) — that's
+  baselined legacy to be migrated, not a pattern to copy. When you touch such
+  code, prefer swapping to the Quill equivalent and run
+  `node scripts/check-radix-imports.mjs --prune`.
 - **Don't restyle Quill internals.** Quill components are already themed —
   spacing, typography, and especially **color** are baked in. Do not add
   `text-gray-*` / `text-muted-foreground` / `font-*` or other color/typography

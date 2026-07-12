@@ -4,6 +4,8 @@ A browser-style tab strip in the Channels title bar (`/website/*`), each tab
 fronting an open **canvas, task, or channel sub-section** (a `TabIdentity`:
 `dashboardId | taskId | channel(+section) | blank`).
 This file documents the UX and the model; edit it when the behaviour changes.
+The root `AGENTS.md` rules apply, including the Radix freeze: new UI here uses
+`@posthog/quill` — only `Box`/`Flex`/`Text` may come from `@radix-ui/themes`.
 
 Canvases and tasks are equal citizens: navigating to either
 (`/website/$channelId/dashboards/$dashboardId` or

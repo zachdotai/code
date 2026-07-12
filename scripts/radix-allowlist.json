@@ -1,0 +1,1087 @@
+{
+  "note": "Radix imports frozen at baseline. Only Box/Flex/Text from @radix-ui/themes are allowed in new code; use @posthog/quill instead. Remove entries as you migrate. Goal: empty.",
+  "files": {
+    "apps/code/.storybook/preview.tsx": [
+      "@radix-ui/themes#Theme",
+      "@radix-ui/themes/styles.css"
+    ],
+    "apps/code/src/renderer/features/dev-toolbar/components/AgentsPanel.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "apps/code/src/renderer/features/dev-toolbar/components/DevToolbar.tsx": [
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "apps/code/src/renderer/features/dev-toolbar/components/HealthPanel.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "apps/code/src/renderer/features/dev-toolbar/components/IpcTimingsPanel.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#TextField"
+    ],
+    "apps/code/src/renderer/features/dev-toolbar/components/LogsPanel.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#TextField"
+    ],
+    "apps/code/src/renderer/features/dev-toolbar/components/NetworkPanel.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/actions/ActionTabIcon.tsx": [
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/agent-applications/agent-builder/AgentBuilderDock.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/agent-applications/agent-builder/AgentBuilderSecretForm.tsx": [
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/agent-applications/agent-builder/AgentBuilderSeedDialog.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/agent-applications/components/AgentApprovalDecisionForm.tsx": [
+      "@radix-ui/themes#Checkbox",
+      "@radix-ui/themes#TextArea"
+    ],
+    "packages/ui/src/features/agent-applications/components/AgentApprovalDetail.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/agent-applications/components/AgentBundleImportDialog.tsx": [
+      "@radix-ui/themes#Dialog"
+    ],
+    "packages/ui/src/features/agent-applications/components/AgentChatSurface.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/agent-applications/components/AgentConfigurationPane.tsx": [
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#Switch"
+    ],
+    "packages/ui/src/features/agent-applications/components/AgentModelConfig.tsx": [
+      "@radix-ui/themes#Popover"
+    ],
+    "packages/ui/src/features/agent-applications/components/AgentRevisionBar.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Popover"
+    ],
+    "packages/ui/src/features/agent-applications/components/DeepLinkApprovalModal.tsx": [
+      "@radix-ui/themes#Dialog"
+    ],
+    "packages/ui/src/features/agent-applications/components/RefreshIndicator.tsx": [
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/agent-applications/components/SecretEditor.tsx": [
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/agent-applications/components/SessionLogsView.tsx": [
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/agent-applications/components/ToolDryRunPanel.tsx": [
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#TextArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/agent-applications/components/ToolSourceEditor.tsx": [
+      "@radix-ui/themes#TextArea"
+    ],
+    "packages/ui/src/features/ai-approval/AiApprovalScreen.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/ai-approval/AiApprovalScreen.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/archive/ArchivedTasksView.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#Popover",
+      "@radix-ui/themes#Table",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/auth/OAuthControls.tsx": [
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/auth/components/InviteCodeScreen.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/auth/components/ScopeReauthPrompt.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/auth/components/ScopeReauthPrompt.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Dialog"
+    ],
+    "packages/ui/src/features/autoresearch/AutoresearchComposerControls.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/autoresearch/AutoresearchComposerControls.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#Popover",
+      "@radix-ui/themes#SegmentedControl",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/autoresearch/AutoresearchConfigDialog.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#TextArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/autoresearch/AutoresearchFullDashboard.stories.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/autoresearch/AutoresearchObservability.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Progress"
+    ],
+    "packages/ui/src/features/autoresearch/AutoresearchPanel.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/autoresearch/AutoresearchPanel.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Select"
+    ],
+    "packages/ui/src/features/autoresearch/AutoresearchRuntimeStats.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/autoresearch/IterationsTable.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Table"
+    ],
+    "packages/ui/src/features/autoresearch/PreBaselineState.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Skeleton",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/autoresearch/stageModels.tsx": [
+      "@radix-ui/themes#Select"
+    ],
+    "packages/ui/src/features/billing/UsageLimitModal.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Dialog"
+    ],
+    "packages/ui/src/features/billing/UsageMeter.tsx": [
+      "@radix-ui/themes#Progress"
+    ],
+    "packages/ui/src/features/canvas/components/ChannelContextPanel.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/canvas/components/ChannelContextPanel.tsx": [
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/canvas/components/CreateChannelModal.tsx": [
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/canvas/components/FeedbackModal.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/canvas/components/RenameChannelModal.tsx": [
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/canvas/components/WebsiteContext.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#SegmentedControl",
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#TextArea"
+    ],
+    "packages/ui/src/features/canvas/components/WebsiteDashboardsIndex.tsx": [
+      "@radix-ui/themes#Grid"
+    ],
+    "packages/ui/src/features/canvas/components/WebsiteNewTask.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/canvas/freeform/CanvasPermissionDialog.tsx": [
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#VisuallyHidden"
+    ],
+    "packages/ui/src/features/canvas/freeform/CanvasSidePanel.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/canvas/freeform/FreeformCanvasView.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/code-editor/components/CodeEditorPanel.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/code-editor/components/SelectionCommentOverlay.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/code-review/components/CloudReviewPage.tsx": [
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/code-review/components/CommentAnnotation.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/code-review/components/DraftCommentAnnotation.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/code-review/components/PendingReviewBar.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/code-review/components/PrCommentThread.tsx": [
+      "@radix-ui/themes#Avatar",
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/code-review/components/ReviewShell.tsx": [
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/code-review/components/ReviewToolbar.tsx": [
+      "@radix-ui/themes#Separator"
+    ],
+    "packages/ui/src/features/command-center/components/CommandCenterPanel.tsx": [
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/command-center/components/CommandCenterToolbar.tsx": [
+      "@radix-ui/themes#Select"
+    ],
+    "packages/ui/src/features/command-center/components/TaskSelector.tsx": [
+      "@radix-ui/themes#Popover"
+    ],
+    "packages/ui/src/features/command/CommandMenu.tsx": [
+      "@radix-ui/react-icons"
+    ],
+    "packages/ui/src/features/command/KeyboardShortcutsSheet.tsx": [
+      "@radix-ui/themes#Dialog"
+    ],
+    "packages/ui/src/features/command/NewTaskFilePreview.tsx": [
+      "@radix-ui/react-icons",
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/editor/components/MarkdownRenderer.tsx": [
+      "@radix-ui/themes#Blockquote",
+      "@radix-ui/themes#Checkbox",
+      "@radix-ui/themes#Code",
+      "@radix-ui/themes#Kbd"
+    ],
+    "packages/ui/src/features/editor/components/StreamingMarkdown.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/folder-picker/FolderPicker.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/git-interaction/components/BranchSelector.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/git-interaction/components/CreatePrDialog.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Checkbox",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#TextArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/git-interaction/components/GitInteractionDialogs.tsx": [
+      "@radix-ui/react-icons",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Checkbox",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#TextArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/git-interaction/components/PRBadgeLink.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/git-interaction/components/TaskActionsMenu.tsx": [
+      "@radix-ui/react-icons",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#DropdownMenu",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/home/components/HomeActiveAgentsStrip.tsx": [
+      "@radix-ui/themes#ScrollArea"
+    ],
+    "packages/ui/src/features/home/components/HomeBoardView.tsx": [
+      "@radix-ui/themes#ScrollArea"
+    ],
+    "packages/ui/src/features/home/components/HomeView.tsx": [
+      "@radix-ui/themes#ScrollArea"
+    ],
+    "packages/ui/src/features/home/components/HomeWorkstreamDetailPanel.tsx": [
+      "@radix-ui/themes#DropdownMenu"
+    ],
+    "packages/ui/src/features/home/components/WorkstreamBits.tsx": [
+      "@radix-ui/themes#DropdownMenu"
+    ],
+    "packages/ui/src/features/home/config/ActionEditorPanel.tsx": [
+      "@radix-ui/themes#Card",
+      "@radix-ui/themes#TextArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/inbox/components/AgentRunDetail.tsx": [
+      "@radix-ui/themes#DropdownMenu"
+    ],
+    "packages/ui/src/features/inbox/components/ConfigureAgentsSection.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/DataSourceSetup.tsx": [
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/inbox/components/DismissReportDialog.tsx": [
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#RadioGroup",
+      "@radix-ui/themes#TextArea"
+    ],
+    "packages/ui/src/features/inbox/components/DismissedReportDetail.tsx": [
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/inbox/components/DynamicSourceSetup.tsx": [
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#TextArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/inbox/components/InboxBulkSelectionBar.tsx": [
+      "@radix-ui/themes#AlertDialog"
+    ],
+    "packages/ui/src/features/inbox/components/InboxMetaSourceStack.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/InboxScopeSelect.tsx": [
+      "@radix-ui/themes#SegmentedControl"
+    ],
+    "packages/ui/src/features/inbox/components/InboxSearchFilterBar.tsx": [
+      "@radix-ui/themes#Popover"
+    ],
+    "packages/ui/src/features/inbox/components/PrDiffIndicator.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/ReportDetailActions.tsx": [
+      "@radix-ui/themes#Popover",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#TextArea"
+    ],
+    "packages/ui/src/features/inbox/components/ResponderAgentRoster.tsx": [
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/SignalSourceToggles.tsx": [
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/SuggestedReviewerAvatarStack.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/SuggestedReviewersSection.tsx": [
+      "@radix-ui/themes#Popover",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/inbox/components/detail/ArtefactCommit.tsx": [
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/inbox/components/detail/ArtefactLogList.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/inbox/components/detail/ArtefactTaskRun.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/inbox/components/detail/SignalCard.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/inbox/components/utils/ExplainedDismissOptionLabels.tsx": [
+      "@radix-ui/themes#RadioGroup",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/utils/ForYouBadge.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/utils/MeBadge.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/utils/ReportImplementationPrLink.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/components/utils/SignalReportStatusBadge.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/inbox/hooks/useInboxReportDismissAction.tsx": [
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/mcp-apps/components/McpAppHost.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/mcp-apps/components/McpToolView.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/mcp-server-manager/AddCustomServerDialog.tsx": [
+      "@radix-ui/themes#Dialog"
+    ],
+    "packages/ui/src/features/mcp-server-manager/AddCustomServerForm.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/mcp-servers/components/McpServersView.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/mcp-servers/components/parts/MarketplaceView.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Heading",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/mcp-servers/components/parts/McpInstalledRail.tsx": [
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/mcp-servers/components/parts/ServerCard.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/mcp-servers/components/parts/ServerDetailView.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Separator",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#TextField",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/mcp-servers/components/parts/ToolPermissionList.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Separator",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#TextField",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/mcp-servers/components/parts/ToolPolicyToggle.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/mcp-servers/components/parts/ToolRow.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/message-editor/components/AttachmentMenu.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/message-editor/components/AttachmentsBar.tsx": [
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/message-editor/components/PromptInput.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/message-editor/components/PromptInput.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/message-editor/components/SlotMachineSubmit.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/onboarding/components/ConnectGitHubStep.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/onboarding/components/GitHubConnectPanel.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#DropdownMenu",
+      "@radix-ui/themes#Skeleton",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/onboarding/components/ImportConfigStep.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/onboarding/components/InstallCliStep.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/onboarding/components/InviteCodeStep.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/onboarding/components/OnboardingFlow.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/onboarding/components/ProjectSelectStep.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/onboarding/components/SelectRepoStep.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/onboarding/components/WelcomeScreen.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/panels/components/DraggableTab.tsx": [
+      "@radix-ui/react-icons",
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/permissions/DeletePermission.tsx": [
+      "@radix-ui/themes#Code"
+    ],
+    "packages/ui/src/features/permissions/EditPermission.tsx": [
+      "@radix-ui/themes#Code"
+    ],
+    "packages/ui/src/features/permissions/ExecutePermission.tsx": [
+      "@radix-ui/themes#Code"
+    ],
+    "packages/ui/src/features/permissions/FetchPermission.tsx": [
+      "@radix-ui/themes#Link"
+    ],
+    "packages/ui/src/features/permissions/McpPermission.tsx": [
+      "@radix-ui/themes#Code"
+    ],
+    "packages/ui/src/features/permissions/PlanApprovalSelector.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/permissions/PlanContent.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/permissions/QuestionPermission.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/provisioning/ProvisioningView.tsx": [
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/scouts/components/ScoutBadges.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/scouts/components/ScoutConfigControls.tsx": [
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/scouts/components/ScoutDetailHeader.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/scouts/components/ScoutDetailView.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/scouts/components/ScoutEmissionCard.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/scouts/components/ScoutFindingDiscussButton.tsx": [
+      "@radix-ui/themes#Popover",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#TextArea"
+    ],
+    "packages/ui/src/features/scouts/components/ScoutFindingsView.tsx": [
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/scouts/components/ScoutRowCard.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/scouts/components/ScoutRunBoxes.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/scouts/components/ScratchpadEntryCard.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#BadgeProps"
+    ],
+    "packages/ui/src/features/scouts/components/ScratchpadView.tsx": [
+      "@radix-ui/themes#SegmentedControl",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/sessions/components/ContextBreakdownPopover.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/ContextUsageIndicator.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/ContextUsageIndicator.tsx": [
+      "@radix-ui/themes#Popover"
+    ],
+    "packages/ui/src/features/sessions/components/ConversationSearchBar.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/sessions/components/DirtyTreeDialog.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/sessions/components/GitActionMessage.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/sessions/components/GitActionResult.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/sessions/components/HandoffConfirmDialog.tsx": [
+      "@radix-ui/themes#Code"
+    ],
+    "packages/ui/src/features/sessions/components/ImageBuilderBuildButton.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/sessions/components/QueuedMessagesDock.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/QueuedMessagesDock.tsx": [
+      "@radix-ui/react-collapsible"
+    ],
+    "packages/ui/src/features/sessions/components/ReasoningLevelSelector.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/SessionResourcesBar.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/sessions/components/SessionView.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#ContextMenu"
+    ],
+    "packages/ui/src/features/sessions/components/SteerQueueToggle.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/sessions/components/UnifiedModelSelector.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/chat-thread/ChatMarkdown.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/sessions/components/chat-thread/ChatThread.tsx": [
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/sessions/components/copyContextMenu.integration.test.tsx": [
+      "@radix-ui/themes#ContextMenu",
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/raw-logs/RawLogEntry.tsx": [
+      "@radix-ui/themes#Code",
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/sessions/components/raw-logs/RawLogsHeader.tsx": [
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/AgentMessage.tsx": [
+      "@radix-ui/themes#Code",
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/CodePreview.tsx": [
+      "@radix-ui/themes#Code"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/CompactBoundaryView.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/ErrorNotificationView.tsx": [
+      "@radix-ui/themes#Callout"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/FetchToolView.tsx": [
+      "@radix-ui/themes#Link"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/PlanApprovalView.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/ProgressGroupView.tsx": [
+      "@radix-ui/react-collapsible"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/QueuedMessageView.tsx": [
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/StatusNotificationView.tsx": [
+      "@radix-ui/themes#Callout"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/SubagentToolView.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/ToolCallBlock.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/ToolCallView.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/UserMessage.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/sessions/components/session-update/UserMessage.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/settings/FolderSettingsView.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Card",
+      "@radix-ui/themes#Code",
+      "@radix-ui/themes#Heading"
+    ],
+    "packages/ui/src/features/settings/components/SettingsPanel.tsx": [
+      "@radix-ui/themes#Avatar",
+      "@radix-ui/themes#ScrollArea"
+    ],
+    "packages/ui/src/features/settings/sections/AccountSettings.tsx": [
+      "@radix-ui/themes#Avatar",
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/settings/sections/AddCustomSoundDialog.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/settings/sections/AddCustomSoundDialog.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Card",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/settings/sections/AdvancedSettings.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Checkbox",
+      "@radix-ui/themes#Switch"
+    ],
+    "packages/ui/src/features/settings/sections/AutostartBaseBranchesSettings.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/settings/sections/ClaudeCodeSettings.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Link",
+      "@radix-ui/themes#Switch"
+    ],
+    "packages/ui/src/features/settings/sections/DiscordPresencePreview.tsx": [
+      "@radix-ui/themes#SegmentedControl"
+    ],
+    "packages/ui/src/features/settings/sections/DiscordSettings.tsx": [
+      "@radix-ui/themes#Switch"
+    ],
+    "packages/ui/src/features/settings/sections/GeneralSettings.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Link",
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#Switch"
+    ],
+    "packages/ui/src/features/settings/sections/GitHubIntegrationSection.tsx": [
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/settings/sections/GitHubSettings.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/settings/sections/NotificationsSettings.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#Slider",
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/settings/sections/PersonalizationSettings.tsx": [
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#TextArea"
+    ],
+    "packages/ui/src/features/settings/sections/PlanUsageSettings.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/settings/sections/SignalSlackNotificationsSettings.tsx": [
+      "@radix-ui/themes#Callout"
+    ],
+    "packages/ui/src/features/settings/sections/SignalSourcesSettings.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/settings/sections/SlackSettings.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/settings/sections/SlackWorkspaceConnection.tsx": [
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/settings/sections/TerminalSettings.tsx": [
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/settings/sections/UpdatesSettings.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#Switch"
+    ],
+    "packages/ui/src/features/settings/sections/environments/CloudEnvironmentsSettings.tsx": [
+      "@radix-ui/react-icons",
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Checkbox",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#TextArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/settings/sections/environments/EnvironmentForm.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#TextArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/settings/sections/environments/EnvironmentRow.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/settings/sections/environments/EnvironmentsSettings.tsx": [
+      "@radix-ui/themes#SegmentedControl"
+    ],
+    "packages/ui/src/features/settings/sections/environments/ProjectEnvironmentCard.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/settings/sections/worktrees/WorktreeRow.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/settings/sections/worktrees/WorktreeSize.tsx": [
+      "@radix-ui/themes#Skeleton"
+    ],
+    "packages/ui/src/features/settings/sections/worktrees/WorktreesSettings.tsx": [
+      "@radix-ui/themes#Switch",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/setup/DiscoveredTaskDetailDialog.tsx": [
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#VisuallyHidden"
+    ],
+    "packages/ui/src/features/sidebar/components/ArchiveRunningTaskDialog.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/sidebar/components/ProjectSwitcher.tsx": [
+      "@radix-ui/themes#Avatar"
+    ],
+    "packages/ui/src/features/sidebar/components/SidebarSection.tsx": [
+      "@radix-ui/react-collapsible"
+    ],
+    "packages/ui/src/features/sidebar/components/SidebarTrigger.tsx": [
+      "@radix-ui/themes#IconButton"
+    ],
+    "packages/ui/src/features/sidebar/components/UpdateBanner.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/skills/MarketplaceBrowse.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/skills/MarketplaceSkillPanel.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/skills/NewSkillDialog.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#Select",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/skills/ReplaceSkillDialog.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/skills/SkillCard.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/skills/SkillDetailPanel.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#TextField",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/skills/SkillFileEditor.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/features/skills/SkillFileTree.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/skills/SkillManifestEditor.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#TextArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/skills/SkillsView.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/skills/TeamSkillDetailPanel.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/skills/TeamSkillsSection.tsx": [
+      "@radix-ui/themes#Badge"
+    ],
+    "packages/ui/src/features/skills/TeamSkillsTab.tsx": [
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/task-detail/BranchMismatchDialog.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Code"
+    ],
+    "packages/ui/src/features/task-detail/components/CanvasInstructionsTab.tsx": [
+      "@radix-ui/themes#ScrollArea"
+    ],
+    "packages/ui/src/features/task-detail/components/ChangesPanel.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#DropdownMenu",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/task-detail/components/ChannelContextTab.tsx": [
+      "@radix-ui/themes#ScrollArea"
+    ],
+    "packages/ui/src/features/task-detail/components/CloudGithubMissingNotice.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/task-detail/components/ContinueCliSessions.tsx": [
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#Spinner",
+      "@radix-ui/themes#TextField"
+    ],
+    "packages/ui/src/features/task-detail/components/ExistingWorktreeDialog.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Code"
+    ],
+    "packages/ui/src/features/task-detail/components/FileTreePanel.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/task-detail/components/RemoteBranchCheckoutDialog.tsx": [
+      "@radix-ui/themes#AlertDialog",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Code"
+    ],
+    "packages/ui/src/features/task-detail/components/SuggestedTaskCard.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/task-detail/components/TaskDetail.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/task-detail/components/TaskInput.tsx": [
+      "@radix-ui/themes#Tooltip"
+    ],
+    "packages/ui/src/features/task-detail/components/WorkspaceSetupPrompt.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Code",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/tour/components/TourTooltip.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/features/updates/UpdateAvailableModal.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#Progress",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#Skeleton"
+    ],
+    "packages/ui/src/features/updates/WhatsNewModal.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Dialog",
+      "@radix-ui/themes#IconButton",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#Skeleton"
+    ],
+    "packages/ui/src/features/usage/UsageView.tsx": [
+      "@radix-ui/themes#Badge",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout",
+      "@radix-ui/themes#ScrollArea",
+      "@radix-ui/themes#Spinner"
+    ],
+    "packages/ui/src/features/usage/components/SpendBreakdownTables.tsx": [
+      "@radix-ui/themes#Table"
+    ],
+    "packages/ui/src/features/usage/components/SpendInsights.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Separator"
+    ],
+    "packages/ui/src/features/usage/components/WindowSelector.tsx": [
+      "@radix-ui/themes#SegmentedControl"
+    ],
+    "packages/ui/src/primitives/Badge.tsx": ["@radix-ui/themes#Badge"],
+    "packages/ui/src/primitives/Button.tsx": ["@radix-ui/themes#Button"],
+    "packages/ui/src/primitives/CodeBlock.test.tsx": ["@radix-ui/themes#Theme"],
+    "packages/ui/src/primitives/CodeBlock.tsx": ["@radix-ui/themes#IconButton"],
+    "packages/ui/src/primitives/ErrorBoundary.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Callout"
+    ],
+    "packages/ui/src/primitives/FullScreenLayout.tsx": [
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/primitives/KeyboardShortcutsSheet.tsx": [
+      "@radix-ui/themes#Dialog"
+    ],
+    "packages/ui/src/primitives/ThemeWrapper.tsx": ["@radix-ui/themes#Theme"],
+    "packages/ui/src/primitives/Tooltip.tsx": ["@radix-ui/react-tooltip"],
+    "packages/ui/src/primitives/action-selector/OptionRow.tsx": [
+      "@radix-ui/themes#Checkbox",
+      "@radix-ui/themes#Radio"
+    ],
+    "packages/ui/src/primitives/combobox/Combobox.stories.tsx": [
+      "@radix-ui/themes#Button"
+    ],
+    "packages/ui/src/primitives/combobox/Combobox.tsx": [
+      "@radix-ui/react-icons",
+      "@radix-ui/themes#Button",
+      "@radix-ui/themes#Popover",
+      "@radix-ui/themes/dist/esm/props/prop-def.js"
+    ],
+    "packages/ui/src/router/RoutePending.tsx": ["@radix-ui/themes#Spinner"],
+    "packages/ui/src/shell/AppLoadingScreen.test.tsx": [
+      "@radix-ui/themes#Theme"
+    ],
+    "packages/ui/src/shell/ErrorBoundary.test.tsx": ["@radix-ui/themes#Theme"]
+  }
+}

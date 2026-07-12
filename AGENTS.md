@@ -113,6 +113,20 @@ For each new file or meaningful change:
 - Bespoke clients that wrap `trpcClient.x` one-to-one.
 - `*Port`, `*_PORT`, or `ports.ts` naming.
 - Business logic in `apps/<host>`.
+- New Radix imports. Radix is frozen: only `Box`, `Flex`, and `Text` from `@radix-ui/themes` may be added; every other Radix component and every other `@radix-ui/*` package is denied for new code — use the `@posthog/quill` equivalent. See "Radix Freeze" below.
+
+## Radix Freeze
+
+Radix UI is legacy and being migrated to `@posthog/quill`. New code may import only the layout/typography primitives `Box`, `Flex`, and `Text` from `@radix-ui/themes`. Everything else — every other `@radix-ui/themes` component (`Button`, `Dialog`, `Tooltip`, `Select`, ...) and every other `@radix-ui/*` package — is denied for new usage. Reach for the `@posthog/quill` equivalent instead.
+
+Existing Radix imports are baselined in `scripts/radix-allowlist.json` and checked by `scripts/check-radix-imports.mjs` in CI. The allowlist only shrinks:
+
+```bash
+node scripts/check-radix-imports.mjs          # verify: fails on any Radix import not in the baseline
+node scripts/check-radix-imports.mjs --prune  # shrink the baseline after migrating a file to quill
+```
+
+Do not use `--init` to baseline new violations. When you touch a file that still uses frozen Radix components, prefer swapping them to quill and running `--prune`.
 
 ## Host Boundary
 
@@ -199,6 +213,7 @@ await boot(container);
 - `pnpm --filter <pkg> typecheck|test|build`: run a scoped task.
 - `pnpm --filter code package|make`: package the Electron app.
 - `node scripts/check-host-boundaries.mjs`: verify host boundary allowlist.
+- `node scripts/check-radix-imports.mjs`: verify no new Radix imports beyond the baseline (`pnpm radix`).
 
 ## Merging PRs
 
@@ -232,7 +247,7 @@ See [docs/conventions.md](./docs/conventions.md).
 
 ## Key Libraries
 
-- React 19, Radix UI Themes, Tailwind CSS, `@posthog/quill`
+- React 19, Tailwind CSS, `@posthog/quill` (Radix UI Themes is legacy — frozen to `Box`/`Flex`/`Text` for new code; see "Radix Freeze")
 - TanStack Query, TanStack Router
 - Zustand, InversifyJS (with `@inversifyjs/strongly-typed`), Zod
 - xterm.js, CodeMirror, Tiptap
