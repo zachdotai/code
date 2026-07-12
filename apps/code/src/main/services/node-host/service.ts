@@ -13,11 +13,13 @@ import { POSTHOG_CODE_INTERNAL_CHILD_ENV } from "@posthog/shared/constants";
 import {
   isNodeHostFromChildMessage,
   NODE_HOST_PORT_CHANNEL,
+  NODE_HOST_PORT_REQUEST,
   type NodeHostToChildMessage,
 } from "@posthog/shared/node-host-protocol";
 import { createTRPCClient, type TRPCClient } from "@trpc/client";
 import {
   app,
+  ipcMain,
   MessageChannelMain,
   type UtilityProcess,
   utilityProcess,
@@ -124,6 +126,7 @@ export class NodeHostService extends TypedEventEmitter<NodeHostEvents> {
    */
   start(resolver: ServiceResolver): Promise<void> {
     this.#resolver = resolver;
+    this.#registerPortRequestHandler();
     if (this.#child) return Promise.resolve();
     if (this.#pendingStart) return this.#pendingStart;
 
@@ -170,6 +173,16 @@ export class NodeHostService extends TypedEventEmitter<NodeHostEvents> {
       } catch {}
     }
     return this.start(this.#resolver);
+  }
+
+  #portRequestHandlerRegistered = false;
+
+  #registerPortRequestHandler(): void {
+    if (this.#portRequestHandlerRegistered) return;
+    this.#portRequestHandlerRegistered = true;
+    ipcMain.on(NODE_HOST_PORT_REQUEST, (event) => {
+      this.issueRendererPort(event.sender);
+    });
   }
 
   /**

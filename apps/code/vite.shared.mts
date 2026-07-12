@@ -106,6 +106,10 @@ export const workspaceAliases: Alias[] = [
     find: /^@posthog\/platform\/(.+)$/,
     replacement: path.resolve(__dirname, "../../packages/platform/src/$1"),
   },
+  {
+    find: /^@posthog\/port-trpc\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/port-trpc/src/$1.ts"),
+  },
 ];
 
 export const mainAliases: Alias[] = [
