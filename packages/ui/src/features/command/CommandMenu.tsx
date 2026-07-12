@@ -3,7 +3,6 @@ import {
   CaretRightIcon,
   ChartLine,
   EnvelopeSimple,
-  HashIcon,
 } from "@phosphor-icons/react";
 import { resolveService } from "@posthog/di/container";
 import {
@@ -76,6 +75,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from "@radix-ui/react-icons";
+import { SquircleDashed } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface CommandMenuProps {
@@ -483,12 +483,12 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     if (channels.length === 0) return [];
     return [
       {
-        label: "Channels",
+        label: "Contexts",
         items: channels.map((channel) => ({
           id: `channel-${channel.id}`,
           label: channel.name,
-          keywords: "channel",
-          icon: <HashIcon size={12} className="text-gray-11" />,
+          keywords: "context",
+          icon: <SquircleDashed size={12} className="text-gray-11" />,
           action: "open-channel" as CommandMenuAction,
           channelId: channel.id,
           onRun: () => {
