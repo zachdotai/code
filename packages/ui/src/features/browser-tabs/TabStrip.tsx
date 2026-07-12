@@ -231,7 +231,7 @@ function SortableTabPill({
               repeat the channel-home name already shown above. */}
           {tab.channelName ? (
             <div className="text-muted">
-              #{tab.channelName}
+              {tab.channelName}
               {tab.isChannelHome ? " / home" : null}
             </div>
           ) : null}

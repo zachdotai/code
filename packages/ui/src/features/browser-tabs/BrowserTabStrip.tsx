@@ -1,6 +1,5 @@
 import {
   BrainIcon,
-  HashIcon,
   HouseIcon,
   PlugsConnectedIcon,
   RobotIcon,
@@ -50,6 +49,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
+import { SquircleDashed } from "lucide-react";
 import { type ReactNode, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
@@ -519,8 +519,8 @@ export function BrowserTabStrip() {
           const meta = channelSectionFor(section);
           return {
             id: t.id,
-            label: meta?.label ?? channel ?? "Channel",
-            icon: <HashIcon size={14} />,
+            label: meta?.label ?? channel ?? "Context",
+            icon: <SquircleDashed size={14} />,
             channelName: channel,
             // No section meta → the channel's index page.
             isChannelHome: !meta,

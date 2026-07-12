@@ -1,4 +1,3 @@
-import { HashIcon } from "@phosphor-icons/react";
 import { Badge, Switch } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -29,6 +28,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
+import { SquircleDashed } from "lucide-react";
 import { ActivityItem } from "./items/ActivityItem";
 import { AgentsItem } from "./items/AgentsItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
@@ -199,9 +199,9 @@ export function SidebarNavSection({
           className="group flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-[13px] leading-snug transition-colors hover:bg-fill-secondary"
         >
           <span className="flex shrink-0 items-center opacity-80">
-            <HashIcon size={16} />
+            <SquircleDashed size={14} />
           </span>
-          <span className="min-w-0 truncate font-medium">Channels</span>
+          <span className="min-w-0 truncate font-medium">Contexts</span>
           <Badge variant="info">Alpha</Badge>
           <Switch
             id="channels-toggle"
