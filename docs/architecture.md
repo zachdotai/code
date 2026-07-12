@@ -34,6 +34,33 @@ Two tRPC surfaces exist:
 - `@posthog/host-router`: Electron main process API for its renderer.
 - `@posthog/workspace-server`: privileged Node backend API consumed by `@posthog/workspace-client`.
 
+## Process Topology (desktop)
+
+```text
+Electron main (windows, menus, power, keychain, sqlite, updater, MCP apps)
+ |-- renderer (BrowserWindow)
+ |     |-- electron-trpc ipcLink -> main            everything except agent.*
+ |     `-- port-trpc portLink   -> node host        agent.* over a direct MessagePort
+ |-- node host (utilityProcess, .vite/build/node-host.js)
+ |     serves the agent routers over MessagePorts (control port for main,
+ |     one direct port per renderer window); consumes main's narrow
+ |     host-capabilities router over a reverse port (sleep, auth tokens,
+ |     MCP apps, repo-fs bridge, sqlite lookups, settings, power resume)
+ `-- workspace-server (ELECTRON_RUN_AS_NODE child, localhost HTTP/SSE)
+       git, fs, pty, watchers
+```
+
+Agent execution (`AgentService`, the gateway/MCP proxies, agent process
+tracking) runs in the node host so stream parsing and proxying never contend
+with window management or IPC routing in main. `NodeHostService` in
+`apps/code/src/main/services/node-host/` supervises it (handshake, heartbeat,
+exponential-backoff restart) and re-issues renderer ports with a bumped
+generation after a restart; the renderer's `PortBridge` swaps ports and fails
+in-flight operations into `SessionService`'s existing auto-recovery. The
+renderer-side link is written against the DOM `MessagePort` interface with no
+electron imports, so a web host can later serve the same `HostRouter["agent"]`
+routes from a Web Worker over the identical link.
+
 ## Dependency Injection
 
 Use plain Inversify through `@posthog/di`.

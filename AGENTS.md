@@ -30,6 +30,8 @@ Principle: logic is portable; hosts are thin.
 | `@posthog/host-router` | Electron host tRPC routers that resolve services from request context and forward calls. Exposes `HostRouter` type and renderer `useHostTRPC`. | Service implementations |
 | `@posthog/di` | DI and boot primitives: `CONTRIBUTION`, `boot()`, `ROOT_LOGGER`, `setRootContainer()`, `bindToContainer()`, `useService`. | Feature code |
 | `@posthog/electron-trpc` | tRPC-over-Electron-IPC transport. | Feature code |
+| `@posthog/port-trpc` | tRPC-over-MessagePort transport (renderer/web link side + MessagePortMain server side via structural adapters). | Feature code, electron, node imports |
+| `@posthog/node-host` | The agent-execution utilityProcess runtime: DI composition, agent routers over MessagePorts, host-capabilities proxies back to main. | UI, electron imports |
 | `@posthog/git`, `@posthog/enricher`, `@posthog/agent` | Reusable domain implementation packages. | Host-specific code |
 
 Hosts:

@@ -50,6 +50,7 @@ import { agentForwardRouter } from "./routers/agent-forward";
 import { devRouter } from "./routers/dev";
 import { discordPresenceRouter } from "./routers/discord-presence";
 import { encryptionRouter } from "./routers/encryption";
+import { nodeHostRouter } from "./routers/node-host";
 import { workspaceServerRouter } from "./routers/workspace-server";
 import { router } from "./trpc";
 
@@ -108,6 +109,7 @@ export const trpcRouter = router({
   deepLink: deepLinkRouter,
   workspace: workspaceRouter,
   workspaceServer: workspaceServerRouter,
+  nodeHost: nodeHostRouter,
 });
 
 export type TrpcRouter = typeof trpcRouter;
