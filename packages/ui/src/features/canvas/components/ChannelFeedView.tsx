@@ -40,6 +40,7 @@ import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
+import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
@@ -472,23 +473,89 @@ function FeedRow({
   );
 }
 
+// A card-less feed row for a synthetic "PostHog agent" announcement (context
+// created, CONTEXT.md being built). Same chrome as a task row — Robot avatar,
+// "PostHog / Agent" — minus the task card and reply footer.
+function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
+  return (
+    <ChatMessageScrollerItem messageId={message.id}>
+      <ThreadItem className="rounded-none py-4 pr-8">
+        <ThreadItemGutter>
+          <Avatar>
+            <AvatarFallback>
+              <RobotIcon size={16} />
+            </AvatarFallback>
+          </Avatar>
+        </ThreadItemGutter>
+        <ThreadItemContent className="min-w-0">
+          <ThreadItemHeader>
+            <ThreadItemAuthor>PostHog</ThreadItemAuthor>
+            <Badge variant="info">Agent</Badge>
+            <ThreadItemTimestamp dateTime={message.createdAt}>
+              {formatRelativeTimeShort(message.createdAt)}
+            </ThreadItemTimestamp>
+          </ThreadItemHeader>
+          <ThreadItemBody className="wrap-break-word text-muted-foreground">
+            {message.text}
+          </ThreadItemBody>
+        </ThreadItemContent>
+      </ThreadItem>
+    </ChatMessageScrollerItem>
+  );
+}
+
+// A single feed entry, either a real task card or a synthetic system row, tagged
+// with the timestamp used to interleave the two.
+type FeedEntry =
+  | { kind: "task"; id: string; createdAt: string; task: Task }
+  | {
+      kind: "system";
+      id: string;
+      createdAt: string;
+      message: ChannelFeedSystemMessage;
+    };
+
 // The Slack-style channel feed: every task kicked off in the channel, oldest
 // first, rendered as a kickoff message + task card. Multiplayer — the list is
-// team-visible and polls for teammates' cards and status flips.
+// team-visible and polls for teammates' cards and status flips. Synthetic
+// "PostHog agent" system rows (context lifecycle) are interleaved by timestamp.
 export function ChannelFeedView({
   tasks,
+  systemMessages,
   isLoading,
   emptyState,
   onOpenTask,
   onOpenThread,
 }: {
   tasks: Task[];
+  systemMessages?: ChannelFeedSystemMessage[];
   isLoading: boolean;
   emptyState?: React.ReactNode;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  if (isLoading && tasks.length === 0) {
+  // Merge tasks + system rows into one chronological list. ISO timestamps sort
+  // lexically, so a plain string compare is chronological.
+  const entries = useMemo<FeedEntry[]>(() => {
+    const merged: FeedEntry[] = [
+      ...tasks.map((task) => ({
+        kind: "task" as const,
+        id: task.id,
+        createdAt: task.created_at,
+        task,
+      })),
+      ...(systemMessages ?? []).map((message) => ({
+        kind: "system" as const,
+        id: message.id,
+        createdAt: message.createdAt,
+        message,
+      })),
+    ];
+    merged.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+    return merged;
+  }, [tasks, systemMessages]);
+
+  if (isLoading && entries.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Spinner />
@@ -496,7 +563,7 @@ export function ChannelFeedView({
     );
   }
 
-  if (tasks.length === 0) {
+  if (entries.length === 0) {
     return <div className="flex-1 overflow-y-auto">{emptyState}</div>;
   }
 
@@ -510,25 +577,29 @@ export function ChannelFeedView({
               the row's top-right corner (absolute, past the row edge). Without a
               gutter they hug the scroll container and get clipped. */}
           <ChatMessageScrollerContent className="mx-auto w-full gap-0 py-4">
-            {tasks.map((task, index) => {
-              const previous = tasks[index - 1];
+            {entries.map((entry, index) => {
+              const previous = entries[index - 1];
               const showDayMarker =
                 !previous ||
-                dayKey(previous.created_at) !== dayKey(task.created_at);
+                dayKey(previous.createdAt) !== dayKey(entry.createdAt);
               return (
-                <Fragment key={task.id}>
+                <Fragment key={entry.id}>
                   {showDayMarker && (
                     <ChatMarker variant="separator">
                       <ChatMarkerContent>
-                        {dayLabel(task.created_at, now)}
+                        {dayLabel(entry.createdAt, now)}
                       </ChatMarkerContent>
                     </ChatMarker>
                   )}
-                  <FeedRow
-                    task={task}
-                    onOpenTask={onOpenTask}
-                    onOpenThread={onOpenThread}
-                  />
+                  {entry.kind === "task" ? (
+                    <FeedRow
+                      task={entry.task}
+                      onOpenTask={onOpenTask}
+                      onOpenThread={onOpenThread}
+                    />
+                  ) : (
+                    <SystemFeedRow message={entry.message} />
+                  )}
                 </Fragment>
               );
             })}

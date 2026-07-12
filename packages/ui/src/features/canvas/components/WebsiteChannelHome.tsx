@@ -12,6 +12,7 @@ import {
   channelFeedQueryKey,
   useChannelFeed,
 } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
+import { useChannelFeedMessages } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
@@ -48,6 +49,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // personal channel), which owns the task feed and threads.
   const { channel: backendChannel } = useBackendChannel(channelName);
   const { tasks, isLoading } = useChannelFeed(backendChannel?.id);
+  // Durable "PostHog agent" rows (channel created / CONTEXT.md being built) live
+  // on the backend channel — the same id the feed tasks use, not the folder id.
+  const { messages: systemMessages } = useChannelFeedMessages(
+    backendChannel?.id,
+  );
 
   useSetHeaderContent(
     useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
@@ -171,6 +177,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <ChannelFeedView
           tasks={tasks}
+          systemMessages={systemMessages}
           isLoading={isLoading}
           emptyState={emptyState}
           onOpenTask={handleOpenTask}

@@ -1,3 +1,4 @@
+import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import {
   TASK_SERVICE,
   type TaskService,
@@ -5,63 +6,154 @@ import {
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { WorkspaceMode } from "@posthog/shared";
+import type { Task } from "@posthog/shared/domain-types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { buildContextGenerationPrompt } from "@posthog/ui/features/canvas/contextPrompt";
+import { channelFeedQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
+import { channelFeedMessagesQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import { useFolderGenerationTaskMutation } from "@posthog/ui/features/canvas/hooks/useFolderGenerationTask";
+import {
+  normalizeChannelName,
+  PERSONAL_CHANNEL_NAME,
+} from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { toastError } from "@posthog/ui/features/notifications/errorDetails";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { usePreviewConfig } from "@posthog/ui/features/task-detail/hooks/usePreviewConfig";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
-// Kicks off CONTEXT.md generation as a repo-less task. The user no longer picks
-// a folder/repo up front — the agent decides at runtime whether it needs one and
-// asks the user to clarify if it can't find the right one. The task runs as a
-// cloud run (not a local agent) so generation proceeds server-side regardless of
-// which client kicked it off, is filed to the channel, and recorded server-side
-// as the channel's generation task so every user's CONTEXT.md view can track it.
-export function useGenerateContext(channelId: string, channelName: string) {
+interface GenerateContextInput {
+  /** The desktop folder/context id — also the /website route param. */
+  channelId: string;
+  channelName: string;
+  /** What the user says this context is about; seeds the plan. */
+  description: string;
+  workspaceMode?: WorkspaceMode;
+}
+
+// The task's backend channel is what the context feed queries (getTasks by
+// channel), while the folder id drives Recents/Artifacts. Resolve the folder's
+// display name onto its backend channel the way useBackendChannel does: the "me"
+// folder maps to the personal channel; any other name resolve-or-creates its
+// public channel. Without this the task only appears in Recents, not the feed.
+async function resolveBackendChannelId(
+  client: PostHogAPIClient | null,
+  channelName: string,
+): Promise<string | undefined> {
+  if (!client) return undefined;
+  const normalized = normalizeChannelName(channelName);
+  if (!normalized) return undefined;
+  if (normalized === PERSONAL_CHANNEL_NAME) {
+    const channels = await client.getTaskChannels();
+    return channels.find((c) => c.channel_type === "personal")?.id;
+  }
+  return (await client.resolveTaskChannel(normalized)).id;
+}
+
+// Launches the plan-mode session that builds a context's CONTEXT.md. The task
+// runs repo-less (the agent attaches a repo lazily and asks to clarify if it
+// can't find the right one) and starts in plan mode, seeded by the user's
+// description, so the user shapes the document before it publishes via the
+// PostHog MCP. Defaults to a cloud run so generation never ties up (or depends
+// on) the local machine. Returns the created task, or null on failure.
+//
+// Channel-agnostic on purpose: the create-context dialog calls this with a
+// freshly-created context's id (no bound hook possible before it exists), and
+// the CONTEXT.md empty state calls it with the existing context.
+export function useGenerateContext() {
   const taskService = useService<TaskService>(TASK_SERVICE);
   const trpc = useHostTRPC();
   const queryClient = useQueryClient();
   const { invalidateTasks } = useCreateTask();
   const { fileTask } = useChannelTaskMutations();
-  const { set: setGenerationTask } = useFolderGenerationTaskMutation(channelId);
+  const client = useOptionalAuthenticatedClient();
   const [isStarting, setIsStarting] = useState(false);
 
+  // Resolve adapter + model the same way the composer does. A cloud run rejects
+  // a task with no model ("required when selecting a cloud runtime"), so this
+  // headless launch must supply one rather than relying on a composer's picker.
+  const adapter = useSettingsStore((s) => s.lastUsedAdapter);
+  const { modelOption } = usePreviewConfig(adapter);
+  const currentModel =
+    modelOption?.type === "select" ? modelOption.currentValue : undefined;
+
   const generate = useCallback(
-    async (workspaceMode: WorkspaceMode = "cloud"): Promise<string | null> => {
+    async ({
+      channelId,
+      channelName,
+      description,
+      workspaceMode = "cloud",
+    }: GenerateContextInput): Promise<Task | null> => {
       setIsStarting(true);
       try {
+        // Own the task on the backend channel so it lands in the context feed
+        // (not just Recents). Best-effort: fall back to no channel on failure.
+        const backendChannelId = await resolveBackendChannelId(
+          client,
+          channelName,
+        ).catch(() => undefined);
+
         const result = await taskService.createTask(
           {
-            content: buildContextGenerationPrompt({ channelName, channelId }),
-            taskDescription: `Generate CONTEXT.md for #${channelName}`,
-            // Defaults to a cloud run — generation should never tie up (or
-            // depend on) the local machine, and it's never the sticky last-used
-            // workspace mode. The dev-only picker can override to "local" to
-            // test a local build of these features before merging.
+            content: buildContextGenerationPrompt({
+              channelName,
+              channelId,
+              description,
+            }),
+            taskDescription: `Build CONTEXT.md for ${channelName}`,
             workspaceMode,
+            adapter: adapter ?? "claude",
+            model: currentModel,
+            channelId: backendChannelId,
+            // Plan mode: the agent proposes the document and waits for approval
+            // before publishing, so the user co-designs CONTEXT.md.
+            executionMode: "plan",
             allowNoRepo: true,
           },
           (output) => invalidateTasks(output.task),
         );
 
         if (!result.success) {
-          toastError("Couldn't start CONTEXT.md generation", result.error);
+          toastError("Couldn't start the planning session", result.error);
           return null;
         }
 
         const task = result.data.task;
-        // File into the channel + record as the (shared) generation task. Both
-        // are best-effort: a failure here shouldn't undo a started task.
+        // File into the context so its Recents/Artifacts tabs pick it up.
+        // Best-effort — a failure here shouldn't undo a started task.
         void fileTask(channelId, task.id, task.title).catch(() => {});
-        void setGenerationTask(task.id).catch(() => {});
+        if (backendChannelId) {
+          // Announce the CONTEXT.md build in the channel feed (durable, team-
+          // visible), keyed on the backend channel — the same id channel_created
+          // and the task cards use. Timestamped just before the task so it sorts
+          // above the card. Best-effort.
+          const buildingAt = new Date(
+            new Date(task.created_at).getTime() - 1,
+          ).toISOString();
+          void client
+            ?.postChannelFeedMessage(backendChannelId, {
+              event: "context_md_building",
+              payload: { context_name: channelName },
+              createdAt: buildingAt,
+            })
+            .then(() =>
+              queryClient.invalidateQueries({
+                queryKey: channelFeedMessagesQueryKey(backendChannelId),
+              }),
+            )
+            .catch(() => {});
+          // Show the new card in the context feed without waiting for the poll.
+          void queryClient.invalidateQueries({
+            queryKey: channelFeedQueryKey(backendChannelId),
+          });
+        }
         // Refresh the workspace cache so the new cloud workspace row appears and
         // the task view resolves the cloud run instead of the repo-picker prompt.
         void queryClient.invalidateQueries({
           queryKey: trpc.workspace.getAll.queryKey(),
         });
-        return task.id;
+        return task;
       } finally {
         setIsStarting(false);
       }
@@ -72,9 +164,9 @@ export function useGenerateContext(channelId: string, channelName: string) {
       queryClient,
       invalidateTasks,
       fileTask,
-      setGenerationTask,
-      channelId,
-      channelName,
+      client,
+      adapter,
+      currentModel,
     ],
   );
 
