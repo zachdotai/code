@@ -12,7 +12,10 @@ import {
   channelFeedQueryKey,
   useChannelFeed,
 } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
-import { useChannelFeedMessages } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
+import {
+  channelCreationMessage,
+  useChannelFeedMessages,
+} from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
@@ -49,11 +52,20 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // personal channel), which owns the task feed and threads.
   const { channel: backendChannel } = useBackendChannel(channelName);
   const { tasks, isLoading } = useChannelFeed(backendChannel?.id);
-  // Durable "PostHog agent" rows (channel created / CONTEXT.md being built) live
-  // on the backend channel — the same id the feed tasks use, not the folder id.
-  const { messages: systemMessages } = useChannelFeedMessages(
-    backendChannel?.id,
-  );
+  // Durable "PostHog agent" rows (CONTEXT.md being built, …) live on the
+  // backend channel — the same id the feed tasks use, not the folder id.
+  const { messages: feedMessages } = useChannelFeedMessages(backendChannel?.id);
+  // "Ann created this context" opens the feed, derived from the channel row so
+  // it renders (and sorts first) even where the feed endpoint isn't deployed.
+  // Suppressed while it would be the feed's only entry — an untouched context
+  // shows the welcome empty state instead.
+  const systemMessages = useMemo(() => {
+    const creation = channelCreationMessage(backendChannel);
+    if (!creation || (tasks.length === 0 && feedMessages.length === 0)) {
+      return feedMessages;
+    }
+    return [creation, ...feedMessages];
+  }, [backendChannel, tasks.length, feedMessages]);
 
   useSetHeaderContent(
     useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),

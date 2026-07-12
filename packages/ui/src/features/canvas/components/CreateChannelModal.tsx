@@ -146,9 +146,10 @@ export function CreateChannelModal({
       return;
     }
 
-    // Launch succeeded. The feed announcements (channel_created, server-emitted;
-    // context_md_building, posted by generate against the backend channel) are
-    // handled where the backend channel id is known — the dialog just navigates.
+    // Launch succeeded. The feed announcements ("created this context", derived
+    // from the channel row; context_md_building, posted by generate against the
+    // backend channel) are handled where the channel is known — the dialog just
+    // navigates.
     //
     // Land on the context index (its feed), where the announcements and the plan
     // task card show. The user clicks the card to open the session.
