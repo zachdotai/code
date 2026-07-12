@@ -113,12 +113,18 @@ import { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
 import { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import { NOTIFIER_SERVICE } from "@posthog/platform/notifier";
-import { POWER_MANAGER_SERVICE } from "@posthog/platform/power-manager";
+import {
+  type IPowerManager,
+  POWER_MANAGER_SERVICE,
+} from "@posthog/platform/power-manager";
 import { SECURE_STORAGE_SERVICE } from "@posthog/platform/secure-storage";
 import { STORAGE_PATHS_SERVICE } from "@posthog/platform/storage-paths";
 import { UPDATER_SERVICE } from "@posthog/platform/updater";
 import { URL_LAUNCHER_SERVICE } from "@posthog/platform/url-launcher";
-import { WORKSPACE_SETTINGS_SERVICE } from "@posthog/platform/workspace-settings";
+import {
+  type IWorkspaceSettings,
+  WORKSPACE_SETTINGS_SERVICE,
+} from "@posthog/platform/workspace-settings";
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
 import { databaseModule } from "@posthog/workspace-server/db/db.module";
 import {
@@ -132,6 +138,7 @@ import {
   WORKSPACE_REPOSITORY,
   WORKTREE_REPOSITORY,
 } from "@posthog/workspace-server/db/identifiers";
+import type { IWorkspaceRepository } from "@posthog/workspace-server/db/repositories/workspace-repository";
 import { repositoriesModule } from "@posthog/workspace-server/db/repositories.module";
 import { GIT_SERVICE as WS_GIT_SERVICE } from "@posthog/workspace-server/di/tokens";
 import { additionalDirectoriesModule } from "@posthog/workspace-server/services/additional-directories/additional-directories.module";
@@ -139,11 +146,16 @@ import type { AgentService } from "@posthog/workspace-server/services/agent/agen
 import { agentModule } from "@posthog/workspace-server/services/agent/agent.module";
 import {
   AGENT_AUTH,
+  AGENT_KNOWN_FOLDERS,
   AGENT_LOGGER,
   AGENT_MCP_APPS,
+  AGENT_PLUGIN_DIR,
+  AGENT_POWER_MONITOR,
   AGENT_REPO_FILES,
   AGENT_SERVICE,
   AGENT_SLEEP_COORDINATOR,
+  AGENT_WORKSPACE_DIRECTORIES,
+  AGENT_WORKTREE_SETTINGS,
 } from "@posthog/workspace-server/services/agent/identifiers";
 import { AgentServiceEvent } from "@posthog/workspace-server/services/agent/schemas";
 import { archiveModule } from "@posthog/workspace-server/services/archive/archive.module";
@@ -166,7 +178,9 @@ import {
   EXTERNAL_APPS_STORE,
 } from "@posthog/workspace-server/services/external-apps/identifiers";
 import type { ExternalAppsPreferences } from "@posthog/workspace-server/services/external-apps/types";
+import type { FoldersService } from "@posthog/workspace-server/services/folders/folders";
 import { foldersModule } from "@posthog/workspace-server/services/folders/folders.module";
+import { FOLDERS_SERVICE } from "@posthog/workspace-server/services/folders/identifiers";
 import { GitService } from "@posthog/workspace-server/services/git/service";
 import { TaskPrStatusService } from "@posthog/workspace-server/services/git/task-pr-status";
 import { githubReleasesModule } from "@posthog/workspace-server/services/github-releases/github-releases.module";
@@ -185,6 +199,7 @@ import { oauthCallbackModule } from "@posthog/workspace-server/services/oauth-ca
 import { onboardingImportModule } from "@posthog/workspace-server/services/onboarding-import/onboarding-import.module";
 import { osModule } from "@posthog/workspace-server/services/os/os.module";
 import { POSTHOG_PLUGIN_SERVICE } from "@posthog/workspace-server/services/posthog-plugin/identifiers";
+import type { PosthogPluginService } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin";
 import { posthogPluginModule } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin.module";
 import { PROCESS_TRACKING_SERVICE } from "@posthog/workspace-server/services/process-tracking/identifiers";
 import { processTrackingModule } from "@posthog/workspace-server/services/process-tracking/process-tracking.module";
@@ -359,6 +374,32 @@ container.bind(AGENT_MCP_APPS).toService(MCP_APPS_SERVICE);
 container.bind(AGENT_REPO_FILES).toService(MAIN_FS_SERVICE);
 container.bind(AGENT_AUTH).toService(MAIN_AUTH_SERVICE);
 container.bind(AGENT_LOGGER).toConstantValue(logger);
+// AgentService's remaining host needs, as narrow async views so the same
+// service can later run in the node-host utilityProcess with these proxied
+// back to main.
+container.bind(AGENT_PLUGIN_DIR).toDynamicValue((ctx) => {
+  const plugins = ctx.get<PosthogPluginService>(POSTHOG_PLUGIN_SERVICE);
+  return { getPluginPath: async () => plugins.getPluginPath() };
+});
+container.bind(AGENT_WORKSPACE_DIRECTORIES).toDynamicValue((ctx) => {
+  const workspaces = ctx.get<IWorkspaceRepository>(WORKSPACE_REPOSITORY);
+  return {
+    getAdditionalDirectories: async (taskId: string) =>
+      workspaces.getAdditionalDirectories(taskId),
+  };
+});
+container.bind(AGENT_WORKTREE_SETTINGS).toDynamicValue((ctx) => {
+  const settings = ctx.get<IWorkspaceSettings>(WORKSPACE_SETTINGS_SERVICE);
+  return { getWorktreeLocation: async () => settings.getWorktreeLocation() };
+});
+container.bind(AGENT_KNOWN_FOLDERS).toDynamicValue((ctx) => {
+  const folders = ctx.get<FoldersService>(FOLDERS_SERVICE);
+  return { getFolders: () => folders.getFolders() };
+});
+container.bind(AGENT_POWER_MONITOR).toDynamicValue((ctx) => {
+  const power = ctx.get<IPowerManager>(POWER_MANAGER_SERVICE);
+  return { onResume: (handler: () => void) => power.onResume(handler) };
+});
 container.load(osModule);
 container.bind<RootLogger>(ROOT_LOGGER).toConstantValue(logger);
 container.bind(AUTH_SESSION_STORE).to(AuthSessionPortAdapter);

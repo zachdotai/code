@@ -121,8 +121,8 @@ function createMockDependencies() {
       readRepoFile: vi.fn(),
       writeRepoFile: vi.fn(),
     },
-    posthogPluginService: {
-      getPluginPath: vi.fn(() => "/mock/plugin"),
+    pluginDir: {
+      getPluginPath: vi.fn(async () => "/mock/plugin"),
     },
     agentAuthAdapter: {
       ensureGatewayProxy: vi.fn().mockResolvedValue("http://127.0.0.1:9999"),
@@ -154,10 +154,8 @@ function createMockDependencies() {
       notifyToolResult: vi.fn(),
       notifyToolCancelled: vi.fn(),
     },
-    powerManager: {
+    powerMonitor: {
       onResume: vi.fn(() => () => {}),
-      preventSleep: vi.fn(() => () => {}),
-      hasBuiltInBattery: vi.fn(async () => false),
     },
     bundledResources: {
       resolve: vi.fn((rel: string) => `/mock/appPath/${rel}`),
@@ -170,15 +168,13 @@ function createMockDependencies() {
       appDataPath: "/mock/userData",
       logsPath: "/mock/logs",
     },
-    workspaceRepository: {
-      getAdditionalDirectories: vi.fn(() => [] as string[]),
-      addAdditionalDirectory: vi.fn(),
-      removeAdditionalDirectory: vi.fn(),
+    workspaceDirectories: {
+      getAdditionalDirectories: vi.fn(async () => [] as string[]),
     },
-    workspaceSettings: {
-      getWorktreeLocation: () => "/mock/worktrees",
+    worktreeSettings: {
+      getWorktreeLocation: async () => "/mock/worktrees",
     },
-    foldersService: {
+    knownFolders: {
       getFolders: vi.fn().mockResolvedValue([]),
     },
     loggerFactory: {
@@ -216,16 +212,16 @@ describe("AgentService", () => {
       deps.processTracking as never,
       deps.sleepService as never,
       deps.fsService as never,
-      deps.posthogPluginService as never,
+      deps.pluginDir as never,
       deps.agentAuthAdapter as never,
       deps.mcpAppsService as never,
-      deps.powerManager as never,
+      deps.powerMonitor as never,
       deps.bundledResources as never,
       deps.appMeta as never,
       deps.storagePaths as never,
-      deps.workspaceRepository as never,
-      deps.workspaceSettings as never,
-      deps.foldersService as never,
+      deps.workspaceDirectories as never,
+      deps.worktreeSettings as never,
+      deps.knownFolders as never,
       deps.loggerFactory as never,
     );
     vi.spyOn(service, "emit");
@@ -492,7 +488,7 @@ describe("AgentService", () => {
       service.recordActivity("run-1");
 
       const resumeHandler = (
-        deps.powerManager.onResume.mock.calls[0] as unknown as [() => void]
+        deps.powerMonitor.onResume.mock.calls[0] as unknown as [() => void]
       )[0];
       expect(resumeHandler).toBeDefined();
 
@@ -510,7 +506,7 @@ describe("AgentService", () => {
       service.recordActivity("run-1");
 
       const resumeHandler = (
-        deps.powerManager.onResume.mock.calls[0] as unknown as [() => void]
+        deps.powerMonitor.onResume.mock.calls[0] as unknown as [() => void]
       )[0];
 
       vi.advanceTimersByTime(5 * 60 * 1000);

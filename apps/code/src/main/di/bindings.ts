@@ -133,11 +133,16 @@ import type { GIT_SERVICE as WS_GIT_SERVICE } from "@posthog/workspace-server/di
 import type { AgentService } from "@posthog/workspace-server/services/agent/agent";
 import type {
   AGENT_AUTH,
+  AGENT_KNOWN_FOLDERS,
   AGENT_LOGGER,
   AGENT_MCP_APPS,
+  AGENT_PLUGIN_DIR,
+  AGENT_POWER_MONITOR,
   AGENT_REPO_FILES,
   AGENT_SERVICE,
   AGENT_SLEEP_COORDINATOR,
+  AGENT_WORKSPACE_DIRECTORIES,
+  AGENT_WORKTREE_SETTINGS,
 } from "@posthog/workspace-server/services/agent/identifiers";
 import type {
   ARCHIVE_FILE_WATCHER,
@@ -339,6 +344,11 @@ export interface MainBindings {
   [AGENT_MCP_APPS]: unknown;
   [AGENT_REPO_FILES]: unknown;
   [AGENT_AUTH]: unknown;
+  [AGENT_PLUGIN_DIR]: unknown;
+  [AGENT_WORKSPACE_DIRECTORIES]: unknown;
+  [AGENT_WORKTREE_SETTINGS]: unknown;
+  [AGENT_KNOWN_FOLDERS]: unknown;
+  [AGENT_POWER_MONITOR]: unknown;
   [AGENT_LOGGER]: RootLogger;
 
   // Logger

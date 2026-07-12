@@ -53,17 +53,9 @@ import {
   type IBundledResources,
 } from "@posthog/platform/bundled-resources";
 import {
-  type IPowerManager,
-  POWER_MANAGER_SERVICE,
-} from "@posthog/platform/power-manager";
-import {
   type IStoragePaths,
   STORAGE_PATHS_SERVICE,
 } from "@posthog/platform/storage-paths";
-import {
-  type IWorkspaceSettings,
-  WORKSPACE_SETTINGS_SERVICE,
-} from "@posthog/platform/workspace-settings";
 import {
   type AcpMessage,
   type Adapter,
@@ -72,13 +64,7 @@ import {
   TypedEventEmitter,
 } from "@posthog/shared";
 import { inject, injectable, preDestroy } from "inversify";
-import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
-import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
-import type { FoldersService } from "../folders/folders";
-import { FOLDERS_SERVICE } from "../folders/identifiers";
 import type { RegisteredFolder } from "../folders/schemas";
-import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
-import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { loadSessionEnvOverrides } from "../session-env/loader";
@@ -88,17 +74,27 @@ import { cleanupCodexHome, prepareCodexHome } from "./codex-home";
 import { discoverExternalPlugins } from "./discover-plugins";
 import {
   AGENT_AUTH_ADAPTER,
+  AGENT_KNOWN_FOLDERS,
   AGENT_LOGGER,
   AGENT_MCP_APPS,
+  AGENT_PLUGIN_DIR,
+  AGENT_POWER_MONITOR,
   AGENT_REPO_FILES,
   AGENT_SLEEP_COORDINATOR,
+  AGENT_WORKSPACE_DIRECTORIES,
+  AGENT_WORKTREE_SETTINGS,
 } from "./identifiers";
 import type {
+  AgentKnownFolders,
   AgentLogger,
   AgentMcpApps,
+  AgentPluginDir,
+  AgentPowerMonitor,
   AgentRepoFiles,
   AgentScopedLogger,
   AgentSleepCoordinator,
+  AgentWorkspaceDirectories,
+  AgentWorktreeSettings,
 } from "./ports";
 import {
   AgentServiceEvent,
@@ -372,7 +368,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   private processTracking: ProcessTrackingService;
   private sleepService: AgentSleepCoordinator;
   private fsService: AgentRepoFiles;
-  private posthogPluginService: PosthogPluginService;
+  private pluginDir: AgentPluginDir;
   private agentAuthAdapter: AgentAuthAdapter;
   private mcpAppsService: AgentMcpApps;
   private readonly log: AgentScopedLogger;
@@ -385,26 +381,26 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     sleepService: AgentSleepCoordinator,
     @inject(AGENT_REPO_FILES)
     fsService: AgentRepoFiles,
-    @inject(POSTHOG_PLUGIN_SERVICE)
-    posthogPluginService: PosthogPluginService,
+    @inject(AGENT_PLUGIN_DIR)
+    pluginDir: AgentPluginDir,
     @inject(AGENT_AUTH_ADAPTER)
     agentAuthAdapter: AgentAuthAdapter,
     @inject(AGENT_MCP_APPS)
     mcpAppsService: AgentMcpApps,
-    @inject(POWER_MANAGER_SERVICE)
-    powerManager: IPowerManager,
+    @inject(AGENT_POWER_MONITOR)
+    powerMonitor: AgentPowerMonitor,
     @inject(BUNDLED_RESOURCES_SERVICE)
     private readonly bundledResources: IBundledResources,
     @inject(APP_META_SERVICE)
     private readonly appMeta: IAppMeta,
     @inject(STORAGE_PATHS_SERVICE)
     private readonly storagePaths: IStoragePaths,
-    @inject(WORKSPACE_REPOSITORY)
-    private readonly workspaceRepository: IWorkspaceRepository,
-    @inject(WORKSPACE_SETTINGS_SERVICE)
-    private readonly workspaceSettings: IWorkspaceSettings,
-    @inject(FOLDERS_SERVICE)
-    private readonly foldersService: FoldersService,
+    @inject(AGENT_WORKSPACE_DIRECTORIES)
+    private readonly workspaceDirectories: AgentWorkspaceDirectories,
+    @inject(AGENT_WORKTREE_SETTINGS)
+    private readonly worktreeSettings: AgentWorktreeSettings,
+    @inject(AGENT_KNOWN_FOLDERS)
+    private readonly knownFolders: AgentKnownFolders,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
@@ -412,13 +408,13 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     this.processTracking = processTracking;
     this.sleepService = sleepService;
     this.fsService = fsService;
-    this.posthogPluginService = posthogPluginService;
+    this.pluginDir = pluginDir;
     this.agentAuthAdapter = agentAuthAdapter;
     this.mcpAppsService = mcpAppsService;
     this.log = loggerFactory.scope("agent-service");
     this.onAgentLog = makeOnAgentLog(loggerFactory);
 
-    powerManager.onResume(() => this.checkIdleDeadlines());
+    powerMonitor.onResume(() => this.checkIdleDeadlines());
   }
 
   private getClaudeCliPath(): string {
@@ -730,20 +726,20 @@ If a repository IS genuinely required, attach one in this priority order:
     // across reconnects, where the same scratch repoPath is passed back in.
     const channelMode = isScratchPath(
       repoPath,
-      this.workspaceSettings.getWorktreeLocation(),
+      await this.worktreeSettings.getWorktreeLocation(),
     );
 
     // In channel mode the agent decides at runtime whether it needs a repo. Give
     // it the user's previously-used local folders so it can reuse one (or ask)
     // instead of cloning from remote. Only fetched for channel sessions.
     const knownLocalFolders = channelMode
-      ? await this.foldersService.getFolders().catch(() => [])
+      ? await this.knownFolders.getFolders().catch(() => [])
       : [];
 
     const additionalDirectories =
       taskId === "__preview__"
         ? []
-        : this.workspaceRepository.getAdditionalDirectories(taskId);
+        : await this.workspaceDirectories.getAdditionalDirectories(taskId);
 
     if (!isRetry) {
       const existing = this.sessions.get(taskRunId);
@@ -799,10 +795,8 @@ If a repository IS genuinely required, attach one in this priority order:
         knownLocalFolders,
       );
 
-      const bundledSkillsDir = join(
-        this.posthogPluginService.getPluginPath(),
-        "skills",
-      );
+      const pluginPath = await this.pluginDir.getPluginPath();
+      const bundledSkillsDir = join(pluginPath, "skills");
 
       let codexHome: string | undefined;
       if (adapter === "codex") {
@@ -937,7 +931,7 @@ If a repository IS genuinely required, attach one in this priority order:
       const plugins = [
         {
           type: "local" as const,
-          path: this.posthogPluginService.getPluginPath(),
+          path: pluginPath,
         },
         ...externalPlugins,
       ];
