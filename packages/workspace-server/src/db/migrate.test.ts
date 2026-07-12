@@ -87,6 +87,31 @@ describe("runMigrations", () => {
     expect(ledgerMax(sqlite)).toBe(latest);
   });
 
+  // 0021 is guarded: re-running it would wipe browser_panes and its backfill
+  // reads columns the migration itself drops. With the ledger behind the
+  // schema it must be recorded and skipped, not re-executed.
+  it("skips a re-run of 0021 without wiping pane rows", () => {
+    const PANES_TIMESTAMP = 1783800060350;
+    runMigrations(sqlite, MIGRATIONS_FOLDER);
+    sqlite.exec(`
+      INSERT INTO browser_windows (id, created_at, updated_at) VALUES ('w1', 0, 0);
+      INSERT INTO browser_tabs (id, window_id, layout, focused_pane_id, position, created_at, last_active_at)
+        VALUES ('t1', 'w1', '{"type":"leaf","paneId":"p1"}', 'p1', 0, 0, 0);
+      INSERT INTO browser_panes (id, tab_id, window_id, created_at, last_active_at)
+        VALUES ('p1', 't1', 'w1', 0, 0);
+    `);
+
+    sqlite
+      .prepare("DELETE FROM __drizzle_migrations WHERE created_at = ?")
+      .run(PANES_TIMESTAMP);
+    expect(ledgerHas(sqlite, PANES_TIMESTAMP)).toBe(false);
+
+    expect(() => runMigrations(sqlite, MIGRATIONS_FOLDER)).not.toThrow();
+    const paneIds = sqlite.prepare("SELECT id FROM browser_panes").all();
+    expect(paneIds).toEqual([{ id: "p1" }]);
+    expect(ledgerHas(sqlite, PANES_TIMESTAMP)).toBe(true);
+  });
+
   it("re-applies a missing mid-history ledger entry", () => {
     runMigrations(sqlite, MIGRATIONS_FOLDER);
 

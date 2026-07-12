@@ -18,6 +18,18 @@ const BEST_EFFORT_MIGRATIONS = new Set<number>([
   1783685997328, // 0020_repair_browser_tabs_schema
 ]);
 
+// Guarded migrations are DESTRUCTIVE to re-run, so when the schema is already
+// past a migration's precondition (ledger behind schema — an amended migration
+// on a branch) the probe fails and the migration is recorded as applied and
+// skipped instead of re-executed. Probes must be reads that succeed on the
+// pre-migration schema and fail after it.
+const MIGRATION_GUARDS = new Map<number, string>([
+  // 0021_tab_owned_panes: its backfill reads browser_tabs.dashboard_id (gone
+  // after the migration), and its DROP TABLE browser_panes would wipe live
+  // pane rows on a re-run.
+  [1783800060350, "SELECT dashboard_id FROM browser_tabs LIMIT 0"],
+]);
+
 export function runMigrations(
   sqlite: SqliteDatabase,
   migrationsFolder: string,
@@ -43,6 +55,15 @@ export function runMigrations(
     for (const migration of migrations) {
       if (appliedTimestamps.has(migration.folderMillis)) {
         continue;
+      }
+      const guard = MIGRATION_GUARDS.get(migration.folderMillis);
+      if (guard) {
+        try {
+          sqlite.exec(guard);
+        } catch {
+          recordMigration.run(migration.hash, migration.folderMillis);
+          continue;
+        }
       }
       const bestEffort = BEST_EFFORT_MIGRATIONS.has(migration.folderMillis);
       for (const statement of migration.sql) {
