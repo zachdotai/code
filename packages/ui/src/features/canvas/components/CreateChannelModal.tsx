@@ -67,9 +67,11 @@ export function CreateChannelModal({
     if (open) {
       setName("");
       // Restore a description stashed by a prior failed launch (create mode
-      // only), otherwise start blank. Consuming clears the stash.
+      // only), otherwise start blank. Only create mode consumes the stash — a
+      // describe-mode open (e.g. the CONTEXT.md empty state the failed flow
+      // lands on) must not wipe a draft it doesn't use.
       setDescription(isDescribeMode ? "" : stashedDescription);
-      stashedDescription = "";
+      if (!isDescribeMode) stashedDescription = "";
     }
   }
 

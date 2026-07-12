@@ -79,8 +79,8 @@ export interface TaskChannel {
   created_by?: UserBasic | null;
 }
 
-/** Lifecycle events a channel-feed system message can announce. */
-export type ChannelFeedMessageEvent = "context_created" | "context_md_building";
+/** Lifecycle events a client may post into a channel's feed. */
+export type ChannelFeedMessageEvent = "context_md_building";
 
 /**
  * A durable, team-visible "PostHog agent" announcement in a channel's feed —

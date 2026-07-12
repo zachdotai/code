@@ -551,7 +551,7 @@ export function ChannelFeedView({
         message,
       })),
     ];
-    merged.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+    merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return merged;
   }, [tasks, systemMessages]);
 

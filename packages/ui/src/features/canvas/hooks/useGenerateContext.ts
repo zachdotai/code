@@ -1,13 +1,18 @@
 import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import {
+  REPORT_MODEL_RESOLVER,
+  type ReportModelResolver,
+} from "@posthog/core/inbox/identifiers";
+import {
   TASK_SERVICE,
   type TaskService,
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
-import type { WorkspaceMode } from "@posthog/shared";
+import { getCloudUrlFromRegion, type WorkspaceMode } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { buildContextGenerationPrompt } from "@posthog/ui/features/canvas/contextPrompt";
 import { channelFeedQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import { channelFeedMessagesQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
@@ -63,6 +68,8 @@ async function resolveBackendChannelId(
 // the CONTEXT.md empty state calls it with the existing context.
 export function useGenerateContext() {
   const taskService = useService<TaskService>(TASK_SERVICE);
+  const modelResolver = useService<ReportModelResolver>(REPORT_MODEL_RESOLVER);
+  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const trpc = useHostTRPC();
   const queryClient = useQueryClient();
   const { invalidateTasks } = useCreateTask();
@@ -87,6 +94,28 @@ export function useGenerateContext() {
     }: GenerateContextInput): Promise<Task | null> => {
       setIsStarting(true);
       try {
+        // The composer's picker may not have resolved yet (or the user never
+        // used it), so fall back to the adapter's server default the way the
+        // inbox one-click flows do; the resolver validates against the gateway.
+        // Without a model a cloud run is rejected server-side after the context
+        // was already created — hard-stop with a clear toast instead.
+        let model = currentModel;
+        if (workspaceMode === "cloud") {
+          model = cloudRegion
+            ? await modelResolver.resolveDefaultModel(
+                getCloudUrlFromRegion(cloudRegion),
+                adapter ?? "claude",
+                currentModel,
+              )
+            : undefined;
+          if (!model) {
+            toastError(
+              "Couldn't start the planning session",
+              "No model is configured for cloud runs.",
+            );
+            return null;
+          }
+        }
         // Own the task on the backend channel so it lands in the context feed
         // (not just Recents). Best-effort: fall back to no channel on failure.
         const backendChannelId = await resolveBackendChannelId(
@@ -104,7 +133,7 @@ export function useGenerateContext() {
             taskDescription: `Build CONTEXT.md for ${channelName}`,
             workspaceMode,
             adapter: adapter ?? "claude",
-            model: currentModel,
+            model,
             channelId: backendChannelId,
             // Plan mode: the agent proposes the document and waits for approval
             // before publishing, so the user co-designs CONTEXT.md.
@@ -167,6 +196,8 @@ export function useGenerateContext() {
       client,
       adapter,
       currentModel,
+      modelResolver,
+      cloudRegion,
     ],
   );
 
