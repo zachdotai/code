@@ -1,4 +1,7 @@
-import type { ChannelFeedMessage } from "@posthog/shared/domain-types";
+import type {
+  ChannelFeedMessage,
+  TaskChannel,
+} from "@posthog/shared/domain-types";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useMemo } from "react";
@@ -19,6 +22,12 @@ export function channelFeedMessagesQueryKey(channelId: string | undefined) {
   return ["channel-feed-messages", channelId ?? "none"] as const;
 }
 
+// The "created this context" row is synthesized from the channel row itself
+// (below) — the canonical creation record, available even where the feed
+// endpoint isn't. Server-emitted channel_created (and its legacy client-posted
+// context_created twin) would duplicate it, so both are dropped from the feed.
+const CREATION_EVENTS = new Set(["channel_created", "context_created"]);
+
 // Render the announcement from its event + structured payload (rename-safe),
 // falling back to the freeform content.
 function messageText(message: ChannelFeedMessage): string {
@@ -28,16 +37,29 @@ function messageText(message: ChannelFeedMessage): string {
       ? message.payload.context_name
       : "";
   switch (message.event) {
-    // Server-emitted when the backend channel is created; context_created is the
-    // legacy client-posted equivalent, kept for older rows.
-    case "channel_created":
-    case "context_created":
-      return `${actor} created this context`;
     case "context_md_building":
       return `${actor} is building CONTEXT.md${contextName ? ` for ${contextName}` : ""}`;
     default:
       return message.content || `${actor} posted an update`;
   }
+}
+
+/**
+ * The feed's "Ann created this context" opener, derived from the channel row
+ * (creator + creation time) rather than a feed message: the channel predates
+ * everything in its feed, so it always sorts first, and it renders even before
+ * the feed-message endpoint is deployed. Personal channels are provisioned by
+ * the system, so they get no creation row.
+ */
+export function channelCreationMessage(
+  channel: TaskChannel | undefined,
+): ChannelFeedSystemMessage | undefined {
+  if (!channel || channel.channel_type !== "public") return undefined;
+  return {
+    id: `channel-created-${channel.id}`,
+    createdAt: channel.created_at,
+    text: `${userDisplayName(channel.created_by ?? null)} created this context`,
+  };
 }
 
 /**
@@ -58,11 +80,13 @@ export function useChannelFeedMessages(channelId: string | undefined): {
   );
   const messages = useMemo(
     () =>
-      (query.data ?? []).map((m) => ({
-        id: m.id,
-        createdAt: m.created_at,
-        text: messageText(m),
-      })),
+      (query.data ?? [])
+        .filter((m) => !CREATION_EVENTS.has(m.event))
+        .map((m) => ({
+          id: m.id,
+          createdAt: m.created_at,
+          text: messageText(m),
+        })),
     [query.data],
   );
   return { messages, isLoading: query.isLoading };

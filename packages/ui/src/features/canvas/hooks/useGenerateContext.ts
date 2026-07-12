@@ -125,9 +125,9 @@ export function useGenerateContext() {
         void fileTask(channelId, task.id, task.title).catch(() => {});
         if (backendChannelId) {
           // Announce the CONTEXT.md build in the channel feed (durable, team-
-          // visible), keyed on the backend channel — the same id channel_created
-          // and the task cards use. Timestamped just before the task so it sorts
-          // above the card. Best-effort.
+          // visible), keyed on the backend channel — the same id the task cards
+          // use. Timestamped just before the task so it sorts above the card.
+          // Best-effort.
           const buildingAt = new Date(
             new Date(task.created_at).getTime() - 1,
           ).toISOString();
