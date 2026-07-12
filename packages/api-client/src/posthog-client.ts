@@ -52,6 +52,8 @@ import type {
   ActionabilityJudgmentArtefact,
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  ChannelFeedMessage,
+  ChannelFeedMessageEvent,
   CodeReferenceArtefact,
   CommitArtefact,
   CommitDiffResponse,
@@ -2465,6 +2467,56 @@ export class PostHogAPIClient {
       throw new Error(`Failed to resolve task channel: ${response.statusText}`);
     }
     return (await response.json()) as TaskChannel;
+  }
+
+  // A channel's system-announcement feed (context created, CONTEXT.md being
+  // built), chronological. Durable + team-visible, rendered alongside task cards.
+  async getChannelFeed(channelId: string): Promise<ChannelFeedMessage[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/${channelId}/feed/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch channel feed: ${response.statusText}`);
+    }
+    return (await response.json()) as ChannelFeedMessage[];
+  }
+
+  // Post a system announcement into a channel's feed. The row is authored by the
+  // system; the server records the requester as `author` for "Adam …" rendering.
+  async postChannelFeedMessage(
+    channelId: string,
+    input: {
+      event: ChannelFeedMessageEvent;
+      payload?: Record<string, unknown>;
+      // Optional explicit timestamp (ISO) so a burst of announcements orders
+      // deterministically instead of racing on server insert time.
+      createdAt?: string;
+    },
+  ): Promise<ChannelFeedMessage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/${channelId}/feed/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({
+          event: input.event,
+          payload: input.payload ?? {},
+          ...(input.createdAt ? { created_at: input.createdAt } : {}),
+        }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to post channel feed message: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as ChannelFeedMessage;
   }
 
   // Mentions of the current user across task threads, newest first.
