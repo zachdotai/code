@@ -251,11 +251,14 @@ import type { DevMetricsService } from "../services/dev-metrics/service";
 import type { DevNetworkService } from "../services/dev-network/service";
 import type { DiscordPresenceService } from "../services/discord-presence/service";
 import type { EncryptionService } from "../services/encryption/service";
+import type { AgentBridge } from "../services/node-host/agent-bridge";
+import type { NodeHostService } from "../services/node-host/service";
 import type { SecureStoreService } from "../services/secure-store/service";
 import type { settingsStore } from "../services/settingsStore";
 import type { WorkspaceServerService } from "../services/workspace-server/service";
 import type { rendererStore } from "../utils/store";
 import type {
+  AGENT_BRIDGE,
   APP_LIFECYCLE_SERVICE as MAIN_APP_LIFECYCLE_SERVICE,
   APPROVAL_LINK_SERVICE as MAIN_APPROVAL_LINK_SERVICE,
   ARCHIVE_REPOSITORY as MAIN_ARCHIVE_REPOSITORY,
@@ -283,6 +286,7 @@ import type {
   LLM_GATEWAY_SERVICE as MAIN_LLM_GATEWAY_SERVICE,
   MCP_APPS_SERVICE as MAIN_MCP_APPS_SERVICE,
   NEW_TASK_LINK_SERVICE as MAIN_NEW_TASK_LINK_SERVICE,
+  NODE_HOST_SERVICE as MAIN_NODE_HOST_SERVICE,
   OPEN_TARGET_LINK_SERVICE as MAIN_OPEN_TARGET_LINK_SERVICE,
   POSTHOG_PLUGIN_SERVICE as MAIN_POSTHOG_PLUGIN_SERVICE,
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
@@ -464,6 +468,8 @@ export interface MainBindings {
   [WORKSPACE_PROVISIONING]: WorkspaceProvisioning;
   [MAIN_WORKSPACE_SERVICE]: WorkspaceService;
   [MAIN_WORKSPACE_SERVER_SERVICE]: WorkspaceServerService;
+  [MAIN_NODE_HOST_SERVICE]: NodeHostService;
+  [AGENT_BRIDGE]: AgentBridge;
 
   // Stores / secure store / encryption
   [MAIN_SETTINGS_STORE]: typeof settingsStore;

@@ -138,6 +138,7 @@ export default defineConfig(({ mode }) => {
             "workspace-server": require.resolve(
               "@posthog/workspace-server/serve",
             ),
+            "node-host": require.resolve("@posthog/node-host/serve"),
           },
           output: {
             format: "cjs",

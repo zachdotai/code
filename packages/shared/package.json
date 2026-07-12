@@ -40,6 +40,10 @@
       "types": "./dist/mcp-sandbox-proxy.d.ts",
       "import": "./dist/mcp-sandbox-proxy.js"
     },
+    "./node-host-protocol": {
+      "types": "./dist/node-host-protocol.d.ts",
+      "import": "./dist/node-host-protocol.js"
+    },
     "./posthog-property-headers": {
       "types": "./dist/posthog-property-headers.d.ts",
       "import": "./dist/posthog-property-headers.js"

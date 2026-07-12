@@ -145,3 +145,7 @@ export const DEV_LOGS_SERVICE = Symbol.for(
 export const DEV_ACTIONS_SERVICE = Symbol.for(
   "posthog.host.main.dev-actions.service",
 );
+export const NODE_HOST_SERVICE = Symbol.for(
+  "posthog.host.main.node-host.service",
+);
+export const AGENT_BRIDGE = Symbol.for("posthog.host.main.agent-bridge");

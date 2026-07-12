@@ -1,0 +1,37 @@
+{
+  "name": "@posthog/node-host",
+  "version": "1.0.0",
+  "description": "The node-host utilityProcess runtime: hosts the agent loop (AgentService + gateway/MCP proxies + agent process tracking) off the Electron main process, serving the agent tRPC routers over MessagePorts and consuming main-resident capabilities (power, MCP apps, auth tokens, sqlite lookups) over a reverse host-capabilities port. Entry is forked by apps/code via utilityProcess; no electron imports (the parent port is typed structurally).",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": [
+      "./src/*.ts",
+      "./src/*.tsx"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "node ../../scripts/rimraf.mjs .turbo"
+  },
+  "dependencies": {
+    "@inversifyjs/strongly-typed": "2.2.0",
+    "@posthog/core": "workspace:*",
+    "@posthog/di": "workspace:*",
+    "@posthog/host-router": "workspace:*",
+    "@posthog/host-trpc": "workspace:*",
+    "@posthog/platform": "workspace:*",
+    "@posthog/port-trpc": "workspace:*",
+    "@posthog/shared": "workspace:*",
+    "@posthog/workspace-server": "workspace:*",
+    "@trpc/client": "catalog:",
+    "@trpc/server": "catalog:",
+    "inversify": "catalog:",
+    "reflect-metadata": "catalog:"
+  },
+  "devDependencies": {
+    "@posthog/tsconfig": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "catalog:"
+  }
+}

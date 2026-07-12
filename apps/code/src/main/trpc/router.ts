@@ -1,6 +1,5 @@
 import type { HostRouter } from "@posthog/host-router/router";
 import { additionalDirectoriesRouter } from "@posthog/host-router/routers/additional-directories.router";
-import { agentRouter } from "@posthog/host-router/routers/agent.router";
 import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { archiveRouter } from "@posthog/host-router/routers/archive.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
@@ -47,6 +46,7 @@ import { uiRouter } from "@posthog/host-router/routers/ui.router";
 import { updatesRouter } from "@posthog/host-router/routers/updates.router";
 import { usageMonitorRouter } from "@posthog/host-router/routers/usage-monitor.router";
 import { workspaceRouter } from "@posthog/host-router/routers/workspace.router";
+import { agentForwardRouter } from "./routers/agent-forward";
 import { devRouter } from "./routers/dev";
 import { discordPresenceRouter } from "./routers/discord-presence";
 import { encryptionRouter } from "./routers/encryption";
@@ -55,7 +55,9 @@ import { router } from "./trpc";
 
 export const trpcRouter = router({
   additionalDirectories: additionalDirectoriesRouter,
-  agent: agentRouter,
+  // agent.* executes in the node-host utilityProcess; main forwards over the
+  // control channel (the renderer's primary path is its own direct port).
+  agent: agentForwardRouter,
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,

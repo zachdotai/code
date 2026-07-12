@@ -142,8 +142,6 @@ import type { IWorkspaceRepository } from "@posthog/workspace-server/db/reposito
 import { repositoriesModule } from "@posthog/workspace-server/db/repositories.module";
 import { GIT_SERVICE as WS_GIT_SERVICE } from "@posthog/workspace-server/di/tokens";
 import { additionalDirectoriesModule } from "@posthog/workspace-server/services/additional-directories/additional-directories.module";
-import type { AgentService } from "@posthog/workspace-server/services/agent/agent";
-import { agentModule } from "@posthog/workspace-server/services/agent/agent.module";
 import {
   AGENT_AUTH,
   AGENT_KNOWN_FOLDERS,
@@ -152,7 +150,6 @@ import {
   AGENT_PLUGIN_DIR,
   AGENT_POWER_MONITOR,
   AGENT_REPO_FILES,
-  AGENT_SERVICE,
   AGENT_SLEEP_COORDINATOR,
   AGENT_WORKSPACE_DIRECTORIES,
   AGENT_WORKTREE_SETTINGS,
@@ -163,8 +160,6 @@ import {
   ARCHIVE_FILE_WATCHER,
   ARCHIVE_SESSION_CANCELLER,
 } from "@posthog/workspace-server/services/archive/identifiers";
-import { authProxyModule } from "@posthog/workspace-server/services/auth-proxy/auth-proxy.module";
-import { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
 import { browserTabsModule } from "@posthog/workspace-server/services/browser-tabs/browser-tabs.module";
 import { claudeCliSessionsModule } from "@posthog/workspace-server/services/claude-cli-sessions/claude-cli-sessions.module";
 import { enrichmentModule } from "@posthog/workspace-server/services/enrichment/enrichment.module";
@@ -192,8 +187,6 @@ import type { HandoffGitGateway } from "@posthog/workspace-server/services/hando
 import { HandoffHostService } from "@posthog/workspace-server/services/handoff/service";
 import { LOGS_SERVICE } from "@posthog/workspace-server/services/local-logs/identifiers";
 import { mcpCallbackModule } from "@posthog/workspace-server/services/mcp-callback/mcp-callback.module";
-import { MCP_PROXY_AUTH } from "@posthog/workspace-server/services/mcp-proxy/identifiers";
-import { mcpProxyModule } from "@posthog/workspace-server/services/mcp-proxy/mcp-proxy.module";
 import { OAUTH_CALLBACK_SERVER } from "@posthog/workspace-server/services/oauth-callback/identifiers";
 import { oauthCallbackModule } from "@posthog/workspace-server/services/oauth-callback/oauth-callback.module";
 import { onboardingImportModule } from "@posthog/workspace-server/services/onboarding-import/onboarding-import.module";
@@ -271,6 +264,8 @@ import { DevMetricsService } from "../services/dev-metrics/service";
 import { DevNetworkService } from "../services/dev-network/service";
 import { DiscordPresenceService } from "../services/discord-presence/service";
 import { EncryptionService } from "../services/encryption/service";
+import { AgentBridge } from "../services/node-host/agent-bridge";
+import { NodeHostService } from "../services/node-host/service";
 import { SecureStoreService } from "../services/secure-store/service";
 import { settingsStore } from "../services/settingsStore";
 import { WorkspaceServerService } from "../services/workspace-server/service";
@@ -279,6 +274,7 @@ import { logger } from "../utils/logger";
 import { rendererStore } from "../utils/store";
 import type { MainBindings } from "./bindings";
 import {
+  AGENT_BRIDGE,
   APP_LIFECYCLE_SERVICE as MAIN_APP_LIFECYCLE_SERVICE,
   APPROVAL_LINK_SERVICE as MAIN_APPROVAL_LINK_SERVICE,
   ARCHIVE_REPOSITORY as MAIN_ARCHIVE_REPOSITORY,
@@ -326,6 +322,7 @@ import {
   WORKSPACE_SERVER_SERVICE as MAIN_WORKSPACE_SERVER_SERVICE,
   WORKSPACE_SERVICE as MAIN_WORKSPACE_SERVICE,
   WORKTREE_REPOSITORY as MAIN_WORKTREE_REPOSITORY,
+  NODE_HOST_SERVICE,
 } from "./tokens";
 
 export const container = new TypedContainer<MainBindings>({
@@ -368,7 +365,9 @@ container.bind(MAIN_SUSPENSION_REPOSITORY).toService(SUSPENSION_REPOSITORY);
 container
   .bind(MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY)
   .toService(DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY);
-container.load(agentModule);
+// AgentService itself runs in the node-host utilityProcess; main keeps the
+// narrow agent ports bound because the host-capabilities router serves them
+// back to that process.
 container.bind(AGENT_SLEEP_COORDINATOR).toService(MAIN_SLEEP_SERVICE);
 container.bind(AGENT_MCP_APPS).toService(MCP_APPS_SERVICE);
 container.bind(AGENT_REPO_FILES).toService(MAIN_FS_SERVICE);
@@ -412,26 +411,10 @@ container
   .toConstantValue(process.env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE ?? null);
 container.bind(MAIN_AUTH_SERVICE).to(AuthService);
 container.bind(AUTH_SERVICE).toService(MAIN_AUTH_SERVICE);
-container.load(authProxyModule);
-container.bind(AUTH_PROXY_AUTH).toDynamicValue((ctx) => ({
-  authenticatedFetch: (url: string, init?: RequestInit) =>
-    ctx
-      .get<AuthService>(MAIN_AUTH_SERVICE)
-      .authenticatedFetch(fetch, url, init),
-}));
-container.load(mcpProxyModule);
-container.bind(MCP_PROXY_AUTH).toDynamicValue((ctx) => {
-  const auth = () => ctx.get<AuthService>(MAIN_AUTH_SERVICE);
-  return {
-    authenticatedFetch: (url: string, init?: RequestInit) =>
-      auth().authenticatedFetch(fetch, url, init),
-    refreshAccessToken: () => auth().refreshAccessToken(),
-  };
-});
 container.load(archiveModule);
 container.bind(ARCHIVE_SESSION_CANCELLER).toDynamicValue((ctx) => ({
   cancelSessionsByTaskId: (taskId: string) =>
-    ctx.get<AgentService>(AGENT_SERVICE).cancelSessionsByTaskId(taskId),
+    ctx.get<AgentBridge>(AGENT_BRIDGE).cancelSessionsByTaskId(taskId),
 }));
 container.bind(ARCHIVE_FILE_WATCHER).toDynamicValue((ctx) => ({
   stopWatching: async (worktreePath: string) => {
@@ -443,7 +426,7 @@ container.bind(ARCHIVE_FILE_WATCHER).toDynamicValue((ctx) => ({
 container.load(suspensionModule);
 container.bind(SUSPENSION_SESSION_CANCELLER).toDynamicValue((ctx) => ({
   cancelSessionsByTaskId: (taskId: string) =>
-    ctx.get<AgentService>(AGENT_SERVICE).cancelSessionsByTaskId(taskId),
+    ctx.get<AgentBridge>(AGENT_BRIDGE).cancelSessionsByTaskId(taskId),
 }));
 container.bind(SUSPENSION_FILE_WATCHER).toDynamicValue((ctx) => ({
   stopWatching: async (worktreePath: string) => {
@@ -573,7 +556,7 @@ container.bind(GIT_DIFF_SOURCE).toDynamicValue((ctx) => {
 });
 container
   .bind(GIT_AGENT_SERVICE)
-  .toDynamicValue((ctx) => ctx.get<AgentService>(AGENT_SERVICE));
+  .toDynamicValue((ctx) => ctx.get<AgentBridge>(AGENT_BRIDGE));
 container
   .bind<GitWorkspaceLookup>(GIT_WORKSPACE_LOOKUP)
   .toDynamicValue((ctx): GitWorkspaceLookup => {
@@ -668,7 +651,7 @@ container.bind(UPDATE_LIFECYCLE_SERVICE).toService(MAIN_APP_LIFECYCLE_SERVICE);
 container.bind(MAIN_UPDATES_SERVICE).toService(UPDATES_SERVICE);
 container.load(usageMonitorModule);
 container.bind(USAGE_HOST).toDynamicValue((ctx) => {
-  const agent = () => ctx.get<AgentService>(AGENT_SERVICE);
+  const agent = () => ctx.get<AgentBridge>(AGENT_BRIDGE);
   return {
     fetchUsage: () =>
       ctx.get<LlmGatewayService>(MAIN_LLM_GATEWAY_SERVICE).fetchUsage(),
@@ -706,7 +689,7 @@ container
   .toService(WATCHER_REGISTRY_SERVICE);
 container.load(workspaceModule);
 container.bind(WORKSPACE_AGENT).toDynamicValue((ctx): WorkspaceAgent => {
-  const agent = ctx.get<AgentService>(AGENT_SERVICE);
+  const agent = ctx.get<AgentBridge>(AGENT_BRIDGE);
   return {
     cancelSessionsByTaskId: (taskId) => agent.cancelSessionsByTaskId(taskId),
     onAgentFileActivity: (handler) =>
@@ -748,6 +731,13 @@ container.bind(MAIN_WORKSPACE_SERVICE).toService(WORKSPACE_SERVICE);
 container
   .bind(MAIN_WORKSPACE_SERVER_SERVICE)
   .to(WorkspaceServerService)
+  .inSingletonScope();
+container.bind(NODE_HOST_SERVICE).to(NodeHostService).inSingletonScope();
+container
+  .bind(AGENT_BRIDGE)
+  .toDynamicValue(
+    (ctx) => new AgentBridge(ctx.get<NodeHostService>(NODE_HOST_SERVICE)),
+  )
   .inSingletonScope();
 
 container.bind(MAIN_SETTINGS_STORE).toConstantValue(settingsStore);

@@ -51,6 +51,7 @@ import type { WorkspaceService } from "@posthog/workspace-server/services/worksp
 import { initializeDeepLinks, registerDeepLinkHandlers } from "./deep-links";
 import { container } from "./di/container";
 import {
+  AGENT_BRIDGE,
   APP_LIFECYCLE_SERVICE,
   APPROVAL_LINK_SERVICE,
   AUTH_SERVICE,
@@ -64,6 +65,7 @@ import {
   INBOX_LINK_SERVICE,
   FS_SERVICE as MAIN_FS_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  NODE_HOST_SERVICE,
   POSTHOG_PLUGIN_SERVICE,
   SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
@@ -82,6 +84,12 @@ import {
   focusSessionStore,
   focusWorktreePaths,
 } from "./services/focus/desktop-adapters";
+import type { AgentBridge } from "./services/node-host/agent-bridge";
+import {
+  NodeHostEvent,
+  type NodeHostService,
+  NodeHostStatus,
+} from "./services/node-host/service";
 import {
   WorkspaceServerEvent,
   type WorkspaceServerService,
@@ -371,6 +379,21 @@ app.whenReady().then(async () => {
     WORKSPACE_SERVER_SERVICE,
   );
   await wsServer.start();
+  // Agent execution runs in the node-host utilityProcess. The AgentBridge
+  // mirrors its events for main-side consumers; a respawned process starts
+  // with fresh event streams, so resubscribe on every Ready.
+  const nodeHost = container.get<NodeHostService>(NODE_HOST_SERVICE);
+  const agentBridge = container.get<AgentBridge>(AGENT_BRIDGE);
+  nodeHost.on(NodeHostEvent.StatusChanged, ({ status }) => {
+    if (status === NodeHostStatus.Ready) {
+      agentBridge.resubscribe();
+    }
+  });
+  await nodeHost.start(container).catch((error) => {
+    // The supervisor keeps retrying with backoff; boot continues so the rest
+    // of the app (and the retry surface) stays usable.
+    log.error("node-host failed to start", error);
+  });
   // The workspace-server child respawns on a new port/secret after a crash;
   // a reconnecting client follows the current connection so main-process
   // callers don't keep hitting the dead port for the rest of the session.
@@ -460,6 +483,9 @@ const teardownContainer = async (): Promise<void> => {
 app.on("before-quit", async (event) => {
   try {
     container.get<WorkspaceServerService>(WORKSPACE_SERVER_SERVICE).stop();
+  } catch {}
+  try {
+    container.get<NodeHostService>(NODE_HOST_SERVICE).stop();
   } catch {}
   let lifecycleService: AppLifecycleService;
   try {

@@ -1,13 +1,13 @@
 import { container } from "@main/di/container";
 import {
+  AGENT_BRIDGE,
   DEV_ACTIONS_SERVICE,
   DEV_FLAGS_SERVICE,
   DEV_LOGS_SERVICE,
   DEV_METRICS_SERVICE,
   DEV_NETWORK_SERVICE,
 } from "@main/di/tokens";
-import type { AgentService } from "@posthog/workspace-server/services/agent/agent";
-import { AGENT_SERVICE } from "@posthog/workspace-server/services/agent/identifiers";
+import type { AgentBridge } from "@main/services/node-host/agent-bridge";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
@@ -53,7 +53,7 @@ const getNetworkService = () =>
 const getLogsService = () => container.get<DevLogsService>(DEV_LOGS_SERVICE);
 const getActionsService = () =>
   container.get<DevActionsService>(DEV_ACTIONS_SERVICE);
-const getAgentService = () => container.get<AgentService>(AGENT_SERVICE);
+const getAgentBridge = () => container.get<AgentBridge>(AGENT_BRIDGE);
 
 // Server-side gate: the toolbar UI only renders when devMode is on, but that
 // does not protect the IPC layer. Any renderer-side code with access to the
@@ -140,7 +140,7 @@ export const devRouter = router({
 
   getAgentsSnapshot: devProcedure
     .output(agentSnapshotSchema)
-    .query(() => getAgentService().getDebugSnapshot()),
+    .query(() => getAgentBridge().getDebugSnapshot()),
 
   openUserDataDir: devProcedure.mutation(async () => {
     await getActionsService().openUserDataDir();

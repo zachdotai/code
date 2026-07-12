@@ -81,7 +81,8 @@
         "!apps/code/src/main/menu.ts",
         "!apps/code/src/main/preload.ts",
         "!apps/code/src/main/deep-links.ts",
-        "!apps/code/src/main/protocols/**"
+        "!apps/code/src/main/protocols/**",
+        "!apps/code/src/main/services/node-host/**"
       ],
       "linter": {
         "rules": {
