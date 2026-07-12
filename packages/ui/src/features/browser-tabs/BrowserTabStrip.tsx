@@ -1,40 +1,23 @@
-import {
-  BrainIcon,
-  HashIcon,
-  HouseIcon,
-  PlugsConnectedIcon,
-  RobotIcon,
-  SquaresFourIcon,
-  TrayIcon,
-} from "@phosphor-icons/react";
-import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
-import { useService } from "@posthog/di/react";
+import { HashIcon } from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
   closeTab as closeTabLocal,
   closeTabs as closeTabsLocal,
-  decideTabNavigation,
+  focusedPaneOfTab,
   newBlankTab as newBlankTabLocal,
-  openOrFocusTab as openOrFocusLocal,
   PROJECT_BLUEBIRD_FLAG,
+  paneIdentityOf,
   primaryWindow,
   setTabOrder,
-  setTabTarget as setTabTargetLocal,
   setWindowActiveTab,
-  type TabsSnapshot,
 } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
-import {
-  type Channel,
-  useChannelMutations,
-  useChannels,
-} from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useDashboard,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
-import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
@@ -42,56 +25,34 @@ import { getLeafPanel } from "@posthog/ui/features/panels/panelStoreHelpers";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { useAppView } from "@posthog/ui/router/useAppView";
+import { createAppRouter } from "@posthog/ui/router/createAppRouter";
+import { setPaneRouter } from "@posthog/ui/router/paneRouterRegistry";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  useNavigate,
-  useParams,
-  useRouter,
-  useRouterState,
-} from "@tanstack/react-router";
-import { type ReactNode, useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { APP_VIEW_META, isAppView } from "./appViews";
 import {
   frontOfUnpinnedOrder,
   partitionPinnedFirst,
   storedOrderIds,
 } from "./displayOrder";
+import { PaneLayoutGlyph } from "./PaneLayoutGlyph";
 import { usePinnedTabsStore } from "./pinnedTabsStore";
 import { TabStrip, type TabView } from "./TabStrip";
 import { TaskTabIcon } from "./TaskTabIcon";
+import { defaultBlankPaneHref } from "./tabHref";
 import { useTabReorderStore } from "./tabReorderStore";
-import {
-  applyLocalTransform,
-  persistWrite,
-  readMirror,
-  reseedMirror,
-} from "./tabsSync";
+import { applyLocalTransform, persistWrite } from "./tabsSync";
 import { useTabsSnapshot } from "./useBrowserTabs";
 
-/** The active tab id is carried in router history state so back/forward replay
- * tab switches. */
-declare module "@tanstack/history" {
-  interface HistoryState {
-    tabId?: string;
-  }
-}
-
 /**
- * Module-level caches of display info, keyed by id. Tabs store only references;
- * names are resolved here as the user navigates (which loads each channel's
- * canvases/tasks), so cross-channel tabs still render a real label without
- * loading every channel up front.
+ * Module-level caches of display info, keyed by id. Panes store only
+ * references; names are resolved here as the user navigates (which loads each
+ * channel's canvases/tasks), so cross-channel tabs still render a real label
+ * without loading every channel up front.
  */
 const canvasInfo = new Map<string, { name: string; templateId: string }>();
 const taskInfo = new Map<string, string>();
-
-// Dedupe concurrent #me provisioning. The folder-creation endpoint isn't
-// server-side idempotent, and the new-tab path is on Cmd+T (trivially
-// double-fired/held) — so two landings racing before the first create's cache
-// update lands could each create a "me" folder. One in-flight create is shared
-// across callers until it settles.
-let personalChannelInFlight: Promise<Channel> | null = null;
 
 /** Bounded insert (most-recent kept) so the caches don't grow unbounded over a
  * long session. */
@@ -108,7 +69,7 @@ function remember<V>(map: Map<string, V>, key: string, value: V): void {
 // True when the open task's focused editor panel has a closeable active tab.
 // Cmd+W is inner-first: it closes that editor tab (handled by
 // usePanelKeyboardShortcuts) before it closes the browser tab.
-function taskHasCloseableEditorTab(taskId: string | undefined): boolean {
+function taskHasCloseableEditorTab(taskId: string | null): boolean {
   if (!taskId) return false;
   const layout = usePanelLayoutStore.getState().getLayout(taskId);
   const panelId = layout?.focusedPanelId;
@@ -120,91 +81,18 @@ function taskHasCloseableEditorTab(taskId: string | undefined): boolean {
   return !!activeTab && activeTab.closeable !== false;
 }
 
-type TabRef = {
-  id: string;
-  dashboardId: string | null;
-  taskId: string | null;
-  channelId: string | null;
-  channelSection: string | null;
-  appView: string | null;
-};
-
-// The top-level app pages that can be a tab. Keyed by useAppView's view.type;
-// each maps to its canonical route (a task/canvas/channel tab has its own
-// route, these don't) plus the strip's label + icon.
-type AppView =
-  | "home"
-  | "inbox"
-  | "agents"
-  | "skills"
-  | "mcp-servers"
-  | "command-center";
-
-const APP_VIEW_META: Record<AppView, { label: string; icon: ReactNode }> = {
-  home: { label: "Home", icon: <HouseIcon size={14} /> },
-  inbox: { label: "Inbox", icon: <TrayIcon size={14} /> },
-  agents: { label: "Agents", icon: <RobotIcon size={14} /> },
-  skills: { label: "Skills", icon: <BrainIcon size={14} /> },
-  "mcp-servers": {
-    label: "MCP servers",
-    icon: <PlugsConnectedIcon size={14} />,
-  },
-  "command-center": {
-    label: "Command center",
-    icon: <SquaresFourIcon size={14} />,
-  },
-};
-
-function isAppView(value: string): value is AppView {
-  return value in APP_VIEW_META;
-}
-
+/**
+ * The window's single tab strip (title bar). Each pill is a whole TAB — which
+ * owns a pane layout; a multi-pane tab's pill carries a mini glyph of its
+ * actual configuration. Selecting, closing, and creating tabs are pure store
+ * mutations (local-first transforms + background persist): no router
+ * navigation is involved, because pane routers keep their locations and the
+ * pane tree simply renders the newly active tab. Labels and icons derive from
+ * each tab's FOCUSED pane's identity.
+ */
 export function BrowserTabStrip() {
-  const logger = useService<RootLogger>(ROOT_LOGGER);
   const snapshot = useTabsSnapshot();
-  const navigate = useNavigate();
-  const router = useRouter();
   const trpc = useHostTRPC();
-  const params = useParams({ strict: false }) as {
-    channelId?: string;
-    dashboardId?: string;
-    taskId?: string;
-  };
-  const historyTabId = useRouterState({
-    select: (s) => s.location.state.tabId,
-  });
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // Tabs work in both spaces: channel-scoped tabs live under /website, while a
-  // plain task tab (no channel) belongs to the Code experience. The space
-  // decides where a task/blank tab navigates.
-  const inChannels = pathname.startsWith("/website");
-  // Top-level app pages (Inbox, Agents, Skills, MCP servers, Command Center,
-  // Home) are tab targets too. useAppView normalizes both the /code routes and
-  // their /website mirrors to the same view.type, so a tab survives either space.
-  const view = useAppView();
-  const routeAppView: AppView | null = isAppView(view.type) ? view.type : null;
-
-  const { channels } = useChannels();
-  const { createChannel } = useChannelMutations();
-  // Whether the channels surface is live — the same gate the sidebar uses. This
-  // (not the current route) decides a new tab's default: with channels on a
-  // fresh tab opens #me, otherwise the Code new-task screen. Keying off the
-  // route would leave the behaviour stale right after the toggle flips.
-  const bluebirdEnabled = useFeatureFlag(
-    PROJECT_BLUEBIRD_FLAG,
-    import.meta.env.DEV,
-  );
-  const channelsEnabled =
-    useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
-
-  // The active channel sub-section (artifacts/history/context) is the
-  // route segment after the channelId. Null when on the channel home or a
-  // non-section route (canvas/task), so a channel-home tab labels by name.
-  const routeChannelSection = useMemo(() => {
-    if (!params.channelId) return null;
-    const seg = pathname.split("/")[3] ?? null;
-    return channelSectionFor(seg)?.key ?? null;
-  }, [pathname, params.channelId]);
 
   // Local-first sync (see tabsSync.ts): every operation applies its shared
   // pure transform to the mirror synchronously via applyLocalTransform, then
@@ -212,14 +100,8 @@ export function BrowserTabStrip() {
   // transport — their returned snapshots are handled by persistWrite's
   // last-settle reconcile, never applied directly, so a stale echo can't
   // rewind the mirror mid-interaction.
-  const openOrFocus = useMutation(
-    trpc.browserTabs.openOrFocus.mutationOptions(),
-  );
   const newBlankTab = useMutation(
     trpc.browserTabs.newBlankTab.mutationOptions(),
-  );
-  const setTabTarget = useMutation(
-    trpc.browserTabs.setTabTarget.mutationOptions(),
   );
   const close = useMutation(trpc.browserTabs.close.mutationOptions());
   const closeMany = useMutation(trpc.browserTabs.closeMany.mutationOptions());
@@ -241,31 +123,43 @@ export function BrowserTabStrip() {
     prunePinned(snapshot.tabs.map((t) => t.id));
   }, [snapshot, prunePinned]);
 
+  // Whether the channels surface is live — the same gate the sidebar uses.
+  // This (not the current route) decides a new tab's default landing and
+  // whether Cmd+1-9 switches browser tabs rather than sidebar tasks.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled =
+    useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
   const win = primaryWindow(snapshot);
   const windowId = win?.id;
-  // The history state flips the instant you navigate, while the server snapshot
-  // round-trips — so prefer it for "which tab is active" to avoid a one-step lag
-  // in the highlight and the name. Validate it against the live tab list first:
-  // back/forward can replay an entry tagged with a since-closed tab, and a dead
-  // id here would blank the strip highlight and point Cmd+W at a tab that no
-  // longer exists (the navigation effect heals the tag, but asynchronously).
-  const historyTabIsLive =
-    !!historyTabId && snapshot.tabs.some((t) => t.id === historyTabId);
-  const activeTabId =
-    (historyTabIsLive ? historyTabId : null) ?? win?.activeTabId ?? null;
+  const activeTabId = win?.activeTabId ?? null;
+  const activeTab = activeTabId
+    ? snapshot.tabs.find((t) => t.id === activeTabId)
+    : undefined;
+  const activeIdentity = activeTab
+    ? (() => {
+        const pane = focusedPaneOfTab(snapshot, activeTab);
+        return pane ? paneIdentityOf(pane) : null;
+      })()
+    : null;
 
   // Names feed the tab labels. The channel canvas list + all-tasks list cover
-  // most tabs; a direct fetch of the *current route's* canvas/task (warm cache
-  // from the detail page) makes the focused tab's name update the instant you
-  // navigate — keyed off the route, not the tab's stored (lagging) target.
-  // Only poll the all-tasks list when a task tab actually needs a title.
-  const hasTaskTab = snapshot.tabs.some((t) => t.taskId != null);
-  const { dashboards } = useDashboards(params.channelId);
-  const { dashboard: activeRecord } = useDashboard(params.dashboardId);
-  const { data: allTasks } = useTasks(undefined, { enabled: hasTaskTab });
+  // most tabs; a direct fetch of the *active pane's* canvas/task (warm cache
+  // from the detail page) makes the focused tab's name update the instant its
+  // pane navigates. Only poll the all-tasks list when a task pane actually
+  // needs a title.
+  const hasTaskPane = snapshot.panes.some((p) => p.taskId != null);
+  const { channels } = useChannels();
+  const { dashboards } = useDashboards(activeIdentity?.channelId ?? undefined);
+  const { dashboard: activeRecord } = useDashboard(
+    activeIdentity?.dashboardId ?? undefined,
+  );
+  const { data: allTasks } = useTasks(undefined, { enabled: hasTaskPane });
   const { data: activeTaskRecord } = useQuery({
-    ...taskDetailQuery(params.taskId ?? ""),
-    enabled: !!params.taskId,
+    ...taskDetailQuery(activeIdentity?.taskId ?? ""),
+    enabled: !!activeIdentity?.taskId,
   });
   // Remember names so a background tab from another channel keeps its label
   // after its channel's list unloads. Written in an effect (not during render)
@@ -285,157 +179,6 @@ export function BrowserTabStrip() {
       remember(taskInfo, activeTaskRecord.id, activeTaskRecord.title);
     }
   }, [dashboards, activeRecord, allTasks, activeTaskRecord]);
-
-  // Resolve what the current location means for the strip (see
-  // decideTabNavigation) and apply it: focus a tab, replace the active tab's
-  // target in place, open a tab, and/or stamp the history entry with the tab it
-  // belongs to so back/forward can replay it.
-  //
-  // Keyed on the LOCATION only — the route is the command stream; the mirror is
-  // state this effect reconciles against, read fresh via readMirror() rather
-  // than subscribed to. Running on mirror changes is actively wrong under
-  // local-first sync: a handler moves the mirror BEFORE it navigates (e.g. the
-  // + tab appends and focuses a blank tab), and an effect run in that gap sees
-  // the OLD location's tag disagree with the new mirror focus and "activates"
-  // the stale tab — yanking focus back and mis-targeting the follow-up
-  // navigation as an in-tab replace of the wrong tab.
-  useEffect(() => {
-    if (!windowId) return;
-    const stamp = (tabId: string) => {
-      const loc = router.history.location;
-      // Already tagged — skip the replace so history entries and router
-      // subscribers don't churn.
-      if ((loc.state as { tabId?: string }).tabId === tabId) return;
-      // Use the full href (always a string); reconstructing from pathname +
-      // search crashes because search is parsed to an object at runtime.
-      router.history.replace(loc.href, { ...(loc.state as object), tabId });
-    };
-    const mirror = readMirror();
-    const mirrorWin = primaryWindow(mirror);
-    const mirrorTabs = mirror.tabs.filter((t) => t.windowId === windowId);
-    const mirrorActive = mirrorWin?.activeTabId
-      ? mirrorTabs.find((t) => t.id === mirrorWin.activeTabId)
-      : undefined;
-    const decision = decideTabNavigation({
-      historyTabId: historyTabId ?? null,
-      // Validates history tags: back/forward can replay an entry tagged with a
-      // closed tab; activating that dead id would persist a dangling
-      // activeTabId, after which every nav "opens" (no active tab found).
-      windowTabIds: mirrorTabs.map((t) => t.id),
-      // Identities of this window's tabs, so a navigation to a target already
-      // open in another tab focuses it instead of duplicating it (and a rapid
-      // switch whose history stamp was lost self-heals to the right tab).
-      windowTabs: mirrorTabs.map((t) => ({
-        id: t.id,
-        dashboardId: t.dashboardId,
-        taskId: t.taskId,
-        channelId: t.channelId,
-        channelSection: t.channelSection,
-        appView: t.appView,
-      })),
-      serverActiveTabId: mirrorWin?.activeTabId ?? null,
-      activeTab: mirrorActive
-        ? {
-            id: mirrorActive.id,
-            dashboardId: mirrorActive.dashboardId,
-            taskId: mirrorActive.taskId,
-            channelId: mirrorActive.channelId,
-            channelSection: mirrorActive.channelSection,
-            appView: mirrorActive.appView,
-          }
-        : null,
-      routeDashboardId: params.dashboardId ?? null,
-      routeTaskId: params.taskId ?? null,
-      routeChannelId: params.channelId ?? null,
-      routeChannelSection,
-      routeAppView,
-    });
-    switch (decision.type) {
-      case "activate": {
-        // Focus in the mirror synchronously; persist in the background.
-        applyLocalTransform((s) =>
-          setWindowActiveTab(s, windowId, decision.tabId),
-        );
-        void persistWrite(() =>
-          setActiveTab.mutateAsync({ windowId, tabId: decision.tabId }),
-        );
-        // Heal the history tag to the tab we're activating. Normally it already
-        // matches (a tagged switch), so `stamp` no-ops. When the dedup path
-        // activated an existing tab the route pointed at (a switch whose stamp
-        // was lost), the entry still carries the STALE tab — left unhealed, the
-        // first branch above would re-activate it next render and ping-pong with
-        // the dedup (a "Maximum update depth exceeded" loop). Stamping breaks it.
-        stamp(decision.tabId);
-        break;
-      }
-      case "replace": {
-        const target = {
-          tabId: decision.tabId,
-          dashboardId: decision.dashboardId,
-          taskId: decision.taskId,
-          channelId: decision.channelId,
-          channelSection: decision.channelSection,
-          appView: decision.appView,
-        };
-        // Synchronous local apply keeps re-entrant runs (and the /website index
-        // redirect guard) from ever seeing the pre-navigation target.
-        applyLocalTransform((s) =>
-          setTabTargetLocal(s, { ...target, now: Date.now }),
-        );
-        void persistWrite(() => setTabTarget.mutateAsync(target));
-        if (decision.stampTabId) stamp(decision.stampTabId);
-        break;
-      }
-      case "open": {
-        const input = {
-          windowId,
-          dashboardId: decision.dashboardId,
-          taskId: decision.taskId,
-          channelId: decision.channelId,
-          channelSection: decision.channelSection,
-          appView: decision.appView,
-        };
-        // Mint the id here so the local apply and the persisted state agree on
-        // it; openOrFocusLocal may instead dedup-focus an existing tab, in
-        // which case the minted id goes unused (identically on the server).
-        const mintedId = crypto.randomUUID();
-        let openedTabId: string = mintedId;
-        applyLocalTransform((s) => {
-          const result = openOrFocusLocal(s, {
-            ...input,
-            makeId: () => mintedId,
-            now: Date.now,
-          });
-          openedTabId = result.tabId;
-          return result.snapshot;
-        });
-        void persistWrite(() =>
-          openOrFocus.mutateAsync({ ...input, tabId: mintedId }),
-        );
-        // Stamp the entry with the tab that now owns this route.
-        stamp(openedTabId);
-        break;
-      }
-      case "stamp":
-        stamp(decision.stampTabId);
-        break;
-    }
-  }, [
-    // windowId flips once when the boot seed lands — that run adopts the
-    // initial route. Everything else here is location; mirror state is read
-    // fresh inside, deliberately NOT a dependency (see the comment above).
-    windowId,
-    historyTabId,
-    params.channelId,
-    params.dashboardId,
-    params.taskId,
-    routeChannelSection,
-    routeAppView,
-    openOrFocus.mutateAsync,
-    setTabTarget.mutateAsync,
-    setActiveTab.mutateAsync,
-    router,
-  ]);
 
   const channelName = useMemo(() => {
     const map = new Map(channels.map((c) => [c.id, c.name]));
@@ -481,33 +224,33 @@ export function BrowserTabStrip() {
       .filter((t) => t !== undefined)
       .map((t): TabView => {
         const pinned = pinnedSet.has(t.id);
-        // The active tab shows the current route's target, so resolve from the
-        // route (instant) rather than its stored ids (which lag a navigation).
-        const isActive = t.id === activeTabId;
-        const taskId = isActive ? (params.taskId ?? null) : t.taskId;
-        const dashId = isActive ? (params.dashboardId ?? null) : t.dashboardId;
-        const channelId = isActive ? (params.channelId ?? null) : t.channelId;
-        const section = isActive ? routeChannelSection : t.channelSection;
-        const appView = isActive ? routeAppView : t.appView;
-        const channel = channelName(channelId);
-        if (taskId) {
-          const task = findTask(taskId);
+        // The pill shows the FOCUSED pane's identity; a multi-pane tab swaps
+        // the content icon for a glyph of its actual layout.
+        const pane = focusedPaneOfTab(snapshot, t);
+        const identity = pane ? paneIdentityOf(pane) : null;
+        const glyph =
+          t.layout.type === "split" ? (
+            <PaneLayoutGlyph key={t.id} layout={t.layout} />
+          ) : null;
+        const channel = channelName(identity?.channelId ?? null);
+        if (identity?.taskId) {
+          const task = findTask(identity.taskId);
           return {
             id: t.id,
-            label: task?.title ?? taskInfo.get(taskId) ?? "Task",
-            icon: <TaskTabIcon task={task} size={14} />,
+            label: task?.title ?? taskInfo.get(identity.taskId) ?? "Task",
+            icon: glyph ?? <TaskTabIcon task={task} size={14} />,
             channelName: channel,
             pinned,
           };
         }
-        if (dashId) {
-          const info = resolveCanvas(dashId);
+        if (identity?.dashboardId) {
+          const info = resolveCanvas(identity.dashboardId);
           return {
             id: t.id,
             label: info?.name ?? "Canvas",
-            icon: iconForTemplate(info?.templateId ?? "freeform", {
-              size: 14,
-            }),
+            icon:
+              glyph ??
+              iconForTemplate(info?.templateId ?? "freeform", { size: 14 }),
             channelName: channel,
             pinned,
           };
@@ -515,12 +258,12 @@ export function BrowserTabStrip() {
         // A channel tab: a sub-section (Artifacts/Recents/…) or the channel home.
         // The section drives the label; the channel name carries the `#` hover
         // context. Home has no section, so it labels by the channel name.
-        if (channelId) {
-          const meta = channelSectionFor(section);
+        if (identity?.channelId) {
+          const meta = channelSectionFor(identity.channelSection);
           return {
             id: t.id,
             label: meta?.label ?? channel ?? "Channel",
-            icon: <HashIcon size={14} />,
+            icon: glyph ?? <HashIcon size={14} />,
             channelName: channel,
             // No section meta → the channel's index page.
             isChannelHome: !meta,
@@ -528,16 +271,22 @@ export function BrowserTabStrip() {
           };
         }
         // A top-level app page (Inbox, Agents, Skills, …).
-        if (appView && isAppView(appView)) {
+        if (identity?.appView && isAppView(identity.appView)) {
           return {
             id: t.id,
-            label: APP_VIEW_META[appView].label,
-            icon: APP_VIEW_META[appView].icon,
+            label: APP_VIEW_META[identity.appView].label,
+            icon: glyph ?? APP_VIEW_META[identity.appView].icon,
             channelName: null,
             pinned,
           };
         }
-        return { id: t.id, label: "New tab", channelName: null, pinned };
+        return {
+          id: t.id,
+          label: "New tab",
+          icon: glyph ?? undefined,
+          channelName: null,
+          pinned,
+        };
       });
   }, [
     snapshot,
@@ -549,116 +298,36 @@ export function BrowserTabStrip() {
     activeRecord,
     allTasks,
     activeTaskRecord,
-    activeTabId,
-    params.channelId,
-    params.dashboardId,
-    params.taskId,
-    routeChannelSection,
-    routeAppView,
   ]);
 
-  // Navigate to a tab, tagging the history entry with its id so the switch is
-  // replayable by back/forward. A canvas/task tab goes to its route; a blank tab
-  // pushes a plain entry (the empty placeholder renders from the active tab).
-  const goToTab = (tab: TabRef) => {
-    const state = (prev: object) => ({ ...prev, tabId: tab.id });
-    if (tab.taskId && tab.channelId) {
-      navigate({
-        to: "/website/$channelId/tasks/$taskId",
-        params: { channelId: tab.channelId, taskId: tab.taskId },
-        state,
-      });
-    } else if (tab.taskId) {
-      // A channel-less task tab — the Code task detail route.
-      navigate({
-        to: "/code/tasks/$taskId",
-        params: { taskId: tab.taskId },
-        state,
-      });
-    } else if (tab.dashboardId && tab.channelId) {
-      navigate({
-        to: "/website/$channelId/dashboards/$dashboardId",
-        params: { channelId: tab.channelId, dashboardId: tab.dashboardId },
-        state,
-      });
-    } else if (tab.channelId) {
-      const params = { channelId: tab.channelId };
-      // Section keys are the route segments; unknown/stale sections (e.g. from
-      // a since-removed tab type) fall back to the channel home.
-      const section = channelSectionFor(tab.channelSection);
-      if (section) {
-        navigate({
-          to: `/website/$channelId/${section.key}` as const,
-          params,
-          state,
-        });
-      } else {
-        navigate({ to: "/website/$channelId", params, state });
-      }
-    } else if (tab.appView && isAppView(tab.appView)) {
-      // A top-level app page — back to its canonical route (literal `to` per
-      // case so the router types stay checked).
-      switch (tab.appView) {
-        case "home":
-          navigate({ to: "/code/home", state });
-          break;
-        case "inbox":
-          navigate({ to: "/code/inbox", state });
-          break;
-        case "agents":
-          navigate({ to: "/code/agents", state });
-          break;
-        case "skills":
-          navigate({ to: "/skills", state });
-          break;
-        case "mcp-servers":
-          navigate({ to: "/mcp-servers", state });
-          break;
-        case "command-center":
-          navigate({ to: "/command-center", state });
-          break;
-        default: {
-          // Exhaustiveness guard: a new AppView value fails to compile here
-          // until its canonical route is wired above — so the tab-target set
-          // (union + APP_VIEW_META) and this navigation can't drift apart.
-          const _exhaustive: never = tab.appView;
-          return _exhaustive;
-        }
-      }
-    } else {
-      // Blank / landing tab: park on the space's home — the channels index, or
-      // the Code new-task screen.
-      navigate({ to: inChannels ? "/website" : "/code", state });
-    }
-  };
-
+  // A tab switch is a pure store mutation: the pane tree renders the newly
+  // active tab, whose pane routers kept their locations. No history entry is
+  // written (browser-like — back/forward stay within a pane).
   const handleSelect = (tabId: string) => {
-    const tab = snapshot.tabs.find((t) => t.id === tabId);
-    if (!tab || !windowId) return;
-    // goToTab stamps historyTabId; the navigation effect picks it up and issues
-    // setActiveTab via the "activate" path — no need to also fire it here.
-    goToTab(tab);
+    if (!windowId || tabId === activeTabId) return;
+    applyLocalTransform((s) => setWindowActiveTab(s, windowId, tabId));
+    void persistWrite(() => setActiveTab.mutateAsync({ windowId, tabId }));
   };
 
-  // Navigate to the close's survivor, or — when the last tab was closed — to the
-  // flag's default landing (#me / new-task), never the /website index (which
-  // would redirect to channels[0], re-opening a random channel tab).
-  const applyCloseResult = (next: TabsSnapshot) => {
-    const w = primaryWindow(next);
-    const active = w?.activeTabId
-      ? next.tabs.find((t) => t.id === w.activeTabId)
-      : null;
-    if (active) goToTab(active);
-    else landOnDefault();
-  };
-
-  // Close applies locally and navigates to the survivor in the same tick — the
-  // /website index therefore always renders against the post-close snapshot
-  // and can't redirect (re-opening a tab) mid-flight.
+  // Closing needs no navigation either: succession (or the blank backfill on
+  // the last tab) is decided inside the transform, and the pane tree follows
+  // the snapshot. The blank-backfill ids are minted here so the local apply
+  // and the persisted state agree.
   const handleClose = (tabId: string) => {
-    const next = applyLocalTransform((s) => closeTabLocal(s, tabId).snapshot);
-    applyCloseResult(next);
-    void persistWrite(() => close.mutateAsync({ tabId }));
+    const blankTabId = crypto.randomUUID();
+    const blankPaneId = crypto.randomUUID();
+    applyLocalTransform(
+      (s) =>
+        closeTabLocal(s, tabId, {
+          makeId: () => crypto.randomUUID(),
+          now: Date.now,
+          blankTabId,
+          blankPaneId,
+        }).snapshot,
+    );
+    void persistWrite(() =>
+      close.mutateAsync({ tabId, blankTabId, blankPaneId }),
+    );
   };
 
   // Unpinning re-homes the tab at the front of the unpinned block. Apply the
@@ -678,10 +347,12 @@ export function BrowserTabStrip() {
   // always survives) takes focus if the active tab was among those closed.
   const handleCloseMany = (tabIds: string[], anchorTabId: string) => {
     if (tabIds.length === 0) return;
-    const next = applyLocalTransform((s) =>
-      closeTabsLocal(s, tabIds, anchorTabId),
+    applyLocalTransform((s) =>
+      closeTabsLocal(s, tabIds, anchorTabId, {
+        makeId: () => crypto.randomUUID(),
+        now: Date.now,
+      }),
     );
-    applyCloseResult(next);
     void persistWrite(() =>
       closeMany.mutateAsync({ tabIds, focusTabId: anchorTabId }),
     );
@@ -718,90 +389,34 @@ export function BrowserTabStrip() {
     );
   };
 
-  // The default landing, keyed off the channels toggle (not the current route,
-  // which lags a toggle flip): #me when channels are on, the Code new-task
-  // screen otherwise. Deliberately never routes through the /website index,
-  // which would redirect to channels[0]. `tabId` (a fresh blank tab) fills that
-  // tab in place; without one (last tab closed) the navigation opens a new tab.
-  const landOnDefault = (tabId?: string) => {
-    const state = tabId ? (prev: object) => ({ ...prev, tabId }) : undefined;
-    if (!channelsEnabled) {
-      navigate({ to: "/code", state });
-      return;
-    }
-    // #me is provisioned lazily the first time (same bridge the sidebar's #me
-    // row uses); fall back to the new-task screen if it can't be created.
-    void (async () => {
-      try {
-        const existing = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
-        if (!existing && !personalChannelInFlight) {
-          personalChannelInFlight = createChannel(
-            PERSONAL_CHANNEL_NAME,
-          ).finally(() => {
-            personalChannelInFlight = null;
-          });
-        }
-        const folder = existing ?? (await personalChannelInFlight);
-        if (!folder) return;
-        navigate({
-          to: "/website/$channelId",
-          params: { channelId: folder.id },
-          state,
-        });
-      } catch {
-        navigate({ to: "/code", state });
-      }
-    })();
-  };
-
-  // New tab is fully local: mint the id here, append the blank tab to the
-  // mirror and navigate in the same tick (no IPC wait), then persist with the
-  // same id so the durable state matches. The service is idempotent on the
-  // minted id, so a replay can't append a duplicate.
-  const createBlankTab = (targetWindowId: string) => {
+  // New tab is fully local: mint the ids here, append the blank tab to the
+  // mirror, pre-seed its pane's router at the default landing (the /website
+  // new-tab page with channels on, the Code new-task screen otherwise), then
+  // persist with the same ids. The service is idempotent on the minted tab
+  // id, so a replay can't append a duplicate.
+  const handleNewTab = () => {
+    if (!windowId) return;
     const tabId = crypto.randomUUID();
+    const paneId = crypto.randomUUID();
     applyLocalTransform(
       (s) =>
         newBlankTabLocal(s, {
-          windowId: targetWindowId,
-          makeId: () => tabId,
+          windowId,
+          tabId,
+          paneId,
+          makeId: () => crypto.randomUUID(),
           now: Date.now,
         }).snapshot,
     );
-    landOnDefault(tabId);
+    const router = createAppRouter({
+      paneId,
+      initialHref: defaultBlankPaneHref(channelsEnabled),
+    });
+    setPaneRouter(paneId, router);
+    void router.load().catch(() => undefined);
     void persistWrite(() =>
-      newBlankTab.mutateAsync({ windowId: targetWindowId, tabId }),
+      newBlankTab.mutateAsync({ windowId, tabId, paneId }),
     );
-  };
-
-  const handleNewTab = () => {
-    if (windowId) {
-      createBlankTab(windowId);
-      return;
-    }
-    // No window means the mirror never seeded (the boot fetch raced or
-    // failed) — the click must not die. Re-pull the authoritative snapshot
-    // (the server always has a primary window) and append into it. Resolve
-    // the window from the FETCHED snapshot, not the mirror: reseedMirror
-    // skips the store apply when a local write or newer remote push raced
-    // the fetch, and the mirror could still be windowless then.
-    void reseedMirror()
-      .then((server) => {
-        const win = server
-          ? primaryWindow(server)
-          : primaryWindow(readMirror());
-        if (win) {
-          createBlankTab(win.id);
-          return;
-        }
-        // Should be unreachable (the server always mints a primary window),
-        // but a silent skip here reproduces the dead-"+" this path exists to
-        // fix — make it loud instead.
-        logger.error("browser-tabs: new-tab found no window after reseed");
-      })
-      .catch((error) => {
-        logger.error("browser-tabs: new-tab reseed failed", { error });
-      });
   };
 
   // Cmd/Ctrl+T opens a new browser tab. Bound here (not globally) so it only
@@ -822,7 +437,7 @@ export function BrowserTabStrip() {
     SHORTCUTS.CLOSE_TAB,
     (e) => {
       e.preventDefault();
-      if (taskHasCloseableEditorTab(params.taskId)) return;
+      if (taskHasCloseableEditorTab(activeIdentity?.taskId ?? null)) return;
       if (activeTabId) handleClose(activeTabId);
     },
     { enableOnFormTags: true, enableOnContentEditable: true },

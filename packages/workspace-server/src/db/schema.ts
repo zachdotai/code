@@ -224,9 +224,10 @@ export const browserWindows = sqliteTable("browser_windows", {
 });
 
 /**
- * Open tabs in the Channels canvas surface. A tab references a canvas
- * (dashboard) and the channel it belongs to; display is resolved at render.
- * `scrollState` is reserved/unwired for later per-tab state (scroll restore).
+ * Open tabs in the Channels canvas surface. A tab is a strip unit that OWNS a
+ * split-pane layout (a bare leaf for the common single-pane tab); what a tab
+ * shows lives on its pane rows (`browser_panes`). The pill renders the focused
+ * pane's identity.
  */
 export const browserTabs = sqliteTable(
   "browser_tabs",
@@ -235,24 +236,50 @@ export const browserTabs = sqliteTable(
     windowId: text()
       .notNull()
       .references(() => browserWindows.id, { onDelete: "cascade" }),
-    /** Canvas this tab shows. Null for a task tab or a blank tab. */
-    dashboardId: text(),
-    /** Task this tab shows. Null for a canvas tab or a blank tab. */
-    taskId: text(),
-    channelId: text(),
-    /** Channel sub-section (inbox/artifacts/history/context). Null = channel
-     * home, or a non-channel tab. */
-    channelSection: text(),
-    /** Top-level app page (inbox/agents/skills/mcp-servers/command-center/home).
-     * Null = a canvas / task / channel / blank tab. */
-    appView: text(),
+    /** Root of the tab's pane layout tree, JSON PaneLayoutNode. */
+    layout: text({ mode: "json" }).$type<unknown>().notNull(),
+    /** Pane owning focus within this tab; a leaf of `layout`. */
+    focusedPaneId: text().notNull(),
     /** Gap-spaced ordering key within a window. */
     position: integer().notNull(),
-    /** Reserved/unwired. Opaque JSON for future per-tab state. */
-    scrollState: text({ mode: "json" }).$type<unknown>(),
     /** Epoch ms. */
     createdAt: integer().notNull(),
     lastActiveAt: integer().notNull(),
   },
   (t) => [index("browser_tabs_window_idx").on(t.windowId)],
+);
+
+/**
+ * Panes: the content units inside a tab's split layout. A pane references a
+ * canvas (dashboard) / task / channel / app view; display is resolved at
+ * render. `windowId` is denormalised from the owning tab so window-scoped
+ * identity dedup needs no join. `scrollState` is reserved/unwired for later
+ * per-pane state (scroll restore).
+ */
+export const browserPanes = sqliteTable(
+  "browser_panes",
+  {
+    id: id(),
+    tabId: text()
+      .notNull()
+      .references(() => browserTabs.id, { onDelete: "cascade" }),
+    windowId: text().notNull(),
+    /** Canvas this pane shows. Null for a task pane or a blank pane. */
+    dashboardId: text(),
+    /** Task this pane shows. Null for a canvas pane or a blank pane. */
+    taskId: text(),
+    channelId: text(),
+    /** Channel sub-section (inbox/artifacts/history/context). Null = channel
+     * home, or a non-channel pane. */
+    channelSection: text(),
+    /** Top-level app page (inbox/agents/skills/mcp-servers/command-center/home).
+     * Null = a canvas / task / channel / blank pane. */
+    appView: text(),
+    /** Reserved/unwired. Opaque JSON for future per-pane state. */
+    scrollState: text({ mode: "json" }).$type<unknown>(),
+    /** Epoch ms. */
+    createdAt: integer().notNull(),
+    lastActiveAt: integer().notNull(),
+  },
+  (t) => [index("browser_panes_tab_idx").on(t.tabId)],
 );

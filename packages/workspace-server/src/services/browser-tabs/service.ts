@@ -1,14 +1,18 @@
 import {
-  type BrowserWindow,
+  closePane,
   closeTab,
   closeTabs,
+  ensureSnapshotIntegrity,
+  mergeTabIntoTab,
   newBlankTab,
   openOrFocusTab,
+  type SplitDropDirection,
+  setFocusedPane,
+  setPaneSizes,
+  setPaneTarget,
   setTabOrder,
-  setTabTarget,
   setWindowActiveTab,
   type TabsSnapshot,
-  type TabTarget,
   TypedEventEmitter,
 } from "@posthog/shared";
 import { inject, injectable } from "inversify";
@@ -19,31 +23,53 @@ import { BrowserTabsEvent, type BrowserTabsEvents } from "./schemas";
 const makeId = () => crypto.randomUUID();
 const now = () => Date.now();
 
+/** Identity fields a pane can point at, as the tRPC inputs deliver them. */
+type PaneIdentityInput = {
+  dashboardId: string | null;
+  taskId: string | null;
+  channelId: string | null;
+  channelSection: string | null;
+  appView: string | null;
+};
+
 export interface IBrowserTabsService {
   getSnapshot(): TabsSnapshot;
   getPrimaryWindowId(): string;
   openOrFocus(
-    input: TabTarget & {
+    input: PaneIdentityInput & {
       windowId: string;
-      channelId: string | null;
-      channelSection?: string | null;
-      appView?: string | null;
       tabId?: string;
+      paneId?: string;
     },
   ): TabsSnapshot;
-  newBlankTab(input: { windowId: string; tabId?: string }): TabsSnapshot;
-  setTabTarget(
-    input: TabTarget & {
-      tabId: string;
-      channelId: string | null;
-      channelSection?: string | null;
-      appView?: string | null;
-    },
-  ): TabsSnapshot;
-  close(tabId: string): TabsSnapshot;
+  newBlankTab(input: {
+    windowId: string;
+    tabId?: string;
+    paneId?: string;
+  }): TabsSnapshot;
+  setPaneTarget(input: PaneIdentityInput & { paneId: string }): TabsSnapshot;
+  close(input: {
+    tabId: string;
+    blankTabId?: string;
+    blankPaneId?: string;
+  }): TabsSnapshot;
   closeMany(tabIds: string[], focusTabId?: string | null): TabsSnapshot;
+  closePane(input: { tabId: string; paneId: string }): TabsSnapshot;
+  mergeTabIntoTab(input: {
+    windowId: string;
+    sourceTabId: string;
+    targetTabId: string;
+    targetPaneId: string | null;
+    direction: SplitDropDirection;
+  }): TabsSnapshot;
   setOrder(input: { windowId: string; tabIds: string[] }): TabsSnapshot;
   setActiveTab(input: { windowId: string; tabId: string | null }): TabsSnapshot;
+  setFocusedPane(input: { tabId: string; paneId: string }): TabsSnapshot;
+  setPaneSizes(input: {
+    tabId: string;
+    path: number[];
+    sizes: number[];
+  }): TabsSnapshot;
   snapshotChangeEvents(
     signal: AbortSignal | undefined,
   ): AsyncIterable<TabsSnapshot>;
@@ -70,30 +96,12 @@ export class BrowserTabsService
     super();
     this.setMaxListeners(0);
     const loaded = this.repo.load();
-    const seeded = this.ensureAtLeastOneTab(this.ensurePrimaryWindow(loaded));
-    if (seeded !== loaded) this.repo.save(seeded);
-    this.snapshot = seeded;
-  }
-
-  /** Guarantee a primary window exists so the first open has somewhere to land. */
-  private ensurePrimaryWindow(snapshot: TabsSnapshot): TabsSnapshot {
-    if (snapshot.windows.some((w) => w.isPrimary)) return snapshot;
-    const primary: BrowserWindow = {
-      id: makeId(),
-      isPrimary: true,
-      bounds: null,
-      activeTabId: null,
-    };
-    return { ...snapshot, windows: [primary, ...snapshot.windows] };
-  }
-
-  /** The strip must never boot empty: seed a blank tab when none survived. */
-  private ensureAtLeastOneTab(snapshot: TabsSnapshot): TabsSnapshot {
-    if (snapshot.tabs.length > 0) return snapshot;
-    const primary = snapshot.windows.find((w) => w.isPrimary);
-    if (!primary) return snapshot;
-    return newBlankTab(snapshot, { windowId: primary.id, makeId, now })
-      .snapshot;
+    // Heal every boot-time invariant in one pass (primary window exists,
+    // >= 1 tab, layout↔pane bijection, valid focus). Re-persist only when
+    // something actually changed (reference inequality).
+    const healed = ensureSnapshotIntegrity(loaded, { makeId, now });
+    if (healed !== loaded) this.repo.save(healed);
+    this.snapshot = healed;
   }
 
   /** Creation targets heal a stale window id (a mirror seeded before a schema
@@ -121,60 +129,80 @@ export class BrowserTabsService
   }
 
   openOrFocus(
-    input: TabTarget & {
+    input: PaneIdentityInput & {
       windowId: string;
-      channelId: string | null;
-      channelSection?: string | null;
-      appView?: string | null;
       tabId?: string;
+      paneId?: string;
     },
   ): TabsSnapshot {
-    // Honor a renderer-minted id so the caller's optimistic apply and this
-    // persisted state agree on the id. Dedup-by-identity still applies first,
-    // so a replay of the same open focuses the existing tab.
-    const providedId = input.tabId;
+    // Renderer-minted ids ride through so the caller's optimistic apply and
+    // this persisted state agree. Dedup-by-identity still applies first, so a
+    // replay of the same open focuses the existing tab.
     const { snapshot } = openOrFocusTab(this.snapshot, {
       ...input,
       windowId: this.resolveWindowId(input.windowId),
-      makeId: providedId ? () => providedId : makeId,
+      makeId,
       now,
     });
     return this.commit(snapshot);
   }
 
-  newBlankTab(input: { windowId: string; tabId?: string }): TabsSnapshot {
-    const providedId = input.tabId;
+  newBlankTab(input: {
+    windowId: string;
+    tabId?: string;
+    paneId?: string;
+  }): TabsSnapshot {
     // Idempotent on the renderer-minted id: a replay of the same call (blank
     // tabs have no identity to dedup on) must not append a second tab.
-    if (providedId && this.snapshot.tabs.some((t) => t.id === providedId)) {
+    if (input.tabId && this.snapshot.tabs.some((t) => t.id === input.tabId)) {
       return this.snapshot;
     }
     const { snapshot } = newBlankTab(this.snapshot, {
       windowId: this.resolveWindowId(input.windowId),
-      makeId: providedId ? () => providedId : makeId,
+      tabId: input.tabId,
+      paneId: input.paneId,
+      makeId,
       now,
     });
     return this.commit(snapshot);
   }
 
-  setTabTarget(
-    input: TabTarget & {
-      tabId: string;
-      channelId: string | null;
-      channelSection?: string | null;
-      appView?: string | null;
-    },
-  ): TabsSnapshot {
-    return this.commit(setTabTarget(this.snapshot, { ...input, now }));
+  setPaneTarget(input: PaneIdentityInput & { paneId: string }): TabsSnapshot {
+    return this.commit(setPaneTarget(this.snapshot, { ...input, now }));
   }
 
-  close(tabId: string): TabsSnapshot {
-    const { snapshot } = closeTab(this.snapshot, tabId);
+  close(input: {
+    tabId: string;
+    blankTabId?: string;
+    blankPaneId?: string;
+  }): TabsSnapshot {
+    const { snapshot } = closeTab(this.snapshot, input.tabId, {
+      makeId,
+      now,
+      blankTabId: input.blankTabId,
+      blankPaneId: input.blankPaneId,
+    });
     return this.commit(snapshot);
   }
 
   closeMany(tabIds: string[], focusTabId?: string | null): TabsSnapshot {
-    return this.commit(closeTabs(this.snapshot, tabIds, focusTabId));
+    return this.commit(
+      closeTabs(this.snapshot, tabIds, focusTabId, { makeId, now }),
+    );
+  }
+
+  closePane(input: { tabId: string; paneId: string }): TabsSnapshot {
+    return this.commit(closePane(this.snapshot, input.tabId, input.paneId));
+  }
+
+  mergeTabIntoTab(input: {
+    windowId: string;
+    sourceTabId: string;
+    targetTabId: string;
+    targetPaneId: string | null;
+    direction: SplitDropDirection;
+  }): TabsSnapshot {
+    return this.commit(mergeTabIntoTab(this.snapshot, { ...input, now }));
   }
 
   setOrder(input: { windowId: string; tabIds: string[] }): TabsSnapshot {
@@ -187,11 +215,32 @@ export class BrowserTabsService
     windowId: string;
     tabId: string | null;
   }): TabsSnapshot {
-    // Validated: a tabId that doesn't exist in the window (a stale history tag
+    // Validated: a tabId that doesn't exist in the window (a stale mirror
     // replayed after the tab closed) is ignored rather than persisted as a
     // dangling activeTabId — that dangle makes every later navigation look like
     // "no active tab" and silently open new tabs.
     const next = setWindowActiveTab(this.snapshot, input.windowId, input.tabId);
+    if (next === this.snapshot) return this.snapshot;
+    return this.commit(next);
+  }
+
+  setFocusedPane(input: { tabId: string; paneId: string }): TabsSnapshot {
+    const next = setFocusedPane(this.snapshot, input.tabId, input.paneId);
+    if (next === this.snapshot) return this.snapshot;
+    return this.commit(next);
+  }
+
+  setPaneSizes(input: {
+    tabId: string;
+    path: number[];
+    sizes: number[];
+  }): TabsSnapshot {
+    const next = setPaneSizes(
+      this.snapshot,
+      input.tabId,
+      input.path,
+      input.sizes,
+    );
     if (next === this.snapshot) return this.snapshot;
     return this.commit(next);
   }

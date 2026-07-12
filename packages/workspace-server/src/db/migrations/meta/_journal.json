@@ -148,6 +148,13 @@
       "when": 1783685997328,
       "tag": "0020_repair_browser_tabs_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1783800060350,
+      "tag": "0021_tab_owned_panes",
+      "breakpoints": true
     }
   ]
 }

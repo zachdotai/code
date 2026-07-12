@@ -12,13 +12,9 @@ function tab(id: string, position: number): BrowserTab {
   return {
     id,
     windowId: "w1",
-    dashboardId: null,
-    taskId: null,
-    channelId: null,
-    channelSection: null,
-    appView: null,
+    layout: { type: "leaf", paneId: `${id}-pane` },
+    focusedPaneId: `${id}-pane`,
     position,
-    scrollState: null,
     createdAt: 0,
     lastActiveAt: 0,
   };
@@ -29,6 +25,7 @@ function snap(ids: string[]): TabsSnapshot {
   return {
     windows: [{ id: "w1", isPrimary: true, bounds: null, activeTabId: null }],
     tabs: ids.map((id, i) => tab(id, (i + 1) * 1000)),
+    panes: [],
   };
 }
 

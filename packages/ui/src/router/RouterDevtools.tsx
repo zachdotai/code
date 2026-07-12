@@ -1,5 +1,8 @@
-import { lazy, Suspense } from "react";
-import { router } from "./router";
+import { lazy, Suspense, useSyncExternalStore } from "react";
+import {
+  getFocusedRouterOrNull,
+  subscribePaneRouters,
+} from "./paneRouterRegistry";
 
 // The genuine floating TanStack Router devtools overlay (drawer, drag-to-resize,
 // in-panel close button, open animation — the exact UI), but with its floating
@@ -52,12 +55,21 @@ const LazyRouterDevtools = import.meta.env.DEV
         "@tanstack/react-router-devtools"
       );
       return {
-        default: () => (
-          <TanStackRouterDevtools
-            router={router}
-            toggleButtonProps={{ id: TOGGLE_ID, style: { display: "none" } }}
-          />
-        ),
+        default: () => {
+          // Attach to the FOCUSED pane's router (there is one per pane now),
+          // re-resolving when routers register/unregister.
+          const router = useSyncExternalStore(
+            subscribePaneRouters,
+            getFocusedRouterOrNull,
+          );
+          if (!router) return null;
+          return (
+            <TanStackRouterDevtools
+              router={router}
+              toggleButtonProps={{ id: TOGGLE_ID, style: { display: "none" } }}
+            />
+          );
+        },
       };
     })
   : () => null;

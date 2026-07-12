@@ -21,23 +21,29 @@ export interface BrowserTabsClient {
     channelId: string | null;
     channelSection?: string | null;
     appView?: string | null;
-    /** Renderer-minted id for a tab this call may create (local-first sync). */
+    /** Renderer-minted ids this call may create with (local-first sync). */
     tabId?: string;
+    paneId?: string;
   }): Promise<TabsSnapshot>;
   newBlankTab(input: {
     windowId: string;
-    /** Renderer-minted id (see openOrFocus.tabId). */
+    /** Renderer-minted ids (see openOrFocus). */
     tabId?: string;
+    paneId?: string;
   }): Promise<TabsSnapshot>;
-  setTabTarget(input: {
-    tabId: string;
+  setPaneTarget(input: {
+    paneId: string;
     dashboardId: string | null;
     taskId: string | null;
     channelId: string | null;
     channelSection?: string | null;
     appView?: string | null;
   }): Promise<TabsSnapshot>;
-  close(tabId: string): Promise<TabsSnapshot>;
+  close(input: {
+    tabId: string;
+    blankTabId?: string;
+    blankPaneId?: string;
+  }): Promise<TabsSnapshot>;
   setActiveTab(input: {
     windowId: string;
     tabId: string | null;
