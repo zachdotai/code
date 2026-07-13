@@ -83,3 +83,7 @@ apps/mobile/ROADMAP.md
 
 # pi project-local config (per-developer MCP servers, prompts, etc.)
 .pi/
+
+# Storybook visual regression: baselines are committed, diffs/failures are not
+apps/code/.storybook/__snapshots__/__diff_output__/
+apps/code/.storybook/__snapshots__/__failures__/

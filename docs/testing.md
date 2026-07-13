@@ -189,6 +189,32 @@ agent-browser snapshot -i                           # then click/type/screenshot
 
 This drives whatever profile is signed into `~/.posthog-code`; do not mutate production data while exploring. See the `test-electron-app` skill.
 
+## Storybook Visual Regression
+
+Every story is snapshot-tested in Chromium in both themes (`<story-id>--dark.png` and `--light.png`) using `@storybook/test-runner` + `jest-image-snapshot`, following posthog/posthog's Storybook test-runner setup. The harness lives in `apps/code/.storybook/test-runner.ts`; baselines live in `apps/code/.storybook/__snapshots__/`.
+
+Baselines are Linux-rendered and CI-owned. The `Storybook visual regression` workflow rebuilds every snapshot on each PR and auto-commits any changes back to the branch (signed via the GitHub API), so visual changes show up as reviewable PNG diffs in the PR. Do not commit locally generated snapshots — macOS font rendering differs, and CI would immediately overwrite them.
+
+Run locally to debug a story before pushing:
+
+```bash
+pnpm --filter code build-storybook
+cd apps/code && pnpm exec http-server storybook-static --port 6006 --silent &
+pnpm --filter code test:visual:update    # or test:visual to compare
+git checkout -- apps/code/.storybook/__snapshots__   # discard macOS renders
+```
+
+Per-story control via story parameters (see the typing in `test-runner.ts`):
+
+- `testOptions.viewport` — viewport size (default 1280x720)
+- `testOptions.waitForSelector` — extra readiness selector(s)
+- `testOptions.waitForLoadersToDisappear` — default `true`, waits out quill spinners/skeletons
+- `testOptions.snapshotTargetSelector` — screenshot a specific element
+- `testOptions.themes` — limit to `["dark"]` or `["light"]`
+- `tags: ["test-skip"]` — skip snapshots for a story
+
+Stories must render deterministically: the preview freezes the clock (`mockdate`) and seeds `Math.random` per render when running under the test runner, but story fixtures should still use fixed dates and stable data.
+
 ## Boundary Checks
 
 After touching `@posthog/platform`, rebuild or typecheck its `dist/` before relying on downstream typechecks.
