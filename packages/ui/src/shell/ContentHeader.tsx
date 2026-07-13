@@ -107,34 +107,20 @@ function LocalHandoffButton({ taskId, task }: { taskId: string; task: Task }) {
   );
 }
 
-// Cloud tasks have no local checkout to switch branches in, so instead of the
-// interactive BranchSelector they get a muted, read-only pill in the same
-// slot: cloud icon + the branch the cloud run works on. Hidden until the run
-// has reported a branch.
+// Cloud tasks have no local checkout to switch branches in, so they get the
+// BranchSelector in read-only mode: a muted pill with a cloud icon and the
+// branch the cloud run works on. Hidden until the run has reported a branch.
 function CloudBranchBadge({ taskId, task }: { taskId: string; task: Task }) {
   const session = useSessionForTask(taskId);
   const branch = task.latest_run?.branch ?? session?.cloudBranch ?? null;
   if (!branch) return null;
   return (
-    <Tooltip
-      content={
-        <span className="flex flex-col">
-          <span>{branch}</span>
-          <span className="text-gray-10">running in the cloud</span>
-        </span>
-      }
-      side="bottom"
-    >
-      <QuillButton
-        variant="outline"
-        size="sm"
-        aria-label={`Cloud branch ${branch}`}
-        className="min-w-0 max-w-[250px] shrink cursor-default text-(--gray-10)"
-      >
-        <Cloud size={14} weight="regular" className="shrink-0" />
-        <span className="min-w-0 truncate">{branch}</span>
-      </QuillButton>
-    </Tooltip>
+    <BranchSelector
+      repoPath={null}
+      currentBranch={branch}
+      workspaceMode="cloud"
+      readOnly
+    />
   );
 }
 

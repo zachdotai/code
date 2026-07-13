@@ -2,6 +2,7 @@ import {
   ArrowClockwise,
   CaretDown,
   Check,
+  Cloud,
   GitBranch,
   Plus,
   Spinner,
@@ -91,6 +92,13 @@ interface BranchSelectorProps {
    * fail while the working tree is mid-operation. Only applies in local mode.
    */
   busyState?: GitBusyState;
+  /**
+   * Render only the trigger as a muted, non-interactive pill — no dropdown,
+   * no checkout. Used where the branch is informational, e.g. a cloud task's
+   * header, where there is no local checkout to switch. In cloud mode the
+   * pill leads with a cloud icon instead of the branch icon.
+   */
+  readOnly?: boolean;
 }
 
 const BUSY_OPERATION_LABEL: Record<GitBusyOperation, string> = {
@@ -124,6 +132,7 @@ export function BranchSelector({
   taskId,
   anchor,
   busyState,
+  readOnly = false,
 }: BranchSelectorProps) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -138,7 +147,8 @@ export function BranchSelector({
 
   const isCloudMode = workspaceMode === "cloud";
   const isSelectionOnly = workspaceMode === "worktree" || isCloudMode;
-  const displayedBranch = isSelectionOnly ? selectedBranch : currentBranch;
+  const displayedBranch =
+    isSelectionOnly && !readOnly ? selectedBranch : currentBranch;
 
   useEffect(() => {
     if (isSelectionOnly && defaultBranch && !selectedBranch && onBranchSelect) {
@@ -301,6 +311,38 @@ export function BranchSelector({
         ? [...branches, USE_INPUT_BRANCH_ACTION]
         : branches
     : [...branches, CREATE_BRANCH_ACTION];
+
+  if (readOnly) {
+    return (
+      <Tooltip
+        content={
+          <span className="flex flex-col">
+            <span>{displayText}</span>
+            {isCloudMode ? (
+              <span className="text-gray-10">running in the cloud</span>
+            ) : repoPath ? (
+              <span className="text-gray-10">in {repoPath}</span>
+            ) : null}
+          </span>
+        }
+        side="bottom"
+      >
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={`Branch ${displayText}`}
+          className="min-w-0 max-w-[250px] shrink cursor-default text-(--gray-10)"
+        >
+          {isCloudMode ? (
+            <Cloud size={14} weight="regular" className="shrink-0" />
+          ) : (
+            <GitBranch size={14} weight="regular" className="shrink-0" />
+          )}
+          <span className="min-w-0 truncate">{displayText}</span>
+        </Button>
+      </Tooltip>
+    );
+  }
 
   return (
     <Combobox
