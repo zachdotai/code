@@ -172,7 +172,7 @@ export function CreateChannelModal({
     >
       <DialogContent showCloseButton={false} className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="font-bold">
             {isDescribeMode ? "Build this context" : "Create a context"}
           </DialogTitle>
           <DialogDescription>

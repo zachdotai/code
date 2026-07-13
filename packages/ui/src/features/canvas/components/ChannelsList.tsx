@@ -1,5 +1,4 @@
 import {
-  CaretDownIcon,
   ChartBarIcon,
   DotsThreeIcon,
   FileTextIcon,
@@ -19,6 +18,10 @@ import {
   AlertDialogTitle,
   Button,
   ButtonGroup,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleHeader,
+  CollapsibleTrigger,
   AlertDialog as ConfirmDialog,
   ContextMenu,
   ContextMenuContent,
@@ -31,7 +34,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  MenuLabel,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -531,40 +533,47 @@ function PersonalChannelRow() {
   );
 }
 
-// A collapsible section label. Clicking the whole header toggles the section;
-// a caret rotates to signal open/closed. Presentation only — collapse state is
-// owned by the caller so it can persist across the (long-lived) sidebar mount.
-function SectionHeader({
+// A collapsible section (Starred / Contexts). The left "rest" icon swaps to a
+// chevron when the header row is hovered or focused (Finder/VS Code tree
+// pattern), via quill's folder-variant Collapsible. The full-row label button
+// sits under the overlaid icon (`ps-7` clears it) so hovering or clicking
+// anywhere on the row highlights and toggles the section.
+function CollapsibleSection({
   icon,
   label,
-  collapsed,
-  onToggle,
+  count,
+  open,
+  onOpenChange,
+  children,
 }: {
   icon: ReactNode;
   label: string;
-  collapsed: boolean;
-  onToggle: () => void;
+  count: number;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={!collapsed}
-      className="group flex w-full items-center gap-2"
-    >
-      <MenuLabel className="flex w-full items-center gap-2 uppercase">
-        {icon}
-        <span className="flex-1 text-left">{label}</span>
-        <CaretDownIcon
-          size={12}
-          weight="bold"
-          className={cn(
-            "shrink-0 text-gray-9 transition-transform",
-            collapsed && "-rotate-90",
-          )}
-        />
-      </MenuLabel>
-    </button>
+    <Collapsible variant="folder" open={open} onOpenChange={onOpenChange}>
+      <CollapsibleHeader>
+        {/* The rest icon (star / squircle) that swaps to the chevron on hover. */}
+        <CollapsibleTrigger iconOnly icon={icon}>
+          Toggle {label}
+        </CollapsibleTrigger>
+        {/* Full-row surface under the overlaid chevron; toggles the section. */}
+        <Button
+          variant="default"
+          size="sm"
+          left
+          onClick={() => onOpenChange(!open)}
+          className="w-full ps-7 font-medium text-[11px] text-gray-9 uppercase tracking-wide"
+        >
+          {label}
+          <span className="ms-auto text-subtle-foreground">{count}</span>
+        </Button>
+      </CollapsibleHeader>
+      <CollapsibleContent>{children}</CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -576,8 +585,9 @@ export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
   const [modalOpen, setModalOpen] = useState(false);
-  const [starredCollapsed, setStarredCollapsed] = useState(false);
-  const [contextsCollapsed, setContextsCollapsed] = useState(false);
+  // Section open state, persisted across the (long-lived) sidebar mount.
+  const [starredOpen, setStarredOpen] = useState(true);
+  const [contextsOpen, setContextsOpen] = useState(true);
 
   // The "me" folder renders as the pinned personal row, not a shared channel.
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
@@ -611,52 +621,46 @@ export function ChannelsList() {
           gap="px"
           className="scroll-mask-4 h-full overflow-y-auto px-2 pt-2 pb-16"
         >
-          <PersonalChannelRow />
+          <div className="mb-2">
+            <PersonalChannelRow />
+          </div>
 
           {starred.length > 0 && (
-            <>
-              <Box>
-                <SectionHeader
-                  icon={<StarIcon size={14} className="text-gray-9" />}
-                  label="Starred"
-                  collapsed={starredCollapsed}
-                  onToggle={() => setStarredCollapsed((c) => !c)}
-                />
-              </Box>
-              {!starredCollapsed && (
-                <div className="pl-2">
-                  {starred.map((channel) => (
-                    <ChannelSection key={channel.id} channel={channel} />
-                  ))}
-                </div>
-              )}
-            </>
+            <CollapsibleSection
+              icon={<StarIcon size={14} />}
+              label="Starred"
+              count={starred.length}
+              open={starredOpen}
+              onOpenChange={setStarredOpen}
+            >
+              <div className="pl-2">
+                {starred.map((channel) => (
+                  <ChannelSection key={channel.id} channel={channel} />
+                ))}
+              </div>
+            </CollapsibleSection>
           )}
 
-          <Box className={cn(starred.length > 0 && "mt-3")}>
-            <SectionHeader
-              icon={<SquircleDashed size={14} className="text-gray-9" />}
+          <Box className={cn(starred.length > 0 && "mt-1")}>
+            <CollapsibleSection
+              icon={<SquircleDashed size={14} />}
               label="Contexts"
-              collapsed={contextsCollapsed}
-              onToggle={() => setContextsCollapsed((c) => !c)}
-            />
-          </Box>
-
-          {!contextsCollapsed && (
-            <>
+              count={others.length}
+              open={contextsOpen}
+              onOpenChange={setContextsOpen}
+            >
               {!isLoading && channels.length === 0 && (
                 <Text size="1" className="px-2 text-gray-9">
                   No contexts yet. Create one to get started.
                 </Text>
               )}
-
               <div className="pl-2">
                 {others.map((channel) => (
                   <ChannelSection key={channel.id} channel={channel} />
                 ))}
               </div>
-            </>
-          )}
+            </CollapsibleSection>
+          </Box>
         </Flex>
 
         {/* Floating create-context button, pinned bottom-right over the list. */}
