@@ -102,7 +102,7 @@ export function MentionText({
   }, [content, markdownLinks]);
   const selfEmail = currentUserEmail?.toLowerCase();
   const router = useRouter();
-  const linkClass = "bg-info/50 px-1 rounded-xs";
+  const linkClass = "bg-info/50 px-0.5 rounded-xs";
   return (
     <Text size="1" className={className}>
       {segments.map(({ segment, key }) => {

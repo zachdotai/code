@@ -403,7 +403,7 @@ const FeedItem = memo(function FeedItem({
   onOpenThread: (task: Task) => void;
 }) {
   return (
-    <ThreadItem className="rounded-none py-4 pr-8 hover:bg-fill-hover/50">
+    <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
@@ -618,7 +618,7 @@ export function DemoMessageItem({
     });
   };
   return (
-    <ThreadItem className="rounded-none py-4 pr-8">
+    <ThreadItem className="rounded-none py-2 pr-8">
       <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
