@@ -122,6 +122,7 @@ describe("buildFolderRows", () => {
     name: string;
     recents: RegisteredFolder[];
     all: RegisteredFolder[];
+    mainReposOnly?: boolean;
     expected: Array<{ id: string; isWorktree: boolean; indented: boolean }>;
   }>([
     {
@@ -160,9 +161,29 @@ describe("buildFolderRows", () => {
       all: [wtA, main, standalone],
       expected: [{ id: "other", isWorktree: false, indented: false }],
     },
-  ])("$name", ({ recents, all, expected }) => {
+    {
+      name: "mainReposOnly collapses families to their main clone",
+      recents: [wtB, standalone],
+      all: [wtA, main, wtB, standalone],
+      mainReposOnly: true,
+      expected: [
+        { id: "code", isWorktree: false, indented: false },
+        { id: "other", isWorktree: false, indented: false },
+      ],
+    },
+    {
+      name: "mainReposOnly keeps worktrees without a registered main clone",
+      recents: [wtA],
+      all: [wtA, wtB, standalone],
+      mainReposOnly: true,
+      expected: [
+        { id: "code-a", isWorktree: true, indented: false },
+        { id: "code-b", isWorktree: true, indented: false },
+      ],
+    },
+  ])("$name", ({ recents, all, mainReposOnly, expected }) => {
     expect(
-      buildFolderRows(recents, all).map((row) => ({
+      buildFolderRows(recents, all, mainReposOnly).map((row) => ({
         id: row.folder.id,
         isWorktree: row.isWorktree,
         indented: row.indented,

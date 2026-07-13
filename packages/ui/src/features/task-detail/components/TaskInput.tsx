@@ -1123,6 +1123,7 @@ export function TaskInput({
                         onChange={setSelectedDirectory}
                         placeholder="Select repository..."
                         anchor={buttonGroupRef}
+                        mainReposOnly={workspaceMode === "worktree"}
                       />
                     )}
                     <BranchSelector

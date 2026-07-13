@@ -45,10 +45,15 @@ interface FolderRow {
  * Groups recent folders into repo families: a recent checkout pulls in its
  * main clone and every registered worktree of the same repo, main first,
  * worktrees indented beneath it. Standalone folders stay single rows.
+ *
+ * With `mainReposOnly`, worktrees whose main clone is in the list are dropped
+ * so only one row per repo remains; worktrees without a registered main stay,
+ * as they are the repo's only selectable entry.
  */
 export function buildFolderRows(
   recentFolders: RegisteredFolder[],
   allFolders: RegisteredFolder[],
+  mainReposOnly = false,
 ): FolderRow[] {
   const familyKey = (f: RegisteredFolder) => f.mainRepoPath ?? f.path;
   const emitted = new Set<string>();
@@ -63,6 +68,7 @@ export function buildFolderRows(
       .filter((f) => f.mainRepoPath)
       .sort((a, b) => a.name.localeCompare(b.name));
     if (main) rows.push({ folder: main, isWorktree: false, indented: false });
+    if (main && mainReposOnly) continue;
     for (const wt of worktrees) {
       rows.push({ folder: wt, isWorktree: true, indented: !!main });
     }
@@ -76,6 +82,8 @@ interface FolderPickerProps {
   placeholder?: string;
   variant?: "compact" | "field";
   anchor?: RefObject<HTMLElement | null>;
+  /** Collapse each repo family to its main clone, hiding worktree rows. */
+  mainReposOnly?: boolean;
 }
 
 export function FolderPicker({
@@ -84,6 +92,7 @@ export function FolderPicker({
   placeholder = "Select folder...",
   variant = "compact",
   anchor,
+  mainReposOnly = false,
 }: FolderPickerProps) {
   const trpcClient = useHostTRPCClient();
   const trpc = useHostTRPC();
@@ -106,8 +115,8 @@ export function FolderPicker({
   const [menuOpen, setMenuOpen] = useState(false);
 
   const folderRows = useMemo(
-    () => buildFolderRows(recentFolders, folders),
-    [recentFolders, folders],
+    () => buildFolderRows(recentFolders, folders, mainReposOnly),
+    [recentFolders, folders, mainReposOnly],
   );
 
   // Current branch per visible row, so the picker answers "what is checked

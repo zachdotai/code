@@ -1,49 +1,14 @@
-import {
-  Archive,
-  GitFork,
-  GitPullRequest,
-  PushPin,
-} from "@phosphor-icons/react";
-import { parseGithubUrl } from "@posthog/git/utils";
+import { Archive, PushPin } from "@phosphor-icons/react";
 import type { WorkspaceMode } from "@posthog/shared";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
-import { navigateToPullRequestView } from "@posthog/ui/router/navigationBridge";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DotsCircleSpinner } from "../../../../primitives/DotsCircleSpinner";
 import { NestedButton } from "../../../../primitives/NestedButton";
 import { Tooltip } from "../../../../primitives/Tooltip";
 import type { SidebarPrState } from "../../useTaskPrStatus";
 import { SidebarItem } from "../SidebarItem";
 import { ICON_SIZE, TaskIcon } from "./TaskIcon";
-
-function PrBadge({ url, number }: { url: string; number: number }) {
-  return (
-    <Tooltip content="Open pull request" side="top">
-      <NestedButton
-        aria-label={`Open pull request #${number}`}
-        className="flex h-4 shrink-0 cursor-pointer items-center gap-0.5 rounded bg-gray-3 px-1 text-[11px] text-gray-11 transition-colors hover:bg-gray-4 hover:text-gray-12"
-        onActivate={() => {
-          navigateToPullRequestView(url);
-        }}
-      >
-        <GitPullRequest size={10} weight="bold" />
-        {`#${number}`}
-      </NestedButton>
-    </Tooltip>
-  );
-}
-
-function WorktreeChip({ name, path }: { name: string; path?: string }) {
-  return (
-    <Tooltip content={path ?? name} side="top">
-      <span className="flex h-4 max-w-[96px] shrink-0 items-center gap-0.5 rounded bg-gray-3 px-1 text-[11px] text-gray-11">
-        <GitFork size={10} weight="bold" className="shrink-0" />
-        <span className="truncate">{name}</span>
-      </span>
-    </Tooltip>
-  );
-}
 
 interface TaskItemProps {
   depth?: number;
@@ -55,10 +20,6 @@ interface TaskItemProps {
   isArchiving?: boolean;
   hideHoverActions?: boolean;
   workspaceMode?: WorkspaceMode;
-  /** Checkout name shown as a chip when the task runs in a git worktree. */
-  worktreeName?: string;
-  /** Full path of that checkout, surfaced in the chip's tooltip. */
-  worktreePath?: string;
   isGenerating?: boolean;
   isUnread?: boolean;
   isPinned?: boolean;
@@ -69,7 +30,6 @@ interface TaskItemProps {
   slackThreadUrl?: string;
   prState?: SidebarPrState;
   hasDiff?: boolean;
-  prUrl?: string | null;
   timestamp?: number;
   isEditing?: boolean;
   onClick: (e: React.MouseEvent) => void;
@@ -131,8 +91,6 @@ export function TaskItem({
   isArchiving = false,
   hideHoverActions = false,
   workspaceMode,
-  worktreeName,
-  worktreePath,
   isSuspended = false,
   isGenerating,
   isUnread,
@@ -143,7 +101,6 @@ export function TaskItem({
   slackThreadUrl,
   prState,
   hasDiff,
-  prUrl,
   timestamp,
   isEditing = false,
   onClick,
@@ -172,19 +129,11 @@ export function TaskItem({
     />
   );
 
-  const prRef = useMemo(() => (prUrl ? parseGithubUrl(prUrl) : null), [prUrl]);
-  const prBadge =
-    prUrl && prRef?.kind === "pr" ? (
-      <PrBadge url={prUrl} number={prRef.number} />
-    ) : null;
-
-  // The PR badge takes the timestamp's slot, so hide the timestamp when shown.
-  const timestampNode =
-    timestamp && !prBadge ? (
-      <span className="shrink-0 text-[11px] text-gray-11 group-hover:hidden">
-        {formatRelativeTimeShort(timestamp)}
-      </span>
-    ) : null;
+  const timestampNode = timestamp ? (
+    <span className="shrink-0 text-[11px] text-gray-11 group-hover:hidden">
+      {formatRelativeTimeShort(timestamp)}
+    </span>
+  ) : null;
 
   const toolbar =
     !isArchiving && !hideHoverActions && (onArchive || onTogglePin) ? (
@@ -195,15 +144,9 @@ export function TaskItem({
       />
     ) : null;
 
-  const worktreeChip = worktreeName ? (
-    <WorktreeChip name={worktreeName} path={worktreePath} />
-  ) : null;
-
   const endContent =
-    worktreeChip || prBadge || timestampNode || toolbar ? (
+    timestampNode || toolbar ? (
       <>
-        {worktreeChip}
-        {prBadge}
         {timestampNode}
         {toolbar}
       </>
