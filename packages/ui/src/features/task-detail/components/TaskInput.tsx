@@ -564,6 +564,22 @@ export function TaskInput({
 
   const { folders } = useFolders();
 
+  // Worktree mode creates a fresh checkout from the main clone, and its folder
+  // picker only lists main repos — but the selection can still point at a
+  // worktree (picked in local mode before switching, or persisted from a past
+  // session). Remap it to the worktree's main repo so task creation doesn't
+  // treat a worktree path as the main repo. Only remap when the main clone is
+  // itself registered; otherwise the worktree row is the repo's only entry.
+  useEffect(() => {
+    if (workspaceMode !== "worktree" || !selectedDirectory) return;
+    const mainRepoPath = folders.find(
+      (f) => f.path === selectedDirectory,
+    )?.mainRepoPath;
+    if (mainRepoPath && folders.some((f) => f.path === mainRepoPath)) {
+      setSelectedDirectory(mainRepoPath);
+    }
+  }, [workspaceMode, selectedDirectory, folders, setSelectedDirectory]);
+
   useEffect(() => {
     if (selectedRepository || !lastUsedCloudRepository) {
       return;
