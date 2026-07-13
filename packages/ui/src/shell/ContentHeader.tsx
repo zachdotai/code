@@ -107,6 +107,37 @@ function LocalHandoffButton({ taskId, task }: { taskId: string; task: Task }) {
   );
 }
 
+// Cloud tasks have no local checkout to switch branches in, so instead of the
+// interactive BranchSelector they get a muted, read-only pill in the same
+// slot: cloud icon + the branch the cloud run works on. Hidden until the run
+// has reported a branch.
+function CloudBranchBadge({ taskId, task }: { taskId: string; task: Task }) {
+  const session = useSessionForTask(taskId);
+  const branch = task.latest_run?.branch ?? session?.cloudBranch ?? null;
+  if (!branch) return null;
+  return (
+    <Tooltip
+      content={
+        <span className="flex flex-col">
+          <span>{branch}</span>
+          <span className="text-gray-10">running in the cloud</span>
+        </span>
+      }
+      side="bottom"
+    >
+      <QuillButton
+        variant="outline"
+        size="sm"
+        aria-label={`Cloud branch ${branch}`}
+        className="min-w-0 max-w-[250px] shrink cursor-default text-(--gray-10)"
+      >
+        <Cloud size={14} weight="regular" className="shrink-0" />
+        <span className="min-w-0 truncate">{branch}</span>
+      </QuillButton>
+    </Tooltip>
+  );
+}
+
 function TaskDiffStatsBadge({ task }: { task: Task }) {
   const { filesChanged, linesAdded, linesRemoved, isOpen, toggle } =
     useDiffStatsToggle(task, "split");
@@ -180,7 +211,13 @@ export function ContentHeader() {
               even if HEAD is detached (the default for worktree tasks) — the
               linked branch is where the task's commits land, and hiding the
               control entirely makes a local task look like a cloud one. */}
+          {isCloudTask && (
+            <div className="no-drag flex h-full min-w-0 items-center">
+              <CloudBranchBadge taskId={activeTask.id} task={activeTask} />
+            </div>
+          )}
           {activeWorkspace &&
+            !isCloudTask &&
             !activeWorkspace.isScratch &&
             (activeWorkspace.worktreePath ||
               activeWorkspace.folderPath ||
