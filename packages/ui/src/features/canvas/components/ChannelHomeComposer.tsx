@@ -13,7 +13,6 @@ import {
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { track } from "../../../shell/analytics";
 import { useOptionalAuthenticatedClient } from "../../auth/authClient";
-import { useUserRepositoryIntegration } from "../../integrations/useIntegrations";
 import { PromptInput } from "../../message-editor/components/PromptInput";
 import { useDraftStore } from "../../message-editor/draftStore";
 import type { EditorHandle } from "../../message-editor/types";
@@ -25,14 +24,9 @@ import {
   type AgentAdapter,
   useSettingsStore,
 } from "../../settings/settingsStore";
-import {
-  type WorkspaceMode,
-  WorkspaceModeSelect,
-} from "../../task-detail/components/WorkspaceModeSelect";
-import { useCloudModeEnabled } from "../../task-detail/hooks/useCloudModeEnabled";
+import type { WorkspaceMode } from "../../task-detail/components/WorkspaceModeSelect";
 import { usePreviewConfig } from "../../task-detail/hooks/usePreviewConfig";
 import { useTaskCreation } from "../../task-detail/hooks/useTaskCreation";
-import { resolveWorkspaceModePreference } from "../../task-detail/hooks/workspaceModePreference";
 import { trackAndCreateCanvas } from "../createCanvasAnalytics";
 import { channelFeedQueryKey } from "../hooks/useChannelFeed";
 import {
@@ -64,8 +58,8 @@ interface ChannelHomeComposerProps {
 // of TaskInput: it reuses the same task-creation pipeline (model/mode/reasoning
 // preview config + useTaskCreation) but drops the repo/branch pickers — channel
 // tasks run repo-less and the agent attaches a repo lazily if it needs one. The
-// starter-prompt suggestions render in the parent above the box; this owns the
-// local/cloud selector.
+// starter-prompt suggestions render in the parent above the box. Channel tasks
+// always run in the cloud, so there's no local/cloud selector.
 export const ChannelHomeComposer = forwardRef<
   ChannelHomeComposerHandle,
   ChannelHomeComposerProps
@@ -108,9 +102,6 @@ export const ChannelHomeComposer = forwardRef<
   const {
     lastUsedAdapter,
     setLastUsedAdapter,
-    lastUsedWorkspaceMode,
-    setLastUsedWorkspaceMode,
-    setLastUsedLocalWorkspaceMode,
     allowBypassPermissions,
     defaultInitialTaskMode,
     lastUsedInitialTaskMode,
@@ -124,30 +115,9 @@ export const ChannelHomeComposer = forwardRef<
     [setLastUsedAdapter],
   );
 
-  const cloudModeEnabled = useCloudModeEnabled();
-  const { hasGithubIntegration } = useUserRepositoryIntegration();
-
-  // Repo-less channel tasks only run local or cloud (worktree needs a repo), so
-  // collapse any lingering worktree preference down to local for the initial pick.
-  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() =>
-    resolveWorkspaceModePreference({
-      preferredMode: lastUsedWorkspaceMode === "cloud" ? "cloud" : "local",
-      cloudModeEnabled,
-      hasGithubIntegration,
-      lastUsedLocalWorkspaceMode: "local",
-    }),
-  );
-  const [selectedCloudEnvId, setSelectedCloudEnvId] = useState<string | null>(
-    null,
-  );
-  const setWorkspaceMode = useCallback(
-    (mode: WorkspaceMode) => {
-      setWorkspaceModeState(mode);
-      setLastUsedWorkspaceMode(mode);
-      if (mode !== "cloud") setLastUsedLocalWorkspaceMode(mode);
-    },
-    [setLastUsedWorkspaceMode, setLastUsedLocalWorkspaceMode],
-  );
+  // Channel tasks always run in the cloud — the local/cloud pick is removed, so
+  // the mode is fixed here and the default cloud environment is used.
+  const workspaceMode: WorkspaceMode = "cloud";
 
   const { modeOption, modelOption, thoughtOption, isLoading, setConfigOption } =
     usePreviewConfig(adapter);
@@ -247,10 +217,7 @@ export const ChannelHomeComposer = forwardRef<
     sessionId,
     selectedDirectory: "",
     workspaceMode,
-    sandboxEnvironmentId:
-      workspaceMode === "cloud" && selectedCloudEnvId
-        ? selectedCloudEnvId
-        : undefined,
+    sandboxEnvironmentId: undefined,
     editorIsEmpty,
     adapter,
     executionMode: currentExecutionMode,
@@ -311,22 +278,6 @@ export const ChannelHomeComposer = forwardRef<
 
   return (
     <div className="flex w-full flex-col">
-      {/* Canvas generation always runs in the cloud, so the local/cloud pick
-          doesn't apply while canvas mode is armed. */}
-      {!canvasArmed && (
-        <div className="mb-2 flex items-center gap-2">
-          <WorkspaceModeSelect
-            value={workspaceMode}
-            onChange={setWorkspaceMode}
-            overrideModes={["local", "cloud"]}
-            selectedCloudEnvironmentId={selectedCloudEnvId}
-            onCloudEnvironmentChange={setSelectedCloudEnvId}
-            size="1"
-            disabled={isBusy}
-          />
-        </div>
-      )}
-
       <PromptInput
         ref={editorRef}
         sessionId={sessionId}
