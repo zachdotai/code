@@ -65,16 +65,21 @@ function ThreadMessageRow({
 }) {
   const forwarded = !!message.forwarded_to_agent_at;
   const showMenu = (isTaskAuthor && !forwarded) || isOwnMessage;
+  // Authorless messages are posted by the backend on the agent's behalf
+  // (canvas created, turn complete).
+  const isAgent = !message.author;
 
   return (
     <div className="group flex gap-2 rounded-md px-2 py-1.5 hover:bg-fill-secondary">
       <Avatar size="xs" className="mt-0.5 shrink-0">
-        <AvatarFallback>{getUserInitials(message.author)}</AvatarFallback>
+        <AvatarFallback>
+          {isAgent ? <RobotIcon size={12} /> : getUserInitials(message.author)}
+        </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <Text size="1" weight="medium" className="truncate">
-            {userDisplayName(message.author)}
+            {isAgent ? "Agent" : userDisplayName(message.author)}
           </Text>
           <Text size="1" className="shrink-0 text-muted-foreground">
             {formatRelativeTimeShort(message.created_at)}
