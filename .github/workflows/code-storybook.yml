@@ -170,6 +170,10 @@ jobs:
           # Lets the VR web UI re-trigger this job via the Actions API.
           JOB_CHECK_RUN_ID: ${{ job.check_run_id }}
         run: |
+          if [ -z "$VR_TOKEN" ]; then
+            echo "::notice::VR_API_TOKEN secret not set - skipping Visual Review submission"
+            exit 0
+          fi
           vr submit \
             --type storybook \
             --dir apps/code/.storybook/__snapshots__/ \
