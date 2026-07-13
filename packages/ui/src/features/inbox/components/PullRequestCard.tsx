@@ -14,9 +14,9 @@ import { InboxCardSourceMeta } from "@posthog/ui/features/inbox/components/Inbox
 import { InboxCardTitle } from "@posthog/ui/features/inbox/components/InboxCardTitle";
 import { PrDiffStats } from "@posthog/ui/features/inbox/components/PrDiffStats";
 import { PriorityMonogram } from "@posthog/ui/features/inbox/components/PriorityMonogram";
-import { usePrDiffStatsFromBatch } from "@posthog/ui/features/inbox/context/PrDiffStatsBatchContext";
 import { SuggestedReviewerAvatarStack } from "@posthog/ui/features/inbox/components/SuggestedReviewerAvatarStack";
 import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
+import { usePrDiffStatsFromBatch } from "@posthog/ui/features/inbox/context/PrDiffStatsBatchContext";
 import { useInboxReportDetailPrefetch } from "@posthog/ui/features/inbox/hooks/useInboxReportDetailPrefetch";
 import { useInboxReportArtefacts } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { Button as UiButton } from "@posthog/ui/primitives/Button";
