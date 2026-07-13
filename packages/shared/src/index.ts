@@ -196,6 +196,7 @@ export {
   type PermissionRequest,
   type QueuedMessage,
   resolveBypassRevertMode,
+  sendableQueuePrefixLength,
   type SessionStatus,
   sessionSupportsNativeSteer,
 } from "./sessions";

@@ -6,12 +6,16 @@ import {
   combineQueuedCloudPrompts,
   promptToQueuedEditorContent,
 } from "@posthog/core/sessions/cloudPrompt";
+import {
+  SESSION_SERVICE,
+  type SessionService,
+} from "@posthog/core/sessions/sessionService";
+import { useService } from "@posthog/di/react";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import {
   type QueuedMessage,
   useSessionIsCloud,
 } from "@posthog/ui/features/sessions/sessionStore";
-import { useSessionViewActions } from "@posthog/ui/features/sessions/sessionViewStore";
 import { useCallback } from "react";
 
 /**
@@ -33,7 +37,7 @@ export function useEditQueuedMessage(
   taskId: string | undefined,
 ): (message: QueuedMessage) => void {
   const { requestFocus, setPendingContent } = useDraftStore((s) => s.actions);
-  const { setEditingQueuedId } = useSessionViewActions();
+  const sessionService = useService<SessionService>(SESSION_SERVICE);
   const isCloud = useSessionIsCloud(taskId);
 
   return useCallback(
@@ -51,11 +55,11 @@ export function useEditQueuedMessage(
       }
       if (!pendingContent) return;
 
-      setEditingQueuedId(taskId, message.id);
+      sessionService.setEditingQueuedMessage(taskId, message.id);
       setPendingContent(taskId, pendingContent);
       requestFocus(taskId);
     },
-    [taskId, isCloud, requestFocus, setPendingContent, setEditingQueuedId],
+    [taskId, isCloud, requestFocus, setPendingContent, sessionService],
   );
 }
 
@@ -68,11 +72,11 @@ export function useCancelQueuedMessageEdit(
   taskId: string | undefined,
 ): () => void {
   const { setPendingContent } = useDraftStore((s) => s.actions);
-  const { clearEditingQueuedId } = useSessionViewActions();
+  const sessionService = useService<SessionService>(SESSION_SERVICE);
 
   return useCallback(() => {
     if (!taskId) return;
-    clearEditingQueuedId(taskId);
+    sessionService.clearEditingQueuedMessage(taskId);
     setPendingContent(taskId, EMPTY_CONTENT);
-  }, [taskId, clearEditingQueuedId, setPendingContent]);
+  }, [taskId, sessionService, setPendingContent]);
 }

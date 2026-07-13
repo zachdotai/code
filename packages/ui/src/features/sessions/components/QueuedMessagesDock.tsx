@@ -20,7 +20,6 @@ import {
   useSessionStore,
 } from "@posthog/ui/features/sessions/sessionStore";
 import {
-  useEditingQueuedId,
   useQueueCollapsed,
   useSessionViewActions,
 } from "@posthog/ui/features/sessions/sessionViewStore";
@@ -85,7 +84,7 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
   const supportsNativeSteer = useSupportsNativeSteer(taskId);
   const editMessage = useEditQueuedMessage(taskId);
   const cancelEdit = useCancelQueuedMessageEdit(taskId);
-  const editingId = useEditingQueuedId(taskId);
+  const editingId = useSessionSelector(taskId, (s) => s?.editingQueuedId);
   // Narrow reads (not the whole session) so the dock doesn't re-render on every
   // streamed token while a turn is running.
   const isCompacting = useSessionSelector(
@@ -98,15 +97,16 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
   // so hide it there too — the message stays queued and lands next turn.
   const canSteer = !isCompacting && !isCloud;
   const collapsed = useQueueCollapsed(taskId);
-  const { setQueueCollapsed, clearEditingQueuedId } = useSessionViewActions();
+  const { setQueueCollapsed } = useSessionViewActions();
 
-  // If the message being edited leaves the queue (drained on turn end, or
-  // discarded), drop the stale edit target so the composer sends normally.
+  // If the message being edited leaves the queue (e.g. discarded), drop the
+  // stale edit hold so the composer sends normally and any messages the hold
+  // was blocking can drain.
   useEffect(() => {
     if (editingId && !queued.some((m) => m.id === editingId)) {
-      clearEditingQueuedId(taskId);
+      sessionService.clearEditingQueuedMessage(taskId);
     }
-  }, [editingId, queued, taskId, clearEditingQueuedId]);
+  }, [editingId, queued, taskId, sessionService]);
 
   const handleDragOver: DragDropEvents["dragover"] = useCallback(
     (event) => {

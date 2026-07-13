@@ -1,4 +1,8 @@
-import type { AgentSession, QueuedMessage } from "@posthog/shared";
+import {
+  type AgentSession,
+  type QueuedMessage,
+  sendableQueuePrefixLength,
+} from "@posthog/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { sessionStore, sessionStoreSetters } from "./sessionStore";
 
@@ -89,5 +93,99 @@ describe("updateQueuedMessage", () => {
     });
 
     expect(queue()[0].content).toBe("A");
+  });
+});
+
+describe("sendableQueuePrefixLength", () => {
+  const q = (ids: string[]): Pick<AgentSession, "messageQueue"> => ({
+    messageQueue: ids.map((id) => msg(id, id)),
+  });
+
+  it("returns the full length when nothing is being edited", () => {
+    expect(sendableQueuePrefixLength(q(["a", "b", "c"]))).toBe(3);
+  });
+
+  it("stops at the edited message, so only earlier messages count", () => {
+    expect(
+      sendableQueuePrefixLength({ ...q(["a", "b", "c"]), editingQueuedId: "b" }),
+    ).toBe(1);
+  });
+
+  it("returns 0 when the head message is being edited", () => {
+    expect(
+      sendableQueuePrefixLength({ ...q(["a", "b", "c"]), editingQueuedId: "a" }),
+    ).toBe(0);
+  });
+
+  it("returns the full length when the edited id already left the queue", () => {
+    expect(
+      sendableQueuePrefixLength({
+        ...q(["a", "b", "c"]),
+        editingQueuedId: "gone",
+      }),
+    ).toBe(3);
+  });
+});
+
+describe("editing hold on the drain", () => {
+  it("set/clear stores and releases the edit hold", () => {
+    seedQueue([msg("a", "A"), msg("b", "B")]);
+
+    sessionStoreSetters.setEditingQueuedMessage(TASK, "b");
+    expect(sessionStore.getState().sessions[RUN].editingQueuedId).toBe("b");
+
+    sessionStoreSetters.clearEditingQueuedMessage(TASK);
+    expect(
+      sessionStore.getState().sessions[RUN].editingQueuedId,
+    ).toBeUndefined();
+  });
+
+  it("stopAtEdited drains only the messages before the edited one", () => {
+    seedQueue([msg("a", "A"), msg("b", "B"), msg("c", "C")]);
+    sessionStoreSetters.setEditingQueuedMessage(TASK, "b");
+
+    const combined = sessionStoreSetters.dequeueMessagesAsText(TASK, {
+      stopAtEdited: true,
+    });
+
+    expect(combined).toBe("A");
+    // The edited message and everything after it stay queued.
+    expect(queue().map((m) => m.id)).toEqual(["b", "c"]);
+  });
+
+  it("stopAtEdited sends nothing when the head message is being edited", () => {
+    seedQueue([msg("a", "A"), msg("b", "B")]);
+    sessionStoreSetters.setEditingQueuedMessage(TASK, "a");
+
+    expect(
+      sessionStoreSetters.dequeueMessagesAsText(TASK, { stopAtEdited: true }),
+    ).toBeNull();
+    expect(
+      sessionStoreSetters.dequeueMessages(TASK, { stopAtEdited: true }),
+    ).toEqual([]);
+    expect(queue().map((m) => m.id)).toEqual(["a", "b"]);
+  });
+
+  it("dequeueMessages with stopAtEdited returns the sendable prefix as raw items", () => {
+    seedQueue([msg("a", "A"), msg("b", "B"), msg("c", "C")]);
+    sessionStoreSetters.setEditingQueuedMessage(TASK, "c");
+
+    const drained = sessionStoreSetters.dequeueMessages(TASK, {
+      stopAtEdited: true,
+    });
+
+    expect(drained.map((m) => m.id)).toEqual(["a", "b"]);
+    expect(queue().map((m) => m.id)).toEqual(["c"]);
+  });
+
+  it("drains the whole queue when stopAtEdited is not set, even mid-edit", () => {
+    seedQueue([msg("a", "A"), msg("b", "B"), msg("c", "C")]);
+    sessionStoreSetters.setEditingQueuedMessage(TASK, "b");
+
+    // Cancel / recall paths pull everything back regardless of the edit hold.
+    const combined = sessionStoreSetters.dequeueMessagesAsText(TASK);
+
+    expect(combined).toBe("A\n\nB\n\nC");
+    expect(queue()).toEqual([]);
   });
 });

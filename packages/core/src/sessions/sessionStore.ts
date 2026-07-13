@@ -1,11 +1,12 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import type {
-  AcpMessage,
-  AgentSession,
-  OptimisticItem,
-  PermissionRequest,
-  QueuedMessage,
-  TaskRunStatus,
+import {
+  type AcpMessage,
+  type AgentSession,
+  type OptimisticItem,
+  type PermissionRequest,
+  type QueuedMessage,
+  sendableQueuePrefixLength,
+  type TaskRunStatus,
 } from "@posthog/shared";
 import { setAutoFreeze } from "immer";
 import { immer } from "zustand/middleware/immer";
@@ -245,7 +246,41 @@ export const sessionStoreSetters = {
     });
   },
 
-  dequeueMessagesAsText: (taskId: string): string | null => {
+  /**
+   * Mark a queued message as being edited in the composer. While set it holds
+   * back the auto-drain: the message and everything after it stay queued (only
+   * the messages before it may send) until the edit is saved or cancelled.
+   */
+  setEditingQueuedMessage: (taskId: string, messageId: string) => {
+    sessionStore.setState((state) => {
+      const taskRunId = state.taskIdIndex[taskId];
+      if (!taskRunId) return;
+      const session = state.sessions[taskRunId];
+      if (session) session.editingQueuedId = messageId;
+    });
+  },
+
+  /** Release the in-place edit hold set by {@link setEditingQueuedMessage}. */
+  clearEditingQueuedMessage: (taskId: string) => {
+    sessionStore.setState((state) => {
+      const taskRunId = state.taskIdIndex[taskId];
+      if (!taskRunId) return;
+      const session = state.sessions[taskRunId];
+      if (session) session.editingQueuedId = undefined;
+    });
+  },
+
+  /**
+   * Drain the queue as one combined string. With `stopAtEdited`, only the
+   * messages before the one being edited are drained (the edited message and
+   * everything after stay queued); otherwise the whole queue drains — the
+   * default used by the cancel/recall paths that pull everything back into the
+   * composer.
+   */
+  dequeueMessagesAsText: (
+    taskId: string,
+    options?: { stopAtEdited?: boolean },
+  ): string | null => {
     // Read the queue from the frozen committed state BEFORE entering the
     // immer draft — same rationale as `dequeueMessages`: anything captured
     // through a draft proxy can be revoked when setState exits.
@@ -255,19 +290,34 @@ export const sessionStoreSetters = {
     const session = state.sessions[taskRunId];
     if (!session || session.messageQueue.length === 0) return null;
 
+    const cutoff = options?.stopAtEdited
+      ? sendableQueuePrefixLength(session)
+      : session.messageQueue.length;
+    if (cutoff === 0) return null;
+
     const combined = session.messageQueue
+      .slice(0, cutoff)
       .map((msg) => msg.content)
       .join("\n\n");
     sessionStore.setState((draft) => {
       const trid = draft.taskIdIndex[taskId];
       if (!trid) return;
       const draftSession = draft.sessions[trid];
-      if (draftSession) draftSession.messageQueue = [];
+      if (draftSession) {
+        draftSession.messageQueue = draftSession.messageQueue.slice(cutoff);
+      }
     });
     return combined;
   },
 
-  dequeueMessages: (taskId: string): QueuedMessage[] => {
+  /**
+   * Drain the queue as raw messages. See {@link dequeueMessagesAsText} for the
+   * `stopAtEdited` semantics.
+   */
+  dequeueMessages: (
+    taskId: string,
+    options?: { stopAtEdited?: boolean },
+  ): QueuedMessage[] => {
     // Read the queue from the frozen committed state BEFORE entering the
     // immer draft, otherwise the items returned are proxies that get
     // revoked when setState exits and any later access throws
@@ -278,14 +328,19 @@ export const sessionStoreSetters = {
     const session = state.sessions[taskRunId];
     if (!session || session.messageQueue.length === 0) return [];
 
-    const queuedMessages = [...session.messageQueue];
+    const cutoff = options?.stopAtEdited
+      ? sendableQueuePrefixLength(session)
+      : session.messageQueue.length;
+    if (cutoff === 0) return [];
+
+    const queuedMessages = session.messageQueue.slice(0, cutoff);
 
     sessionStore.setState((draft) => {
       const trid = draft.taskIdIndex[taskId];
       if (!trid) return;
       const draftSession = draft.sessions[trid];
       if (draftSession) {
-        draftSession.messageQueue = [];
+        draftSession.messageQueue = draftSession.messageQueue.slice(cutoff);
       }
     });
 

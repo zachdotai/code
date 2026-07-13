@@ -67,6 +67,9 @@ const mockSessionStoreSetters = vi.hoisted(() => ({
   appendEvents: vi.fn(),
   enqueueMessage: vi.fn(),
   removeQueuedMessage: vi.fn(),
+  updateQueuedMessage: vi.fn(),
+  setEditingQueuedMessage: vi.fn(),
+  clearEditingQueuedMessage: vi.fn(),
   clearMessageQueue: vi.fn(),
   dequeueMessagesAsText: vi.fn((): string | null => null),
   dequeueMessages: vi.fn(
@@ -4049,6 +4052,7 @@ describe("SessionService", () => {
         });
         expect(mockSessionStoreSetters.dequeueMessages).toHaveBeenCalledWith(
           "task-123",
+          { stopAtEdited: true },
         );
       } finally {
         vi.useRealTimers();
@@ -5035,6 +5039,108 @@ describe("SessionService", () => {
         prompt: [{ type: "text", text: "rich blocks" }],
         steer: true,
       });
+    });
+  });
+
+  describe("in-place edit hold release", () => {
+    const seedEditedIdleSession = (
+      overrides: Partial<AgentSession> = {},
+    ): AgentSession => {
+      const session = createMockSession({
+        isCloud: false,
+        status: "connected",
+        isPromptPending: false,
+        messageQueue: [{ id: "q-1", content: "old", queuedAt: 1 }],
+        editingQueuedId: "q-1",
+        ...overrides,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": session,
+      });
+      // Mirror the real store so the flush's readiness check sees the hold gone.
+      mockSessionStoreSetters.clearEditingQueuedMessage.mockImplementation(
+        () => {
+          session.editingQueuedId = undefined;
+        },
+      );
+      return session;
+    };
+
+    it("saving an edit while the agent is idle clears the hold and drains the queue", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = getSessionService();
+        seedEditedIdleSession();
+        mockSessionStoreSetters.dequeueMessagesAsText.mockReturnValue("edited");
+        mockTrpcAgent.prompt.mutate.mockResolvedValue({
+          stopReason: "end_turn",
+        });
+
+        const updated = await service.updateQueuedMessage(
+          "task-123",
+          "q-1",
+          "edited",
+        );
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(updated).toBe(true);
+        expect(
+          mockSessionStoreSetters.clearEditingQueuedMessage,
+        ).toHaveBeenCalledWith("task-123");
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).toHaveBeenCalledWith("task-123", { stopAtEdited: true });
+        expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({ sessionId: "run-123" }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("saving an edit while the agent is still busy does not send immediately", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = getSessionService();
+        seedEditedIdleSession({ isPromptPending: true });
+
+        await service.updateQueuedMessage("task-123", "q-1", "edited");
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(
+          mockSessionStoreSetters.clearEditingQueuedMessage,
+        ).toHaveBeenCalledWith("task-123");
+        // Left for the turn-end drain — nothing sent mid-turn.
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).not.toHaveBeenCalled();
+        expect(mockTrpcAgent.prompt.mutate).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("cancelling an edit while idle drains the messages the hold was blocking", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = getSessionService();
+        seedEditedIdleSession();
+        mockSessionStoreSetters.dequeueMessagesAsText.mockReturnValue("q-1");
+        mockTrpcAgent.prompt.mutate.mockResolvedValue({
+          stopReason: "end_turn",
+        });
+
+        service.clearEditingQueuedMessage("task-123");
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).toHaveBeenCalledWith("task-123", { stopAtEdited: true });
+        expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

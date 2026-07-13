@@ -27,6 +27,7 @@ import {
   type PermissionRequest,
   type QueuedMessage,
   resolveBypassRevertMode,
+  sendableQueuePrefixLength,
   type StoredLogEntry,
   sessionSupportsNativeSteer,
   type TaskRunStatus,
@@ -227,9 +228,17 @@ export interface ISessionStore {
     messageId: string,
     patch: { content: string; rawPrompt?: string | ContentBlock[] },
   ): void;
+  setEditingQueuedMessage(taskId: string, messageId: string): void;
+  clearEditingQueuedMessage(taskId: string): void;
   clearMessageQueue(taskId: string): void;
-  dequeueMessagesAsText(taskId: string): string | null;
-  dequeueMessages(taskId: string): QueuedMessage[];
+  dequeueMessagesAsText(
+    taskId: string,
+    options?: { stopAtEdited?: boolean },
+  ): string | null;
+  dequeueMessages(
+    taskId: string,
+    options?: { stopAtEdited?: boolean },
+  ): QueuedMessage[];
   prependQueuedMessages(taskId: string, messages: QueuedMessage[]): void;
   appendOptimisticItem(
     taskRunId: string,
@@ -2097,12 +2106,16 @@ export class SessionService {
     session: AgentSession,
   ): boolean {
     const freshSession = this.d.store.getSessions()[taskRunId];
-    const hasQueuedMessages =
-      freshSession &&
-      freshSession.messageQueue.length > 0 &&
-      freshSession.status === "connected";
+    // A message being edited in place holds back itself and everything after
+    // it, so only the sendable prefix counts. When the whole queue is held,
+    // this returns false and the caller fires the "turn complete" notification
+    // (the agent is idle, waiting for the edit to be saved).
+    const hasSendableMessages =
+      !!freshSession &&
+      freshSession.status === "connected" &&
+      sendableQueuePrefixLength(freshSession) > 0;
 
-    if (hasQueuedMessages) {
+    if (hasSendableMessages) {
       setTimeout(() => {
         this.sendQueuedMessages(session.taskId).catch((err) => {
           this.d.log.error("Failed to send queued messages", {
@@ -2113,7 +2126,7 @@ export class SessionService {
       }, 0);
     }
 
-    return hasQueuedMessages;
+    return hasSendableMessages;
   }
 
   private handlePermissionRequest(
@@ -2384,7 +2397,9 @@ export class SessionService {
   private async sendQueuedMessages(
     taskId: string,
   ): Promise<{ stopReason: string }> {
-    const combinedText = this.d.store.dequeueMessagesAsText(taskId);
+    const combinedText = this.d.store.dequeueMessagesAsText(taskId, {
+      stopAtEdited: true,
+    });
     if (!combinedText) {
       return { stopReason: "skipped" };
     }
@@ -2552,12 +2567,36 @@ export class SessionService {
   }
 
   /**
+   * Begin an in-place edit of a queued message: mark it as the edit target so
+   * that, until the edit is saved or cancelled, it and everything queued after
+   * it are held back when the turn ends (only the messages before it may send).
+   */
+  setEditingQueuedMessage(taskId: string, messageId: string): void {
+    this.d.store.setEditingQueuedMessage(taskId, messageId);
+  }
+
+  /**
+   * Release an in-place edit hold — the edit was cancelled, or the edited
+   * message left the queue. Drops the hold and, if the agent is now idle, sends
+   * the messages the hold was blocking (the turn may have ended while the user
+   * was still editing, so nothing else would trigger the drain).
+   */
+  clearEditingQueuedMessage(taskId: string): void {
+    this.d.store.clearEditingQueuedMessage(taskId);
+    this.flushQueuedMessagesIfIdle(taskId);
+  }
+
+  /**
    * Update a queued message in place from an edited composer prompt, keeping it
    * in the queue at its current position. Mirrors the enqueue normalization so
    * the stored `content`/`rawPrompt` match what a freshly-queued prompt would
    * hold (cloud recomputes the transport display + raw payload; local stores
    * the serialized text). Returns false when the target is no longer queued so
    * the caller can fall back to sending it as a new message.
+   *
+   * Saving is also what releases the edit hold: the hold is cleared and, if the
+   * agent finished its turn while the user was editing, the now-unblocked queue
+   * is drained.
    */
   async updateQueuedMessage(
     taskId: string,
@@ -2580,7 +2619,39 @@ export class SessionService {
         content: extractPromptText(prompt),
       });
     }
+
+    if (session.editingQueuedId === messageId) {
+      this.d.store.clearEditingQueuedMessage(taskId);
+    }
+    this.flushQueuedMessagesIfIdle(taskId);
     return true;
+  }
+
+  /**
+   * Nudge the queue after an in-place edit is saved or cancelled. The turn may
+   * have finished while the user was editing — in that case nothing else would
+   * trigger the normal turn-end drain, so the now-unblocked messages would sit
+   * stranded until the next turn. Only sends when the agent is actually idle;
+   * a mid-turn edit is left for the turn-end drain to pick up.
+   */
+  private flushQueuedMessagesIfIdle(taskId: string): void {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session || session.messageQueue.length === 0) return;
+
+    if (session.isCloud) {
+      // The cloud flush re-checks run readiness itself, so scheduling while the
+      // run is still busy is a safe no-op.
+      this.scheduleCloudQueueFlush(taskId, "edit_released");
+      return;
+    }
+
+    if (
+      session.status === "connected" &&
+      !session.isPromptPending &&
+      !session.isCompacting
+    ) {
+      this.drainQueuedMessages(session.taskRunId, session);
+    }
   }
 
   /**
@@ -2883,7 +2954,9 @@ export class SessionService {
       const authStatus = await this.getAuthCredentialsStatus();
       if (authStatus.kind === "restoring") return;
 
-      const drained = this.d.store.dequeueMessages(taskId);
+      const drained = this.d.store.dequeueMessages(taskId, {
+        stopAtEdited: true,
+      });
       const combined = this.d.h.combineQueuedCloudPrompts(drained);
       if (!combined) return;
 

@@ -20,7 +20,6 @@ import {
   type AgentSession,
   sessionStoreSetters,
 } from "@posthog/ui/features/sessions/sessionStore";
-import { sessionViewStore } from "@posthog/ui/features/sessions/sessionViewStore";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import {
   SHELL_CLIENT,
@@ -95,9 +94,8 @@ export function useSessionCallbacks({
       // queue rather than sending a new prompt. If the target already drained
       // or was discarded, fall through and send it as a fresh message.
       const editingId =
-        sessionViewStore.getState().editingQueuedIdByTaskId[taskId];
+        sessionStoreSetters.getSessionByTaskId(taskId)?.editingQueuedId;
       if (editingId) {
-        sessionViewStore.getState().actions.clearEditingQueuedId(taskId);
         try {
           const updated = await sessionService.updateQueuedMessage(
             taskId,
@@ -108,11 +106,14 @@ export function useSessionCallbacks({
             markAsViewed(taskId);
             return;
           }
+          // Target no longer queued — drop the stale hold and send as new.
+          sessionService.clearEditingQueuedMessage(taskId);
         } catch (error) {
           const message =
             error instanceof Error ? error.message : "Failed to update message";
           toast.error(message);
           log.error("Failed to update queued message", error);
+          sessionService.clearEditingQueuedMessage(taskId);
           return;
         }
       }
