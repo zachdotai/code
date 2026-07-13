@@ -65,9 +65,11 @@ function ThreadMessageRow({
 }) {
   const forwarded = !!message.forwarded_to_agent_at;
   const showMenu = (isTaskAuthor && !forwarded) || isOwnMessage;
-  // Authorless messages are posted by the backend on the agent's behalf
-  // (canvas created, turn complete).
-  const isAgent = !message.author;
+  // Agent rows are server-emitted announcements (canvas created, turn complete).
+  // author_kind is authoritative; authorless is the pre-author_kind fallback.
+  const isAgent =
+    message.author_kind === "agent" ||
+    (!message.author_kind && !message.author);
 
   return (
     <div className="group flex gap-2 rounded-md px-2 py-1.5 hover:bg-fill-secondary">
