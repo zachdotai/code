@@ -19,6 +19,8 @@ import {
   DropdownMenuTrigger,
   InputGroupAddon,
   InputGroupButton,
+  Skeleton,
+  SkeletonText,
   Spinner,
   ThreadItem,
   ThreadItemAction,
@@ -55,6 +57,7 @@ import {
   ChatMarkdown,
   ChatStreamingMarkdown,
 } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
+import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import { useSessionCallbacks } from "@posthog/ui/features/sessions/hooks/useSessionCallbacks";
 import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
@@ -91,7 +94,7 @@ function ThreadMessageRow({
   return (
     <ThreadItem>
       <ThreadItemGutter>
-        <Avatar size="lg">
+        <Avatar size="lg" className="sticky top-2">
           <AvatarFallback>{getUserInitials(message.author)}</AvatarFallback>
         </Avatar>
       </ThreadItemGutter>
@@ -195,6 +198,23 @@ function agentTurns(items: ConversationItem[]): AgentMessage[] {
   return turns;
 }
 
+// The prompts the user sent the agent — the initial task and each steer — so
+// the thread shows *what was asked* next to the agent's replies. The first
+// prompt carries the channel CONTEXT.md block the saga prepended; strip it so
+// the row reads as the human's actual request.
+function agentPrompts(items: ConversationItem[]): AgentMessage[] {
+  const prompts: AgentMessage[] = [];
+  for (const item of items) {
+    if (item.type !== "user_message") continue;
+    const text = (
+      extractChannelContext(item.content)?.stripped ?? item.content
+    ).trim();
+    if (!text) continue;
+    prompts.push({ id: item.id, text, ts: item.timestamp });
+  }
+  return prompts;
+}
+
 function AgentStatusChip({ status }: { status: AgentStatus }) {
   switch (status.phase) {
     case "active":
@@ -279,12 +299,71 @@ function AgentTurnRow({
   );
 }
 
-// One row in the merged thread timeline: a human message or an agent turn,
-// interleaved by timestamp so the conversation reads chronologically (latest at
-// the bottom) instead of pinning all agent activity below the human replies.
+// A prompt the user sent the agent (the task or a steer), rendered as a human
+// message so the thread shows what was asked. Attributed to the task creator —
+// conversation items don't carry a per-prompt author, and the task owner is who
+// kicked the run off.
+function UserPromptRow({
+  message,
+  author,
+}: {
+  message: AgentMessage;
+  author: TaskThreadMessage["author"];
+}) {
+  return (
+    <ThreadItem>
+      <ThreadItemGutter>
+        <Avatar size="lg" className="sticky top-2">
+          <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+      <ThreadItemContent>
+        <ThreadItemHeader>
+          <ThreadItemAuthor>{userDisplayName(author)}</ThreadItemAuthor>
+          {message.ts !== undefined && (
+            <ThreadTimestamp dateTime={new Date(message.ts).toISOString()} />
+          )}
+        </ThreadItemHeader>
+        <ThreadItemBody className="wrap-break-word whitespace-pre-wrap">
+          {message.text}
+        </ThreadItemBody>
+      </ThreadItemContent>
+    </ThreadItem>
+  );
+}
+
+// One row in the merged thread timeline: a human thread message, a user prompt
+// to the agent, or an agent turn — interleaved by timestamp so the conversation
+// reads chronologically (latest at the bottom) instead of pinning all agent
+// activity below the human replies.
 type TimelineRow =
   | { kind: "human"; ts: number; message: TaskThreadMessage }
+  | { kind: "prompt"; ts: number; message: AgentMessage }
   | { kind: "agent"; ts: number; message: AgentMessage };
+
+// Placeholder rows shown until the thread and the agent session have both
+// settled. Mirrors the ThreadItem layout so the real timeline swaps in without
+// a jump — and, crucially, keeps the agent status hidden until it's real, so
+// the panel never flashes a premature "Working…" while the session connects.
+function ThreadTimelineSkeleton() {
+  return (
+    <ThreadItemGroup aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <ThreadItem key={i}>
+          <ThreadItemGutter>
+            <Skeleton className="size-8 rounded-full" />
+          </ThreadItemGutter>
+          <ThreadItemContent>
+            <ThreadItemHeader>
+              <Skeleton className="h-3.5 w-24 rounded" />
+            </ThreadItemHeader>
+            <SkeletonText lines={i === 1 ? 3 : 2} />
+          </ThreadItemContent>
+        </ThreadItem>
+      ))}
+    </ThreadItemGroup>
+  );
+}
 
 // The merged thread + task conversation: a task card pinned at the top, the
 // human thread, and a single live agent status message pinned at the bottom.
@@ -345,6 +424,7 @@ function ThreadConversation({
       : undefined;
 
   const agentMsgs = useMemo(() => agentTurns(items), [items]);
+  const promptMsgs = useMemo(() => agentPrompts(items), [items]);
 
   const agentStatus = useMemo<AgentStatus | null>(() => {
     const hasActivity = events.length > 0 || !!task.latest_run;
@@ -391,11 +471,19 @@ function ThreadConversation({
     );
   };
 
-  // Human messages and agent turns woven into one chronological list. Ties keep
-  // humans-before-agents (insertion) order; an agent turn with no timestamp yet
-  // (just started, still streaming) sorts to the end so it stays at the bottom.
+  // User prompts, human thread messages, and agent turns woven into one
+  // chronological list. Ties keep insertion order (prompts, then humans, then
+  // agents); an agent turn with no timestamp yet (just started, still streaming)
+  // sorts to the end so it stays at the bottom.
   const timeline = useMemo<TimelineRow[]>(() => {
     const rows: TimelineRow[] = [
+      ...promptMsgs.map(
+        (message): TimelineRow => ({
+          kind: "prompt",
+          ts: message.ts ?? 0,
+          message,
+        }),
+      ),
       ...messages.map(
         (message): TimelineRow => ({
           kind: "human",
@@ -412,7 +500,7 @@ function ThreadConversation({
       ),
     ];
     return rows.sort((a, b) => a.ts - b.ts);
-  }, [messages, agentMsgs]);
+  }, [promptMsgs, messages, agentMsgs]);
 
   // The status chip + ship actions ride the newest agent turn; when the agent
   // has spoken nothing yet they hang off a trailing status-only row instead.
@@ -439,6 +527,7 @@ function ThreadConversation({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [
     messages.length,
+    promptMsgs.length,
     agentMsgs.length,
     agentMsgs[agentMsgs.length - 1]?.text,
     agentStatus?.phase,
@@ -481,6 +570,11 @@ function ThreadConversation({
   };
 
   const isEmpty = timeline.length === 0 && !agentStatus;
+  // Skeleton the conversation until the human thread has loaded and the agent
+  // session has finished initializing. Gating on `isInitializing` is what keeps
+  // the premature "Working…" status off-screen — it only appears once the
+  // session is settled and the status is real.
+  const isReady = !isInitializing && !isLoading;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
@@ -526,10 +620,8 @@ function ThreadConversation({
         <TaskCard task={task} onOpen={() => onOpenFull?.()} />
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {isLoading && isEmpty ? (
-          <div className="flex justify-center py-6">
-            <Spinner />
-          </div>
+        {!isReady ? (
+          <ThreadTimelineSkeleton />
         ) : isEmpty ? (
           <div className="px-2 py-6 text-center">
             <Text size="1" className="text-muted-foreground">
@@ -541,7 +633,13 @@ function ThreadConversation({
         ) : (
           <ThreadItemGroup>
             {timeline.map((row) =>
-              row.kind === "human" ? (
+              row.kind === "prompt" ? (
+                <UserPromptRow
+                  key={row.message.id}
+                  message={row.message}
+                  author={task.created_by}
+                />
+              ) : row.kind === "human" ? (
                 <ThreadMessageRow
                   key={row.message.id}
                   message={row.message}
