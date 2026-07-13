@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
@@ -441,6 +449,42 @@ describe("AgentServer HTTP Mode", () => {
         bootMs: expect.any(Number),
         sessionInitMs: expect.any(Number),
       });
+    }, 30000);
+
+    it("links native agent state before initializing the session", async () => {
+      const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      const originalCodexHome = process.env.CODEX_HOME;
+      const claudeConfigDir = join(repo.path, ".claude-test");
+      const codexHome = join(repo.path, ".codex-test");
+      const agentStateDir = join(repo.path, ".posthog", "agent-state");
+      process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+      process.env.CODEX_HOME = codexHome;
+
+      try {
+        await createServer({ agentStateDir }).start();
+
+        const claudeProjects = join(claudeConfigDir, "projects");
+        const codexSessions = join(codexHome, "sessions");
+        expect((await lstat(claudeProjects)).isSymbolicLink()).toBe(true);
+        expect((await lstat(codexSessions)).isSymbolicLink()).toBe(true);
+        expect(await readlink(claudeProjects)).toBe(
+          join(agentStateDir, "claude", "projects"),
+        );
+        expect(await readlink(codexSessions)).toBe(
+          join(agentStateDir, "codex", "sessions"),
+        );
+      } finally {
+        if (originalClaudeConfigDir === undefined) {
+          delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+          process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
+        }
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
     }, 30000);
   });
 
@@ -955,6 +999,123 @@ describe("AgentServer HTTP Mode", () => {
         }
       },
     );
+
+    function createRetryTestServer(prompt: ReturnType<typeof vi.fn>) {
+      const testServer = createFailureTestServer();
+      testServer.session = {
+        acpSessionId: "acp-1",
+        payload: { run_id: "run-1" },
+        logWriter: { appendRawLine: vi.fn(), flush: vi.fn(async () => {}) },
+        clientConnection: { prompt },
+      };
+      return testServer as unknown as {
+        promptWithUpstreamRetry(request: {
+          sessionId: string;
+          prompt: ContentBlock[];
+        }): Promise<{ stopReason: string }>;
+      };
+    }
+
+    it("continues an unattended turn after a transient upstream stream death", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("API Error: terminated"))
+          .mockResolvedValueOnce({ stopReason: "end_turn" });
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        await expect(resultPromise).resolves.toEqual({
+          stopReason: "end_turn",
+        });
+        expect(prompt).toHaveBeenCalledTimes(2);
+        const retryRequest = prompt.mock.calls[1][0] as {
+          sessionId: string;
+          prompt: Array<{ type: string; text: string }>;
+        };
+        expect(retryRequest.sessionId).toBe("acp-1");
+        expect(retryRequest.prompt[0].text).toContain(
+          "interrupted by a transient connection error",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("re-sends the original prompt when the failure happened before the stream started", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("API Error: Connection error."))
+          .mockResolvedValueOnce({ stopReason: "end_turn" });
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        await expect(resultPromise).resolves.toEqual({
+          stopReason: "end_turn",
+        });
+        expect(prompt).toHaveBeenCalledTimes(2);
+        const retryRequest = prompt.mock.calls[1][0] as {
+          sessionId: string;
+          prompt: Array<{ type: string; text: string }>;
+        };
+        expect(retryRequest.sessionId).toBe("acp-1");
+        expect(retryRequest.prompt).toEqual([
+          { type: "text", text: "do the task" },
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not retry a genuine agent error", async () => {
+      const prompt = vi.fn().mockRejectedValue(new Error("boom"));
+      const testServer = createRetryTestServer(prompt);
+
+      await expect(
+        testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        }),
+      ).rejects.toThrow("boom");
+      expect(prompt).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops continuing once the bounded retry budget is exhausted", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValue(new Error("API Error: terminated"));
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        const assertion = expect(resultPromise).rejects.toThrow(
+          "API Error: terminated",
+        );
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        await assertion;
+        expect(prompt).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
 
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
