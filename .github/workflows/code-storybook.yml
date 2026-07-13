@@ -15,7 +15,7 @@ jobs:
       contents: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
-      head_commit_message: ${{ steps.head-commit.outputs.message }}
+      verify_only: "${{ startsWith(steps.head-commit.outputs.message, 'chore(storybook): update visual regression snapshots') }}"
     steps:
       - name: Detect relevant changes
         id: filter
@@ -29,15 +29,15 @@ jobs:
             # against its base, not just the latest commit, so this filter
             # alone does NOT stop the auto-commit from re-triggering itself
             # (the diff still includes the code changes from earlier commits).
-            # The circuit breaker on the visual-regression job's `if` below is
-            # what actually breaks the loop.
+            # verify_only is what breaks the loop: the retriggered run
+            # executes in verify mode, which never commits.
             code:
               - "{apps/code/**,packages/**,pnpm-lock.yaml,.github/workflows/code-storybook.yml}"
               - "!apps/code/.storybook/__snapshots__/**"
               - "!**/*.md"
 
       # The pull_request event payload has no head.commit.message, so fetch it
-      # via the API to power the circuit breaker below.
+      # via the API to power the verify_only switch below.
       - name: Get head commit message
         id: head-commit
         env:
@@ -51,11 +51,7 @@ jobs:
   visual-regression:
     needs: changes
     # Fail closed: if change detection itself failed, run instead of skipping.
-    # Circuit breaker: skip when the head commit is itself a snapshot
-    # auto-commit, so the commit step's own retrigger doesn't loop forever.
-    if: >-
-      ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') &&
-      !startsWith(needs.changes.outputs.head_commit_message, 'chore(storybook): update visual regression snapshots') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -141,7 +137,18 @@ jobs:
           pnpm exec http-server storybook-static --port 6006 --silent &
           pnpm exec wait-on http://127.0.0.1:6006/iframe.html --timeout 30000
 
+      # When the head commit is itself a snapshot auto-commit, updating again
+      # would retrigger this workflow forever. Verify instead: the run still
+      # proves the committed baselines pass, but never commits, which breaks
+      # the loop while keeping the check green-because-it-ran (not
+      # green-because-it-skipped).
+      - name: Verify visual regression snapshots
+        if: needs.changes.outputs.verify_only == 'true'
+        working-directory: apps/code
+        run: pnpm test:visual:ci:verify
+
       - name: Update visual regression snapshots
+        if: needs.changes.outputs.verify_only != 'true'
         working-directory: apps/code
         env:
           # Tells jest-image-snapshot's outdated-snapshot-reporter to delete
@@ -152,6 +159,7 @@ jobs:
 
       - name: Detect snapshot changes
         id: diff
+        if: needs.changes.outputs.verify_only != 'true'
         env:
           IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
