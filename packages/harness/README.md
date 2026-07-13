@@ -74,6 +74,36 @@ While an interactive session is running, `/subagents` shows the bundled agent ro
 agent's effective model, reasoning level, and purpose. Use `/subagents all` to include project-local
 `.pi/agents/*.md` definitions; project settings are applied only for trusted projects.
 
+## Choosing subagents
+
+There are three ways to control subagent selection:
+
+1. **Select the persona for a call.** The `subagent` tool accepts `agent: "Explore"`, `"Plan"`,
+   or `"General"`. `Explore` is read-only recon, `Plan` is read-only design work, and `General`
+   can edit files. Workflow scripts use the same choice with `agent("...", { agent: "Plan" })`.
+2. **Add project personas.** Create `.pi/agents/<name>.md` with `name`, `description`, optional
+   `tools` and `model` frontmatter, followed by the persona prompt. Invoke it with
+   `agentScope: "both"`; trusted projects may also require confirmation before running it.
+3. **Override model and thinking per persona.** Put this in `~/.pi/agent/settings.json` for user-wide
+   defaults, or `.pi/settings.json` for a trusted project (project values override user values):
+
+   ```json
+   {
+     "subagents": {
+       "agentOverrides": {
+         "Explore": { "model": "claude-haiku-4-5", "thinking": "low" },
+         "Plan": { "model": "gpt-5.6-luna", "thinking": "high" },
+         "General": { "model": "gpt-5.6-luna", "thinking": "high" }
+       }
+     }
+   }
+   ```
+
+The current settings are **not** an event router: they do not express rules such as “run the
+reviewer for pull requests” or “use the explorer when a task mentions tests.” The parent agent or a
+workflow script chooses the persona. For deterministic routing, encode the condition in a workflow
+and call the desired persona explicitly; `/subagents` shows the resulting effective configuration.
+
 ## Spawn the CLI as a subprocess
 
 ```ts
