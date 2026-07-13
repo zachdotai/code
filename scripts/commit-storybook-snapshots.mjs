@@ -27,22 +27,27 @@ for (const [name, value] of Object.entries({
   }
 }
 
+// -z gives NUL-terminated, unquoted paths (porcelain v1's default quoting
+// mangles filenames with spaces or special characters). Renames add the old
+// path as a second NUL-terminated field instead of a " -> " separator.
 const status = execFileSync(
   "git",
-  ["status", "--porcelain", "--", SNAPSHOTS_DIR],
+  ["status", "--porcelain=v1", "-z", "--", SNAPSHOTS_DIR],
   {
     encoding: "utf8",
   },
 );
+const fields = status.split("\0").filter(Boolean);
 const additions = [];
 const deletions = [];
-for (const line of status.split("\n").filter(Boolean)) {
-  const state = line.slice(0, 2).trim();
-  const file = line.slice(3);
-  if (state.startsWith("R")) {
-    const [from, to] = file.split(" -> ");
+for (let i = 0; i < fields.length; i++) {
+  const entry = fields[i];
+  const state = entry.slice(0, 2).trim();
+  const file = entry.slice(3);
+  if (state.startsWith("R") || state.startsWith("C")) {
+    const from = fields[++i];
     deletions.push(from);
-    additions.push(to);
+    additions.push(file);
   } else if (state === "D") {
     deletions.push(file);
   } else {
@@ -75,6 +80,8 @@ for (const file of additions) {
 }
 batches.push(batch);
 
+class StaleHeadError extends Error {}
+
 async function graphql(query, variables) {
   const response = await fetch("https://api.github.com/graphql", {
     method: "POST",
@@ -86,6 +93,16 @@ async function graphql(query, variables) {
   });
   const body = await response.json();
   if (!response.ok || body.errors) {
+    // If someone pushed to the branch while this job ran, expectedHeadOid no
+    // longer matches and GitHub rejects the commit rather than risk clobbering
+    // the new push. The new push retriggers this workflow, which will
+    // regenerate the snapshots against its own head, so there's nothing to
+    // retry here.
+    if (body.errors?.some((error) => error.type === "STALE_DATA")) {
+      throw new StaleHeadError(
+        `Branch moved during the run: ${JSON.stringify(body.errors)}`,
+      );
+    }
     throw new Error(
       `GraphQL request failed: ${JSON.stringify(body.errors ?? body)}`,
     );
@@ -94,30 +111,40 @@ async function graphql(query, variables) {
 }
 
 let headOid = EXPECTED_HEAD_OID;
-for (const [
-  index,
-  { additions: batchAdditions, deletions: batchDeletions },
-] of batches.entries()) {
-  const message =
-    batches.length === 1
-      ? COMMIT_MESSAGE
-      : `${COMMIT_MESSAGE} (${index + 1}/${batches.length})`;
-  const data = await graphql(
-    `mutation ($input: CreateCommitOnBranchInput!) {
-      createCommitOnBranch(input: $input) { commit { oid } }
-    }`,
-    {
-      input: {
-        branch: { repositoryNameWithOwner: REPO, branchName: BRANCH },
-        expectedHeadOid: headOid,
-        message: { headline: message },
-        fileChanges: {
-          additions: batchAdditions,
-          deletions: batchDeletions.map((path) => ({ path })),
+try {
+  for (const [
+    index,
+    { additions: batchAdditions, deletions: batchDeletions },
+  ] of batches.entries()) {
+    const message =
+      batches.length === 1
+        ? COMMIT_MESSAGE
+        : `${COMMIT_MESSAGE} (${index + 1}/${batches.length})`;
+    const data = await graphql(
+      `mutation ($input: CreateCommitOnBranchInput!) {
+        createCommitOnBranch(input: $input) { commit { oid } }
+      }`,
+      {
+        input: {
+          branch: { repositoryNameWithOwner: REPO, branchName: BRANCH },
+          expectedHeadOid: headOid,
+          message: { headline: message },
+          fileChanges: {
+            additions: batchAdditions,
+            deletions: batchDeletions.map((path) => ({ path })),
+          },
         },
       },
-    },
-  );
-  headOid = data.createCommitOnBranch.commit.oid;
-  console.log(`Created commit ${headOid} (${message})`);
+    );
+    headOid = data.createCommitOnBranch.commit.oid;
+    console.log(`Created commit ${headOid} (${message})`);
+  }
+} catch (error) {
+  if (error instanceof StaleHeadError) {
+    console.log(
+      "Branch moved during the run; the new push will regenerate snapshots. Skipping commit.",
+    );
+    process.exit(0);
+  }
+  throw error;
 }

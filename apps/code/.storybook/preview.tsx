@@ -7,7 +7,7 @@ import "../../../packages/ui/src/styles/globals.css";
 import { withAppProviders } from "./withAppProviders";
 
 function inStorybookTestRunner(): boolean {
-  return navigator?.userAgent.includes("StorybookTestRunner");
+  return navigator.userAgent.includes("StorybookTestRunner");
 }
 
 // Visual regression snapshots need identical pixels on every render: freeze

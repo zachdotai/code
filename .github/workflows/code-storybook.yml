@@ -12,8 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
+      contents: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      head_commit_message: ${{ steps.head-commit.outputs.message }}
     steps:
       - name: Detect relevant changes
         id: filter
@@ -23,22 +25,39 @@ jobs:
           filters: |
             # Anything that can change a rendered story. Snapshot baselines are
             # excluded so a PR that only touches them (e.g. a manual refresh)
-            # skips the run. The auto-commit still retriggers one run via the
-            # app token, but it regenerates identical snapshots, finds no diff,
-            # and stops there rather than looping.
+            # skips the run. Note: dorny/paths-filter diffs the whole PR
+            # against its base, not just the latest commit, so this filter
+            # alone does NOT stop the auto-commit from re-triggering itself
+            # (the diff still includes the code changes from earlier commits).
+            # The circuit breaker on the visual-regression job's `if` below is
+            # what actually breaks the loop.
             code:
-              - "apps/code/**"
-              - "packages/**"
-              - "pnpm-lock.yaml"
-              - ".github/workflows/code-storybook.yml"
+              - "{apps/code/**,packages/**,pnpm-lock.yaml,.github/workflows/code-storybook.yml}"
               - "!apps/code/.storybook/__snapshots__/**"
               - "!**/*.md"
+
+      # The pull_request event payload has no head.commit.message, so fetch it
+      # via the API to power the circuit breaker below.
+      - name: Get head commit message
+        id: head-commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          message=$(gh api repos/${{ github.repository }}/commits/${{ github.event.pull_request.head.sha }} --jq '.commit.message')
+          echo "message<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$message" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
   visual-regression:
     needs: changes
     # Fail closed: if change detection itself failed, run instead of skipping.
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
+    # Circuit breaker: skip when the head commit is itself a snapshot
+    # auto-commit, so the commit step's own retrigger doesn't loop forever.
+    if: >-
+      ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') &&
+      !startsWith(needs.changes.outputs.head_commit_message, 'chore(storybook): update visual regression snapshots') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -83,14 +102,30 @@ jobs:
         run: pnpm exec playwright install-deps chromium
 
       - name: Build workspace packages
+        # Bare `wait` returns the exit status of only the last job passed to
+        # it, silently swallowing failures from the others. Wait on each PID
+        # individually and check its own status so any failed build fails
+        # the step.
         run: |
           pnpm --filter @posthog/electron-trpc build &
-          pnpm --filter @posthog/shared build && pnpm --filter @posthog/platform build &
-          wait
+          pid1=$!
+          (pnpm --filter @posthog/shared build && pnpm --filter @posthog/platform build) &
+          pid2=$!
+          status=0
+          wait "$pid1" || status=$?
+          wait "$pid2" || status=$?
+          [ "$status" -eq 0 ]
+
           pnpm --filter @posthog/git build
+
           pnpm --filter @posthog/enricher build &
+          pid3=$!
           pnpm --filter @posthog/agent build &
-          wait
+          pid4=$!
+          status=0
+          wait "$pid3" || status=$?
+          wait "$pid4" || status=$?
+          [ "$status" -eq 0 ]
 
       - name: Build Storybook
         working-directory: apps/code
@@ -104,6 +139,11 @@ jobs:
 
       - name: Update visual regression snapshots
         working-directory: apps/code
+        env:
+          # Tells jest-image-snapshot's outdated-snapshot-reporter to delete
+          # baseline PNGs that no story wrote this run, so renamed/removed
+          # stories don't leave orphaned snapshots behind.
+          JEST_IMAGE_SNAPSHOT_TRACK_OBSOLETE: "1"
         run: pnpm test:visual:ci:update
 
       - name: Detect snapshot changes
@@ -120,10 +160,13 @@ jobs:
       - name: Get app token
         id: app-token
         if: steps.diff.outputs.changed == 'true' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: getsentry/action-github-app-token@5c1e90706fe007857338ac1bfbd7a4177db2f789 # v4.0.0
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
-          app_id: ${{ secrets.GH_APP_ARRAY_RELEASER_APP_ID }}
-          private_key: ${{ secrets.GH_APP_ARRAY_RELEASER_PRIVATE_KEY }}
+          app-id: ${{ secrets.GH_APP_ARRAY_RELEASER_APP_ID }}
+          private-key: ${{ secrets.GH_APP_ARRAY_RELEASER_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
 
       - name: Commit updated snapshots to the PR branch
         if: steps.diff.outputs.changed == 'true' && github.event.pull_request.head.repo.full_name == github.repository

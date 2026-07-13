@@ -201,7 +201,8 @@ Run locally to debug a story before pushing:
 pnpm --filter code build-storybook
 cd apps/code && pnpm exec http-server storybook-static --port 6006 --silent &
 pnpm --filter code test:visual:update    # or test:visual to compare
-git checkout -- apps/code/.storybook/__snapshots__   # discard macOS renders
+git checkout -- apps/code/.storybook/__snapshots__   # discard modified baselines
+git clean -fd apps/code/.storybook/__snapshots__      # discard newly generated ones
 ```
 
 Per-story control via story parameters (see the typing in `test-runner.ts`):

@@ -4,6 +4,7 @@ import type { TestRunnerConfig } from "@storybook/test-runner";
 import { getStoryContext, waitForPageReady } from "@storybook/test-runner";
 import { toMatchImageSnapshot } from "jest-image-snapshot";
 import type { Page } from "playwright";
+import type { Parameters } from "storybook/internal/types";
 
 // Ported from posthog/posthog's common/storybook/.storybook/test-runner.ts,
 // trimmed to what this app needs (no MSW, kea, iframes, or webkit).
@@ -114,7 +115,7 @@ async function takeSnapshotWithTheme(
   page: Page,
   storyId: string,
   theme: SnapshotTheme,
-  parameters: Record<string, any>,
+  parameters: Parameters,
 ): Promise<void> {
   // The preview's Theme decorator reads context.globals.theme, so flipping the
   // global re-renders the story in the other theme without a page reload.
@@ -127,7 +128,10 @@ async function takeSnapshotWithTheme(
   await waitForImagesToLoad(page);
   await resetScroll(page);
   await waitForDomStability(page);
-  await page.waitForTimeout(500);
+  // waitForDomStability only polls scrollWidth/Height, so a theme flip's
+  // color-only repaint (no layout change) isn't visible to it. This settle
+  // covers that paint.
+  await page.waitForTimeout(250);
 
   const image = await captureScreenshot(page, parameters);
   expect(image).toMatchImageSnapshot({
@@ -141,7 +145,7 @@ async function takeSnapshotWithTheme(
 
 async function captureScreenshot(
   page: Page,
-  parameters: Record<string, any>,
+  parameters: Parameters,
 ): Promise<Buffer> {
   if (parameters?.layout === "fullscreen") {
     return page.screenshot();
@@ -188,14 +192,16 @@ async function componentClip(
 }
 
 async function waitForImagesToLoad(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () =>
-      Array.from(document.querySelectorAll("img")).every(
-        (img) => img.naturalWidth > 0,
-      ),
-    undefined,
-    { timeout: 5000 },
-  );
+  await page
+    .waitForFunction(
+      () =>
+        Array.from(document.querySelectorAll("img[src]")).every(
+          (img) => (img as HTMLImageElement).naturalWidth > 0,
+        ),
+      undefined,
+      { timeout: 5000 },
+    )
+    .catch(() => undefined);
 }
 
 async function resetScroll(page: Page): Promise<void> {
