@@ -285,16 +285,15 @@ function RootLayout() {
       s.location.pathname.startsWith("/website/"),
   });
 
-  // The /website (Channels) routes stay registered regardless of the flag, so a
-  // stale URL, a restored session, or a persisted channel browser tab could
-  // strand a flag-off user on the channel layout with no way back (the Channels
-  // toggle is hidden and ContentHeader is suppressed on /website). Once flags
-  // resolve, send them back to Code.
+  // The /website (Contexts) routes stay registered regardless of the local
+  // opt-in and remote flag. A stale URL, restored session, or toggling Contexts
+  // off while inside one could otherwise strand the user on a hidden surface.
+  // Once flags resolve, send users without the effective opt-in back to Code.
   useEffect(() => {
-    if (flagsLoaded && !bluebirdEnabled && onWebsitePath) {
+    if (flagsLoaded && !channelsEnabled && onWebsitePath) {
       openTaskInput();
     }
-  }, [flagsLoaded, bluebirdEnabled, onWebsitePath]);
+  }, [flagsLoaded, channelsEnabled, onWebsitePath]);
 
   // A blank browser tab (the "+" new-tab page) shows an empty placeholder — but
   // ONLY on the channels index. Inside a channel (`/website/$channelId…`) the
@@ -404,10 +403,10 @@ function RootLayout() {
               </ButtonGroup>
             </Flex>
           </Flex>
-          {/* Browser tabs are part of the Contexts alpha experience. Keep the
-              entire strip, including its keyboard shortcuts and route syncing,
-              unmounted until the user opts in. */}
-          {channelsEnabled && <BrowserTabStrip />}
+          {/* Browser tabs are part of the Contexts alpha experience. The
+              component stays mounted to preserve route/tab reconciliation, but
+              renders no strip and binds no shortcuts until the user opts in. */}
+          <BrowserTabStrip />
           {/* Gated so an empty right-side group can't claim a no-drag rect
               in the title bar for nothing — every pixel without controls
               should drag the window. */}

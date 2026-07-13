@@ -70,9 +70,10 @@ differ. Desktop ships first.
 ## UX
 
 ### The strip
-- Mounts only while the Contexts toggle is enabled. It lives in the title bar,
-  after a `#title-bar-left` section sized to the sidebar width so the strip
-  starts flush with the content pane.
+- Renders only while the Contexts toggle is enabled. Its container stays mounted
+  so route/tab reconciliation remains current, while tab shortcuts are disabled
+  when opted out. The strip lives in the title bar after a `#title-bar-left`
+  section sized to the sidebar width so it starts flush with the content pane.
 - Each tab is a quill `Button` (variant `default`). The active tab is elevated;
   inactive tabs are muted. Tabs **shrink to fit** — the strip never scrolls
   (`overflow-hidden`, pills `flex-1 basis-[200px]` capped at `max-w-[200px]`).

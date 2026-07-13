@@ -812,7 +812,11 @@ export function BrowserTabStrip() {
       e.preventDefault();
       handleNewTab();
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      enabled: channelsEnabled,
+    },
   );
 
   // Cmd/Ctrl+W closes the active browser tab. Always preventDefault so Electron
@@ -825,7 +829,11 @@ export function BrowserTabStrip() {
       if (taskHasCloseableEditorTab(params.taskId)) return;
       if (activeTabId) handleClose(activeTabId);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      enabled: channelsEnabled,
+    },
   );
 
   // With channels on, Cmd/Ctrl+1-9 switches to the Nth browser tab (in the
@@ -851,7 +859,7 @@ export function BrowserTabStrip() {
     [tabs, handleSelect],
   );
 
-  return (
+  return channelsEnabled ? (
     <TabStrip
       tabs={tabs}
       activeTabId={activeTabId}
@@ -863,5 +871,5 @@ export function BrowserTabStrip() {
       onCloseToLeft={handleCloseToLeft}
       onNewTab={handleNewTab}
     />
-  );
+  ) : null;
 }
