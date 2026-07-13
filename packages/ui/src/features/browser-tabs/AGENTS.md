@@ -1,6 +1,6 @@
 # Browser tabs (Channels canvas surface)
 
-A browser-style tab strip in the Channels title bar (`/website/*`), each tab
+A browser-style tab strip enabled when the user opts in to Contexts, each tab
 fronting an open **canvas, task, or channel sub-section** (a `TabIdentity`:
 `dashboardId | taskId | channel(+section) | blank`).
 This file documents the UX and the model; edit it when the behaviour changes.
@@ -70,8 +70,9 @@ differ. Desktop ships first.
 ## UX
 
 ### The strip
-- Lives in the Channels title bar, after a `#title-bar-left` section sized to the
-  Channels sidebar width so the strip starts flush with the content pane.
+- Mounts only while the Contexts toggle is enabled. It lives in the title bar,
+  after a `#title-bar-left` section sized to the sidebar width so the strip
+  starts flush with the content pane.
 - Each tab is a quill `Button` (variant `default`). The active tab is elevated;
   inactive tabs are muted. Tabs **shrink to fit** — the strip never scrolls
   (`overflow-hidden`, pills `flex-1 basis-[200px]` capped at `max-w-[200px]`).

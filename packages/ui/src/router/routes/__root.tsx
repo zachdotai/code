@@ -404,11 +404,10 @@ function RootLayout() {
               </ButtonGroup>
             </Flex>
           </Flex>
-          {/* Tabs work in both spaces: channel tabs under /website and plain
-              task tabs in the Code experience. The strip's route→tab effect
-              noops on param-less routes (inbox, agents, new-task), so it's safe
-              to mount everywhere. */}
-          <BrowserTabStrip />
+          {/* Browser tabs are part of the Contexts alpha experience. Keep the
+              entire strip, including its keyboard shortcuts and route syncing,
+              unmounted until the user opts in. */}
+          {channelsEnabled && <BrowserTabStrip />}
           {/* Gated so an empty right-side group can't claim a no-drag rect
               in the title bar for nothing — every pixel without controls
               should drag the window. */}

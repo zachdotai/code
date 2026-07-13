@@ -41,7 +41,6 @@ import { getLeafPanel } from "@posthog/ui/features/panels/panelStoreHelpers";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -197,11 +196,6 @@ export function BrowserTabStrip() {
   );
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
-
-  // A cloud run is read-only, so opening a new tab there makes no sense — hide
-  // the new-tab button and disable its Cmd/Ctrl+T shortcut. Off a task route
-  // params.taskId is undefined, so this is false and the button stays.
-  const isCloudRun = useIsWorkspaceCloudRun(params.taskId);
 
   // The active channel sub-section (artifacts/history/context) is the
   // route segment after the channelId. Null when on the channel home or a
@@ -818,11 +812,7 @@ export function BrowserTabStrip() {
       e.preventDefault();
       handleNewTab();
     },
-    {
-      enableOnFormTags: true,
-      enableOnContentEditable: true,
-      enabled: !isCloudRun,
-    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // Cmd/Ctrl+W closes the active browser tab. Always preventDefault so Electron
@@ -871,7 +861,7 @@ export function BrowserTabStrip() {
       onCloseOthers={handleCloseOthers}
       onCloseToRight={handleCloseToRight}
       onCloseToLeft={handleCloseToLeft}
-      onNewTab={isCloudRun ? undefined : handleNewTab}
+      onNewTab={handleNewTab}
     />
   );
 }
