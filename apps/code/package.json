@@ -33,7 +33,6 @@
     "test:visual": "test-storybook --ci --browsers chromium --no-index-json",
     "test:visual:update": "test-storybook -u --browsers chromium --no-index-json",
     "test:visual:ci:update": "test-storybook -u --junit --browsers chromium --no-index-json --maxWorkers=2",
-    "test:visual:ci:verify": "test-storybook --ci --junit --browsers chromium --no-index-json --maxWorkers=2",
     "clean": "node ../../scripts/rimraf.mjs .vite .turbo out node_modules/.vite"
   },
   "keywords": [

@@ -1,7 +1,20 @@
 name: Storybook visual regression
 
+# Captures a screenshot of every story (dark + light) and submits them to the
+# PostHog Visual Review product, which diffs against the signed baseline
+# manifest committed at apps/code/snapshots.yml. Visual changes are reviewed
+# and approved at https://us.posthog.com/project/2/visual_review; on approval
+# the VR backend commits the updated manifest back to the PR branch. PNGs are
+# never committed to this repo.
+#
+# Until the one-time setup is done (VR repo registration + VR_API_TOKEN secret
+# + committed snapshots.yml), the vr step silently no-ops: the job still runs
+# the capture, which catches stories that crash or never settle.
+
 on:
   pull_request:
+  push:
+    branches: [main]
 
 concurrency:
   group: code-storybook-${{ github.head_ref || github.ref }}
@@ -9,13 +22,12 @@ concurrency:
 
 jobs:
   changes:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
-      contents: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
-      verify_only: "${{ startsWith(steps.head-commit.outputs.message, 'chore(storybook): update visual regression snapshots') }}"
     steps:
       - name: Detect relevant changes
         id: filter
@@ -23,34 +35,18 @@ jobs:
         with:
           predicate-quantifier: every
           filters: |
-            # Anything that can change a rendered story. Snapshot baselines are
-            # excluded so a PR that only touches them (e.g. a manual refresh)
-            # skips the run. Note: dorny/paths-filter diffs the whole PR
-            # against its base, not just the latest commit, so this filter
-            # alone does NOT stop the auto-commit from re-triggering itself
-            # (the diff still includes the code changes from earlier commits).
-            # verify_only is what breaks the loop: the retriggered run
-            # executes in verify mode, which never commits.
+            # Anything that can change a rendered story. The baseline manifest
+            # is excluded so the VR backend's approval commit (which touches
+            # only snapshots.yml) doesn't re-run the suite for nothing.
             code:
               - "{apps/code/**,packages/**,pnpm-lock.yaml,.github/workflows/code-storybook.yml}"
-              - "!apps/code/.storybook/__snapshots__/**"
+              - "!apps/code/snapshots.yml"
               - "!**/*.md"
-
-      # The pull_request event payload has no head.commit.message, so fetch it
-      # via the API to power the verify_only switch below.
-      - name: Get head commit message
-        id: head-commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          message=$(gh api repos/${{ github.repository }}/commits/${{ github.event.pull_request.head.sha }} --jq '.commit.message')
-          echo "message<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$message" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
 
   visual-regression:
     needs: changes
-    # Fail closed: if change detection itself failed, run instead of skipping.
+    # Fail closed: if change detection failed (or this is a main push, where
+    # `changes` is skipped), run instead of skipping.
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -61,9 +57,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-          # Auto-commit targets the PR head branch, so test against it rather
-          # than the synthetic merge commit.
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -137,70 +130,55 @@ jobs:
           pnpm exec http-server storybook-static --port 6006 --silent &
           pnpm exec wait-on http://127.0.0.1:6006/iframe.html --timeout 30000
 
-      # When the head commit is itself a snapshot auto-commit, updating again
-      # would retrigger this workflow forever. Verify instead: the run still
-      # proves the committed baselines pass, but never commits, which breaks
-      # the loop while keeping the check green-because-it-ran (not
-      # green-because-it-skipped).
-      - name: Verify visual regression snapshots
-        if: needs.changes.outputs.verify_only == 'true'
+      - name: Capture story screenshots
         working-directory: apps/code
-        run: pnpm test:visual:ci:verify
-
-      - name: Update visual regression snapshots
-        if: needs.changes.outputs.verify_only != 'true'
-        working-directory: apps/code
-        env:
-          # Tells jest-image-snapshot's outdated-snapshot-reporter to delete
-          # baseline PNGs that no story wrote this run, so renamed/removed
-          # stories don't leave orphaned snapshots behind.
-          JEST_IMAGE_SNAPSHOT_TRACK_OBSOLETE: "1"
-        run: pnpm test:visual:ci:update
-
-      - name: Detect snapshot changes
-        id: diff
-        if: needs.changes.outputs.verify_only != 'true'
-        env:
-          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
-          git add -A apps/code/.storybook/__snapshots__
-          if git diff --staged --quiet -- apps/code/.storybook/__snapshots__; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "commit=false" >> "$GITHUB_OUTPUT"
-            echo "fail-fork=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "commit=$([ "$IS_FORK" = "true" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
-            echo "fail-fork=$IS_FORK" >> "$GITHUB_OUTPUT"
-            git diff --staged --stat -- apps/code/.storybook/__snapshots__
-          fi
+          rm -rf .storybook/__snapshots__
+          pnpm test:visual:ci:update
 
-      - name: Get app token
-        id: app-token
-        if: steps.diff.outputs.commit == 'true'
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      # The vr CLI isn't published anywhere; build it from posthog/posthog's
+      # master, the same way that repo's own CI does.
+      - name: Checkout Visual Review CLI
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          app-id: ${{ secrets.GH_APP_ARRAY_RELEASER_APP_ID }}
-          private-key: ${{ secrets.GH_APP_ARRAY_RELEASER_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-contents: write
+          repository: PostHog/posthog
+          path: vr-cli
+          persist-credentials: false
+          sparse-checkout: |
+            products/visual_review/cli
+            products/visual_review/frontend/generated/api.schemas.ts
+          sparse-checkout-cone-mode: false
 
-      - name: Commit updated snapshots to the PR branch
-        if: steps.diff.outputs.commit == 'true'
+      - name: Install Visual Review CLI
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+        run: cd vr-cli/products/visual_review/cli && npm ci && npm run build && npm link
+
+      - name: Submit snapshots to Visual Review
+        # Fork PRs can't read the token; their captures still ran above, so a
+        # broken story fails the job either way.
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+        # On main pushes the run is tracking-only ("observe"), but vr submit
+        # still exits 1 when it detects changes; keep main green regardless.
+        continue-on-error: ${{ github.event_name == 'push' }}
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPO: ${{ github.repository }}
-          BRANCH: ${{ github.event.pull_request.head.ref }}
-          EXPECTED_HEAD_OID: ${{ github.event.pull_request.head.sha }}
-        run: node scripts/commit-storybook-snapshots.mjs
-
-      - name: Fail on snapshot changes from a fork
-        if: steps.diff.outputs.fail-fork == 'true'
+          VR_TOKEN: ${{ secrets.VR_API_TOKEN }}
+          VR_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          VR_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          VR_PR: ${{ github.event.pull_request.number }}
+          VR_PURPOSE: ${{ github.event_name == 'push' && 'observe' || 'review' }}
+          # Lets the VR web UI re-trigger this job via the Actions API.
+          JOB_CHECK_RUN_ID: ${{ job.check_run_id }}
         run: |
-          echo "Visual regression snapshots changed, but fork PRs cannot receive auto-commits."
-          echo "Run 'pnpm --filter code test:visual:update' against a Linux build and commit the results."
-          exit 1
+          vr submit \
+            --type storybook \
+            --dir apps/code/.storybook/__snapshots__/ \
+            --baseline apps/code/snapshots.yml \
+            --branch "$VR_BRANCH" \
+            --commit "$VR_COMMIT" \
+            ${VR_PR:+--pr "$VR_PR"} \
+            --purpose "$VR_PURPOSE" \
+            --token "$VR_TOKEN"
 
       - name: Upload failure screenshots
         if: failure()

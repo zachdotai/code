@@ -191,18 +191,31 @@ This drives whatever profile is signed into `~/.posthog-code`; do not mutate pro
 
 ## Storybook Visual Regression
 
-Every story is snapshot-tested in Chromium in both themes (`<story-id>--dark.png` and `--light.png`) using `@storybook/test-runner` + `jest-image-snapshot`, following posthog/posthog's Storybook test-runner setup. The harness lives in `apps/code/.storybook/test-runner.ts`; baselines live in `apps/code/.storybook/__snapshots__/`.
+Every story is screenshot in Chromium in both themes (`<story-id>--dark.png` and `--light.png`) using `@storybook/test-runner`, following posthog/posthog's setup. The harness lives in `apps/code/.storybook/test-runner.ts`.
 
-Baselines are Linux-rendered and CI-owned. The `Storybook visual regression` workflow rebuilds every snapshot on each PR and auto-commits any changes back to the branch (signed via the GitHub API), so visual changes show up as reviewable PNG diffs in the PR. Do not commit locally generated snapshots — macOS font rendering differs, and CI would immediately overwrite them.
+PNGs are never committed. The `Storybook visual regression` workflow captures every story and submits the images to the [PostHog Visual Review product](https://us.posthog.com/project/2/visual_review) via the `vr` CLI (built from posthog/posthog). VR diffs against the signed hash manifest committed at `apps/code/snapshots.yml`, posts the result on the PR, and — once a human approves the changes in the VR UI — commits the updated manifest back to the PR branch. The next run then matches and goes green.
 
-Run locally to debug a story before pushing:
+One-time setup (not yet done — the vr step no-ops until it is):
+
+1. Register `PostHog/code` as a repo in Visual Review settings (project 2 on us.posthog.com); this mints the repo UUID.
+2. Create a PostHog personal API key with the `visual_review` scope and store it as the `VR_API_TOKEN` Actions secret on this repo.
+3. Commit the seeded baseline at `apps/code/snapshots.yml`:
+
+   ```yaml
+   version: 1
+   config:
+       api: https://us.posthog.com
+       team: "2"
+       repo: <uuid-from-step-1>
+   snapshots: {}
+   ```
+
+Run locally to debug a story before pushing (local PNGs are gitignored):
 
 ```bash
 pnpm --filter code build-storybook
 cd apps/code && pnpm exec http-server storybook-static --port 6006 --silent &
-pnpm --filter code test:visual:update    # or test:visual to compare
-git checkout -- apps/code/.storybook/__snapshots__   # discard modified baselines
-git clean -fd apps/code/.storybook/__snapshots__      # discard newly generated ones
+pnpm --filter code test:visual:update    # capture; rerun with test:visual to spot local flakiness
 ```
 
 Per-story control via story parameters (see the typing in `test-runner.ts`):
