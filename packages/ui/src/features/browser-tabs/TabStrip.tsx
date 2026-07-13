@@ -42,8 +42,7 @@ export interface TabStripProps {
   activeTabId: string | null;
   onSelect: (tabId: string) => void;
   onClose: (tabId: string) => void;
-  /** When omitted, the trailing new-tab button is hidden (e.g. on read-only
-   * cloud runs, where opening a tab makes no sense). */
+  /** When omitted, the trailing new-tab button is hidden. */
   onNewTab?: () => void;
   onTogglePin: (tabId: string) => void;
   onCloseOthers: (tabId: string) => void;
