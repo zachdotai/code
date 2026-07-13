@@ -103,29 +103,33 @@ jobs:
 
       - name: Build workspace packages
         # Bare `wait` returns the exit status of only the last job passed to
-        # it, silently swallowing failures from the others. Wait on each PID
-        # individually and check its own status so any failed build fails
-        # the step.
+        # it, silently swallowing failures from the others. `wait_all` waits
+        # on each PID individually and checks its own status so any failed
+        # build fails the step.
         run: |
+          wait_all() {
+            status=0
+            for pid in "$@"; do
+              wait "$pid" || status=$?
+            done
+            [ "$status" -eq 0 ]
+          }
+
           pnpm --filter @posthog/electron-trpc build &
           pid1=$!
           (pnpm --filter @posthog/shared build && pnpm --filter @posthog/platform build) &
           pid2=$!
-          status=0
-          wait "$pid1" || status=$?
-          wait "$pid2" || status=$?
-          [ "$status" -eq 0 ]
+          wait_all "$pid1" "$pid2"
 
+          # @posthog/agent imports @posthog/git's dist, so git must finish
+          # before the last group starts.
           pnpm --filter @posthog/git build
 
           pnpm --filter @posthog/enricher build &
           pid3=$!
           pnpm --filter @posthog/agent build &
           pid4=$!
-          status=0
-          wait "$pid3" || status=$?
-          wait "$pid4" || status=$?
-          [ "$status" -eq 0 ]
+          wait_all "$pid3" "$pid4"
 
       - name: Build Storybook
         working-directory: apps/code
@@ -148,18 +152,24 @@ jobs:
 
       - name: Detect snapshot changes
         id: diff
+        env:
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
           git add -A apps/code/.storybook/__snapshots__
           if git diff --staged --quiet -- apps/code/.storybook/__snapshots__; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "commit=false" >> "$GITHUB_OUTPUT"
+            echo "fail-fork=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "commit=$([ "$IS_FORK" = "true" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+            echo "fail-fork=$IS_FORK" >> "$GITHUB_OUTPUT"
             git diff --staged --stat -- apps/code/.storybook/__snapshots__
           fi
 
       - name: Get app token
         id: app-token
-        if: steps.diff.outputs.changed == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.diff.outputs.commit == 'true'
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
           app-id: ${{ secrets.GH_APP_ARRAY_RELEASER_APP_ID }}
@@ -169,7 +179,7 @@ jobs:
           permission-contents: write
 
       - name: Commit updated snapshots to the PR branch
-        if: steps.diff.outputs.changed == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.diff.outputs.commit == 'true'
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
@@ -178,7 +188,7 @@ jobs:
         run: node scripts/commit-storybook-snapshots.mjs
 
       - name: Fail on snapshot changes from a fork
-        if: steps.diff.outputs.changed == 'true' && github.event.pull_request.head.repo.full_name != github.repository
+        if: steps.diff.outputs.fail-fork == 'true'
         run: |
           echo "Visual regression snapshots changed, but fork PRs cannot receive auto-commits."
           echo "Run 'pnpm --filter code test:visual:update' against a Linux build and commit the results."

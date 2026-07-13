@@ -129,8 +129,10 @@ async function takeSnapshotWithTheme(
   await resetScroll(page);
   await waitForDomStability(page);
   // waitForDomStability only polls scrollWidth/Height, so a theme flip's
-  // color-only repaint (no layout change) isn't visible to it. This settle
-  // covers that paint.
+  // color-only repaint (no layout change) isn't visible to it. Wait for a
+  // paint, plus a short settle: the theme global lands via a channel event
+  // and React's commit isn't guaranteed within the next frame under CI load.
+  await waitForNextPaint(page);
   await page.waitForTimeout(250);
 
   const image = await captureScreenshot(page, parameters);
@@ -202,6 +204,16 @@ async function waitForImagesToLoad(page: Page): Promise<void> {
       { timeout: 5000 },
     )
     .catch(() => undefined);
+}
+
+/** Waits for two animation frames so a color-only repaint (no layout change) finishes painting. */
+async function waitForNextPaint(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
 }
 
 async function resetScroll(page: Page): Promise<void> {
