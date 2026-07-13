@@ -541,9 +541,10 @@ function handleNotification(
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.COMPACT_BOUNDARY)) {
     ensureImplicitTurn(b, ts);
+    // trigger/preTokens are adapter-dependent: the claude adapter sends both, codex sends neither.
     const params = msg.params as {
-      trigger: "manual" | "auto";
-      preTokens: number;
+      trigger?: "manual" | "auto";
+      preTokens?: number;
       contextSize?: number;
     };
     markCompactingStatusComplete(b);

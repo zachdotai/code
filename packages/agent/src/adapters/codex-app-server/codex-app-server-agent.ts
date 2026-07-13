@@ -1091,6 +1091,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     void this.client
       .extNotification(POSTHOG_NOTIFICATIONS.COMPACT_BOUNDARY, {
         sessionId: this.sessionId,
+        // codex only compacts on its own (contextCompaction items); preTokens is the last
+        // context occupancy reading, omitted when no usage arrived yet.
+        trigger: "auto",
+        preTokens: this.usage.contextTokens(),
       })
       .catch(() => undefined);
     void this.client
