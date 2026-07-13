@@ -1,5 +1,6 @@
 import { ArchiveIcon } from "@phosphor-icons/react";
 import { extractRepoSelectionRepository } from "@posthog/core/inbox/artefacts";
+import { isImplementationPrClosedOrMerged } from "@posthog/core/inbox/reportActions";
 import {
   deriveHeadline,
   displayConventionalCommitTitle,
@@ -13,6 +14,7 @@ import { InboxCardSourceMeta } from "@posthog/ui/features/inbox/components/Inbox
 import { InboxCardTitle } from "@posthog/ui/features/inbox/components/InboxCardTitle";
 import { PrDiffStats } from "@posthog/ui/features/inbox/components/PrDiffStats";
 import { PriorityMonogram } from "@posthog/ui/features/inbox/components/PriorityMonogram";
+import { usePrDiffStatsFromBatch } from "@posthog/ui/features/inbox/context/PrDiffStatsBatchContext";
 import { SuggestedReviewerAvatarStack } from "@posthog/ui/features/inbox/components/SuggestedReviewerAvatarStack";
 import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
 import { useInboxReportDetailPrefetch } from "@posthog/ui/features/inbox/hooks/useInboxReportDetailPrefetch";
@@ -51,6 +53,13 @@ export function PullRequestCard({
   const prRef = report.implementation_pr_url
     ? parsePrUrl(report.implementation_pr_url)
     : null;
+  // Live GitHub state from the surrounding diff-stats batch. The cloud report
+  // `status` lags a merge/close (it stays `ready` until the backend catches
+  // up), so a merged PR would otherwise keep its actionable primary "Review"
+  // button and read as active work. Once shipped, de-emphasise it to a neutral
+  // "View" — the violet merged badge on the PR link makes the state explicit.
+  const prBatch = usePrDiffStatsFromBatch(report.implementation_pr_url);
+  const prClosedOrMerged = isImplementationPrClosedOrMerged(prBatch.stats);
   const { data: artefactsResp } = useInboxReportArtefacts(report.id, {
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -158,7 +167,7 @@ export function PullRequestCard({
           </UiButton>
           <Button
             type="button"
-            variant="primary"
+            variant={prClosedOrMerged ? "outline" : "primary"}
             size="sm"
             onClick={(event) => {
               event.stopPropagation();
@@ -166,7 +175,7 @@ export function PullRequestCard({
               navigate(detailRoute);
             }}
           >
-            Review
+            {prClosedOrMerged ? "View" : "Review"}
           </Button>
         </Flex>
       </Flex>

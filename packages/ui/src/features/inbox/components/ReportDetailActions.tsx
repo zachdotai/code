@@ -5,9 +5,13 @@ import {
   GitPullRequestIcon,
 } from "@phosphor-icons/react";
 import { extractRepoSelectionRepository } from "@posthog/core/inbox/artefacts";
-import { canCreateImplementationPr } from "@posthog/core/inbox/reportActions";
+import {
+  canCreateImplementationPr,
+  isImplementationPrClosedOrMerged,
+} from "@posthog/core/inbox/reportActions";
 import { Button } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
+import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
 import { useCreatePrReport } from "@posthog/ui/features/inbox/hooks/useCreatePrReport";
 import { useDiscussReport } from "@posthog/ui/features/inbox/hooks/useDiscussReport";
 import { useInboxReportArtefacts } from "@posthog/ui/features/inbox/hooks/useInboxReports";
@@ -50,7 +54,20 @@ export function ReportDetailActions({ report }: ReportDetailActionsProps) {
   const existingPrUrl =
     report.implementation_pr_url ??
     (continuableTask ? getTaskPrUrl(continuableTask) : null);
-  const hasExistingPr = !!existingPrUrl || !!continuableTask;
+
+  // Reconcile against live GitHub state: the cloud report `status` lags a
+  // merge/close (it stays `ready` until the backend catches up), so a PR that
+  // has already merged would otherwise still offer "Continue PR" and claim an
+  // open PR exists. Once the PR is merged/closed there is nothing open to
+  // continue, so drop the continuation path. `usePrDetails` reuses the same
+  // `getPrDetailsByUrl` query the header's PR badge already primed on this page.
+  const { meta: implementationPrMeta } = usePrDetails(existingPrUrl ?? null);
+  const prClosedOrMerged =
+    !implementationPrMeta.isLoading &&
+    isImplementationPrClosedOrMerged(implementationPrMeta);
+
+  const hasExistingPr =
+    (!!existingPrUrl || !!continuableTask) && !prClosedOrMerged;
 
   const fireAction = useReportActionTracker(report);
   const openTask = useOpenTask();

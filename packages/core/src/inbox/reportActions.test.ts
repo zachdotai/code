@@ -2,7 +2,50 @@ import { describe, expect, it } from "vitest";
 import {
   buildCreatePrReportPrompt,
   buildDiscussReportPrompt,
+  isImplementationPrClosedOrMerged,
 } from "./reportActions";
+
+describe("isImplementationPrClosedOrMerged", () => {
+  it.each([
+    { label: "missing state", pr: null, expected: false },
+    { label: "undefined state", pr: undefined, expected: false },
+    { label: "unresolved (no fields)", pr: {}, expected: false },
+    {
+      label: "open PR (GraphQL batch)",
+      pr: { state: "open", merged: false },
+      expected: false,
+    },
+    {
+      label: "draft PR",
+      pr: { state: "open", merged: false },
+      expected: false,
+    },
+    {
+      label: "merged PR (GraphQL batch)",
+      pr: { state: "merged", merged: true },
+      expected: true,
+    },
+    // GitHub's REST endpoint reports merged PRs as closed + merged:true.
+    {
+      label: "merged PR (REST)",
+      pr: { state: "closed", merged: true },
+      expected: true,
+    },
+    {
+      label: "closed-unmerged PR",
+      pr: { state: "closed", merged: false },
+      expected: true,
+    },
+    { label: "merged flag only", pr: { merged: true }, expected: true },
+    {
+      label: "uppercase CLOSED",
+      pr: { state: "CLOSED", merged: false },
+      expected: true,
+    },
+  ])("is $expected for $label", ({ pr, expected }) => {
+    expect(isImplementationPrClosedOrMerged(pr)).toBe(expected);
+  });
+});
 
 describe("buildCreatePrReportPrompt", () => {
   it("embeds the report web URL as a clickable backlink when provided", () => {
