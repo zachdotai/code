@@ -70,6 +70,10 @@ provider registration defaults to `us` for model discovery, and `/login` prompts
 region to authenticate against — which then takes over routing via `modifyModels` above. The OAuth
 loopback callback port can be overridden with `HARNESS_OAUTH_PORT` (default `8237`).
 
+While an interactive session is running, `/subagents` shows the bundled agent roster with each
+agent's effective model, reasoning level, and purpose. Use `/subagents all` to include project-local
+`.pi/agents/*.md` definitions; project settings are applied only for trusted projects.
+
 ## Spawn the CLI as a subprocess
 
 ```ts

@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
+  ExtensionCommandContext,
   ExtensionContext,
   ExtensionFactory,
   Theme,
@@ -28,7 +29,9 @@ import {
 } from "./format";
 import { runPool } from "./process/pool";
 import { renderSubagentCall, renderSubagentResult } from "./render";
+import { formatSubagentRoster } from "./roster";
 import { isFailedResult, runAgent, type SingleRunResult } from "./run-agent";
+import { loadSubagentSettings } from "./settings";
 import { SubagentStatusEditor } from "./status-editor";
 import { renderSubagentFooterLines } from "./status-footer";
 import { showSubagentStatusOverlay } from "./status-overlay";
@@ -178,6 +181,17 @@ export function createSubagentExtension(
     pi.on("resources_discover", () => ({
       skillPaths: [fileURLToPath(new URL("./skills", import.meta.url))],
     }));
+
+    pi.registerCommand("subagents", {
+      description:
+        "Show the configured subagent roster. Usage: /subagents [all]",
+      handler: async (args: string, ctx: ExtensionCommandContext) => {
+        const scope = args.trim().toLowerCase() === "all" ? "both" : "bundled";
+        const discovery = discoverAgents(ctx.cwd, scope);
+        const settings = loadSubagentSettings(ctx.cwd, ctx.isProjectTrusted());
+        ctx.ui.notify(formatSubagentRoster(discovery.agents, settings), "info");
+      },
+    });
 
     pi.registerTool(
       defineTool({
