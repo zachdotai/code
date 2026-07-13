@@ -45,7 +45,10 @@ export function QueuedMessageView({
           : "border-gray-5 bg-card",
       )}
     >
-      <Flex align="center" gap="2">
+      {/* Pin the row height so it stays constant across states: the non-editing
+          Steer button (fixed height) anchors it, but the editing state's ghost
+          icon buttons are `fit-content` and would otherwise collapse shorter. */}
+      <Flex align="center" gap="2" className="min-h-6">
         <DotsSixVertical
           size={14}
           className="shrink-0 cursor-grab text-gray-9"
@@ -61,10 +64,10 @@ export function QueuedMessageView({
             <MarkdownRenderer content={message.content} />
           )}
         </CollapsibleMessageContent>
-        <Flex align="center" gap="1" className="shrink-0">
+        <Flex align="center" gap="2" className="shrink-0">
           {isEditing ? (
             <>
-              <Text className="text-[12px] text-purple-11">
+              <Text className="mr-1 text-[12px] text-purple-11">
                 Editing in composer
               </Text>
               {onCancelEdit && (
