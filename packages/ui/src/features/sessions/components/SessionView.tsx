@@ -32,12 +32,14 @@ import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/Se
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/useEditQueuedMessage";
 import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
   useModeConfigOptionForTask,
   usePendingPermissionsForTask,
+  useSessionSelector,
   useThoughtLevelConfigOptionForTask,
 } from "@posthog/ui/features/sessions/sessionStore";
 import {
@@ -320,6 +322,12 @@ export function SessionView({
     },
     [isOnline, onBeforeSubmit],
   );
+
+  const isEditingQueued = useSessionSelector(
+    taskId,
+    (s) => !!s?.editingQueuedId,
+  );
+  const cancelQueuedEdit = useCancelQueuedMessageEdit(taskId);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
@@ -700,6 +708,8 @@ export function SessionView({
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}
                           onCancel={onCancelPrompt}
+                          isEditingQueued={isEditingQueued}
+                          onCancelEdit={cancelQueuedEdit}
                         />
                       </ComposerWidth>
                     </Box>
