@@ -168,14 +168,14 @@ export function TaskInput({
   const setSelectedReportIds = useInboxReportSelectionStore(
     (s) => s.setSelectedReportIds,
   );
-  const selectedDirectory = useActiveRepoStore((s) => s.path);
+  const activeRepoPath = useActiveRepoStore((s) => s.path);
   const setSelectedDirectory = useActiveRepoStore((s) => s.setPath);
   // Inline file preview opened from the command palette's file search.
   const previewFile = useFileSearchStore((s) => s.previewFile);
   const closePreviewFile = useFileSearchStore((s) => s.closePreview);
   // Clear the open file on repo change + unmount.
   // biome-ignore lint/correctness/useExhaustiveDependencies: clear on repo change + unmount only
-  useEffect(() => closePreviewFile, [selectedDirectory, closePreviewFile]);
+  useEffect(() => closePreviewFile, [activeRepoPath, closePreviewFile]);
   const { data: mostRecentRepo } = useQuery(
     trpc.folders.getMostRecentlyAccessedRepository.queryOptions(),
   );
@@ -202,8 +202,8 @@ export function TaskInput({
   const editorRef = useRef<EditorHandle>(null);
   const handleAddSelectionToPrompt = useCallback(
     (startLine: number, endLine: number, text: string) => {
-      if (!selectedDirectory || !previewFile) return;
-      const absolutePath = `${selectedDirectory.replace(/\/+$/, "")}/${previewFile}`;
+      if (!activeRepoPath || !previewFile) return;
+      const absolutePath = `${activeRepoPath.replace(/\/+$/, "")}/${previewFile}`;
       const prompt = buildFileLineReferencePrompt(
         absolutePath,
         startLine,
@@ -213,7 +213,7 @@ export function TaskInput({
       editorRef.current?.insertEditorContent(xmlToContent(prompt));
       editorRef.current?.focus();
     },
-    [selectedDirectory, previewFile],
+    [activeRepoPath, previewFile],
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonGroupRef = useRef<HTMLDivElement>(null);
@@ -299,10 +299,10 @@ export function TaskInput({
   }, [activeReportAssociation, setSelectedReportIds]);
 
   useEffect(() => {
-    if (!selectedDirectory && mostRecentRepo?.path) {
+    if (!activeRepoPath && mostRecentRepo?.path) {
       setSelectedDirectory(mostRecentRepo.path);
     }
-  }, [mostRecentRepo?.path, selectedDirectory, setSelectedDirectory]);
+  }, [mostRecentRepo?.path, activeRepoPath, setSelectedDirectory]);
 
   const setAdapter = (newAdapter: AgentAdapter) =>
     setLastUsedAdapter(newAdapter);
@@ -379,6 +379,25 @@ export function TaskInput({
       setLastUsedLocalWorkspaceMode(mode);
     }
   };
+
+  const { folders } = useFolders();
+
+  // Worktree mode creates a fresh checkout from the main clone, and its folder
+  // picker only lists main repos — but the persisted selection can still point
+  // at a worktree (picked in local mode before switching, or from a past
+  // session). Resolve the effective directory to that worktree's registered
+  // main clone so task creation doesn't treat a worktree path as the main
+  // repo. Worktrees without a registered main stay as-is: they're the repo's
+  // only selectable entry.
+  const selectedDirectory = useMemo(() => {
+    if (workspaceMode !== "worktree" || !activeRepoPath) return activeRepoPath;
+    const mainRepoPath = folders.find(
+      (f) => f.path === activeRepoPath,
+    )?.mainRepoPath;
+    return mainRepoPath && folders.some((f) => f.path === mainRepoPath)
+      ? mainRepoPath
+      : activeRepoPath;
+  }, [workspaceMode, activeRepoPath, folders]);
   const {
     repositories: visibleCloudRepositories,
     isPending: cloudRepositoriesLoading,
@@ -561,24 +580,6 @@ export function TaskInput({
     modeOption,
     setConfigOption,
   ]);
-
-  const { folders } = useFolders();
-
-  // Worktree mode creates a fresh checkout from the main clone, and its folder
-  // picker only lists main repos — but the selection can still point at a
-  // worktree (picked in local mode before switching, or persisted from a past
-  // session). Remap it to the worktree's main repo so task creation doesn't
-  // treat a worktree path as the main repo. Only remap when the main clone is
-  // itself registered; otherwise the worktree row is the repo's only entry.
-  useEffect(() => {
-    if (workspaceMode !== "worktree" || !selectedDirectory) return;
-    const mainRepoPath = folders.find(
-      (f) => f.path === selectedDirectory,
-    )?.mainRepoPath;
-    if (mainRepoPath && folders.some((f) => f.path === mainRepoPath)) {
-      setSelectedDirectory(mainRepoPath);
-    }
-  }, [workspaceMode, selectedDirectory, folders, setSelectedDirectory]);
 
   useEffect(() => {
     if (selectedRepository || !lastUsedCloudRepository) {
@@ -1043,10 +1044,10 @@ export function TaskInput({
     >
       <DropZoneOverlay isVisible={isDraggingFile} />
       <Flex height="100%" width="100%">
-        {previewFile && selectedDirectory && (
+        {previewFile && activeRepoPath && (
           <Box className="h-full min-w-0 flex-1 border-gray-4 border-r">
             <NewTaskFilePreview
-              repoPath={selectedDirectory}
+              repoPath={activeRepoPath}
               filePath={previewFile}
               onAddSelection={handleAddSelectionToPrompt}
             />
