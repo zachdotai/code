@@ -176,8 +176,16 @@ export function ContentHeader() {
           <div className="no-drag">
             <AutoresearchHeaderButton taskId={activeTask.id} />
           </div>
+          {/* Show the branch control whenever the task has a repo checkout,
+              even if HEAD is detached (the default for worktree tasks) — the
+              linked branch is where the task's commits land, and hiding the
+              control entirely makes a local task look like a cloud one. */}
           {activeWorkspace &&
-            (activeWorkspace.branchName || activeWorkspace.baseBranch) && (
+            !activeWorkspace.isScratch &&
+            (activeWorkspace.worktreePath ||
+              activeWorkspace.folderPath ||
+              activeWorkspace.branchName ||
+              activeWorkspace.baseBranch) && (
               <div className="no-drag flex h-full min-w-0 items-center">
                 <BranchSelector
                   repoPath={
@@ -187,6 +195,7 @@ export function ContentHeader() {
                   }
                   currentBranch={
                     activeWorkspace.branchName ??
+                    activeWorkspace.linkedBranch ??
                     activeWorkspace.baseBranch ??
                     null
                   }
