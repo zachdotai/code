@@ -13,6 +13,7 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import {
+  detectRtkBinary,
   isMcpToolReadOnly,
   isNotification,
   POSTHOG_NOTIFICATIONS,
@@ -92,7 +93,6 @@ import {
   AGENT_REPO_FILES,
   AGENT_SLEEP_COORDINATOR,
 } from "./identifiers";
-import { ensureNodeShim } from "./node-shim";
 import type {
   AgentLogger,
   AgentMcpApps,
@@ -108,6 +108,7 @@ import {
   type InterruptReason,
   type PromptOutput,
   type ReconnectSessionInput,
+  type RtkStatus,
   type SessionResponse,
   type StartSessionInput,
 } from "./schemas";
@@ -116,13 +117,6 @@ export type { InterruptReason };
 
 function isDevBuild(): boolean {
   return process.env.POSTHOG_CODE_IS_DEV === "true";
-}
-
-const MOCK_NODE_DIR_PREFIX = "agent-node";
-
-function getMockNodeDir(): string {
-  const suffix = isDevBuild() ? "dev" : "prod";
-  return join(tmpdir(), `${MOCK_NODE_DIR_PREFIX}-${suffix}`);
 }
 
 /** Mark all content blocks as hidden so the renderer doesn't show a duplicate user message on retry */
@@ -288,6 +282,8 @@ interface SessionConfig {
    * replayed to the client. Claude adapter only.
    */
   importedSessionId?: string;
+  /** rtk command-output compression for this session; false opts out. */
+  rtkEnabled?: boolean;
 }
 
 /** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
@@ -369,7 +365,6 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
-  private mockNodeReady = false;
   private idleTimeouts = new Map<
     string,
     { handle: ReturnType<typeof setTimeout>; deadline: number }
@@ -431,6 +426,15 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     // (copyClaudeExecutable plugin).
     const binary = process.platform === "win32" ? "claude.exe" : "claude";
     return this.bundledResources.resolve(`.vite/build/claude-cli/${binary}`);
+  }
+
+  /** Whether an rtk binary is installed on this host, independent of the toggle. */
+  getRtkStatus(): RtkStatus {
+    const binaryPath = detectRtkBinary(process.env);
+    return {
+      available: binaryPath !== undefined,
+      binaryPath: binaryPath ?? null,
+    };
   }
 
   private getCodexBinaryPath(): string {
@@ -761,15 +765,14 @@ If a repository IS genuinely required, attach one in this priority order:
     }
 
     const channel = `agent-event:${taskRunId}`;
-    const mockNodeDir = this.setupMockNodeEnvironment();
     const proxyUrl = await this.agentAuthAdapter.ensureGatewayProxy(
       credentials.apiHost,
     );
     await this.agentAuthAdapter.configureProcessEnv({
       credentials,
-      mockNodeDir,
       proxyUrl,
       claudeCliPath: this.getClaudeCliPath(),
+      rtkEnabled: config.rtkEnabled,
     });
 
     const isPreview = taskId === "__preview__";
@@ -1596,19 +1599,6 @@ For git operations while detached:
     this.log.info("All agent sessions cleaned up");
   }
 
-  private setupMockNodeEnvironment(): string {
-    const mockNodeDir = getMockNodeDir();
-    if (!this.mockNodeReady) {
-      try {
-        ensureNodeShim(mockNodeDir, process.execPath);
-        this.mockNodeReady = true;
-      } catch (err) {
-        this.log.warn("Failed to setup mock node environment", err);
-      }
-    }
-    return mockNodeDir;
-  }
-
   private cancelInFlightMcpToolCalls(session: ManagedSession): void {
     for (const [toolCallId, toolKey] of session.inFlightMcpToolCalls) {
       this.mcpAppsService.notifyToolCancelled(toolKey, toolCallId);
@@ -1987,6 +1977,7 @@ For git operations while detached:
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
       importedSessionId:
         "importedSessionId" in params ? params.importedSessionId : undefined,
+      rtkEnabled: "rtkEnabled" in params ? params.rtkEnabled : undefined,
     };
   }
 

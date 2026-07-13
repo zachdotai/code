@@ -406,6 +406,7 @@ describe("AgentServer HTTP Mode", () => {
       mode: "interactive",
       taskId: "test-task-id",
       runId: "test-run-id",
+      resolveRtkSavings: async () => null,
       ...overrides,
     });
     return server;
@@ -445,6 +446,7 @@ describe("AgentServer HTTP Mode", () => {
 
   describe("turn completion", () => {
     function stubSessionCleanup(testServer: unknown): {
+      session: unknown;
       cleanupSession: (options?: {
         completeEventStream?: boolean;
       }) => Promise<void>;
@@ -497,6 +499,48 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
     });
 
+    it("emits rtk savings once before terminal event ingest stops", async () => {
+      const testServer = stubSessionCleanup(
+        createServer({
+          resolveRtkSavings: async () => ({
+            totalCommands: 4,
+            inputTokens: 1000,
+            outputTokens: 350,
+            tokensSaved: 650,
+          }),
+        }),
+      );
+      const session = testServer.session;
+
+      await testServer.cleanupSession({ completeEventStream: true });
+      testServer.session = session;
+      await testServer.cleanupSession({ completeEventStream: true });
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledOnce();
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notification: expect.objectContaining({
+            method: "_posthog/rtk_savings",
+            params: expect.objectContaining({
+              task_id: "test-task-id",
+              run_id: "test-run-id",
+              team_id: 1,
+              counter_id: "test-task-id",
+              cumulative_commands: 4,
+              cumulative_input_tokens: 1000,
+              cumulative_output_tokens: 350,
+              cumulative_tokens_saved: 650,
+            }),
+          }),
+        }),
+      );
+      expect(
+        testServer.eventStreamSender.enqueue.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        testServer.eventStreamSender.stop.mock.invocationCallOrder[0],
+      );
+    });
+
     it("writes terminal failure status before completing event ingest", async () => {
       const order: string[] = [];
       const testServer = new AgentServer({
@@ -509,6 +553,7 @@ describe("AgentServer HTTP Mode", () => {
         mode: "interactive",
         taskId: "test-task-id",
         runId: "test-run-id",
+        resolveRtkSavings: async () => null,
       }) as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
@@ -586,6 +631,7 @@ describe("AgentServer HTTP Mode", () => {
         mode: "interactive",
         taskId: "test-task-id",
         runId: "test-run-id",
+        resolveRtkSavings: async () => null,
       }) as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
@@ -683,6 +729,139 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.enqueue).not.toHaveBeenCalled();
       expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
+    function createUsageTestServer() {
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: { payload: JwtPayload } | null;
+        posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+        recordTurnUsage(usage: unknown): void;
+      };
+      testServer.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      testServer.session = {
+        payload: {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      return testServer;
+    }
+
+    it("reports cumulative run token usage into TaskRun.state after each settled turn", () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        cachedReadTokens: 10,
+        cachedWriteTokens: 5,
+        totalTokens: 165,
+      };
+
+      testServer.recordTurnUsage(turnUsage);
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenNthCalledWith(
+        1,
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 10,
+              cache_write_tokens: 5,
+              thought_tokens: 0,
+              total_tokens: 165,
+              turns: 1,
+            },
+          },
+        },
+      );
+      // The second report carries run-cumulative totals, not per-turn figures.
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 200,
+              output_tokens: 100,
+              cache_read_tokens: 20,
+              cache_write_tokens: 10,
+              thought_tokens: 0,
+              total_tokens: 330,
+              turns: 2,
+            },
+          },
+        },
+      );
+    });
+
+    it("does not report anything when a turn settles without usage", () => {
+      const testServer = createUsageTestServer();
+
+      testServer.recordTurnUsage(undefined);
+
+      expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
+    it("resets run usage on session cleanup so a later run starts from zero", async () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 150,
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      const cleanupServer = stubSessionCleanup(testServer);
+      await cleanupServer.cleanupSession();
+
+      testServer.session = {
+        payload: {
+          run_id: "run-2",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-2",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 0,
+              cache_write_tokens: 0,
+              thought_tokens: 0,
+              total_tokens: 150,
+              turns: 1,
+            },
+          },
+        },
+      );
     });
 
     function createFailureTestServer() {
@@ -1675,6 +1854,98 @@ describe("AgentServer HTTP Mode", () => {
   });
 
   describe("native resume", () => {
+    it.each([
+      { retryOutcome: "succeeds", retryFails: false },
+      { retryOutcome: "fails", retryFails: true },
+    ])(
+      "clears resume state when the fresh-session retry $retryOutcome",
+      async ({ retryFails }) => {
+        const s = createServer();
+        await s.start();
+
+        const prompts: ContentBlock[][] = [];
+        const prompt = vi.fn(async (params: { prompt: ContentBlock[] }) => {
+          prompts.push(params.prompt);
+          if (prompts.length === 1) {
+            throw new Error("Internal error: Prompt is too long");
+          }
+          if (retryFails) {
+            throw new Error("Fresh-session retry failed");
+          }
+          return { stopReason: "end_turn" };
+        });
+        const newSession = vi.fn(async () => ({ sessionId: "fresh-session" }));
+
+        const internals = s as unknown as {
+          session: {
+            acpSessionId: string;
+            clientConnection: {
+              prompt: typeof prompt;
+              newSession: typeof newSession;
+            };
+          };
+          resumeState: ResumeState | null;
+          nativeResume: { sessionId: string; warm: boolean } | null;
+          loadResumeState(
+            taskId: string,
+            resumeRunId: string,
+            runId: string,
+          ): Promise<void>;
+          sendResumeContinuation(
+            payload: JwtPayload,
+            taskRun: TaskRun | null,
+          ): Promise<void>;
+        };
+        internals.session.clientConnection.prompt = prompt;
+        internals.session.clientConnection.newSession = newSession;
+        internals.nativeResume = { sessionId: "prior-session", warm: true };
+        internals.loadResumeState = vi.fn(async () => {
+          internals.resumeState = {
+            conversation: [
+              {
+                role: "user",
+                content: [{ type: "text", text: "original task" }],
+              },
+              {
+                role: "assistant",
+                content: [{ type: "text", text: "progress so far" }],
+              },
+            ],
+            latestGitCheckpoint: null,
+            interrupted: false,
+            logEntryCount: 2,
+            sessionId: "prior-session",
+          };
+        });
+
+        await internals.sendResumeContinuation(
+          {
+            task_id: "test-task-id",
+            run_id: "test-run-id",
+            team_id: 1,
+            user_id: 1,
+            distinct_id: "test-distinct-id",
+            mode: "interactive",
+          },
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+        );
+
+        expect(newSession).toHaveBeenCalledOnce();
+        expect(internals.session.acpSessionId).toBe("fresh-session");
+        expect(internals.resumeState).toBeNull();
+        expect(internals.nativeResume).toBeNull();
+        expect(prompts).toHaveLength(2);
+        const retryText = prompts[1]
+          .map((block) => ("text" in block ? block.text : ""))
+          .join("\n");
+        expect(retryText).toContain("progress so far");
+      },
+      20000,
+    );
+
     it("hydrates cold sessions from S3 logs instead of cached resume conversation", async () => {
       const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
       process.env.CLAUDE_CONFIG_DIR = join(repo.path, ".claude-test");
@@ -1980,8 +2251,22 @@ describe("AgentServer HTTP Mode", () => {
       expect(s.detectedPrUrl).toBeNull();
     });
 
-    it("fails closed when the run's GitHub identity cannot be resolved", async () => {
-      const s = setup(justNow());
+    it("attributes a recent PR when the identity is a GitHub App installation (gh api user unavailable)", async () => {
+      // Cloud runs authenticate with a GitHub App installation token, for which
+      // `gh api user` returns 403 → ghLogin is null. The PR is authored by the
+      // app bot (e.g. "app/posthog"); recency alone must carry attribution.
+      const s = setup(justNow(), "app/posthog");
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
+      });
+      expect(s.detectedPrUrl).toBe(PR_URL);
+    });
+
+    it("still rejects an old PR when the identity cannot be resolved (recency guards)", async () => {
+      const s = setup(longAgo, "app/posthog");
       s.fetchGhLogin = vi.fn(async () => null);
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();

@@ -24,7 +24,7 @@ import {
   type EnrichedReadCache,
   type OnModeChange,
 } from "../hooks";
-import type { CodeExecutionMode } from "../tools";
+import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
@@ -50,6 +50,13 @@ export type GatewayEnv = {
   openaiApiKey: string;
   /** Task-specific custom headers forwarded to the gateway (e.g. task_id, run_id). */
   anthropicCustomHeaders?: string;
+  /**
+   * Same task-metadata attribution headers as {@link anthropicCustomHeaders},
+   * in record form for the codex/OpenAI path (which sets provider
+   * `http_headers` rather than `ANTHROPIC_CUSTOM_HEADERS`). Includes `team_id`,
+   * which the Claude path instead appends in {@link buildEnvironment}.
+   */
+  openaiCustomHeaders?: Record<string, string>;
   /** PostHog project ID for per-team attribution headers. */
   posthogProjectId?: string;
 };
@@ -183,7 +190,9 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
     }),
     ...(gateway?.openaiBaseUrl && { OPENAI_BASE_URL: gateway.openaiBaseUrl }),
     ...(gateway?.openaiApiKey && { OPENAI_API_KEY: gateway.openaiApiKey }),
-    ELECTRON_RUN_AS_NODE: "1",
+    ...((process.versions.electron || process.env.ELECTRON_RUN_AS_NODE) && {
+      ELECTRON_RUN_AS_NODE: "1",
+    }),
     CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL: "true",
     // Offload all MCP tools by default
     ENABLE_TOOL_SEARCH: "auto:0",
@@ -436,7 +445,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     cwd: params.cwd,
     includePartialMessages: true,
     allowDangerouslySkipPermissions: !IS_ROOT || !!process.env.IS_SANDBOX,
-    permissionMode: params.permissionMode,
+    permissionMode: toSdkPermissionMode(params.permissionMode),
     canUseTool: params.canUseTool,
     tools,
     agents,

@@ -19,6 +19,7 @@ import { getCurrentBranch } from "@posthog/git/queries";
 import {
   type Adapter,
   buildPrOutput,
+  getErrorMessage,
   mergePrUrls,
   readPrUrls,
 } from "@posthog/shared";
@@ -40,6 +41,7 @@ import { hasCodexThreadState } from "../adapters/codex-app-server/thread-state";
 import {
   type AgentErrorClassification,
   classifyAgentError,
+  isPromptTooLongError,
 } from "../adapters/error-classification";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
@@ -74,6 +76,7 @@ import type {
 import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
 import {
+  buildGatewayPropertyHeaderRecord,
   buildGatewayPropertyHeaders,
   resolveGatewayProduct,
   resolveLlmGatewayUrl,
@@ -86,6 +89,8 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { resolveRtkSavings } from "./rtk-savings";
+import { RunUsageAccumulator } from "./run-usage";
 import {
   handoffLocalGitStateSchema,
   jsonRpcRequestSchema,
@@ -247,6 +252,8 @@ interface ActiveSession {
   /** Whether a desktop client has ever connected via SSE during this session */
   hasDesktopConnected: boolean;
   pendingHandoffGitState?: HandoffLocalGitState;
+  /** Meta the session was created with, reused when a retry needs a fresh session */
+  sessionMeta: Record<string, unknown>;
 }
 
 interface InstalledSkillBundle {
@@ -315,8 +322,10 @@ export class AgentServer {
   private app: Hono;
   private posthogAPI: PostHogAPIClient;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
+  private rtkSavingsAttempted = false;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
+  private runUsage = new RunUsageAccumulator();
   private detectedPrUrl: string | null = null;
   // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
   // attributions so the most recently created PR in a run wins.
@@ -325,6 +334,7 @@ export class AgentServer {
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
   private nativeResume: { sessionId: string; warm: boolean } | null = null;
+  private oversizedResumeRetried = false;
   // Prewarmed runs boot before the user's first message exists, so the boot-time
   // --autoPublish flag can't carry the user's choice; it is resolved from run
   // state when the first message arrives (see resolveWarmAutoPublishUpgrade).
@@ -956,6 +966,7 @@ export class AgentServer {
           void this.syncCloudBranchMetadata(this.session.payload);
         }
 
+        this.recordTurnUsage(result.usage);
         this.broadcastTurnComplete(result.stopReason);
 
         if (result.stopReason === "end_turn") {
@@ -1254,6 +1265,7 @@ export class AgentServer {
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
               reasoningEffort: this.config.reasoningEffort,
               developerInstructions: codexInstructions,
+              httpHeaders: gatewayEnv.openaiCustomHeaders,
             }
           : undefined,
       onStructuredOutput: async (output) => {
@@ -1404,6 +1416,7 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
+      sessionMeta,
     };
 
     this.logger = new Logger({
@@ -1668,6 +1681,7 @@ export class AgentServer {
         void this.syncCloudBranchMetadata(payload);
       }
 
+      this.recordTurnUsage(result.usage);
       this.broadcastTurnComplete(result.stopReason);
 
       if (result.stopReason === "end_turn") {
@@ -1739,7 +1753,6 @@ export class AgentServer {
         gitCheckpointBranch: resumeState.latestGitCheckpoint?.branch ?? null,
       });
 
-      this.resumeState = null;
       return {
         prompt: resumePromptBlocks,
         ...(resumePromptMeta ? { meta: resumePromptMeta } : {}),
@@ -1780,14 +1793,74 @@ export class AgentServer {
           hasPendingUserMessage: !!pendingUserPrompt?.prompt.length,
         });
 
-        this.resumeState = null;
-        this.nativeResume = null;
         return {
           prompt,
           ...(pendingUserPrompt?.meta ? { meta: pendingUserPrompt.meta } : {}),
         };
       },
+      { retryOnOversizedPrompt: true },
     );
+  }
+
+  /**
+   * A native resume replays the prior transcript verbatim; when that
+   * transcript no longer fits the context window, every request (including
+   * auto-compaction) is rejected, so the only way forward is a fresh session
+   * seeded with the summarized history the non-native resume path uses.
+   */
+  private async retryOversizedResumeOnFreshSession(
+    payload: JwtPayload,
+    taskRun: TaskRun | null,
+  ): Promise<boolean> {
+    if (this.oversizedResumeRetried || !this.session) {
+      return false;
+    }
+    this.oversizedResumeRetried = true;
+
+    const resumeRunId = this.getResumeRunId(taskRun);
+    if (!resumeRunId) return false;
+    if (!this.resumeState) {
+      try {
+        await this.loadResumeState(
+          payload.task_id,
+          resumeRunId,
+          payload.run_id,
+        );
+      } catch (error) {
+        this.logger.warn("Failed to reload resume state for retry", {
+          error: getErrorMessage(error),
+        });
+        return false;
+      }
+    }
+    if (!this.resumeState?.conversation.length) return false;
+
+    this.logger.warn(
+      "Resume prompt exceeded the context window; retrying on a fresh session with summarized history",
+      { taskId: payload.task_id, runId: payload.run_id },
+    );
+
+    try {
+      const response = await this.session.clientConnection.newSession({
+        cwd: this.config.repositoryPath ?? "/tmp/workspace",
+        mcpServers: this.config.mcpServers ?? [],
+        _meta: this.session.sessionMeta,
+      });
+      this.session.acpSessionId = response.sessionId;
+    } catch (error) {
+      this.logger.warn("Failed to start fresh session for oversized resume", {
+        error: getErrorMessage(error),
+      });
+      return false;
+    }
+
+    try {
+      await this.sendResumeMessage(payload, taskRun);
+      return true;
+    } finally {
+      this.resumeState = null;
+      this.nativeResume = null;
+    }
   }
 
   private async runResumeTurn(
@@ -1795,6 +1868,7 @@ export class AgentServer {
     taskRun: TaskRun | null,
     logLabel: string,
     buildPrompt: () => Promise<BuiltPrompt>,
+    opts: { retryOnOversizedPrompt?: boolean } = {},
   ): Promise<void> {
     if (!this.session) return;
 
@@ -1813,12 +1887,17 @@ export class AgentServer {
         stopReason: result.stopReason,
       });
 
+      // Kept until the turn succeeds so a prompt-too-long retry can reuse it.
+      this.resumeState = null;
+      this.nativeResume = null;
+
       await this.clearPendingInitialPromptState(payload, taskRun);
 
       if (result.stopReason === "end_turn") {
         void this.syncCloudBranchMetadata(payload);
       }
 
+      this.recordTurnUsage(result.usage);
       this.broadcastTurnComplete(result.stopReason);
 
       if (result.stopReason === "end_turn") {
@@ -1828,6 +1907,13 @@ export class AgentServer {
       this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
       if (this.session) {
         await this.session.logWriter.flushAll();
+      }
+      if (
+        opts.retryOnOversizedPrompt &&
+        isPromptTooLongError(error) &&
+        (await this.retryOversizedResumeOnFreshSession(payload, taskRun))
+      ) {
+        return;
       }
       await this.handleTurnFailure(payload, "resume", error);
     }
@@ -3009,6 +3095,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     } catch (error) {
       this.logger.error("Failed to signal task completion", error);
     } finally {
+      await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
     }
   }
@@ -3060,12 +3147,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       ? gatewayUrl
       : `${gatewayUrl}/v1`;
     // Forward task metadata as `x-posthog-property-*` headers so the gateway
-    // lifts them onto the $ai_generation event. Routes through the Anthropic
-    // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
-    // equivalent today. (The `team_id` attribution header is added downstream
-    // in the Claude session builder from POSTHOG_PROJECT_ID — see
-    // adapters/claude/session/options.ts.)
-    const customHeaders = buildGatewayPropertyHeaders({
+    // lifts them onto the $ai_generation event. The Claude path routes these
+    // through the Anthropic SDK's ANTHROPIC_CUSTOM_HEADERS env var; the codex
+    // path sets them as `model_providers.posthog.http_headers` instead, so we
+    // also expose the record form below.
+    const gatewayProperties = {
       task_origin_product: originProduct,
       task_internal: isInternal,
       signal_report_id: signalReportId,
@@ -3074,6 +3160,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       task_run_id: taskRunId,
       task_user_id: taskUserId,
       task_title: taskTitle,
+    };
+    const customHeaders = buildGatewayPropertyHeaders(gatewayProperties);
+    // The Claude path appends `team_id` in buildEnvironment from
+    // POSTHOG_PROJECT_ID; the codex path has no such hook, so fold it into the
+    // record here to keep team attribution working for both adapters.
+    const openaiCustomHeaders = buildGatewayPropertyHeaderRecord({
+      ...gatewayProperties,
+      team_id: projectId,
     });
 
     // Server-level constants that don't vary per task — safe to keep in
@@ -3096,6 +3190,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       openaiBaseUrl,
       openaiApiKey: apiKey,
       anthropicCustomHeaders: customHeaders,
+      openaiCustomHeaders,
       posthogProjectId: String(projectId),
     };
   }
@@ -3485,10 +3580,13 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       return;
     }
 
-    // Only attribute PRs created during this run by this run's own GitHub
-    // identity — not ones the agent merely viewed.
+    // Only attribute PRs created during this run — not ones the agent merely
+    // viewed. GitHub App installation tokens (all cloud runs) can't read
+    // `gh api user`, so ghLogin is null there; enforce the author match only when
+    // we resolved our own identity, otherwise the recency gate alone scopes
+    // attribution to PRs created during this run.
     if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
-    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
+    if (ghLogin && !wasCreatedByLogin(attribution.author, ghLogin)) return;
 
     this.detectedPrUrl = prUrl;
 
@@ -3604,12 +3702,51 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
 
     if (completeEventStream) {
+      await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
     }
 
     this.pendingEvents = [];
     this.lastReportedBranch = null;
+    // Run usage is per run: a later session on this instance (e.g. a resume
+    // with a different run_id) must not inherit the previous run's totals.
+    this.runUsage = new RunUsageAccumulator();
     this.session = null;
+  }
+
+  private async emitRtkSavings(): Promise<void> {
+    if (!this.eventStreamSender || this.rtkSavingsAttempted) return;
+    this.rtkSavingsAttempted = true;
+
+    try {
+      const savings = await (
+        this.config.resolveRtkSavings ?? resolveRtkSavings
+      )();
+      if (!savings) return;
+
+      this.eventStreamSender.enqueue({
+        type: "notification",
+        timestamp: new Date().toISOString(),
+        notification: {
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.RTK_SAVINGS,
+          params: {
+            task_id: this.config.taskId,
+            run_id: this.config.runId,
+            team_id: this.config.projectId,
+            counter_id: this.config.taskId,
+            cumulative_commands: savings.totalCommands,
+            cumulative_input_tokens: savings.inputTokens,
+            cumulative_output_tokens: savings.outputTokens,
+            cumulative_tokens_saved: savings.tokensSaved,
+            runtime_adapter: this.config.runtimeAdapter,
+            model: this.config.model,
+          },
+        },
+      });
+    } catch (error) {
+      this.logger.debug("Failed to emit rtk savings", { error });
+    }
   }
 
   private async captureCheckpointState(
@@ -3664,6 +3801,24 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   ): HandoffLocalGitState | null {
     const result = handoffLocalGitStateSchema.safeParse(params.localGitState);
     return result.success ? result.data : null;
+  }
+
+  /**
+   * Accumulates a settled turn's token usage into the run total and reports it
+   * to the backend, merged into `TaskRun.state.token_usage`. Best-effort: a
+   * reporting failure must never affect the turn outcome.
+   */
+  private recordTurnUsage(usage: PromptResponse["usage"]): void {
+    if (!this.runUsage.add(usage)) return;
+    const payload = this.session?.payload;
+    if (!payload) return;
+    void this.posthogAPI
+      .updateTaskRun(payload.task_id, payload.run_id, {
+        state: { token_usage: this.runUsage.snapshot() },
+      })
+      .catch((error) => {
+        this.logger.warn("Failed to report run token usage", error);
+      });
   }
 
   private broadcastTurnComplete(stopReason: string): void {
