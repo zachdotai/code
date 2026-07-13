@@ -17,6 +17,10 @@ import {
 import { DemoMessageItem } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import { ReferencePicker } from "@posthog/ui/features/canvas/components/ReferencePicker";
+import {
+  type ThreadReply,
+  ThreadReplyPicker,
+} from "@posthog/ui/features/canvas/components/ThreadReplyPicker";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { useDemoFeedStore } from "@posthog/ui/features/canvas/stores/demoFeedStore";
@@ -55,6 +59,7 @@ export function InsertFakeMessageDialog({
   const [fromName, setFromName] = useState("");
   const [fromKind, setFromKind] = useState<"human" | "agent">("human");
   const [content, setContent] = useState("");
+  const [replyTo, setReplyTo] = useState<ThreadReply | null>(null);
 
   // Reset fields on each open so a prior draft never lingers (prev-prop compare,
   // not an effect, so there's no stale flash).
@@ -65,6 +70,7 @@ export function InsertFakeMessageDialog({
       setFromName("");
       setFromKind("human");
       setContent("");
+      setReplyTo(null);
     }
   }
 
@@ -98,6 +104,7 @@ export function InsertFakeMessageDialog({
         fromKind === "agent" ? AGENT_PERSONA : fromName.trim() || "Someone",
       fromKind,
       content: content.trim(),
+      replyTo: replyTo ?? undefined,
     });
     toast.success("Added to the channel feed");
     onOpenChange(false);
@@ -170,6 +177,16 @@ export function InsertFakeMessageDialog({
               )}
             </Field>
 
+            {/* Optional: render the message as a reply to a thread (a task). */}
+            <Field>
+              <FieldLabel>Reply to thread (optional)</FieldLabel>
+              <ThreadReplyPicker
+                channelId={channelId}
+                value={replyTo}
+                onChange={setReplyTo}
+              />
+            </Field>
+
             {/* Message body: a real thread composer, so @ opens the same member
               picker as a thread. The reference picker inserts canvas / channel /
               task / CONTEXT.md deep links. */}
@@ -202,6 +219,7 @@ export function InsertFakeMessageDialog({
                   fromName={fromName}
                   fromKind={fromKind}
                   content={content}
+                  replyTo={replyTo ?? undefined}
                 />
               </div>
             </div>

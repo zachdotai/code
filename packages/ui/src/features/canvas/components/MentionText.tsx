@@ -24,7 +24,7 @@ import {
 // The task-list status icon for a `…/tasks/<id>` link — live, like the sidebar
 // and feed cards (generating spinner, PR/cloud state). Falls back to the code
 // glyph while the task loads or if it isn't cached.
-function TaskLinkIcon({ taskId }: { taskId: string }) {
+export function TaskLinkIcon({ taskId }: { taskId: string }) {
   const { data } = useQuery({ ...taskDetailQuery(taskId), staleTime: 30_000 });
   return <TaskTabIcon task={data ?? getCachedTask(taskId)} size={12} />;
 }

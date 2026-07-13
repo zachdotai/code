@@ -48,10 +48,12 @@ import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import {
   MentionText,
   mentionChipClass,
+  TaskLinkIcon,
 } from "@posthog/ui/features/canvas/components/MentionText";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
+import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
   type SidebarPrState,
@@ -59,6 +61,7 @@ import {
 } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { Text } from "@radix-ui/themes";
+import { useNavigate } from "@tanstack/react-router";
 import { Fragment, memo, type ReactNode, useMemo } from "react";
 
 // Feed rows poll their reply counts slower than the open thread panel — the
@@ -532,15 +535,33 @@ export function DemoMessageItem({
   fromKind,
   content,
   createdAt,
+  replyTo,
   onDelete,
 }: {
   fromName: string;
   fromKind: "human" | "agent";
   content: string;
   createdAt?: string;
-  /** When set, a hover "…" menu offers a destructive delete. */
+  /** When set, renders a Slack-style "replied to a thread: …" preview line. */
+  replyTo?: { label: string; href: string };
   onDelete?: () => void;
 }) {
+  const navigate = useNavigate();
+  const openThread = useThreadPanelStore((s) => s.openThread);
+  // The reply target is a task deep link; clicking opens that task's *thread*
+  // dock (not the full task page) in its channel home.
+  const replyMatch = replyTo?.href.match(
+    /\/website\/([^/]+)\/tasks\/([^/?#]+)/,
+  );
+  const openReplyThread = () => {
+    if (!replyMatch) return;
+    const [, replyChannelId, taskId] = replyMatch;
+    openThread(replyChannelId, taskId);
+    void navigate({
+      to: "/website/$channelId",
+      params: { channelId: replyChannelId },
+    });
+  };
   return (
     <ThreadItem className="rounded-none py-4 pr-8">
       <ThreadItemGutter>
@@ -564,6 +585,21 @@ export function DemoMessageItem({
             </ThreadItemTimestamp>
           )}
         </ThreadItemHeader>
+        {replyTo && (
+          <div className="flex items-center gap-1 text-muted-foreground text-xs">
+            <span>replied to a thread:</span>
+            {/* Opens the task's thread dock (not the task page); the live
+                task-status icon matches reference links. */}
+            <button
+              type="button"
+              onClick={openReplyThread}
+              className="inline-flex min-w-0 items-center gap-1 text-primary hover:underline"
+            >
+              {replyMatch && <TaskLinkIcon taskId={replyMatch[2]} />}
+              <span className="truncate">{replyTo.label}</span>
+            </button>
+          </div>
+        )}
         <ThreadItemBody className="wrap-break-word">
           {content ? (
             // Same renderer as real thread messages: @mentions become chips and
@@ -620,6 +656,7 @@ function DemoFeedRow({
         fromKind={demo.fromKind}
         content={demo.content}
         createdAt={message.createdAt}
+        replyTo={demo.replyTo}
         onDelete={onDelete ? () => onDelete(message.id) : undefined}
       />
     </ChatMessageScrollerItem>

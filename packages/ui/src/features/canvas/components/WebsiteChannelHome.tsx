@@ -73,7 +73,12 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
       id: e.id,
       createdAt: e.createdAt,
       text: e.content,
-      demo: { fromName: e.fromName, fromKind: e.fromKind, content: e.content },
+      demo: {
+        fromName: e.fromName,
+        fromKind: e.fromKind,
+        content: e.content,
+        replyTo: e.replyTo,
+      },
     }));
     const base = [...feedMessages, ...demoMessages];
     const creation = channelCreationMessage(backendChannel);

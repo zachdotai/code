@@ -20,6 +20,8 @@ export interface DemoFeedMessage {
   fromKind: "human" | "agent";
   /** Markdown; may embed links to canvases / other channels. */
   content: string;
+  /** When set, the message renders as a reply to this thread (a task deep link). */
+  replyTo?: { label: string; href: string };
 }
 
 // The `payload` key that marks a feed message as a demo composer post — the
