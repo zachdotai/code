@@ -207,8 +207,8 @@ export {
   type PermissionRequest,
   type QueuedMessage,
   resolveBypassRevertMode,
-  sendableQueuePrefixLength,
   type SessionStatus,
+  sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
 } from "./sessions";
 export type {
