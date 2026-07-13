@@ -1,6 +1,10 @@
 import { splitMentionSegments } from "@posthog/shared";
-import { splitLinkSegments } from "@posthog/ui/features/canvas/utils/linkify";
+import {
+  splitLinkSegments,
+  splitRichLinkSegments,
+} from "@posthog/ui/features/canvas/utils/linkify";
 import { Text } from "@radix-ui/themes";
+import { useRouter } from "@tanstack/react-router";
 import { Fragment, useMemo } from "react";
 
 type RenderSegment =
@@ -23,13 +27,19 @@ export function MentionText({
   content,
   currentUserEmail,
   className,
+  markdownLinks = false,
 }: {
   content: string;
   currentUserEmail?: string | null;
   className?: string;
+  /** Also render markdown `[label](url)` links, not just bare URLs. */
+  markdownLinks?: boolean;
 }) {
   // Key each segment by its character offset — stable for a given content.
   const segments = useMemo(() => {
+    const splitLinks = markdownLinks
+      ? splitRichLinkSegments
+      : splitLinkSegments;
     let offset = 0;
     const entries: Array<{ segment: RenderSegment; key: string }> = [];
     const push = (segment: RenderSegment, length: number) => {
@@ -43,14 +53,17 @@ export function MentionText({
           segment.text.length,
         );
       } else {
-        for (const part of splitLinkSegments(segment.text)) {
+        for (const part of splitLinks(segment.text)) {
           push(part, part.text.length);
         }
       }
     }
     return entries;
-  }, [content]);
+  }, [content, markdownLinks]);
   const selfEmail = currentUserEmail?.toLowerCase();
+  const router = useRouter();
+  const linkClass =
+    "text-[var(--accent-11)] underline underline-offset-2 hover:text-[var(--accent-12)]";
   return (
     <Text size="1" className={className}>
       {segments.map(({ segment, key }) => {
@@ -70,13 +83,30 @@ export function MentionText({
           );
         }
         if (segment.type === "link") {
+          // An in-app route (`/…`) navigates through the router (opening a
+          // canvas, context, …) instead of the OS browser.
+          if (segment.href.startsWith("/")) {
+            return (
+              <a
+                key={key}
+                href={segment.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void router.history.push(segment.href);
+                }}
+                className={linkClass}
+              >
+                {segment.text}
+              </a>
+            );
+          }
           return (
             <a
               key={key}
               href={segment.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[var(--accent-11)] underline underline-offset-2 hover:text-[var(--accent-12)]"
+              className={linkClass}
             >
               {segment.text}
             </a>

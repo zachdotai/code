@@ -10,12 +10,43 @@ import { useMemo } from "react";
 // without a dedicated push channel.
 const CHANNEL_FEED_MESSAGES_POLL_INTERVAL_MS = 5_000;
 
+// A rich "fake" message authored in the dev-only demo composer. Carried inside
+// the feed message's freeform `payload` (the backend records the poster as the
+// real author and offers no content field, so the shown persona + body ride the
+// payload) and rendered as a full thread item — avatar, name, markdown body —
+// rather than the plain announcement text.
+export interface DemoFeedMessage {
+  fromName: string;
+  fromKind: "human" | "agent";
+  /** Markdown; may embed links to canvases / other channels. */
+  content: string;
+}
+
+// The `payload` key that marks a feed message as a demo composer post — the
+// client keys rich rendering off it, ignoring the event's usual text. (Used for
+// any server-side demo messages; the dev composer itself persists locally.)
+export const DEMO_FEED_MARKER = "__demo";
+
+function readDemoPayload(
+  message: ChannelFeedMessage,
+): DemoFeedMessage | undefined {
+  const p = message.payload ?? {};
+  if (p[DEMO_FEED_MARKER] !== true) return undefined;
+  return {
+    fromName: typeof p.from_name === "string" ? p.from_name : "Someone",
+    fromKind: p.from_kind === "agent" ? "agent" : "human",
+    content: typeof p.content === "string" ? p.content : message.content,
+  };
+}
+
 // A channel-feed system message flattened to what the feed renders.
 export interface ChannelFeedSystemMessage {
   id: string;
   /** ISO; interleaved with task cards in the feed. */
   createdAt: string;
   text: string;
+  /** Present for dev-only demo composer posts; rendered as a rich thread item. */
+  demo?: DemoFeedMessage;
 }
 
 export function channelFeedMessagesQueryKey(channelId: string | undefined) {
@@ -89,11 +120,15 @@ export function useChannelFeedMessages(channelId: string | undefined): {
     () =>
       (query.data ?? [])
         .filter((m) => !CREATION_EVENTS.has(m.event))
-        .map((m) => ({
-          id: m.id,
-          createdAt: m.created_at,
-          text: messageText(m),
-        })),
+        .map((m) => {
+          const demo = readDemoPayload(m);
+          return {
+            id: m.id,
+            createdAt: m.created_at,
+            text: demo?.content ?? messageText(m),
+            demo,
+          };
+        }),
     [query.data],
   );
   return { messages, isLoading: query.isLoading };

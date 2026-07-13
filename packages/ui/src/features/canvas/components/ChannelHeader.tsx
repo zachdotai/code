@@ -1,9 +1,12 @@
+import { SparkleIcon } from "@phosphor-icons/react";
 import { Button, cn } from "@posthog/quill";
 import { ChannelTabs } from "@posthog/ui/features/canvas/components/ChannelTabs";
+import { InsertFakeMessageDialog } from "@posthog/ui/features/canvas/components/InsertFakeMessageDialog";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { SquircleDashed } from "lucide-react";
+import { useState } from "react";
 
 // The shared channel header: a clickable "# channel" that doubles as the Home
 // item — it routes to the channel home (`/website/$channelId`, like the sidebar
@@ -17,6 +20,8 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
   const channelName = channels.find((c) => c.id === channelId)?.name;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isHome = pathname === `/website/${channelId}`;
+  // Dev-only demo tool: post a "fake" message into the channel feed.
+  const [fakeMessageOpen, setFakeMessageOpen] = useState(false);
 
   return (
     <div className="flex min-w-0 items-center gap-2">
@@ -38,6 +43,26 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
         </Text>
       </Button>
       <ChannelTabs channelId={channelId} />
+
+      {import.meta.env.DEV && (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="ms-auto shrink-0"
+            onClick={() => setFakeMessageOpen(true)}
+          >
+            <SparkleIcon size={14} />
+            Insert fake message
+          </Button>
+          <InsertFakeMessageDialog
+            channelId={channelId}
+            open={fakeMessageOpen}
+            onOpenChange={setFakeMessageOpen}
+          />
+        </>
+      )}
     </div>
   );
 }

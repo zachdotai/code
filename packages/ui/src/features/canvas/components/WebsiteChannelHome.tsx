@@ -13,6 +13,7 @@ import {
   useChannelFeed,
 } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import {
+  type ChannelFeedSystemMessage,
   channelCreationMessage,
   useChannelFeedMessages,
 } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
@@ -23,6 +24,7 @@ import {
   PERSONAL_CHANNEL_NAME,
   useBackendChannel,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useDemoFeedStore } from "@posthog/ui/features/canvas/stores/demoFeedStore";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
@@ -55,17 +57,31 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // Durable "PostHog agent" rows (CONTEXT.md being built, …) live on the
   // backend channel — the same id the feed tasks use, not the folder id.
   const { messages: feedMessages } = useChannelFeedMessages(backendChannel?.id);
+  // Dev-only demo messages, persisted locally (the feed POST endpoint isn't
+  // deployed everywhere), keyed by folder channelId. Flattened to the same
+  // shape as real feed rows so they interleave by timestamp.
+  const demoByChannel = useDemoFeedStore((s) => s.byChannel);
+  const removeDemoMessage = useDemoFeedStore((s) => s.remove);
   // "Ann created this context" opens the feed, derived from the channel row so
   // it renders (and sorts first) even where the feed endpoint isn't deployed.
   // Suppressed while it would be the feed's only entry — an untouched context
   // shows the welcome empty state instead.
   const systemMessages = useMemo(() => {
+    const demoMessages: ChannelFeedSystemMessage[] = (
+      demoByChannel[channelId] ?? []
+    ).map((e) => ({
+      id: e.id,
+      createdAt: e.createdAt,
+      text: e.content,
+      demo: { fromName: e.fromName, fromKind: e.fromKind, content: e.content },
+    }));
+    const base = [...feedMessages, ...demoMessages];
     const creation = channelCreationMessage(backendChannel);
-    if (!creation || (tasks.length === 0 && feedMessages.length === 0)) {
-      return feedMessages;
+    if (!creation || (tasks.length === 0 && base.length === 0)) {
+      return base;
     }
-    return [creation, ...feedMessages];
-  }, [backendChannel, tasks.length, feedMessages]);
+    return [creation, ...base];
+  }, [backendChannel, channelId, tasks.length, feedMessages, demoByChannel]);
 
   useSetHeaderContent(
     useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
@@ -194,6 +210,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           emptyState={emptyState}
           onOpenTask={handleOpenTask}
           onOpenThread={handleOpenThread}
+          onDeleteDemoMessage={(id) => removeDemoMessage(channelId, id)}
         />
         <div className="mx-auto w-full px-4 pb-4">
           <ChannelHomeComposer

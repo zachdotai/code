@@ -1,8 +1,10 @@
 import {
   ArrowSquareOutIcon,
   ChatCircleIcon,
+  DotsThreeIcon,
   GitBranchIcon,
   RobotIcon,
+  TrashIcon,
 } from "@phosphor-icons/react";
 import {
   Avatar,
@@ -20,6 +22,10 @@ import {
   ChatMessageScrollerProvider,
   ChatMessageScrollerViewport,
   cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   Spinner,
   ThreadItem,
   ThreadItemAction,
@@ -39,7 +45,10 @@ import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
-import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
+import {
+  MentionText,
+  mentionChipClass,
+} from "@posthog/ui/features/canvas/components/MentionText";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
@@ -504,6 +513,119 @@ function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
   );
 }
 
+// Initials for a free-text persona name (the demo composer lets you type any
+// "from"), so a fake human message gets a sensible avatar fallback.
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// A dev-only "fake" message rendered as a full thread item: the chosen persona's
+// avatar + name, then the body rendered the same way real thread messages are
+// (MentionText — @mention chips + linkified URLs). Presentational, so the header
+// composer can reuse it as a live preview. `createdAt` omitted (preview) hides
+// the timestamp.
+export function DemoMessageItem({
+  fromName,
+  fromKind,
+  content,
+  createdAt,
+  onDelete,
+}: {
+  fromName: string;
+  fromKind: "human" | "agent";
+  content: string;
+  createdAt?: string;
+  /** When set, a hover "…" menu offers a destructive delete. */
+  onDelete?: () => void;
+}) {
+  return (
+    <ThreadItem className="rounded-none py-4 pr-8">
+      <ThreadItemGutter>
+        <Avatar>
+          <AvatarFallback>
+            {fromKind === "agent" ? (
+              <RobotIcon size={16} />
+            ) : (
+              initialsFromName(fromName)
+            )}
+          </AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+      <ThreadItemContent className="min-w-0">
+        <ThreadItemHeader>
+          <ThreadItemAuthor>{fromName || "Someone"}</ThreadItemAuthor>
+          {fromKind === "agent" && <Badge variant="info">Agent</Badge>}
+          {createdAt && (
+            <ThreadItemTimestamp dateTime={createdAt}>
+              {formatRelativeTimeShort(createdAt)}
+            </ThreadItemTimestamp>
+          )}
+        </ThreadItemHeader>
+        <ThreadItemBody className="wrap-break-word">
+          {content ? (
+            // Same renderer as real thread messages: @mentions become chips and
+            // bare URLs linkify, so a fake message reads exactly like a real one.
+            <MentionText
+              content={content}
+              markdownLinks
+              className="block whitespace-pre-wrap"
+            />
+          ) : (
+            <span className="text-muted-foreground text-sm">
+              Your message will appear here…
+            </span>
+          )}
+        </ThreadItemBody>
+      </ThreadItemContent>
+      {onDelete && (
+        <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <ThreadItemAction label="Message actions">
+                  <DotsThreeIcon size={15} weight="bold" />
+                </ThreadItemAction>
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                <TrashIcon size={14} />
+                Delete message
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ThreadItemActions>
+      )}
+    </ThreadItem>
+  );
+}
+
+// The feed wrapper: pins the shared item into the message scroller.
+function DemoFeedRow({
+  message,
+  onDelete,
+}: {
+  message: ChannelFeedSystemMessage;
+  onDelete?: (id: string) => void;
+}) {
+  const demo = message.demo;
+  if (!demo) return null;
+  return (
+    <ChatMessageScrollerItem messageId={message.id}>
+      <DemoMessageItem
+        fromName={demo.fromName}
+        fromKind={demo.fromKind}
+        content={demo.content}
+        createdAt={message.createdAt}
+        onDelete={onDelete ? () => onDelete(message.id) : undefined}
+      />
+    </ChatMessageScrollerItem>
+  );
+}
+
 // A single feed entry, either a real task card or a synthetic system row, tagged
 // with the timestamp used to interleave the two.
 type FeedEntry =
@@ -526,6 +648,7 @@ export function ChannelFeedView({
   emptyState,
   onOpenTask,
   onOpenThread,
+  onDeleteDemoMessage,
 }: {
   tasks: Task[];
   systemMessages?: ChannelFeedSystemMessage[];
@@ -533,6 +656,8 @@ export function ChannelFeedView({
   emptyState?: React.ReactNode;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
+  /** Delete a dev-only demo message (its "…" menu is shown only when set). */
+  onDeleteDemoMessage?: (id: string) => void;
 }) {
   // Merge tasks + system rows into one chronological list. ISO timestamps sort
   // lexically, so a plain string compare is chronological.
@@ -596,6 +721,11 @@ export function ChannelFeedView({
                       task={entry.task}
                       onOpenTask={onOpenTask}
                       onOpenThread={onOpenThread}
+                    />
+                  ) : entry.message.demo ? (
+                    <DemoFeedRow
+                      message={entry.message}
+                      onDelete={onDeleteDemoMessage}
                     />
                   ) : (
                     <SystemFeedRow message={entry.message} />
