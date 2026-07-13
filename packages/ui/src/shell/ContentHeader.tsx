@@ -1,5 +1,6 @@
 import { Cloud, Spinner } from "@phosphor-icons/react";
 import { Button as QuillButton } from "@posthog/quill";
+import type { Workspace } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { AutoresearchHeaderButton } from "@posthog/ui/features/autoresearch/AutoresearchHeaderButton";
@@ -107,20 +108,53 @@ function LocalHandoffButton({ taskId, task }: { taskId: string; task: Task }) {
   );
 }
 
-// Cloud tasks have no local checkout to switch branches in, so they get the
-// BranchSelector in read-only mode: a muted pill with a cloud icon and the
-// branch the cloud run works on. Hidden until the run has reported a branch.
-function CloudBranchBadge({ taskId, task }: { taskId: string; task: Task }) {
-  const session = useSessionForTask(taskId);
-  const branch = task.latest_run?.branch ?? session?.cloudBranch ?? null;
-  if (!branch) return null;
+// The header's single branch slot. Cloud tasks get the BranchSelector in
+// read-only mode (cloud icon + the branch the run works on, hidden until the
+// run reports one); repo-backed local/worktree tasks get the interactive
+// selector, shown even on a detached HEAD — the linked branch is where the
+// task's commits land, and hiding the control entirely makes a local task
+// look like a cloud one. Scratch (repo-less) tasks show nothing.
+function TaskBranchControl({
+  task,
+  workspace,
+}: {
+  task: Task;
+  workspace: Workspace | null;
+}) {
+  const session = useSessionForTask(task.id);
+  if (!workspace || workspace.isScratch) return null;
+
+  let selector: React.ReactNode;
+  if (workspace.mode === "cloud") {
+    const branch = task.latest_run?.branch ?? session?.cloudBranch ?? null;
+    if (!branch) return null;
+    selector = (
+      <BranchSelector
+        repoPath={null}
+        currentBranch={branch}
+        workspaceMode="cloud"
+        readOnly
+      />
+    );
+  } else {
+    const repoPath = workspace.worktreePath ?? workspace.folderPath ?? null;
+    const currentBranch =
+      workspace.branchName ??
+      workspace.linkedBranch ??
+      workspace.baseBranch ??
+      null;
+    if (!repoPath && !currentBranch) return null;
+    selector = (
+      <BranchSelector
+        repoPath={repoPath}
+        currentBranch={currentBranch}
+        taskId={task.id}
+      />
+    );
+  }
+
   return (
-    <BranchSelector
-      repoPath={null}
-      currentBranch={branch}
-      workspaceMode="cloud"
-      readOnly
-    />
+    <div className="no-drag flex h-full min-w-0 items-center">{selector}</div>
   );
 }
 
@@ -193,39 +227,7 @@ export function ContentHeader() {
           <div className="no-drag">
             <AutoresearchHeaderButton taskId={activeTask.id} />
           </div>
-          {/* Show the branch control whenever the task has a repo checkout,
-              even if HEAD is detached (the default for worktree tasks) — the
-              linked branch is where the task's commits land, and hiding the
-              control entirely makes a local task look like a cloud one. */}
-          {isCloudTask && (
-            <div className="no-drag flex h-full min-w-0 items-center">
-              <CloudBranchBadge taskId={activeTask.id} task={activeTask} />
-            </div>
-          )}
-          {activeWorkspace &&
-            !isCloudTask &&
-            !activeWorkspace.isScratch &&
-            (activeWorkspace.worktreePath ||
-              activeWorkspace.folderPath ||
-              activeWorkspace.branchName ||
-              activeWorkspace.baseBranch) && (
-              <div className="no-drag flex h-full min-w-0 items-center">
-                <BranchSelector
-                  repoPath={
-                    activeWorkspace.worktreePath ??
-                    activeWorkspace.folderPath ??
-                    null
-                  }
-                  currentBranch={
-                    activeWorkspace.branchName ??
-                    activeWorkspace.linkedBranch ??
-                    activeWorkspace.baseBranch ??
-                    null
-                  }
-                  taskId={activeTask.id}
-                />
-              </div>
-            )}
+          <TaskBranchControl task={activeTask} workspace={activeWorkspace} />
           <TaskDiffStatsBadge task={activeTask} />
 
           {isCloudTask ? (
