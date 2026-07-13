@@ -422,4 +422,67 @@ describe("GitHandoffTracker", () => {
       }
     });
   }, 15000);
+
+  it.each([
+    ["the branch's upstream tracking ref", false],
+    ["the remote default branch when the branch has no upstream", true],
+  ])(
+    "packs against %s when no local git state is provided",
+    async (_label, useBranchWithoutUpstream) => {
+      const originRepo = await setupRepo();
+      const sandboxRepo = await cloneRepo(originRepo);
+      try {
+        const sandboxGit = createGitClient(sandboxRepo);
+        const branch = (
+          await sandboxGit.revparse(["--abbrev-ref", "HEAD"])
+        ).trim();
+        const baseCommit = (
+          await sandboxGit.revparse([`origin/${branch}`])
+        ).trim();
+        const baseBlob = (
+          await sandboxGit.revparse([`origin/${branch}:tracked.txt`])
+        ).trim();
+
+        if (useBranchWithoutUpstream) {
+          await sandboxGit.checkout(["-b", "session-branch"]);
+        }
+
+        await writeFile(
+          path.join(sandboxRepo, "committed.txt"),
+          "session commit\n",
+        );
+        await sandboxGit.add(["committed.txt"]);
+        await sandboxGit.commit("Session commit");
+        const sessionCommit = (await sandboxGit.revparse(["HEAD"])).trim();
+
+        const tracker = new GitHandoffTracker({ repositoryPath: sandboxRepo });
+        const capture = await tracker.captureForHandoff();
+
+        try {
+          expect(capture.headPack).toBeDefined();
+          const packPath = capture.headPack?.path as string;
+          await execFileAsync("git", ["index-pack", packPath], {
+            cwd: sandboxRepo,
+          });
+          const idxPath = packPath.replace(/\.pack$/, ".idx");
+          const { stdout } = await execFileAsync(
+            "git",
+            ["verify-pack", "-v", idxPath],
+            { cwd: sandboxRepo },
+          );
+          await rm(idxPath, { force: true });
+
+          expect(stdout).toContain(sessionCommit);
+          expect(stdout).not.toContain(baseCommit);
+          expect(stdout).not.toContain(baseBlob);
+        } finally {
+          await cleanupCapture(capture);
+        }
+      } finally {
+        await rm(sandboxRepo, { recursive: true, force: true });
+        await rm(originRepo, { recursive: true, force: true });
+      }
+    },
+    15000,
+  );
 });
