@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
+import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -49,7 +50,24 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    // Splits each route's component into its own lazy chunk (autoCodeSplitting),
+    // so the browser only downloads a screen's code when it's navigated to. Must
+    // precede react() so it transforms the route files first. Points at the same
+    // shared routes dir + generated tree as apps/code's electron.vite.config.ts,
+    // so both hosts produce an identical routeTree.gen.ts.
+    TanStackRouterVite({
+      target: "react",
+      autoCodeSplitting: true,
+      routesDirectory: path.resolve(dir, "../../packages/ui/src/router/routes"),
+      generatedRouteTree: path.resolve(
+        dir,
+        "../../packages/ui/src/router/routeTree.gen.ts",
+      ),
+    }),
+    react(),
+    tailwindcss(),
+  ],
   // Load .env from the repo root (mirrors apps/code's loadEnv(mode, "../..")) so
   // VITE_POSTHOG_API_KEY / _HOST / _UI_HOST resolve here just as they do on
   // desktop. Without this, envDir defaults to apps/web (no .env) and posthog-js

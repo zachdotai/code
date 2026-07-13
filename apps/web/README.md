@@ -36,90 +36,123 @@ on the page (httpOnly cookies would need server-side sessions the cloud host
 doesn't have). Tokens written by the earlier plaintext build fail to decrypt
 and are cleared, forcing a clean re-auth.
 
-### External requirements (status as of 2026-07)
+## Hosting
 
-- **CORS — no action needed.** Verified against `us.posthog.com`:
-  `/oauth/token` answers preflight with the request origin allowed, and
-  `/api/*` responds `access-control-allow-origin: *` with `authorization` in
-  the allowed headers. The agent-proxy stream service has a CORS origin
-  allowlist (`TASKS_AGENT_PROXY_CORS_ORIGINS` in
-  `PostHog/posthog/services/agent-proxy`), and `CloudTaskService` falls back
-  to the CORS-open Django stream leg regardless.
-- **Redirect URI registration — required.** The web host reuses the Code
-  ("Array") OAuth application client ids (`packages/shared/src/oauth.ts`).
-  Those applications' `redirect_uris` are database rows on each region
-  (Django admin → OAuth applications), and must include:
-  - `http://localhost/callback` (portless) for development — PostHog's
-    authorize view extends RFC 8252 §7.3 loopback port flexibility to
-    `localhost` (`posthog/api/oauth/views.py: validate_redirect_uri`), so
-    the portless form matches the Vite dev server on any port. It may
-    already be registered; if desktop dev builds can sign in to the region,
-    check whether the registered localhost URI is portless or pinned to
-    `:8237`.
-  - `https://<web-origin>/callback` for a deployed web host, once an origin
-    exists. `http` is rejected for non-loopback hosts by
-    `OAuthApplication` redirect validation.
+Build a static bundle and serve it:
 
-  A CIMD client (the `raycast_metadata.py` / `wizard_metadata.py` pattern in
-  `posthog/api/oauth/`) is NOT suitable here: CIMD registrations are capped
-  to unprivileged scopes, and Code requires `scope=*` like the desktop app.
-- **S3 artifact-bucket CORS — required for attachment uploads.** Composer
-  attachments upload straight from the browser via an S3 presigned POST
-  (`.../artifacts/prepare_upload/` returns the presigned post, then a `POST` to
-  `s3.<region>.amazonaws.com/<bucket>`). The bucket
-  (`posthog-cloud-prod-us-east-1-app-assets` for US) must return
-  `Access-Control-Allow-Origin` for the web origin or the browser blocks the
-  response — the POST itself returns `204` (it succeeds server-side) but `fetch`
-  rejects with a bare `NetworkError`. Desktop (Electron/Node `fetch`) is not
-  subject to CORS, so this is web-only. Add the deployed web origin (and
-  `http://localhost:5273` for dev) with the `POST` method to the bucket's CORS
-  config. Until then, attaching + preview work but sending a task with an
-  attachment fails at the upload step.
-- **Integration connect origin (`connect_from=posthog_web`) — required for Slack
-  / GitHub connect.** PostHog brokers the Slack/GitHub OAuth server-side and,
-  once it completes, redirects to a target chosen by the `connect_from` value
-  (`posthog_code` → `posthog-code://…`, `posthog_mobile` → `posthog://…`) — a
-  per-known-client mapping, not an open redirect. There is no `posthog_web`
-  mapping yet. The web host's `startFlow` opens the standard
-  `.../integrations/authorize/?kind={slack|github}&next=…&connect_from=posthog_web`
-  URL in a tab; no callback relay is needed because the integration is created
-  server-side, and the connect hooks refetch `getIntegrations()` on window-focus
-  to surface it. This covers the Slack and GitHub *team* flows once the backend
-  tolerates/handles `posthog_web`. The GitHub *user* flow
-  (`POST /api/users/@me/integrations/github/start/`) additionally hardcodes
-  `connect_from: "posthog_code"` in `@posthog/api-client` and returns **400** on
-  web — it needs a host-parameterized `connect_from` plus the same backend
-  origin support.
+```bash
+pnpm --filter @posthog/web build   # Vite output: apps/web/dist
+```
 
-## Not yet wired
+Serve `dist/` as a single-page app with a fallback to `index.html` for unknown
+paths. The OAuth popup lands on the real path `/callback` (`OAUTH_CALLBACK_PATH`
+in `web-oauth-flow.ts`, dispatched in `main.tsx`), which must load the SPA to
+relay the code back to the opener tab. The app's own routes use hash history, so
+`/callback` is the only real path that needs the fallback.
 
-- **Feature flags + analytics + error tracking** are wired (posthog-js), but
-  dormant until `VITE_POSTHOG_API_KEY` is a real `phc_…` key (see the guard in
-  `main.tsx`). Feature flags force `SYNC_CLOUD_TASKS_FLAG` on (a host
-  requirement) and defer every other flag to posthog-js; with no key, only the
-  forced flag is on. Session recording turns on whenever posthog-js initializes
-  (any build with a real key); automatic error/rejection/console capture is
-  additionally gated to non-dev (production) builds (`capture_exceptions` in
-  `posthogAnalyticsImpl.ts`).
-- **Attachment uploads** are blocked in the browser by the S3 artifact-bucket
-  CORS config (see External requirements) until the web host is served from an
-  allowlisted origin. Attaching, preview, and byte-reads all work; only the
-  final presigned-POST upload fails.
+The build is code-split: vendor libraries into cacheable groups (`manualChunks`
+in `vite.config.ts`) and each route's component into its own lazy chunk (the
+TanStack Router plugin's `autoCodeSplitting`, mirroring `apps/code`), so a screen
+downloads only when navigated to. All emitted assets are content-hashed — serve
+`dist/assets/` with a long-lived immutable `Cache-Control` and only `index.html`
+short-lived, so returning users re-download just the chunks that changed.
+
+The steps below are one-time setup for a deployed origin. None block the app
+from booting, but auth, attachments, and integrations each need one.
+
+### Environment variables
+
+All are Vite build-time vars (`import.meta.env.*`), baked in at build time.
+
+| Var | Required | Purpose |
+| --- | --- | --- |
+| `VITE_POSTHOG_API_KEY` | Recommended | Real `phc_…` project key. Enables posthog-js analytics, error/rejection capture, session recording, and real feature flags. The guard in `main.tsx` requires the `phc_` prefix; without it posthog stays uninitialized and the tracker/analytics service no-op, leaving only the host-forced `SYNC_CLOUD_TASKS_FLAG` on (every other flag reads `false`). |
+| `VITE_POSTHOG_API_HOST` | No | posthog-js ingestion host. Default `https://internal-c.posthog.com`. |
+| `VITE_POSTHOG_UI_HOST` | No | posthog-js UI host. Default `https://us.i.posthog.com`. |
+| `VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE` | No | Dev/test only: a static access token that bypasses the OAuth flow (`AUTH_TOKEN_OVERRIDE`). Leave unset in production. |
+
+Session recording turns on whenever posthog-js initializes (any build with a
+real key); automatic unhandled-error/rejection/console capture is additionally
+gated to non-dev (production) builds (`capture_exceptions` in
+`posthogAnalyticsImpl.ts`).
+
+### OAuth redirect URI registration — required for sign-in
+
+The web host reuses the Code ("Array") OAuth application client ids
+(`packages/shared/src/oauth.ts`). Each region stores its app's `redirect_uris`
+as database rows (Django admin → OAuth applications), and they must include:
+
+- `https://<web-origin>/callback` for the deployed host. `http` is rejected for
+  non-loopback hosts by `OAuthApplication` redirect validation, so the origin
+  must be HTTPS.
+- `http://localhost/callback` (portless) for local dev — PostHog's authorize
+  view extends RFC 8252 §7.3 loopback port flexibility to `localhost`
+  (`posthog/api/oauth/views.py: validate_redirect_uri`), so the portless form
+  matches the Vite dev server on any port. If desktop dev builds can already
+  sign in to the region, check whether the registered localhost URI is portless
+  or pinned to `:8237`.
+
+A CIMD client (the `raycast_metadata.py` / `wizard_metadata.py` pattern in
+`posthog/api/oauth/`) is NOT suitable: CIMD registrations are capped to
+unprivileged scopes, and Code requires `scope=*` like the desktop app.
+
+### S3 artifact-bucket CORS — required for attachment uploads
+
+Composer attachments upload straight from the browser via an S3 presigned POST
+(`.../artifacts/prepare_upload/` returns the presigned post, then a `POST` to
+`s3.<region>.amazonaws.com/<bucket>`). The bucket
+(`posthog-cloud-prod-us-east-1-app-assets` for US) must return
+`Access-Control-Allow-Origin` for the web origin or the browser blocks the
+response — the POST itself returns `204` (it succeeds server-side) but `fetch`
+rejects with a bare `NetworkError`. Desktop (Electron/Node `fetch`) is not
+subject to CORS, so this is web-only.
+
+Add the deployed web origin (and `http://localhost:5273` for dev) with the
+`POST` method to the bucket's CORS config. Until then, attaching + preview work
+but sending a task with an attachment fails at the upload step.
+
+### `posthog_web` integration connect origin — required for Slack / GitHub connect
+
+PostHog brokers the Slack/GitHub OAuth server-side and, on completion, redirects
+to a target chosen by the `connect_from` value (`posthog_code` →
+`posthog-code://…`, `posthog_mobile` → `posthog://…`) — a per-known-client
+mapping, not an open redirect. The web host's `startFlow` opens
+`.../integrations/authorize/?kind={slack|github}&next=…&connect_from=posthog_web`
+in a tab; the backend needs a `posthog_web` mapping for the flow to complete. No
+callback relay is required because the integration is created server-side and the
+connect hooks refetch `getIntegrations()` on window-focus. See Known gaps for
+what remains once the mapping exists.
+
+### CORS — no action needed
+
+Verified against `us.posthog.com`: `/oauth/token` answers preflight with the
+request origin allowed, and `/api/*` responds `access-control-allow-origin: *`
+with `authorization` in the allowed headers. The agent-proxy stream service has
+a CORS origin allowlist (`TASKS_AGENT_PROXY_CORS_ORIGINS` in
+`PostHog/posthog/services/agent-proxy`), and `CloudTaskService` falls back to
+the CORS-open Django stream leg regardless.
+
+## Known gaps
+
+Limitations that remain even after the hosting setup above — each needs a code
+or backend change, not just configuration.
+
 - **Slack / GitHub connect** is client-wired (`startFlow` opens the authorize
-  URL; the connection is detected via the window-focus refetch, not a callback
-  relay) but gated on backend support for a `posthog_web` connect origin — see
-  External requirements. The GitHub user flow returns 400 on web today. Where a
-  project already has the integration connected, the settings pages render the
-  connected/manage state correctly.
+  URL; the connection is detected via a window-focus refetch of
+  `getIntegrations()`, not a callback relay) but gated on backend support for the
+  `posthog_web` connect origin (see Hosting). Even with that mapping, the GitHub
+  *user* flow (`POST /api/users/@me/integrations/github/start/`) hardcodes
+  `connect_from: "posthog_code"` in `@posthog/api-client` and returns **400** on
+  web — it needs a host-parameterized `connect_from`. Where a project already has
+  the integration connected, the settings pages render the connected/manage state
+  correctly.
 - **Per-device stores** (cloud workspaces, archive, pins, browser tabs) are
-  localStorage-only — not durable across devices or a site-data clear.
+  localStorage-only — not durable across devices or a site-data clear. Desktop
+  persists these in SQLite; the browser host needs server-side state to match.
 - **Skill dependency expansion** is a passthrough: a skill that declares
   `dependencies:` on other skills won't pull them in automatically (pick them
   explicitly). This is a pipeline gap, not just a web gap — `exportSkill` strips
   SKILL.md frontmatter and the team-skills API has no `dependencies` field, so
   the dependency list never reaches any client (desktop only expands local
   on-disk skills). Needs `dependencies` carried end-to-end through
-  export → publish → the LlmSkill API (backend) → fetchSkillForInstall.
-- Vendor libraries are split into cacheable chunks (the entry chunk dropped from
-  ~8.6 MB to ~5.1 MB; see `manualChunks` in `vite.config.ts`). Route-level
-  lazy-loading of the app code itself is a possible further optimization.
+  export → publish → the LlmSkill API (backend) → `fetchSkillForInstall`.
