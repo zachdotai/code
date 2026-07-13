@@ -78,6 +78,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         fromKind: e.fromKind,
         content: e.content,
         replyTo: e.replyTo,
+        buttons: e.buttons,
       },
     }));
     const base = [...feedMessages, ...demoMessages];

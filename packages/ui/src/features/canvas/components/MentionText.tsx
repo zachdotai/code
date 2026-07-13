@@ -16,6 +16,7 @@ import "./mention-chip.css";
 import {
   ExternalLink,
   File,
+  Inbox,
   type LucideIcon,
   Shapes,
   SquircleDashed,
@@ -45,6 +46,7 @@ function internalLinkMeta(
 ): { Icon: LucideIcon; label: string } {
   if (href.includes("/dashboards/")) return { Icon: Shapes, label: text };
   if (href.endsWith("/context")) return { Icon: File, label: text };
+  if (href.includes("/inbox/")) return { Icon: Inbox, label: text };
   if (href.startsWith("/website/")) {
     return { Icon: SquircleDashed, label: text.replace(/^#/, "") };
   }
@@ -100,8 +102,7 @@ export function MentionText({
   }, [content, markdownLinks]);
   const selfEmail = currentUserEmail?.toLowerCase();
   const router = useRouter();
-  const linkClass =
-    "text-primary underline underline-offset-2 hover:text-primary/80";
+  const linkClass = "bg-info/50 px-1 rounded-xs";
   return (
     <Text size="1" className={className}>
       {segments.map(({ segment, key }) => {

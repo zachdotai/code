@@ -21,6 +21,7 @@ import {
   type ThreadReply,
   ThreadReplyPicker,
 } from "@posthog/ui/features/canvas/components/ThreadReplyPicker";
+import type { DemoButtonPreset } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { useDemoFeedStore } from "@posthog/ui/features/canvas/stores/demoFeedStore";
@@ -60,6 +61,7 @@ export function InsertFakeMessageDialog({
   const [fromKind, setFromKind] = useState<"human" | "agent">("human");
   const [content, setContent] = useState("");
   const [replyTo, setReplyTo] = useState<ThreadReply | null>(null);
+  const [buttons, setButtons] = useState<DemoButtonPreset | null>(null);
 
   // Reset fields on each open so a prior draft never lingers (prev-prop compare,
   // not an effect, so there's no stale flash).
@@ -71,6 +73,7 @@ export function InsertFakeMessageDialog({
       setFromKind("human");
       setContent("");
       setReplyTo(null);
+      setButtons(null);
     }
   }
 
@@ -105,6 +108,7 @@ export function InsertFakeMessageDialog({
       fromKind,
       content: content.trim(),
       replyTo: replyTo ?? undefined,
+      buttons: buttons ?? undefined,
     });
     toast.success("Added to the channel feed");
     onOpenChange(false);
@@ -187,6 +191,26 @@ export function InsertFakeMessageDialog({
               />
             </Field>
 
+            {/* Optional: a preset of action buttons on the message. */}
+            <Field>
+              <FieldLabel>Buttons (optional)</FieldLabel>
+              <ToggleGroup
+                value={[buttons ?? "none"]}
+                onValueChange={(v) => {
+                  const next = v[0];
+                  setButtons(
+                    next === "inbox-item" || next === "task-pr" ? next : null,
+                  );
+                }}
+              >
+                <ToggleGroupItem value="none">None</ToggleGroupItem>
+                <ToggleGroupItem value="inbox-item">
+                  Inbox item buttons
+                </ToggleGroupItem>
+                <ToggleGroupItem value="task-pr">PR buttons</ToggleGroupItem>
+              </ToggleGroup>
+            </Field>
+
             {/* Message body: a real thread composer, so @ opens the same member
               picker as a thread. The reference picker inserts canvas / channel /
               task / CONTEXT.md deep links. */}
@@ -220,6 +244,7 @@ export function InsertFakeMessageDialog({
                   fromKind={fromKind}
                   content={content}
                   replyTo={replyTo ?? undefined}
+                  buttons={buttons ?? undefined}
                 />
               </div>
             </div>

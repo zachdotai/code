@@ -15,6 +15,10 @@ const CHANNEL_FEED_MESSAGES_POLL_INTERVAL_MS = 5_000;
 // real author and offers no content field, so the shown persona + body ride the
 // payload) and rendered as a full thread item — avatar, name, markdown body —
 // rather than the plain announcement text.
+// A preset of action buttons shown on the message (a demo affordance).
+// `task-pr` derives its buttons from the replied task's live PR / merge state.
+export type DemoButtonPreset = "inbox-item" | "task-pr";
+
 export interface DemoFeedMessage {
   fromName: string;
   fromKind: "human" | "agent";
@@ -22,6 +26,8 @@ export interface DemoFeedMessage {
   content: string;
   /** When set, the message renders as a reply to this thread (a task deep link). */
   replyTo?: { label: string; href: string };
+  /** When set, renders a preset row of action buttons on the message. */
+  buttons?: DemoButtonPreset;
 }
 
 // The `payload` key that marks a feed message as a demo composer post — the

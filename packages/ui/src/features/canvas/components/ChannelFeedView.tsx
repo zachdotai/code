@@ -1,4 +1,5 @@
 import {
+  ArchiveIcon,
   ArrowSquareOutIcon,
   ChatCircleIcon,
   DotsThreeIcon,
@@ -11,6 +12,7 @@ import {
   AvatarFallback,
   AvatarGroup,
   Badge,
+  Button,
   Card,
   CardContent,
   ChatMarker,
@@ -50,7 +52,10 @@ import {
   mentionChipClass,
   TaskLinkIcon,
 } from "@posthog/ui/features/canvas/components/MentionText";
-import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
+import type {
+  ChannelFeedSystemMessage,
+  DemoButtonPreset,
+} from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
@@ -59,8 +64,14 @@ import {
   type SidebarPrState,
   useTaskPrStatus,
 } from "@posthog/ui/features/sidebar/useTaskPrStatus";
+import {
+  getCachedTask,
+  taskDetailQuery,
+} from "@posthog/ui/features/tasks/queries";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
+import { toast } from "@posthog/ui/primitives/toast";
 import { Text } from "@radix-ui/themes";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Fragment, memo, type ReactNode, useMemo } from "react";
 
@@ -404,7 +415,7 @@ const FeedItem = memo(function FeedItem({
       <ThreadItemContent className="min-w-0">
         <ThreadItemHeader>
           <ThreadItemAuthor>PostHog</ThreadItemAuthor>
-          <Badge variant="info">Agent</Badge>
+          {/* <Badge variant="info">Agent</Badge> */}
           <ThreadItemTimestamp
             dateTime={new Date(task.created_at).toISOString()}
           >
@@ -516,6 +527,47 @@ function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
   );
 }
 
+// Buttons derived from a task's live PR / merge state: "Merged" once it lands,
+// otherwise a "Review PR" action. A "View PR" button appears when the task has a
+// real PR URL. Used by the demo message's `task-pr` button preset, keyed off its
+// replied task; the buttons always render (they're a demo affordance) but the
+// state reflects the real task when it has one.
+function TaskPrButtons({ taskId }: { taskId: string }) {
+  const { data } = useQuery({ ...taskDetailQuery(taskId), staleTime: 30_000 });
+  const task = data ?? getCachedTask(taskId);
+  const prUrl =
+    typeof task?.latest_run?.output?.pr_url === "string"
+      ? task.latest_run.output.pr_url
+      : undefined;
+  const { prState } = useTaskPrStatus({
+    id: taskId,
+    cloudPrUrl: prUrl ?? null,
+    taskRunEnvironment: task?.latest_run?.environment ?? null,
+  });
+  const merged = prState === "merged";
+  const openPr = () =>
+    prUrl
+      ? window.open(prUrl, "_blank", "noopener,noreferrer")
+      : toast.success("Review started");
+  return (
+    <div className="mt-1.5 flex items-center gap-1.5">
+      {merged ? (
+        <Badge variant="default">Merged</Badge>
+      ) : (
+        <Button variant="outline" size="sm" onClick={openPr}>
+          Review PR
+        </Button>
+      )}
+      {prUrl && (
+        <Button variant="default" size="sm" onClick={openPr}>
+          <ArrowSquareOutIcon size={14} />
+          View PR
+        </Button>
+      )}
+    </div>
+  );
+}
+
 // Initials for a free-text persona name (the demo composer lets you type any
 // "from"), so a fake human message gets a sensible avatar fallback.
 function initialsFromName(name: string): string {
@@ -536,6 +588,7 @@ export function DemoMessageItem({
   content,
   createdAt,
   replyTo,
+  buttons,
   onDelete,
 }: {
   fromName: string;
@@ -544,6 +597,8 @@ export function DemoMessageItem({
   createdAt?: string;
   /** When set, renders a Slack-style "replied to a thread: …" preview line. */
   replyTo?: { label: string; href: string };
+  /** When set, renders a preset row of action buttons. */
+  buttons?: DemoButtonPreset;
   onDelete?: () => void;
 }) {
   const navigate = useNavigate();
@@ -578,7 +633,7 @@ export function DemoMessageItem({
       <ThreadItemContent className="min-w-0">
         <ThreadItemHeader>
           <ThreadItemAuthor>{fromName || "Someone"}</ThreadItemAuthor>
-          {fromKind === "agent" && <Badge variant="info">Agent</Badge>}
+          {/* {fromKind === "agent" && <Badge variant="info">Agent</Badge>} */}
           {createdAt && (
             <ThreadItemTimestamp dateTime={createdAt}>
               {formatRelativeTimeShort(createdAt)}
@@ -615,6 +670,28 @@ export function DemoMessageItem({
             </span>
           )}
         </ThreadItemBody>
+        {buttons === "inbox-item" && (
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => toast.success("Review started")}
+            >
+              Review
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              aria-label="Archive"
+              onClick={() => toast.success("Archived")}
+            >
+              <ArchiveIcon size={14} />
+            </Button>
+          </div>
+        )}
+        {buttons === "task-pr" && replyMatch && (
+          <TaskPrButtons taskId={replyMatch[2]} />
+        )}
       </ThreadItemContent>
       {onDelete && (
         <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
@@ -657,6 +734,7 @@ function DemoFeedRow({
         content={demo.content}
         createdAt={message.createdAt}
         replyTo={demo.replyTo}
+        buttons={demo.buttons}
         onDelete={onDelete ? () => onDelete(message.id) : undefined}
       />
     </ChatMessageScrollerItem>
