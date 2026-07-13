@@ -32,6 +32,8 @@ import {
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { copyCanvasLink } from "@posthog/ui/features/canvas/utils/copyCanvasLink";
+import { TaskHeaderActions } from "@posthog/ui/features/task-detail/components/TaskHeaderActions";
+import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
@@ -299,7 +301,14 @@ export function WebsiteLayout() {
 
   const channelId = params.channelId;
   const dashboardId = params.dashboardId;
+  const taskId = params.taskId;
   const base = channelId ? `/website/${channelId}` : "/website";
+
+  // On a channel task detail this bar also carries the task's action row
+  // (branch selector, review-panel toggle, handoff, task actions) — the same
+  // row ContentHeader renders for /code tasks, which isn't mounted here.
+  const { data: tasks } = useTasks();
+  const channelTask = taskId ? tasks?.find((t) => t.id === taskId) : undefined;
 
   const { channels } = useChannels();
   const channelName = channelId
@@ -329,7 +338,14 @@ export function WebsiteLayout() {
           gap="2"
           className="h-10 shrink-0 border-gray-6 border-b px-3"
         >
-          {headerContent}
+          <Flex
+            align="center"
+            justify="between"
+            className="h-full min-w-0 flex-1 overflow-hidden"
+          >
+            {headerContent}
+          </Flex>
+          {channelTask && <TaskHeaderActions task={channelTask} />}
         </Flex>
       )}
 
