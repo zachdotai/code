@@ -59,6 +59,12 @@ const USER_AGENT_INSTRUCTIONS_CANDIDATES: ReadonlyArray<[string, string]> = [
   [".claude", "CLAUDE.md"],
 ];
 
+// Claude Code follows `@path` imports up to four hops deep; we match that so a
+// stub CLAUDE.md that only `@`-imports its real rules still syncs those rules.
+const USER_AGENT_INSTRUCTIONS_MAX_IMPORT_DEPTH = 4;
+const AGENT_IMPORT_PATTERN_SOURCE = "(^|\\s)@(\\S+)";
+const FENCE_PATTERN = /^\s*(`{3,}|~{3,})/;
+
 @injectable()
 export class OsService {
   constructor(
@@ -108,17 +114,146 @@ export class OsService {
         continue;
       }
       if (!content.trim()) continue;
-      const truncated = content.length > USER_AGENT_INSTRUCTIONS_MAX_LENGTH;
+
+      const realPath = await this.realpathOrSelf(filePath);
+      const expanded = await this.expandAgentImports(
+        content,
+        path.dirname(realPath),
+        1,
+        new Set([realPath]),
+      );
+      const truncated = expanded.length > USER_AGENT_INSTRUCTIONS_MAX_LENGTH;
       return {
         path: filePath,
         displayPath: `~/${dir}/${file}`,
         content: truncated
-          ? content.slice(0, USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
-          : content,
+          ? expanded.slice(0, USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
+          : expanded,
         truncated,
       };
     }
     return null;
+  }
+
+  private async realpathOrSelf(filePath: string): Promise<string> {
+    try {
+      return await fsPromises.realpath(filePath);
+    } catch {
+      return filePath;
+    }
+  }
+
+  private async expandAgentImports(
+    content: string,
+    baseDir: string,
+    depth: number,
+    visited: Set<string>,
+  ): Promise<string> {
+    if (depth > USER_AGENT_INSTRUCTIONS_MAX_IMPORT_DEPTH) return content;
+
+    const lines = content.split("\n");
+    const expandedLines: string[] = [];
+    let fenceMarker: string | null = null;
+
+    for (const line of lines) {
+      const fence = line.match(FENCE_PATTERN);
+      if (fence) {
+        const marker = fence[1][0];
+        if (fenceMarker === null) fenceMarker = marker;
+        else if (marker === fenceMarker) fenceMarker = null;
+        expandedLines.push(line);
+        continue;
+      }
+      if (fenceMarker !== null) {
+        expandedLines.push(line);
+        continue;
+      }
+      expandedLines.push(
+        await this.expandImportsInLine(line, baseDir, depth, visited),
+      );
+    }
+
+    return expandedLines.join("\n");
+  }
+
+  private async expandImportsInLine(
+    line: string,
+    baseDir: string,
+    depth: number,
+    visited: Set<string>,
+  ): Promise<string> {
+    // Odd-indexed segments sit inside single-backtick code spans, where
+    // Claude Code treats `@path` as literal text rather than an import.
+    const segments = line.split("`");
+    const rebuilt = await Promise.all(
+      segments.map((segment, index) =>
+        index % 2 === 0
+          ? this.expandImportsInSegment(segment, baseDir, depth, visited)
+          : Promise.resolve(segment),
+      ),
+    );
+    return rebuilt.join("`");
+  }
+
+  private async expandImportsInSegment(
+    segment: string,
+    baseDir: string,
+    depth: number,
+    visited: Set<string>,
+  ): Promise<string> {
+    const pattern = new RegExp(AGENT_IMPORT_PATTERN_SOURCE, "g");
+    let result = "";
+    let lastIndex = 0;
+    for (const match of segment.matchAll(pattern)) {
+      const [full, lead, importPath] = match;
+      const matchIndex = match.index ?? 0;
+      result += segment.slice(lastIndex, matchIndex) + lead;
+      const imported = await this.resolveAgentImport(
+        importPath,
+        baseDir,
+        depth,
+        visited,
+      );
+      result += imported ?? `@${importPath}`;
+      lastIndex = matchIndex + full.length;
+    }
+    result += segment.slice(lastIndex);
+    return result;
+  }
+
+  private async resolveAgentImport(
+    importPath: string,
+    baseDir: string,
+    depth: number,
+    visited: Set<string>,
+  ): Promise<string | null> {
+    const resolved = importPath.startsWith("~")
+      ? path.join(os.homedir(), importPath.slice(1))
+      : path.resolve(baseDir, importPath);
+
+    let realPath: string;
+    try {
+      realPath = await fsPromises.realpath(resolved);
+    } catch {
+      return null;
+    }
+    if (visited.has(realPath)) return null;
+
+    let imported: string;
+    try {
+      imported = await fsPromises.readFile(realPath, "utf-8");
+    } catch {
+      return null;
+    }
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(realPath);
+    return this.expandAgentImports(
+      imported,
+      path.dirname(realPath),
+      depth + 1,
+      nextVisited,
+    );
   }
 
   async selectDirectory(): Promise<string | null> {
