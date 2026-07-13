@@ -27,6 +27,8 @@ export class UsageTracker {
   private baseline: ContextBreakdownBaseline = emptyBaseline();
   private lastTurn?: AccumulatedUsage;
   private contextUsed?: number;
+  // Model context window is a constant, so it survives resetForTurn.
+  private contextWindow?: number;
 
   setBaseline(baseline: ContextBreakdownBaseline): void {
     this.baseline = baseline;
@@ -49,6 +51,7 @@ export class UsageTracker {
     const { context, used, size } = reading;
     // Drives the per-source breakdown's "conversation" bucket on turn complete.
     this.contextUsed = used;
+    if (size != null) this.contextWindow = size;
     this.lastTurn = {
       inputTokens: context.inputTokens ?? 0,
       outputTokens: context.outputTokens ?? 0,
@@ -84,5 +87,10 @@ export class UsageTracker {
   /** Live context occupancy (same derivation as the renderer gauge), or undefined pre-usage. */
   contextTokens(): number | undefined {
     return this.contextUsed;
+  }
+
+  /** Model context window last reported by codex, or undefined pre-usage. */
+  contextSize(): number | undefined {
+    return this.contextWindow;
   }
 }

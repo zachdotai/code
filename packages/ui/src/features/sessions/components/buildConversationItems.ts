@@ -542,8 +542,8 @@ function handleNotification(
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.COMPACT_BOUNDARY)) {
     ensureImplicitTurn(b, ts);
     const params = msg.params as {
-      trigger: "manual" | "auto";
-      preTokens: number;
+      trigger?: "manual" | "auto";
+      preTokens?: number;
       contextSize?: number;
     };
     markCompactingStatusComplete(b);

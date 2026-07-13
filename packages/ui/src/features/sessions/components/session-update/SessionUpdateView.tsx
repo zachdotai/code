@@ -25,8 +25,8 @@ export type RenderItem =
     }
   | {
       sessionUpdate: "compact_boundary";
-      trigger: "manual" | "auto";
-      preTokens: number;
+      trigger?: "manual" | "auto";
+      preTokens?: number;
       contextSize?: number;
     }
   | {
