@@ -1,0 +1,17 @@
+/* Inline @-mention chip, shared by every surface that renders a mention:
+   MentionText (sent messages / feed rows), and the composer's inserted chips.
+   Kept here as one class so the look lives in a single place. */
+.mention-chip {
+  padding-inline: 0.125rem;
+  font-weight: 500;
+  border-radius: var(--radius-1);
+  color: color-mix(in oklab, var(--primary) 80%, transparent);
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+/* The viewer's own mention — a stronger treatment so a message calling you out
+   stands out from mentions of other people. */
+.mention-chip--self {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 50%, transparent);
+}

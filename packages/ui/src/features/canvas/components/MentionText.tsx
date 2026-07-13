@@ -6,17 +6,41 @@ import {
 import { Text } from "@radix-ui/themes";
 import { useRouter } from "@tanstack/react-router";
 import { Fragment, useMemo } from "react";
+import "./mention-chip.css";
+import {
+  ExternalLink,
+  File,
+  type LucideIcon,
+  Shapes,
+  SquircleDashed,
+} from "lucide-react";
 
 type RenderSegment =
   | { type: "text"; text: string }
   | { type: "link"; text: string; href: string }
   | { type: "mention"; name: string; email: string };
 
-// The plain (not-the-viewer) mention chip look, also used by surfaces that
-// render a mention-styled name without real mention semantics (e.g. the
-// channel feed's "started a new task" row).
-export const mentionChipClass =
-  "rounded px-0.5 font-medium text-[var(--accent-11)]";
+// Pick the icon + label for an in-app link by its route: a canvas
+// (`…/dashboards/…`) gets the Shapes mark, a CONTEXT.md (`…/context`) the File
+// mark, a context/channel (`/website/<id>`) the SquircleDashed mark (its "#name"
+// label drops the hash, since the icon already says "context"). Anything else
+// falls back to the generic link mark.
+function internalLinkMeta(
+  href: string,
+  text: string,
+): { Icon: LucideIcon; label: string } {
+  if (href.includes("/dashboards/")) return { Icon: Shapes, label: text };
+  if (href.endsWith("/context")) return { Icon: File, label: text };
+  if (href.startsWith("/website/")) {
+    return { Icon: SquircleDashed, label: text.replace(/^#/, "") };
+  }
+  return { Icon: ExternalLink, label: text };
+}
+
+// The mention chip class (see mention-chip.css). Also used by surfaces that
+// render a mention-styled name without real mention semantics (e.g. the channel
+// feed's "started a new task" row). Add `mention-chip--self` for the viewer.
+export const mentionChipClass = "mention-chip";
 
 /**
  * Thread message content with inline mention tokens rendered as highlighted
@@ -63,7 +87,7 @@ export function MentionText({
   const selfEmail = currentUserEmail?.toLowerCase();
   const router = useRouter();
   const linkClass =
-    "text-[var(--accent-11)] underline underline-offset-2 hover:text-[var(--accent-12)]";
+    "text-primary underline underline-offset-2 hover:text-primary/80";
   return (
     <Text size="1" className={className}>
       {segments.map(({ segment, key }) => {
@@ -73,7 +97,7 @@ export function MentionText({
               key={key}
               className={
                 selfEmail && segment.email.toLowerCase() === selfEmail
-                  ? "rounded bg-[var(--accent-a4)] px-0.5 font-medium text-[var(--accent-12)]"
+                  ? "mention-chip mention-chip--self"
                   : mentionChipClass
               }
               title={segment.email}
@@ -86,6 +110,10 @@ export function MentionText({
           // An in-app route (`/…`) navigates through the router (opening a
           // canvas, context, …) instead of the OS browser.
           if (segment.href.startsWith("/")) {
+            const { Icon, label } = internalLinkMeta(
+              segment.href,
+              segment.text,
+            );
             return (
               <a
                 key={key}
@@ -96,7 +124,8 @@ export function MentionText({
                 }}
                 className={linkClass}
               >
-                {segment.text}
+                <Icon size={12} className="mr-0.5 inline-block align-[-1px]" />
+                {label}
               </a>
             );
           }

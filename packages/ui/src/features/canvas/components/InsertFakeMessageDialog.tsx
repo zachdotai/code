@@ -10,9 +10,10 @@ import {
   DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Field,
   FieldLabel,
@@ -192,38 +193,64 @@ export function InsertFakeMessageDialog({
                       </Button>
                     }
                   />
-                  <DropdownMenuContent align="end" className="max-h-72 w-56">
-                    {dashboards.length > 0 && (
-                      <DropdownMenuGroup>
-                        <DropdownMenuLabel>Canvases</DropdownMenuLabel>
-                        {dashboards.map((d) => (
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>Canvas</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent
+                        side="right"
+                        sideOffset={4}
+                        className="max-h-72 w-56 overflow-y-auto"
+                      >
+                        {dashboards.length === 0 ? (
+                          <DropdownMenuItem disabled>
+                            No canvases yet
+                          </DropdownMenuItem>
+                        ) : (
+                          dashboards.map((d) => (
+                            <DropdownMenuItem
+                              key={d.id}
+                              onClick={() =>
+                                insertReference(
+                                  d.name,
+                                  `/website/${channelId}/dashboards/${d.id}`,
+                                )
+                              }
+                            >
+                              {d.name}
+                            </DropdownMenuItem>
+                          ))
+                        )}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>Channels</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent
+                        side="right"
+                        sideOffset={4}
+                        className="max-h-72 w-56 overflow-y-auto"
+                      >
+                        {channels.map((c) => (
                           <DropdownMenuItem
-                            key={d.id}
+                            key={c.id}
                             onClick={() =>
-                              insertReference(
-                                d.name,
-                                `/website/${channelId}/dashboards/${d.id}`,
-                              )
+                              insertReference(`#${c.name}`, `/website/${c.id}`)
                             }
                           >
-                            {d.name}
+                            #{c.name}
                           </DropdownMenuItem>
                         ))}
-                      </DropdownMenuGroup>
-                    )}
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel>Contexts</DropdownMenuLabel>
-                      {channels.map((c) => (
-                        <DropdownMenuItem
-                          key={c.id}
-                          onClick={() =>
-                            insertReference(`#${c.name}`, `/website/${c.id}`)
-                          }
-                        >
-                          #{c.name}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        insertReference(
+                          "CONTEXT.md",
+                          `/website/${channelId}/context`,
+                        )
+                      }
+                    >
+                      This channel's CONTEXT.md
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
