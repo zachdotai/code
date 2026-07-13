@@ -548,6 +548,18 @@ function AccountSelectField({
     integrationId !== "" &&
     integrationId !== false;
 
+  // Reset any prior selection when the backing integration changes. An account
+  // chosen (or fallback text typed) for one integration must not survive into
+  // another — otherwise the form could submit an account that was never
+  // selected for the active integration.
+  const prevIntegrationId = useRef(integrationId);
+  useEffect(() => {
+    if (prevIntegrationId.current === integrationId) return;
+    prevIntegrationId.current = integrationId;
+    setQuery("");
+    setValue(field.name, "");
+  }, [integrationId, field.name, setValue]);
+
   useEffect(() => {
     if (!projectId || !client || !hasIntegration) return;
     let cancelled = false;
@@ -596,8 +608,12 @@ function AccountSelectField({
         placeholder={field.placeholder || field.label}
         value={query}
         onChange={(e) => {
+          // Typing only filters the list; it does not commit a value. The
+          // submitted account is set solely by picking an option, so editing
+          // the text after a selection clears it rather than silently mutating
+          // the underlying (possibly opaque) account id.
           setQuery(e.target.value);
-          setValue(field.name, e.target.value);
+          setValue(field.name, "");
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
@@ -615,8 +631,10 @@ function AccountSelectField({
                 type="button"
                 className="block w-full px-2 py-1 text-left text-gray-12 text-sm hover:bg-(--gray-3)"
                 onClick={() => {
+                  // Commit the account's opaque value to the form, but show the
+                  // human-readable name in the input.
                   setValue(field.name, account.value);
-                  setQuery(account.value);
+                  setQuery(account.display_name);
                   setOpen(false);
                 }}
               >
