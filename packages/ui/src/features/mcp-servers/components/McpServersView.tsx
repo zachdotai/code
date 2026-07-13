@@ -7,6 +7,7 @@ import { AddCustomServerForm } from "@posthog/ui/features/mcp-server-manager/Add
 import { MarketplaceView } from "@posthog/ui/features/mcp-servers/components/parts/MarketplaceView";
 import { McpInstalledRail } from "@posthog/ui/features/mcp-servers/components/parts/McpInstalledRail";
 import { useMcpServers } from "@posthog/ui/features/mcp-servers/hooks/useMcpServers";
+import { SkillsMcpTabs } from "@posthog/ui/features/skills/SkillsMcpTabs";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import {
   AlertDialog,
@@ -51,9 +52,9 @@ export function McpServersView() {
         <Plugs size={12} className="shrink-0 text-gray-10" />
         <Text
           className="truncate whitespace-nowrap font-medium text-[13px]"
-          title="MCP servers"
+          title="Skills and MCP"
         >
-          MCP servers
+          Skills and MCP
         </Text>
       </Flex>
     ),
@@ -272,23 +273,26 @@ export function McpServersView() {
   })();
 
   return (
-    <Flex height="100%" className="min-h-0 overflow-hidden">
-      <McpInstalledRail
-        installations={installationList}
-        templates={serverList}
-        selectedInstallationId={selectedInstallationId}
-        onAddCustom={() => setView({ kind: "add-custom" })}
-        onSelectInstallation={(installationId) =>
-          setView({ kind: "detail-installation", installationId })
-        }
-      />
-      <Box className="min-h-0 min-w-0 flex-1">
-        <ScrollArea className="h-full w-full">
-          <Box p="6" mx="auto" className="relative z-[1] max-w-[960px]">
-            {mainContent}
-          </Box>
-        </ScrollArea>
-      </Box>
+    <Flex direction="column" height="100%" className="min-h-0 overflow-hidden">
+      <SkillsMcpTabs active="mcp-servers" />
+      <Flex className="min-h-0 flex-1 overflow-hidden">
+        <McpInstalledRail
+          installations={installationList}
+          templates={serverList}
+          selectedInstallationId={selectedInstallationId}
+          onAddCustom={() => setView({ kind: "add-custom" })}
+          onSelectInstallation={(installationId) =>
+            setView({ kind: "detail-installation", installationId })
+          }
+        />
+        <Box className="min-h-0 min-w-0 flex-1">
+          <ScrollArea className="h-full w-full">
+            <Box p="6" mx="auto" className="relative z-[1] max-w-[960px]">
+              {mainContent}
+            </Box>
+          </ScrollArea>
+        </Box>
+      </Flex>
       <UninstallConfirmDialog
         target={uninstallTarget}
         isPending={uninstallMutation.isPending}

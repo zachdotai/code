@@ -14,12 +14,10 @@ import {
   navigateToCommandCenter,
   navigateToHome,
   navigateToInbox,
-  navigateToMcpServers,
   navigateToSkills,
   navigateToUsage,
   navigateToWebsiteCommandCenter,
   navigateToWebsiteHome,
-  navigateToWebsiteMcpServers,
   navigateToWebsiteSkills,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
@@ -34,10 +32,9 @@ import { AgentsItem } from "./items/AgentsItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
-import { McpServersItem } from "./items/McpServersItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
-import { SkillsItem } from "./items/SkillsItem";
+import { SkillsAndMcpItem } from "./items/SkillsAndMcpItem";
 import { UsageItem } from "./items/UsageItem";
 
 const SIDEBAR_INBOX_REFETCH_INTERVAL_MS = 60_000;
@@ -55,7 +52,7 @@ interface SidebarNavSectionProps {
 // and the Channels pane. It is fully self-contained — every item's active
 // state, badge count, and click handler is wired here — so it can be dropped
 // into either layout. In the Channels space, destinations with a /website
-// mirror (Home, Skills, MCP servers, Command Center) stay in that space;
+// mirror (Home, Skills and MCP, Command Center) stay in that space;
 // Inbox, Agents, Usage and New task have no mirror yet and jump back to Code.
 // Search opens the command menu in place.
 export function SidebarNavSection({
@@ -85,9 +82,6 @@ export function SidebarNavSection({
     openTaskInput(inChannels ? { space: "website" } : undefined);
   const goHome = inChannels ? navigateToWebsiteHome : navigateToHome;
   const goSkills = inChannels ? navigateToWebsiteSkills : navigateToSkills;
-  const goMcpServers = inChannels
-    ? navigateToWebsiteMcpServers
-    : navigateToMcpServers;
   const goCommandCenter = inChannels
     ? navigateToWebsiteCommandCenter
     : navigateToCommandCenter;
@@ -101,8 +95,9 @@ export function SidebarNavSection({
   const isInboxActive = view.type === "inbox";
   const isAgentsActive = view.type === "agents";
   const isCommandCenterActive = view.type === "command-center";
-  const isSkillsActive = view.type === "skills";
-  const isMcpServersActive = view.type === "mcp-servers";
+  // Skills and MCP servers share one nav destination; either route lights it.
+  const isSkillsAndMcpActive =
+    view.type === "skills" || view.type === "mcp-servers";
   const isUsageActive = view.type === "usage";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
@@ -167,11 +162,7 @@ export function SidebarNavSection({
       </Box>
 
       <Box>
-        <SkillsItem isActive={isSkillsActive} onClick={goSkills} />
-      </Box>
-
-      <Box>
-        <McpServersItem isActive={isMcpServersActive} onClick={goMcpServers} />
+        <SkillsAndMcpItem isActive={isSkillsAndMcpActive} onClick={goSkills} />
       </Box>
 
       <Box mb={usageEnabled || bluebirdEnabled ? undefined : "2"}>

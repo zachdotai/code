@@ -1,5 +1,4 @@
 import {
-  BrainIcon,
   HouseIcon,
   PlugsConnectedIcon,
   RobotIcon,
@@ -144,9 +143,11 @@ const APP_VIEW_META: Record<AppView, { label: string; icon: ReactNode }> = {
   home: { label: "Home", icon: <HouseIcon size={14} /> },
   inbox: { label: "Inbox", icon: <TrayIcon size={14} /> },
   agents: { label: "Agents", icon: <RobotIcon size={14} /> },
-  skills: { label: "Skills", icon: <BrainIcon size={14} /> },
+  // Skills and MCP servers are one combined destination — the two routes are
+  // its internal tabs, so both present as the same "Skills and MCP" tab.
+  skills: { label: "Skills and MCP", icon: <PlugsConnectedIcon size={14} /> },
   "mcp-servers": {
-    label: "MCP servers",
+    label: "Skills and MCP",
     icon: <PlugsConnectedIcon size={14} />,
   },
   "command-center": {

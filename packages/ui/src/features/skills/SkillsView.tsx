@@ -1,4 +1,4 @@
-import { Lightbulb, MagnifyingGlass, Plus } from "@phosphor-icons/react";
+import { Lightbulb, MagnifyingGlass, Plugs, Plus } from "@phosphor-icons/react";
 import { analyzeSkills } from "@posthog/core/skills/analyzeSkills";
 import { Tabs, TabsList, TabsTrigger } from "@posthog/quill";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
@@ -17,6 +17,7 @@ import { MarketplaceBrowse } from "./MarketplaceBrowse";
 import { NewSkillDialog } from "./NewSkillDialog";
 import { SkillSection, SOURCE_CONFIG } from "./SkillCard";
 import { SkillDetailPanel } from "./SkillDetailPanel";
+import { SkillsMcpTabs } from "./SkillsMcpTabs";
 import {
   useRequestedSkillName,
   useSkillsSelectionActions,
@@ -118,12 +119,12 @@ export function SkillsView() {
   const headerContent = useMemo(
     () => (
       <Flex align="center" gap="2" className="w-full min-w-0">
-        <Lightbulb size={12} className="shrink-0 text-gray-10" />
+        <Plugs size={12} className="shrink-0 text-gray-10" />
         <Text
           className="truncate whitespace-nowrap font-medium text-[13px]"
-          title="Skills"
+          title="Skills and MCP"
         >
-          Skills
+          Skills and MCP
         </Text>
       </Flex>
     ),
@@ -134,6 +135,7 @@ export function SkillsView() {
 
   return (
     <Flex direction="column" height="100%" className="overflow-hidden">
+      <SkillsMcpTabs active="skills" />
       <Box px="4" className="shrink-0 border-b border-b-(--gray-5)">
         <Tabs
           value={activeTab}
