@@ -4,16 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { posthogSrcAliases } from "./vite.aliases";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const src = (name: string) => path.resolve(dir, `../../packages/${name}/src`);
-
-// Mirror apps/code's vite.shared.mts: resolve @posthog/<pkg>/<sub> to package src,
-// since the packages' array-fallback `exports` don't resolve under Rollup.
-const subpath = (name: string) => ({
-  find: new RegExp(`^@posthog/${name}/(.+)$`),
-  replacement: `${src(name)}/$1`,
-});
 
 // Peel the biggest statically-imported vendors out of the single ~8.6 MB entry
 // chunk into cacheable groups so the browser downloads them in parallel and
@@ -74,19 +67,7 @@ export default defineConfig({
   // never gets a key.
   envDir: path.resolve(dir, "../.."),
   resolve: {
-    alias: [
-      subpath("di"),
-      subpath("ui"),
-      subpath("core"),
-      subpath("shared"),
-      subpath("host-router"),
-      subpath("host-trpc"),
-      subpath("platform"),
-      subpath("workspace-client"),
-      subpath("api-client"),
-      subpath("agent"),
-      subpath("enricher"),
-    ],
+    alias: posthogSrcAliases,
   },
   server: { port: 5273 },
   build: {

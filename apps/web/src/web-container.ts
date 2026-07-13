@@ -59,6 +59,11 @@ import {
   GIT_INTERACTION_SERVICE,
   GIT_WRITE_CLIENT,
 } from "@posthog/core/git-interaction/identifiers";
+import {
+  REPORT_MODEL_RESOLVER,
+  type ReportModelResolver,
+} from "@posthog/core/inbox/identifiers";
+import { selectModelFromOptions } from "@posthog/core/inbox/reportTaskCreation";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
 import {
   GITHUB_CONNECT_CLIENT as INTEGRATIONS_GITHUB_CONNECT_CLIENT,
@@ -144,6 +149,7 @@ import {
 import type { TaskDeletionService } from "@posthog/core/tasks/taskDeletionService";
 import { tasksModule } from "@posthog/core/tasks/tasks.module";
 import { setRootContainer } from "@posthog/di/container";
+import { assertHostCapabilities } from "@posthog/di/hostCapabilities";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
   HOST_TRPC_CLIENT,
@@ -165,7 +171,7 @@ import {
   type IPowerManager,
   POWER_MANAGER_SERVICE,
 } from "@posthog/platform/power-manager";
-import { SYNC_CLOUD_TASKS_FLAG } from "@posthog/shared";
+import { type Adapter, SYNC_CLOUD_TASKS_FLAG } from "@posthog/shared";
 import { sandboxProxyHtml } from "@posthog/shared/mcp-sandbox-proxy";
 import { authUiModule } from "@posthog/ui/features/auth/auth.module";
 import {
@@ -259,6 +265,7 @@ import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "@posthog/ui/shell/queryClient";
+import { REQUIRED_HOST_CAPABILITIES } from "@posthog/ui/shell/requiredHostCapabilities";
 import { QueryClient } from "@tanstack/react-query";
 import {
   WebAuthConnectivity,
@@ -367,6 +374,7 @@ interface WebBindings {
   [NOTIFICATIONS_SERVICE]: INotifications;
   [NOTIFICATION_SETTINGS_PROVIDER]: INotificationSettings;
   [ACTIVE_VIEW_PROVIDER]: IActiveView;
+  [REPORT_MODEL_RESOLVER]: ReportModelResolver;
 }
 
 export const queryClient = new QueryClient();
@@ -755,5 +763,38 @@ container
   .bind(NOTIFICATION_SETTINGS_PROVIDER)
   .toConstantValue(webNotificationSettings);
 container.bind(ACTIVE_VIEW_PROVIDER).toConstantValue(webActiveView);
+
+// ── Inbox: resolve the default cloud-run model from the LLM gateway ──
+// Host capability consumed by UI hooks (canvas/home/inbox) that create cloud
+// runs. Same logic as desktop-services.ts, over the web host router's
+// getPreviewConfigOptions (backed by the CORS-open gateway, web-agent-config.ts).
+const reportModelResolverLog = scoped("report-model-resolver");
+container.bind(REPORT_MODEL_RESOLVER).toConstantValue({
+  async resolveDefaultModel(
+    apiHost: string,
+    adapter: Adapter,
+    preferredModel?: string | null,
+  ): Promise<string | undefined> {
+    try {
+      const options = await hostTrpcClient.agent.getPreviewConfigOptions.query({
+        apiHost,
+        adapter,
+      });
+      return selectModelFromOptions(options, preferredModel);
+    } catch (error) {
+      reportModelResolverLog.warn("Failed to resolve default model", {
+        error,
+        adapter,
+      });
+      return undefined;
+    }
+  },
+} satisfies ReportModelResolver);
+
+// Fail loudly at composition time if a capability the shared app resolves via
+// service location is unbound, instead of limping to the first navigation that
+// needs it (how the missing reportModelResolver first surfaced). CI locks this
+// in via web-container.test.ts.
+assertHostCapabilities(container, REQUIRED_HOST_CAPABILITIES);
 
 setRootContainer(container);
