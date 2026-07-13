@@ -1,6 +1,7 @@
 import { Lightning } from "@phosphor-icons/react";
 import { ChatMarker, ChatMarkerContent } from "@posthog/quill";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
+import { formatTokensCompact } from "../../contextColors";
 import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 
 interface CompactBoundaryViewProps {
@@ -14,35 +15,29 @@ export function CompactBoundaryView({
   preTokens,
   contextSize,
 }: CompactBoundaryViewProps) {
-  const validTokens =
-    typeof preTokens === "number" &&
-    Number.isFinite(preTokens) &&
-    preTokens > 0
-      ? preTokens
-      : null;
-  const tokensK = validTokens !== null ? Math.round(validTokens / 1000) : null;
+  const tokens =
+    typeof preTokens === "number" && preTokens > 0 ? preTokens : null;
   const percent =
-    validTokens !== null && contextSize && contextSize > 0
-      ? Math.round((validTokens / contextSize) * 100)
+    tokens !== null && contextSize && contextSize > 0
+      ? Math.round((tokens / contextSize) * 100)
+      : null;
+  const detail =
+    tokens !== null
+      ? percent !== null
+        ? `${percent}% of context · ~${formatTokensCompact(tokens)} tokens`
+        : `~${formatTokensCompact(tokens)} tokens`
       : null;
   // New thread renders the boundary as a centered separator marker; the legacy thread keeps its
   // bordered badge row so ConversationView is unchanged when the chat thread is off.
   const chatChrome = useChatThreadChrome();
 
-  const detail =
-    percent !== null
-      ? `${percent}% of context`
-      : tokensK !== null
-        ? `~${tokensK}K tokens`
-        : null;
-
   if (chatChrome) {
     return (
       <ChatMarker variant="separator">
         <ChatMarkerContent>
-          {`Conversation compacted${trigger ? ` · ${trigger}` : ""}${
-            detail ? ` · ${detail}` : ""
-          }`}
+          {["Conversation compacted", trigger, detail]
+            .filter(Boolean)
+            .join(" · ")}
         </ChatMarkerContent>
       </ChatMarker>
     );
@@ -62,12 +57,8 @@ export function CompactBoundaryView({
             {trigger}
           </Badge>
         ) : null}
-        {tokensK !== null ? (
-          <Text className="text-[13px] text-gray-9">
-            {percent !== null
-              ? `(${percent}% of context · ~${tokensK}K tokens summarized)`
-              : `(~${tokensK}K tokens summarized)`}
-          </Text>
+        {detail ? (
+          <Text className="text-[13px] text-gray-9">({detail} summarized)</Text>
         ) : null}
       </Flex>
     </Box>

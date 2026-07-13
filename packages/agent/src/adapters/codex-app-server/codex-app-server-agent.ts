@@ -1093,7 +1093,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         sessionId: this.sessionId,
         // codex only auto-compacts; there's no manual /compact.
         trigger: "auto",
-        preTokens: this.usage.contextTokens() ?? 0,
+        preTokens: this.usage.contextTokens(),
         contextSize: this.usage.contextSize(),
       })
       .catch(() => undefined);
