@@ -19,6 +19,7 @@ import { getCurrentBranch } from "@posthog/git/queries";
 import {
   type Adapter,
   buildPrOutput,
+  getErrorMessage,
   mergePrUrls,
   readPrUrls,
 } from "@posthog/shared";
@@ -40,6 +41,7 @@ import { hasCodexThreadState } from "../adapters/codex-app-server/thread-state";
 import {
   type AgentErrorClassification,
   classifyAgentError,
+  isPromptTooLongError,
 } from "../adapters/error-classification";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
@@ -49,6 +51,7 @@ import {
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
+import { configurePersistentAgentState } from "../persistent-agent-state";
 import { PostHogAPIClient } from "../posthog-api";
 import {
   findPrUrls,
@@ -87,6 +90,7 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { resolveRtkSavings } from "./rtk-savings";
 import { RunUsageAccumulator } from "./run-usage";
 import {
   handoffLocalGitStateSchema,
@@ -121,6 +125,12 @@ const errorWithClassificationSchema = z.object({
 type MessageCallback = (message: unknown) => void;
 
 export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
+
+// Bounded per-turn retries for unattended (initial/resume) turns that hit a
+// transient upstream failure. Two covers a retry whose own attempt also gets
+// cut once, without letting a hard upstream outage loop forever.
+const MAX_UPSTREAM_TURN_RETRIES = 2;
+const UPSTREAM_TURN_RETRY_DELAY_MS = 5_000;
 
 class NdJsonTap {
   private decoder = new TextDecoder();
@@ -249,6 +259,8 @@ interface ActiveSession {
   /** Whether a desktop client has ever connected via SSE during this session */
   hasDesktopConnected: boolean;
   pendingHandoffGitState?: HandoffLocalGitState;
+  /** Meta the session was created with, reused when a retry needs a fresh session */
+  sessionMeta: Record<string, unknown>;
 }
 
 interface InstalledSkillBundle {
@@ -272,7 +284,8 @@ function hiddenTextBlock(text: string): ContentBlock {
 }
 
 interface LocalSkillPromptContext {
-  skillName: string;
+  /** Set when the message is a bare `/skill` invocation the adapter should strip. */
+  skillName?: string;
   context: string;
 }
 
@@ -317,6 +330,7 @@ export class AgentServer {
   private app: Hono;
   private posthogAPI: PostHogAPIClient;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
+  private rtkSavingsAttempted = false;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
   private runUsage = new RunUsageAccumulator();
@@ -328,6 +342,7 @@ export class AgentServer {
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
   private nativeResume: { sessionId: string; warm: boolean } | null = null;
+  private oversizedResumeRetried = false;
   // Prewarmed runs boot before the user's first message exists, so the boot-time
   // --autoPublish flag can't carry the user's choice; it is resolved from run
   // state when the first message arrives (see resolveWarmAutoPublishUpgrade).
@@ -635,6 +650,10 @@ export class AgentServer {
   }
 
   async start(): Promise<void> {
+    if (this.config.agentStateDir) {
+      await configurePersistentAgentState(this.config.agentStateDir);
+    }
+
     await new Promise<void>((resolve) => {
       this.server = serve(
         {
@@ -1409,6 +1428,7 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
+      sessionMeta,
     };
 
     this.logger = new Logger({
@@ -1506,6 +1526,72 @@ export class AgentServer {
     }
 
     return { classification: classifyAgentError(message), message };
+  }
+
+  /**
+   * Send an initial/resume turn prompt, absorbing transient upstream
+   * failures with a bounded number of retries. These turns run unattended
+   * (no user watching who could retry), so without this a single transient
+   * transport cut fails the whole run. A stream that died mid-response has
+   * already delivered the original prompt into the session history, so that
+   * case retries with a hidden continuation; failures where the request may
+   * never have been processed re-send the original prompt instead.
+   */
+  private async promptWithUpstreamRetry(request: {
+    sessionId: string;
+    prompt: ContentBlock[];
+    _meta?: Record<string, unknown>;
+  }): Promise<PromptResponse> {
+    let retries = 0;
+    let continueInterruptedTurn = false;
+    for (;;) {
+      // Re-read the session on every attempt: it can be torn down or
+      // replaced while the retry delay is pending.
+      const session = this.session;
+      if (!session) {
+        throw new Error("Agent session ended before the turn could be sent");
+      }
+      const attempt = continueInterruptedTurn
+        ? {
+            sessionId: session.acpSessionId,
+            prompt: [
+              hiddenTextBlock(
+                "The previous response was interrupted by a transient connection error. " +
+                  "Continue from where you left off — do not repeat work that already completed.",
+              ),
+            ],
+          }
+        : { ...request, sessionId: session.acpSessionId };
+      try {
+        return await session.clientConnection.prompt(attempt);
+      } catch (error) {
+        const { classification, message } =
+          this.extractErrorClassification(error);
+        if (
+          !upstreamProviderFailureClassifications.has(classification) ||
+          retries >= MAX_UPSTREAM_TURN_RETRIES
+        ) {
+          throw error;
+        }
+        retries += 1;
+        // Only a mid-response stream death guarantees the prompt reached the
+        // model; connection/timeout/status failures re-send the original.
+        continueInterruptedTurn =
+          classification === "upstream_stream_terminated";
+        this.logger.warn(
+          "Turn hit a transient upstream failure; retrying after a short delay",
+          {
+            classification,
+            message,
+            attempt: retries,
+            continueInterruptedTurn,
+          },
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, UPSTREAM_TURN_RETRY_DELAY_MS),
+        );
+      }
+    }
   }
 
   private async handleTurnFailure(
@@ -1657,7 +1743,7 @@ export class AgentServer {
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
-      const result = await this.session.clientConnection.prompt({
+      const result = await this.promptWithUpstreamRetry({
         sessionId: this.session.acpSessionId,
         prompt: initialPrompt,
         ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
@@ -1745,7 +1831,6 @@ export class AgentServer {
         gitCheckpointBranch: resumeState.latestGitCheckpoint?.branch ?? null,
       });
 
-      this.resumeState = null;
       return {
         prompt: resumePromptBlocks,
         ...(resumePromptMeta ? { meta: resumePromptMeta } : {}),
@@ -1786,14 +1871,74 @@ export class AgentServer {
           hasPendingUserMessage: !!pendingUserPrompt?.prompt.length,
         });
 
-        this.resumeState = null;
-        this.nativeResume = null;
         return {
           prompt,
           ...(pendingUserPrompt?.meta ? { meta: pendingUserPrompt.meta } : {}),
         };
       },
+      { retryOnOversizedPrompt: true },
     );
+  }
+
+  /**
+   * A native resume replays the prior transcript verbatim; when that
+   * transcript no longer fits the context window, every request (including
+   * auto-compaction) is rejected, so the only way forward is a fresh session
+   * seeded with the summarized history the non-native resume path uses.
+   */
+  private async retryOversizedResumeOnFreshSession(
+    payload: JwtPayload,
+    taskRun: TaskRun | null,
+  ): Promise<boolean> {
+    if (this.oversizedResumeRetried || !this.session) {
+      return false;
+    }
+    this.oversizedResumeRetried = true;
+
+    const resumeRunId = this.getResumeRunId(taskRun);
+    if (!resumeRunId) return false;
+    if (!this.resumeState) {
+      try {
+        await this.loadResumeState(
+          payload.task_id,
+          resumeRunId,
+          payload.run_id,
+        );
+      } catch (error) {
+        this.logger.warn("Failed to reload resume state for retry", {
+          error: getErrorMessage(error),
+        });
+        return false;
+      }
+    }
+    if (!this.resumeState?.conversation.length) return false;
+
+    this.logger.warn(
+      "Resume prompt exceeded the context window; retrying on a fresh session with summarized history",
+      { taskId: payload.task_id, runId: payload.run_id },
+    );
+
+    try {
+      const response = await this.session.clientConnection.newSession({
+        cwd: this.config.repositoryPath ?? "/tmp/workspace",
+        mcpServers: this.config.mcpServers ?? [],
+        _meta: this.session.sessionMeta,
+      });
+      this.session.acpSessionId = response.sessionId;
+    } catch (error) {
+      this.logger.warn("Failed to start fresh session for oversized resume", {
+        error: getErrorMessage(error),
+      });
+      return false;
+    }
+
+    try {
+      await this.sendResumeMessage(payload, taskRun);
+      return true;
+    } finally {
+      this.resumeState = null;
+      this.nativeResume = null;
+    }
   }
 
   private async runResumeTurn(
@@ -1801,6 +1946,7 @@ export class AgentServer {
     taskRun: TaskRun | null,
     logLabel: string,
     buildPrompt: () => Promise<BuiltPrompt>,
+    opts: { retryOnOversizedPrompt?: boolean } = {},
   ): Promise<void> {
     if (!this.session) return;
 
@@ -1809,7 +1955,7 @@ export class AgentServer {
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
-      const result = await this.session.clientConnection.prompt({
+      const result = await this.promptWithUpstreamRetry({
         sessionId: this.session.acpSessionId,
         prompt: builtPrompt.prompt,
         ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
@@ -1818,6 +1964,10 @@ export class AgentServer {
       this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
       });
+
+      // Kept until the turn succeeds so a prompt-too-long retry can reuse it.
+      this.resumeState = null;
+      this.nativeResume = null;
 
       await this.clearPendingInitialPromptState(payload, taskRun);
 
@@ -1835,6 +1985,13 @@ export class AgentServer {
       this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
       if (this.session) {
         await this.session.logWriter.flushAll();
+      }
+      if (
+        opts.retryOnOversizedPrompt &&
+        isPromptTooLongError(error) &&
+        (await this.retryOversizedResumeOnFreshSession(payload, taskRun))
+      ) {
+        return;
       }
       await this.handleTurnFailure(payload, "resume", error);
     }
@@ -2052,7 +2209,9 @@ export class AgentServer {
         ? {
             meta: {
               localSkillContext: localSkillContext.context,
-              localSkillName: localSkillContext.skillName,
+              ...(localSkillContext.skillName
+                ? { localSkillName: localSkillContext.skillName }
+                : {}),
             } satisfies Record<string, unknown>,
           }
         : {}),
@@ -2157,40 +2316,121 @@ export class AgentServer {
       (block): block is Extract<ContentBlock, { type: "text" }> =>
         block.type === "text" && block.text.trim().length > 0,
     );
-    if (textBlockIndex === -1) {
+    const textBlock =
+      textBlockIndex === -1 ? null : contentBlocks[textBlockIndex];
+    const invocation =
+      textBlock?.type === "text"
+        ? this.parseLocalSkillInvocation(textBlock.text)
+        : null;
+
+    if (invocation) {
+      const hasMatchingArtifact = artifacts.some(
+        (artifact) =>
+          artifact.type === "skill_bundle" &&
+          artifact.metadata?.skill_name === invocation.skillName,
+      );
+      const installedSkill = hasMatchingArtifact
+        ? this.installedSkillBundleInfo.get(
+            this.getInstalledSkillBundleInfoKey(runId, invocation.skillName),
+          )
+        : undefined;
+      if (installedSkill) {
+        return {
+          skillName: invocation.skillName,
+          context: this.buildInstalledSkillPrompt(
+            installedSkill,
+            invocation.args,
+            this.getCoInstalledSkillBundles(runId, invocation.skillName),
+          ),
+        };
+      }
+    }
+
+    const messageText = contentBlocks
+      .filter(
+        (block): block is Extract<ContentBlock, { type: "text" }> =>
+          block.type === "text",
+      )
+      .map((block) => block.text)
+      .join("\n");
+    return this.buildAttachedSkillsPromptContext(runId, artifacts, messageText);
+  }
+
+  /**
+   * Fallback for messages that install skill bundles without being a bare
+   * `/skill` invocation: a running session can't discover mid-session
+   * installs, so skills named in the message get their definition inlined
+   * and the rest are listed with their paths.
+   */
+  private buildAttachedSkillsPromptContext(
+    runId: string,
+    artifacts: TaskRunArtifact[],
+    messageText: string,
+  ): LocalSkillPromptContext | null {
+    const installed = artifacts
+      .filter((artifact) => artifact.type === "skill_bundle")
+      .map((artifact) => artifact.metadata?.skill_name)
+      .filter((name): name is string => typeof name === "string")
+      .map((name) =>
+        this.installedSkillBundleInfo.get(
+          this.getInstalledSkillBundleInfoKey(runId, name),
+        ),
+      )
+      .filter((skill): skill is InstalledSkillBundle => !!skill);
+    if (installed.length === 0) {
       return null;
     }
 
-    const textBlock = contentBlocks[textBlockIndex];
-    if (textBlock.type !== "text") {
-      return null;
-    }
+    const mentioned = installed.filter((skill) => {
+      // token-boundary match so "/foo" never matches inside "/foobar"
+      const escaped = skill.skillName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(
+        `(^|[\\s(\`"'\\[])/${escaped}(?![A-Za-z0-9_/-])`,
+        "m",
+      ).test(messageText);
+    });
+    const unmentioned = installed.filter((skill) => !mentioned.includes(skill));
 
-    const invocation = this.parseLocalSkillInvocation(textBlock.text);
-    if (!invocation) {
-      return null;
+    const sections: string[] = [
+      "The user's message references local skills that are now installed for this run. Apply a skill's instructions when the message calls for it.",
+    ];
+    for (const skill of mentioned) {
+      sections.push(
+        "",
+        `--- BEGIN LOCAL SKILL ${skill.skillName} ---`,
+        skill.skillDefinition.trim(),
+        `--- END LOCAL SKILL ${skill.skillName} ---`,
+        `Installed skill path: ${skill.skillRoot}`,
+      );
     }
-
-    const hasMatchingArtifact = artifacts.some(
-      (artifact) =>
-        artifact.type === "skill_bundle" &&
-        artifact.metadata?.skill_name === invocation.skillName,
-    );
-    if (!hasMatchingArtifact) {
-      return null;
+    if (unmentioned.length > 0) {
+      sections.push(
+        "",
+        "Other local skills installed for this run (read a skill's SKILL.md from its path when referenced):",
+        ...unmentioned.map(
+          (skill) => `- /${skill.skillName}: ${skill.skillRoot}`,
+        ),
+      );
     }
+    return { context: sections.join("\n") };
+  }
 
-    const installedSkill = this.installedSkillBundleInfo.get(
-      this.getInstalledSkillBundleInfoKey(runId, invocation.skillName),
-    );
-    if (!installedSkill) {
-      return null;
-    }
-
-    return {
-      skillName: invocation.skillName,
-      context: this.buildInstalledSkillPrompt(installedSkill, invocation.args),
-    };
+  /**
+   * Other skills already installed for this run (auto-bundled dependencies,
+   * skills from earlier messages), listed so the model can find them by path.
+   */
+  private getCoInstalledSkillBundles(
+    runId: string,
+    invokedSkillName: string,
+  ): InstalledSkillBundle[] {
+    const prefix = `${runId}:`;
+    return [...this.installedSkillBundleInfo.entries()]
+      .filter(
+        ([key, skill]) =>
+          key.startsWith(prefix) && skill.skillName !== invokedSkillName,
+      )
+      .map(([, skill]) => skill)
+      .sort((a, b) => a.skillName.localeCompare(b.skillName));
   }
 
   private parseLocalSkillInvocation(
@@ -2211,6 +2451,7 @@ export class AgentServer {
   private buildInstalledSkillPrompt(
     skill: InstalledSkillBundle,
     args: string | undefined,
+    coInstalledSkills: InstalledSkillBundle[] = [],
   ): string {
     return [
       `The user invoked the local skill "/${skill.skillName}". Apply these skill instructions for this turn.`,
@@ -2220,6 +2461,16 @@ export class AgentServer {
       `--- END LOCAL SKILL ${skill.skillName} ---`,
       "",
       `Installed skill path: ${skill.skillRoot}`,
+      ...(coInstalledSkills.length > 0
+        ? [
+            "",
+            "Other local skills installed for this run (when the skill above references one of these, read its SKILL.md from the listed path):",
+            ...coInstalledSkills.map(
+              (coInstalled) =>
+                `- /${coInstalled.skillName}: ${coInstalled.skillRoot}`,
+            ),
+          ]
+        : []),
       "",
       "User request:",
       args?.trim() || `Run /${skill.skillName}.`,
@@ -3016,6 +3267,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     } catch (error) {
       this.logger.error("Failed to signal task completion", error);
     } finally {
+      await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
     }
   }
@@ -3622,6 +3874,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
 
     if (completeEventStream) {
+      await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
     }
 
@@ -3631,6 +3884,41 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     // with a different run_id) must not inherit the previous run's totals.
     this.runUsage = new RunUsageAccumulator();
     this.session = null;
+  }
+
+  private async emitRtkSavings(): Promise<void> {
+    if (!this.eventStreamSender || this.rtkSavingsAttempted) return;
+    this.rtkSavingsAttempted = true;
+
+    try {
+      const savings = await (
+        this.config.resolveRtkSavings ?? resolveRtkSavings
+      )();
+      if (!savings) return;
+
+      this.eventStreamSender.enqueue({
+        type: "notification",
+        timestamp: new Date().toISOString(),
+        notification: {
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.RTK_SAVINGS,
+          params: {
+            task_id: this.config.taskId,
+            run_id: this.config.runId,
+            team_id: this.config.projectId,
+            counter_id: this.config.taskId,
+            cumulative_commands: savings.totalCommands,
+            cumulative_input_tokens: savings.inputTokens,
+            cumulative_output_tokens: savings.outputTokens,
+            cumulative_tokens_saved: savings.tokensSaved,
+            runtime_adapter: this.config.runtimeAdapter,
+            model: this.config.model,
+          },
+        },
+      });
+    } catch (error) {
+      this.logger.debug("Failed to emit rtk savings", { error });
+    }
   }
 
   private async captureCheckpointState(

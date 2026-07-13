@@ -2,7 +2,8 @@ import { isMac } from "@posthog/ui/utils/platform";
 
 export const SHORTCUTS = {
   COMMAND_MENU: "mod+k",
-  NEW_TASK: "mod+n,mod+t",
+  NEW_TASK: "mod+n",
+  NEW_TAB: "mod+t",
   SETTINGS: "mod+,",
   SHORTCUTS_SHEET: "mod+/",
   GO_BACK: "mod+[",
@@ -52,7 +53,13 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     keys: "mod+n",
     description: "New task",
     category: "general",
-    alternateKeys: "mod+t",
+  },
+  {
+    id: "new-tab",
+    keys: SHORTCUTS.NEW_TAB,
+    description: "New tab",
+    category: "navigation",
+    context: "Channels",
   },
   {
     id: "command-menu",

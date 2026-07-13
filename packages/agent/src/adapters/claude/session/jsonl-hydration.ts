@@ -241,9 +241,12 @@ export function rebuildConversation(
   return turns;
 }
 
-const CHARS_PER_TOKEN = 4;
-const DEFAULT_MAX_TOKENS = 150_000;
-const LARGE_CONTEXT_MAX_TOKENS = 800_000;
+// JSON-heavy tool payloads tokenize at ~2.5-3 chars/token, so estimate low.
+const CHARS_PER_TOKEN = 3;
+// Target ~half the context window, leaving headroom for the system prompt,
+// tools, skills, estimation error, and the resumed run's own work.
+const DEFAULT_MAX_TOKENS = 80_000;
+const LARGE_CONTEXT_MAX_TOKENS = 400_000;
 
 function estimateTurnTokens(turn: ConversationTurn): number {
   let chars = 0;

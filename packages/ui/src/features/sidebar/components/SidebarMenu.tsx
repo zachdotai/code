@@ -1,7 +1,6 @@
 import { findGroupFolder } from "@posthog/core/sidebar/groupTasks";
 import { isTaskActivelyRunning } from "@posthog/core/sidebar/taskRunning";
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import { Separator } from "@posthog/quill";
 import type { Task } from "@posthog/shared/types";
 import {
   archiveTasksImperative,
@@ -35,11 +34,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArchiveRunningTaskDialog } from "./ArchiveRunningTaskDialog";
 import { SidebarItem } from "./SidebarItem";
-import { SidebarNavSection } from "./SidebarNavSection";
 import { TaskListView } from "./TaskListView";
 import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
 
 function SidebarMenuComponent() {
   const hostClient = useHostTRPCClient();
@@ -103,6 +108,21 @@ function SidebarMenuComponent() {
     taskId: string;
     taskTitle: string;
   } | null>(null);
+
+  // Escape clears any bulk task selection (moved here from the retired
+  // MainSidebar so it survives with the task list in the unified sidebar).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (isEditableTarget(e.target)) return;
+      const { selectedTaskIds, clearSelection } =
+        useTaskSelectionStore.getState();
+      if (selectedTaskIds.length === 0) return;
+      clearSelection();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const selectedTaskIds = useTaskSelectionStore((s) => s.selectedTaskIds);
   const toggleTaskSelection = useTaskSelectionStore(
@@ -430,18 +450,6 @@ function SidebarMenuComponent() {
       id="side-bar-menu"
       className="flex min-h-0 flex-col"
     >
-      {/* Derive the command-center count from data SidebarMenu already holds,
-          so the nested nav section doesn't open its own task subscription. */}
-      <SidebarNavSection
-        commandCenterActiveCount={commandCenterCells.reduce(
-          (count, taskId) =>
-            taskId != null && taskMap.has(taskId) ? count + 1 : count,
-          0,
-        )}
-      />
-
-      <Separator className="mx-2 my-2 shrink-0" />
-
       <TasksHeader />
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
