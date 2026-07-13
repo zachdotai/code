@@ -10,14 +10,6 @@ function inStorybookTestRunner(): boolean {
   return navigator.userAgent.includes("StorybookTestRunner");
 }
 
-// Visual regression snapshots need identical pixels on every render: freeze
-// the clock (elapsed-time counters, relative timestamps) and re-seed
-// Math.random before each story (random status verbs), including on the
-// re-renders the test runner triggers for theme flips and retries.
-if (inStorybookTestRunner()) {
-  MockDate.set("2026-07-01T10:30:00Z");
-}
-
 function seededMathRandom(): void {
   let state = 0x9e3779b9;
   Math.random = () => {
@@ -63,8 +55,18 @@ const preview: Preview = {
       );
     },
     // Last in the array = outermost, so it runs before every story render.
+    // Visual regression snapshots need identical pixels on every render:
+    // freeze the clock (elapsed-time counters, rendered timestamps) and
+    // re-seed Math.random (random status verbs), including on the re-renders
+    // the test runner triggers for theme flips and retries. This must live in
+    // a decorator, not module scope: the test runner appends its UA marker
+    // via an injected script AFTER the page (and this module) loads, so a
+    // module-scope inStorybookTestRunner() check reads false. Story-module
+    // fixtures evaluated at import time still see the real clock — use fixed
+    // dates there.
     (Story) => {
       if (inStorybookTestRunner()) {
+        MockDate.set("2026-07-01T10:30:00Z");
         seededMathRandom();
       }
       return <Story />;

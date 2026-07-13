@@ -28,6 +28,7 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      baseline_only_push: ${{ steps.baseline_push.outputs.result }}
     steps:
       - name: Detect relevant changes
         id: filter
@@ -36,18 +37,56 @@ jobs:
           predicate-quantifier: every
           filters: |
             # Anything that can change a rendered story. The baseline manifest
-            # is excluded so the VR backend's approval commit (which touches
-            # only snapshots.yml) doesn't re-run the suite for nothing.
+            # is excluded, but note paths-filter diffs the whole PR against
+            # its base, so once a PR has code changes this filter stays true
+            # for every later push — the baseline_push step below is what
+            # skips the VR backend's own approval commits.
             code:
               - "{apps/code/**,packages/**,pnpm-lock.yaml,.github/workflows/code-storybook.yml}"
               - "!apps/code/snapshots.yml"
               - "!**/*.md"
 
+      # Visual Review commits the approved baseline back to the PR branch as
+      # a bot; re-running the suite for that push is pure waste (only the
+      # manifest changed). Compare the push delta (before...after), not the
+      # PR diff, so it only matches the bot's own baseline commit.
+      - name: Detect Visual Review baseline-only push
+        id: baseline_push
+        if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          result=false
+          case "$ACTOR" in
+            *'[bot]' | posthog-bot) is_bot=true ;;
+            *) is_bot=false ;;
+          esac
+          zero=0000000000000000000000000000000000000000
+          if [ "$is_bot" = true ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "$zero" ] && [ -n "$AFTER" ]; then
+            # compare uses merge-base(before, after), which for an appended
+            # commit is exactly the push delta; a force-push/rebase widens it
+            # and won't match.
+            files=$(gh api "repos/${REPO}/compare/${BEFORE}...${AFTER}" --jq '.files[].filename' || true)
+            if [ -n "$files" ] && ! grep -qv '^apps/code/snapshots\.yml$' <<<"$files"; then
+              result=true
+            fi
+          fi
+          echo "result=$result" >>"$GITHUB_OUTPUT"
+          echo "Visual Review baseline-only push: $result"
+
   visual-regression:
     needs: changes
     # Fail closed: if change detection failed (or this is a main push, where
-    # `changes` is skipped), run instead of skipping.
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
+    # `changes` is skipped), run instead of skipping — unless the push was
+    # just the VR bot committing an approved baseline.
+    if: >-
+      ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') &&
+      needs.changes.outputs.baseline_only_push != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
