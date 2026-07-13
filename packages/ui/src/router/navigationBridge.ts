@@ -26,13 +26,6 @@ export function navigateToTaskDetail(taskId: string): void {
   });
 }
 
-export function navigateToPullRequestView(prUrl: string): void {
-  void getRouterOrNull()?.navigate({
-    to: "/code/pr",
-    search: { prUrl },
-  });
-}
-
 export function navigateToTaskPending(key: string): void {
   void getRouterOrNull()?.navigate({
     to: "/code/tasks/pending/$key",

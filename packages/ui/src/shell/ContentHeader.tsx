@@ -17,7 +17,10 @@ import { TaskActionsMenu } from "@posthog/ui/features/git-interaction/components
 import { HandoffConfirmDialog } from "@posthog/ui/features/sessions/components/HandoffConfirmDialog";
 import { useHandoffDialogStore } from "@posthog/ui/features/sessions/handoffDialogStore";
 import { useSessionCallbacks } from "@posthog/ui/features/sessions/hooks/useSessionCallbacks";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import {
+  useSessionForTask,
+  useSessionSelector,
+} from "@posthog/ui/features/sessions/useSession";
 import { SkillButtonsMenu } from "@posthog/ui/features/skill-buttons/components/SkillButtonsMenu";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
@@ -121,12 +124,19 @@ function TaskBranchControl({
   task: Task;
   workspace: Workspace | null;
 }) {
-  const session = useSessionForTask(task.id);
+  // Selector, not useSessionForTask: the header is always visible and the full
+  // session object changes identity on every streamed event.
+  const sessionCloudBranch = useSessionSelector(
+    task.id,
+    (s) => s?.cloudBranch ?? null,
+  );
   if (!workspace || workspace.isScratch) return null;
 
   let selector: React.ReactNode;
   if (workspace.mode === "cloud") {
-    const branch = task.latest_run?.branch ?? session?.cloudBranch ?? null;
+    // Same run-then-session precedence as deriveCloudRunState's
+    // effectiveBranch (core/task-detail/cloudRunState.ts).
+    const branch = task.latest_run?.branch ?? sessionCloudBranch;
     if (!branch) return null;
     selector = (
       <BranchSelector

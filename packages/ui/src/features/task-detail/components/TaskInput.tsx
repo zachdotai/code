@@ -41,6 +41,7 @@ import { useFeatureFlagsLoaded } from "../../feature-flags/useFeatureFlagsLoaded
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
 import { GitHubRepoPicker } from "../../folder-picker/GitHubRepoPicker";
+import { resolveMainRepoPath } from "../../folders/resolveMainRepoPath";
 import { useFolders } from "../../folders/useFolders";
 import { BranchSelector } from "../../git-interaction/components/BranchSelector";
 import { GitBranchDialog } from "../../git-interaction/components/GitInteractionDialogs";
@@ -387,17 +388,14 @@ export function TaskInput({
   // at a worktree (picked in local mode before switching, or from a past
   // session). Resolve the effective directory to that worktree's registered
   // main clone so task creation doesn't treat a worktree path as the main
-  // repo. Worktrees without a registered main stay as-is: they're the repo's
-  // only selectable entry.
-  const selectedDirectory = useMemo(() => {
-    if (workspaceMode !== "worktree" || !activeRepoPath) return activeRepoPath;
-    const mainRepoPath = folders.find(
-      (f) => f.path === activeRepoPath,
-    )?.mainRepoPath;
-    return mainRepoPath && folders.some((f) => f.path === mainRepoPath)
-      ? mainRepoPath
-      : activeRepoPath;
-  }, [workspaceMode, activeRepoPath, folders]);
+  // repo.
+  const selectedDirectory = useMemo(
+    () =>
+      workspaceMode === "worktree" && activeRepoPath
+        ? resolveMainRepoPath(folders, activeRepoPath)
+        : activeRepoPath,
+    [workspaceMode, activeRepoPath, folders],
+  );
   const {
     repositories: visibleCloudRepositories,
     isPending: cloudRepositoriesLoading,
