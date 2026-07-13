@@ -32,7 +32,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Heading, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 // A channel: a Slack-style multiplayer feed. Each member message kicks off a
 // task rendered as a card everyone in the channel sees; the composer stays
@@ -73,15 +73,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
 
-  const threadTaskId = useThreadPanelStore((s) => s.taskId);
+  // Which thread is open is tracked per tab (keyed by channelId), so switching
+  // between channel tabs keeps each tab's own thread docked.
+  const threadTaskId = useThreadPanelStore((s) => s.openByChannel[channelId]);
   const openThread = useThreadPanelStore((s) => s.openThread);
   const closeThread = useThreadPanelStore((s) => s.closeThread);
-
-  // A thread from another channel shouldn't linger when switching feeds.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-close per channel
-  useEffect(() => {
-    closeThread();
-  }, [closeThread, channelId]);
 
   const handleSuggestionSelect = useCallback(
     (prompt: string, mode?: string) => {
@@ -129,21 +125,25 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     [channelId, fileTask, invalidateFeed, queryClient],
   );
 
-  // The task route's mount effect points the panel at the task, so navigating
-  // is enough here.
+  // Clicking a task card or its "reply in thread" action both open the same
+  // thread dock — the merged conversation with the task card and the agent's
+  // live replies inline — rather than navigating away to the full task view.
+  // The full view stays a click away (openFull). The feed keeps the two intents
+  // as distinct props so they can diverge later without re-plumbing.
   const handleOpenTask = useCallback(
-    (task: Task) => {
+    (task: Task) => openThread(channelId, task.id),
+    [openThread, channelId],
+  );
+  const handleOpenThread = handleOpenTask;
+
+  const handleOpenFull = useCallback(
+    (taskId: string) => {
       void navigate({
         to: "/website/$channelId/tasks/$taskId",
-        params: { channelId, taskId: task.id },
+        params: { channelId, taskId },
       });
     },
     [channelId, navigate],
-  );
-
-  const handleOpenThread = useCallback(
-    (task: Task) => openThread(task.id),
-    [openThread],
   );
 
   const threadTask = threadTaskId
@@ -211,7 +211,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         <ThreadSidebar
           taskId={threadTaskId}
           task={threadTask}
-          onClose={closeThread}
+          onClose={() => closeThread(channelId)}
+          onOpenFull={() => handleOpenFull(threadTaskId)}
         />
       )}
     </div>

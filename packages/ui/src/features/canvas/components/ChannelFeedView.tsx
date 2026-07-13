@@ -240,7 +240,7 @@ function TaskStatusBadge({ display }: { display: TaskStatusDisplay }) {
 
 // The task the message kicked off, as a card everyone in the channel sees:
 // bold title + status up top, then run metadata.
-function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
+export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const statusDisplay = useTaskStatusDisplay(task);
   const prUrl =
     typeof task.latest_run?.output?.pr_url === "string"

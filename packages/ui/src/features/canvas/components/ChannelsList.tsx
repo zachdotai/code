@@ -621,7 +621,7 @@ export function ChannelsList() {
           gap="px"
           className="scroll-mask-4 h-full overflow-y-auto px-2 pt-2 pb-16"
         >
-          <div className="mb-2">
+          <div className="mb-1">
             <PersonalChannelRow />
           </div>
 
