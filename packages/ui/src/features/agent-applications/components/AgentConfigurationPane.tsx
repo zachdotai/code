@@ -170,7 +170,9 @@ function mcpProvider(m: unknown): string | undefined {
 // `spec.authoritative_provider` = the one identity_providers[] id that gates
 // admission. It can only be authoritative if it proves a subject (kind posthog,
 // or oauth2 + userinfo_url) — mirrors AgentSpecSchema.superRefine.
-const NONE_PROVIDER = "__none__";
+// The leading NUL byte makes this sentinel structurally impossible as a
+// user-typed provider id, so it can't collide with a real Select.Item value.
+const NONE_PROVIDER = "\0none";
 function authoritativeProviderId(spec: AgentSpec): string | undefined {
   return str(spec.authoritative_provider);
 }
@@ -2005,15 +2007,11 @@ function providerSummary(p: unknown, used: number): string {
   return parts.join(" · ");
 }
 
-function IdentitiesOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
-  const providers = identityProviders(spec);
+// Both identity components apply a full-spec PATCH the same way — same mutation,
+// same success (auto-jump to a newly branched draft) and error handling — so
+// share the wiring. The default error string is the only thing that differs.
+function useSaveIdentitySpec(ctx: Ctx, defaultError: string) {
   const applySpec = useApplyAgentSpec(ctx.idOrSlug, ctx.applicationId);
-  const canEdit = !!ctx.revisionState;
-  const saving = applySpec.isPending;
-  const authoritative = authoritativeProviderId(spec);
-  const [showOauth, setShowOauth] = useState(false);
-  const hasPosthog = providers.some((p) => str(rec(p).kind) === "posthog");
-
   const saveSpec = (next: AgentSpec, onDone?: () => void) => {
     if (!ctx.revisionState) return;
     applySpec.mutate(
@@ -2026,11 +2024,23 @@ function IdentitiesOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
           if (rev.id !== ctx.revisionId) ctx.onSelectRevision?.(rev.id);
           onDone?.();
         },
-        onError: (e) =>
-          toast.error(e.message || "Failed to save identity providers"),
+        onError: (e) => toast.error(e.message || defaultError),
       },
     );
   };
+  return { saveSpec, saving: applySpec.isPending };
+}
+
+function IdentitiesOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
+  const providers = identityProviders(spec);
+  const { saveSpec, saving } = useSaveIdentitySpec(
+    ctx,
+    "Failed to save identity providers",
+  );
+  const canEdit = !!ctx.revisionState;
+  const authoritative = authoritativeProviderId(spec);
+  const [showOauth, setShowOauth] = useState(false);
+  const hasPosthog = providers.some((p) => str(rec(p).kind) === "posthog");
 
   // The PATCH replaces `spec` wholesale, so omit the key to clear it.
   const setAuthoritative = (value: string) => {
@@ -2190,6 +2200,10 @@ function IdentitiesOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
 }
 
 // userinfo_url is what lets an oauth2 provider be picked as authoritative.
+// The form intentionally omits `client_secret`: it's a secret, so it lives in
+// the agent's secret store (referenced by env-key via the top-level `secrets`
+// list, not inlined on the provider entry) and is looked up server-side at
+// token-exchange time. See posthog PR #66050 for the admission spec.
 function AddOauth2ProviderForm({
   existingIds,
   pending,
@@ -2322,27 +2336,12 @@ function IdentityBody({
   const authoritative = authoritativeProviderId(spec);
   const isAuth = declared && id === authoritative;
   const establishes = establishesIdentity(provider);
-  const applySpec = useApplyAgentSpec(ctx.idOrSlug, ctx.applicationId);
+  const { saveSpec, saving } = useSaveIdentitySpec(
+    ctx,
+    "Failed to save identity provider",
+  );
   const canEdit = !!ctx.revisionState;
-  const saving = applySpec.isPending;
 
-  const saveSpec = (next: AgentSpec, onDone?: () => void) => {
-    if (!ctx.revisionState) return;
-    applySpec.mutate(
-      {
-        revision: { id: ctx.revisionId, state: ctx.revisionState },
-        spec: next,
-      },
-      {
-        onSuccess: (rev) => {
-          if (rev.id !== ctx.revisionId) ctx.onSelectRevision?.(rev.id);
-          onDone?.();
-        },
-        onError: (e) =>
-          toast.error(e.message || "Failed to save identity provider"),
-      },
-    );
-  };
   const setAuthoritative = (on: boolean) => {
     const next: AgentSpec = { ...spec };
     if (on) next.authoritative_provider = id;
