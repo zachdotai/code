@@ -1,4 +1,5 @@
 import {
+  CaretDownIcon,
   ChartBarIcon,
   DotsThreeIcon,
   FileTextIcon,
@@ -530,14 +531,53 @@ function PersonalChannelRow() {
   );
 }
 
+// A collapsible section label. Clicking the whole header toggles the section;
+// a caret rotates to signal open/closed. Presentation only — collapse state is
+// owned by the caller so it can persist across the (long-lived) sidebar mount.
+function SectionHeader({
+  icon,
+  label,
+  collapsed,
+  onToggle,
+}: {
+  icon: ReactNode;
+  label: string;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      className="group flex w-full items-center gap-2"
+    >
+      <MenuLabel className="flex w-full items-center gap-2 uppercase">
+        {icon}
+        <span className="flex-1 text-left">{label}</span>
+        <CaretDownIcon
+          size={12}
+          weight="bold"
+          className={cn(
+            "shrink-0 text-gray-9 transition-transform",
+            collapsed && "-rotate-90",
+          )}
+        />
+      </MenuLabel>
+    </button>
+  );
+}
+
 // The channel list — the Channels space sidebar body. The private "#me"
 // channel is pinned at the top; starred channels surface in their own section
 // so the ones you use most stay in reach; the rest sit under a "Channels"
-// label with the "New" channel button.
+// label. A floating "+" pinned to the bottom-right creates a new context.
 export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
   const [modalOpen, setModalOpen] = useState(false);
+  const [starredCollapsed, setStarredCollapsed] = useState(false);
+  const [contextsCollapsed, setContextsCollapsed] = useState(false);
 
   // The "me" folder renders as the pinned personal row, not a shared channel.
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
@@ -561,54 +601,82 @@ export function ChannelsList() {
     // One shared provider groups every row tooltip so that once one shows,
     // moving to the next row reveals its tooltip instantly (no re-delay).
     <TooltipProvider delay={600}>
-      <Flex direction="column" gap="px" className="px-2 pt-2 pb-2">
-        <PersonalChannelRow />
+      {/* Relative shell so the floating "+" pins to the bottom-right of the
+          sidebar viewport rather than scrolling with the list. */}
+      <Box className="relative h-full">
+        {/* scroll-padding-bottom (pb-16) keeps the last rows clear of the
+            floating button when scrolled to the end. */}
+        <Flex
+          direction="column"
+          gap="px"
+          className="scroll-mask-4 h-full overflow-y-auto px-2 pt-2 pb-16"
+        >
+          <PersonalChannelRow />
 
-        {starred.length > 0 && (
-          <>
-            <Box>
-              <MenuLabel className="flex items-center gap-2 uppercase">
-                <StarIcon size={14} className="text-gray-9" />
-                Starred
-              </MenuLabel>
-            </Box>
-            <div className="pl-2">
-              {starred.map((channel) => (
-                <ChannelSection key={channel.id} channel={channel} />
-              ))}
-            </div>
-          </>
-        )}
+          {starred.length > 0 && (
+            <>
+              <Box>
+                <SectionHeader
+                  icon={<StarIcon size={14} className="text-gray-9" />}
+                  label="Starred"
+                  collapsed={starredCollapsed}
+                  onToggle={() => setStarredCollapsed((c) => !c)}
+                />
+              </Box>
+              {!starredCollapsed && (
+                <div className="pl-2">
+                  {starred.map((channel) => (
+                    <ChannelSection key={channel.id} channel={channel} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
 
-        <Box className={cn(starred.length > 0 && "mt-3")}>
-          <MenuLabel className="group flex items-center justify-between uppercase">
-            <span className="flex items-center gap-2">
-              <SquircleDashed size={14} className="text-gray-9" />
-              Contexts
-            </span>
-            <Button
-              variant="outline"
-              size="icon-xs"
-              onClick={() => setModalOpen(true)}
-              className="-mr-1 group-hover:border-border"
-            >
-              <PlusIcon size={14} />
-            </Button>
-          </MenuLabel>
-        </Box>
+          <Box className={cn(starred.length > 0 && "mt-3")}>
+            <SectionHeader
+              icon={<SquircleDashed size={14} className="text-gray-9" />}
+              label="Contexts"
+              collapsed={contextsCollapsed}
+              onToggle={() => setContextsCollapsed((c) => !c)}
+            />
+          </Box>
 
-        {!isLoading && channels.length === 0 && (
-          <Text size="1" className="px-2 text-gray-9">
-            No contexts yet. Create one to get started.
-          </Text>
-        )}
+          {!contextsCollapsed && (
+            <>
+              {!isLoading && channels.length === 0 && (
+                <Text size="1" className="px-2 text-gray-9">
+                  No contexts yet. Create one to get started.
+                </Text>
+              )}
 
-        <div className="pl-2">
-          {others.map((channel) => (
-            <ChannelSection key={channel.id} channel={channel} />
-          ))}
-        </div>
-      </Flex>
+              <div className="pl-2">
+                {others.map((channel) => (
+                  <ChannelSection key={channel.id} channel={channel} />
+                ))}
+              </div>
+            </>
+          )}
+        </Flex>
+
+        {/* Floating create-context button, pinned bottom-right over the list. */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="primary"
+                size="icon-lg"
+                aria-label="New context"
+                onClick={() => setModalOpen(true)}
+                className="absolute right-3 bottom-3 rounded-full shadow-lg"
+              >
+                <PlusIcon size={20} weight="bold" />
+              </Button>
+            }
+          />
+          <TooltipContent side="left">New context</TooltipContent>
+        </Tooltip>
+      </Box>
 
       <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />
     </TooltipProvider>

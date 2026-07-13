@@ -110,7 +110,9 @@ export function ChannelsSidebar() {
         {bodyChannelsEnabled ? (
           <>
             <Separator />
-            <Box className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto">
+            {/* ChannelsList owns its own scroll region (so its floating "+"
+                can pin to the viewport); this box just gives it the space. */}
+            <Box className="min-h-0 flex-1">
               <ChannelsList />
             </Box>
           </>

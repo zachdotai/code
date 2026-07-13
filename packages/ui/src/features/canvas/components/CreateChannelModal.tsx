@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
   Field,
+  FieldDescription,
   FieldError,
   FieldLabel,
   Input,
@@ -181,7 +182,7 @@ export function CreateChannelModal({
           </DialogDescription>
         </DialogHeader>
 
-        <DialogBody className="flex flex-col gap-4">
+        <DialogBody className="flex flex-col [&>div]:flex [&>div]:flex-col [&>div]:gap-4">
           {!isDescribeMode && (
             <Field>
               <FieldLabel htmlFor="context-name">Name</FieldLabel>
@@ -200,18 +201,17 @@ export function CreateChannelModal({
                   }
                 }}
               />
-              {nameError ? (
-                <FieldError>{nameError}</FieldError>
-              ) : (
-                <span className="text-gray-9 text-xs tabular-nums">
-                  {remaining} left
-                </span>
-              )}
+              {nameError && <FieldError>{nameError}</FieldError>}
+              <FieldDescription className="tabular-nums">
+                {remaining} left
+              </FieldDescription>
             </Field>
           )}
 
           <Field>
-            <FieldLabel htmlFor="context-description">Description</FieldLabel>
+            <FieldLabel htmlFor="context-description">
+              Describe the area of work
+            </FieldLabel>
             <Textarea
               id="context-description"
               autoFocus={isDescribeMode}
@@ -228,6 +228,10 @@ export function CreateChannelModal({
                 }
               }}
             />
+            <FieldDescription className="tabular-nums">
+              Example: "All code, all pull requests related to the mobile app in
+              Posthog/Code"
+            </FieldDescription>
           </Field>
         </DialogBody>
 
