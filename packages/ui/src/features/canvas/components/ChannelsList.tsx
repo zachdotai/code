@@ -2,7 +2,6 @@ import {
   ChartBarIcon,
   DotsThreeIcon,
   FileTextIcon,
-  HashIcon,
   LinkIcon,
   LockSimpleIcon,
   PencilSimpleIcon,
@@ -60,6 +59,7 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { SquircleDashed } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
 
@@ -138,7 +138,7 @@ function useChannelActions(channel: Channel): {
         channel_id: channel.id,
         success: false,
       });
-      toast.error("Couldn't delete channel", {
+      toast.error("Couldn't delete context", {
         description: error instanceof Error ? error.message : String(error),
       });
       return false;
@@ -148,7 +148,7 @@ function useChannelActions(channel: Channel): {
   const actions: ChannelActionItem[] = [
     {
       key: "star",
-      label: isStarred ? "Unstar channel" : "Star channel",
+      label: isStarred ? "Unstar context" : "Star context",
       icon: <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />,
       onSelect: () => {
         track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -167,14 +167,14 @@ function useChannelActions(channel: Channel): {
     },
     {
       key: "rename",
-      label: "Rename channel…",
+      label: "Rename context…",
       icon: <PencilSimpleIcon size={14} />,
       separatorBefore: true,
       onSelect: () => setRenameOpen(true),
     },
     {
       key: "delete",
-      label: "Delete channel…",
+      label: "Delete context…",
       icon: <TrashIcon size={14} />,
       variant: "destructive",
       onSelect: () => setConfirmDeleteOpen(true),
@@ -334,7 +334,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
               }}
               className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
             >
-              <HashIcon size={14} className="shrink-0 text-gray-9" />
+              <SquircleDashed size={14} className="shrink-0 text-gray-9" />
               <span
                 className={cn(
                   "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
@@ -439,19 +439,19 @@ function ChannelSection({ channel }: { channel: Channel }) {
       >
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete #{channel.name}?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {channel.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the channel and can’t be undone.
+              This permanently deletes the context and can’t be undone.
               <ul className="list-disc ps-4">
                 <li>
-                  The channel and its{" "}
+                  The context and its{" "}
                   <span className="font-medium">CONTEXT.md</span> are deleted.
                 </li>
                 <li>
-                  Every canvas saved in this channel is permanently deleted.
+                  Every canvas saved in this context is permanently deleted.
                 </li>
                 <li>
-                  Filed tasks are removed from the channel, but the tasks
+                  Filed tasks are removed from the context, but the tasks
                   themselves are not deleted.
                 </li>
               </ul>
@@ -470,7 +470,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
                 })
               }
             >
-              Delete channel
+              Delete context
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -505,7 +505,7 @@ function PersonalChannelRow() {
         params: { channelId: folder.id },
       });
     } catch (error) {
-      toast.error("Couldn't open #me", {
+      toast.error("Couldn't open me", {
         description: error instanceof Error ? error.message : String(error),
       });
     }
@@ -521,7 +521,7 @@ function PersonalChannelRow() {
       onClick={() => void open()}
       className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
     >
-      <HashIcon size={14} className="shrink-0 text-gray-9" />
+      <SquircleDashed size={14} className="shrink-0 text-gray-9" />
       <span className="truncate font-medium text-[13px] text-gray-12">
         {PERSONAL_CHANNEL_NAME}
       </span>
@@ -583,8 +583,8 @@ export function ChannelsList() {
         <Box className={cn(starred.length > 0 && "mt-3")}>
           <MenuLabel className="group flex items-center justify-between uppercase">
             <span className="flex items-center gap-2">
-              <HashIcon size={14} className="text-gray-9" />
-              Channels
+              <SquircleDashed size={14} className="text-gray-9" />
+              Contexts
             </span>
             <Button
               variant="outline"
@@ -599,7 +599,7 @@ export function ChannelsList() {
 
         {!isLoading && channels.length === 0 && (
           <Text size="1" className="px-2 text-gray-9">
-            No channels yet. Create one to get started.
+            No contexts yet. Create one to get started.
           </Text>
         )}
 

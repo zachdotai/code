@@ -1341,7 +1341,7 @@ export function TaskInput({
                         <button
                           type="button"
                           onClick={() => setChannelContextDismissed(true)}
-                          aria-label="Remove channel context from prompt"
+                          aria-label="Remove context from prompt"
                           className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
                         >
                           <X size={12} />

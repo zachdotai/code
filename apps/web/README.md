@@ -97,8 +97,10 @@ and are cleared, forcing a clean re-auth.
   dormant until `VITE_POSTHOG_API_KEY` is a real `phc_…` key (see the guard in
   `main.tsx`). Feature flags force `SYNC_CLOUD_TASKS_FLAG` on (a host
   requirement) and defer every other flag to posthog-js; with no key, only the
-  forced flag is on. Production web builds also get posthog-js automatic
-  error/rejection capture and session recording.
+  forced flag is on. Session recording turns on whenever posthog-js initializes
+  (any build with a real key); automatic error/rejection/console capture is
+  additionally gated to non-dev (production) builds (`capture_exceptions` in
+  `posthogAnalyticsImpl.ts`).
 - **Attachment uploads** are blocked in the browser by the S3 artifact-bucket
   CORS config (see External requirements) until the web host is served from an
   allowlisted origin. Attaching, preview, and byte-reads all work; only the

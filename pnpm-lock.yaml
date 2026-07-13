@@ -980,11 +980,11 @@ importers:
         specifier: 0.80.3
         version: 0.80.3(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
       '@earendil-works/pi-coding-agent':
-        specifier: 0.80.3
-        version: 0.80.3(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
+        specifier: 0.80.6
+        version: 0.80.6(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
       '@earendil-works/pi-tui':
-        specifier: 0.80.3
-        version: 0.80.3
+        specifier: 0.80.6
+        version: 0.80.6
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
@@ -2662,8 +2662,8 @@ packages:
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
 
-  '@earendil-works/pi-agent-core@0.80.3':
-    resolution: {integrity: sha512-3qw0/GeRQBU/nlGjDe5Yb7ePKTmoxefx2YxyKMFAviFUMXpFexBG/hS7mBtwFahFvzrrTPPoRT6sFIDjwoDWPQ==}
+  '@earendil-works/pi-agent-core@0.80.6':
+    resolution: {integrity: sha512-Lvn89ko42h5ETUb6Z0Ku6ldskEqXaTdQBYvSa0+7bdG9V6rUEpXptv5e0OVZ1HDcvi8s6/2lGCQWsxKX+DFHNw==}
     engines: {node: '>=22.19.0'}
 
   '@earendil-works/pi-ai@0.80.3':
@@ -2671,13 +2671,18 @@ packages:
     engines: {node: '>=22.19.0'}
     hasBin: true
 
-  '@earendil-works/pi-coding-agent@0.80.3':
-    resolution: {integrity: sha512-TIggw9gCXpA+Ph7OjdTA7ka2NPwTVuPmy39KDSyUzaKq8VvHfMGR7vtRz4JB7Um/RMRblmzhu4p9tUCk6MTgGA==}
+  '@earendil-works/pi-ai@0.80.6':
+    resolution: {integrity: sha512-7xfLk8sANBp+bpPEbjoOZTbPxsa+++b1JXAoSJsNa3vbs9AHHEclmvg54XLQcxH+fuwaeti/g2jeIfJ+mVYLpA==}
     engines: {node: '>=22.19.0'}
     hasBin: true
 
-  '@earendil-works/pi-tui@0.80.3':
-    resolution: {integrity: sha512-2BJI6qwRQfnM0Q7seL1+SbacU/jRRjBnN7Hu3n9BjAn7/s5FaBNnvdD1qBQYRsFTHfjqMaDsjYqanPyqwXj99w==}
+  '@earendil-works/pi-coding-agent@0.80.6':
+    resolution: {integrity: sha512-vcfD6tOk402isLl3Cm/qbn2O10TvgroMp1+/fEGM24ZdvETFCdOYv5VZ7m59EI5fPsjfSJh+CpQ5bhBrhfOg7g==}
+    engines: {node: '>=22.19.0'}
+    hasBin: true
+
+  '@earendil-works/pi-tui@0.80.6':
+    resolution: {integrity: sha512-bSuzS4EVSqEPj/Qr/p9eqCESfKsGuDNbl77EGci8Iaqqt/C/XCBZL1MjXaxSWW1NsT5afjp/Cb0NTPzOLv/aPA==}
     engines: {node: '>=22.19.0'}
 
   '@ecies/ciphers@0.2.6':
@@ -6341,8 +6346,8 @@ packages:
       '@types/react-dom':
         optional: true
 
-  '@react-grab/cli@0.1.47':
-    resolution: {integrity: sha512-Cc7d8mSwvoV8gpeTQbE8dMPdeXIyO6w+yIhzgi3jY06i03WLNhb/6jIxNBNF1cVRI7ujnFQXZA66BbnBNTpBSw==}
+  '@react-grab/cli@0.1.48':
+    resolution: {integrity: sha512-KXRZFN0b78BeVa4Tq1FC9kiXPpC5lS4pQp/mvQ1azy9dZUJ3zfc7Ei84+yvGh+WoYdceMCFxXfBp6qhU/G056g==}
     hasBin: true
 
   '@react-native-async-storage/async-storage@2.2.0':
@@ -8374,6 +8379,11 @@ packages:
     peerDependencies:
       react: '>=17.0.1'
 
+  bippy@0.5.43:
+    resolution: {integrity: sha512-Tvu7b1M7+d8b9/YHaCeODEsi2CgbuoBql+dWSBrNnCuqJ1gMUeY3i0r+319hvjjl5GVBP6FFWxrKnq3fhZER0w==}
+    peerDependencies:
+      react: '>=17.0.1'
+
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
 
@@ -9056,8 +9066,8 @@ packages:
     resolution: {integrity: sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA==}
     engines: {node: '>=6'}
 
-  deslop-js@0.6.0:
-    resolution: {integrity: sha512-MAFw9r+5WUNthgy6J6HtVKdk6B7orqGMOTBiBYz3YMI7WJNM5nE8cfQgp+ZoS7gnD1DQalEW5GqqA/emUSmD8w==}
+  deslop-js@0.7.1:
+    resolution: {integrity: sha512-HsEoRI/bzuD0o2OVczYz42SXTCl5of3ax6eiojZbC/7gJsPNxxjPRvBysP88LXsHujYrIGJnGtFRnHwCmKWuxQ==}
 
   destroy@1.2.0:
     resolution: {integrity: sha512-2sJGJTaXIIaR1w4iJSNoN0hnMY7Gpc/n8D4qSCJw8QqFWXf7cuAgnEHxBpweaVcPevC2l3KpjYCx3NypQQgaJg==}
@@ -12062,8 +12072,8 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
-  oxlint-plugin-react-doctor@0.6.0:
-    resolution: {integrity: sha512-oByEUczXDnxO5ZsevbOscpFlpmya7dnH6Nne5StYy02AJtyEDAiCSKkXj21GDMjDDkD42708LRfWXRAY32IL9w==}
+  oxlint-plugin-react-doctor@0.7.1:
+    resolution: {integrity: sha512-fvARsCESDZYvDIlhuB/JlDeUhTOLHYstoDJCKm0pzh4HQQJVVV6gcrQajBjYo/hdHC1ukl7btKTK3rk4uZwuew==}
     engines: {node: ^20.19.0 || >=22.13.0}
 
   oxlint@1.66.0:
@@ -12678,8 +12688,8 @@ packages:
     resolution: {integrity: sha512-+NRMYs2DyTP4/tqWz371Oo50JqmWltR1h2gcdgUMAWZJIAvrd0/SqlCfx7tpzpl/s36rzw6qH2MjoNrxtRNYhA==}
     engines: {node: ^20.9.0 || >=22}
 
-  react-doctor@0.6.0:
-    resolution: {integrity: sha512-AqsoQqKQve8Zahxs48hXJuFgMcdY0AdV0fcO5eTdAKZQ/QICEoMCf0bTwxPKwN9Ix/4wWiAR+dNkBcm0ouFq+Q==}
+  react-doctor@0.7.1:
+    resolution: {integrity: sha512-Gmty7Enyrh6GPlz6Paq+UoL2O7YkTzNeHdflbqdp6fspX1UbUem5ejPyIUgo1jf77D6kB+INqsi2K+Mk/K8uBQ==}
     engines: {node: ^20.19.0 || >=22.13.0}
     hasBin: true
 
@@ -12697,8 +12707,8 @@ packages:
     peerDependencies:
       react: '>=17.0.0'
 
-  react-grab@0.1.47:
-    resolution: {integrity: sha512-1GNy24KMJ4CY1IxorYO9mydItGi0L1HkQB19uYU3t0BMsJB0K+D/QYiaBz+rugRynyY8LzmXIuOcon1TykLlCg==}
+  react-grab@0.1.48:
+    resolution: {integrity: sha512-p3WnmK9LLvXE/c4ITPLlXcP1fkXo2VFEQqK94tIfcHIWKNdqdhYYFyNVioO50HR+uyHIwT63Z4txZDqJlVcD/Q==}
     hasBin: true
     peerDependencies:
       react: '>=17.0.0'
@@ -16116,9 +16126,9 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@earendil-works/pi-agent-core@0.80.3(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)':
+  '@earendil-works/pi-agent-core@0.80.6(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)':
     dependencies:
-      '@earendil-works/pi-ai': 0.80.3(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
+      '@earendil-works/pi-ai': 0.80.6(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
       ignore: 7.0.5
       typebox: 1.1.38
       yaml: 2.9.0
@@ -16151,11 +16161,32 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-coding-agent@0.80.3(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)':
+  '@earendil-works/pi-ai@0.80.6(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)':
     dependencies:
-      '@earendil-works/pi-agent-core': 0.80.3(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
-      '@earendil-works/pi-ai': 0.80.3(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
-      '@earendil-works/pi-tui': 0.80.3
+      '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
+      '@aws-sdk/client-bedrock-runtime': 3.1048.0
+      '@google/genai': 1.52.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
+      '@mistralai/mistralai': 2.2.6(@opentelemetry/api@1.9.0)
+      '@opentelemetry/api': 1.9.0
+      '@smithy/node-http-handler': 4.7.3
+      http-proxy-agent: 7.0.2
+      https-proxy-agent: 7.0.6
+      openai: 6.26.0(ws@8.19.0)(zod@4.4.3)
+      partial-json: 0.1.7
+      typebox: 1.1.38
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@earendil-works/pi-coding-agent@0.80.6(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)':
+    dependencies:
+      '@earendil-works/pi-agent-core': 0.80.6(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
+      '@earendil-works/pi-ai': 0.80.6(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
+      '@earendil-works/pi-tui': 0.80.6
       '@silvia-odwyer/photon-node': 0.3.4
       chalk: 5.6.2
       cross-spawn: 7.0.6
@@ -16181,7 +16212,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-tui@0.80.3':
+  '@earendil-works/pi-tui@0.80.6':
     dependencies:
       get-east-asian-width: 1.6.0
       marked: 18.0.5
@@ -19638,7 +19669,7 @@ snapshots:
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
 
-  '@react-grab/cli@0.1.47':
+  '@react-grab/cli@0.1.48':
     dependencies:
       agent-install: 0.0.6
       commander: 14.0.3
@@ -21941,6 +21972,10 @@ snapshots:
     dependencies:
       react: 19.2.6
 
+  bippy@0.5.43(react@19.2.6):
+    dependencies:
+      react: 19.2.6
+
   bl@4.1.0:
     dependencies:
       buffer: 5.7.1
@@ -22601,7 +22636,7 @@ snapshots:
 
   dequal@2.0.3: {}
 
-  deslop-js@0.6.0:
+  deslop-js@0.7.1:
     dependencies:
       '@oxc-project/types': 0.132.0
       fast-glob: 3.3.3
@@ -26270,7 +26305,7 @@ snapshots:
       '@oxfmt/binding-win32-ia32-msvc': 0.45.0
       '@oxfmt/binding-win32-x64-msvc': 0.45.0
 
-  oxlint-plugin-react-doctor@0.6.0:
+  oxlint-plugin-react-doctor@0.7.1:
     dependencies:
       '@typescript-eslint/types': 8.62.0
       eslint-scope: 9.1.2
@@ -26986,19 +27021,19 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  react-doctor@0.6.0(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(eslint@10.5.0(jiti@2.7.0)):
+  react-doctor@0.7.1(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(eslint@10.5.0(jiti@2.7.0)):
     dependencies:
       '@babel/code-frame': 7.29.0
       '@sentry/node': 10.61.0(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))
       agent-install: 0.0.5
       conf: 15.1.0
       confbox: 0.2.4
-      deslop-js: 0.6.0
+      deslop-js: 0.7.1
       eslint-plugin-react-hooks: 7.1.1(eslint@10.5.0(jiti@2.7.0))
       jiti: 2.7.0
       magicast: 0.5.3
       oxlint: 1.66.0
-      oxlint-plugin-react-doctor: 0.6.0
+      oxlint-plugin-react-doctor: 0.7.1
       prompts: 2.4.2
       typescript: 5.9.3
       vscode-languageserver: 9.0.1
@@ -27023,10 +27058,10 @@ snapshots:
     dependencies:
       react: 19.2.6
 
-  react-grab@0.1.47(react@19.2.6):
+  react-grab@0.1.48(react@19.2.6):
     dependencies:
-      '@react-grab/cli': 0.1.47
-      bippy: 0.5.42(react@19.2.6)
+      '@react-grab/cli': 0.1.48
+      bippy: 0.5.43(react@19.2.6)
     optionalDependencies:
       react: 19.2.6
 
@@ -27268,9 +27303,9 @@ snapshots:
       preact: 10.29.2
       prompts: 2.4.2
       react: 19.2.6
-      react-doctor: 0.6.0(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(eslint@10.5.0(jiti@2.7.0))
+      react-doctor: 0.7.1(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(eslint@10.5.0(jiti@2.7.0))
       react-dom: 19.2.6(react@19.2.6)
-      react-grab: 0.1.47(react@19.2.6)
+      react-grab: 0.1.48(react@19.2.6)
     optionalDependencies:
       esbuild: 0.27.2
       unplugin: 3.0.0

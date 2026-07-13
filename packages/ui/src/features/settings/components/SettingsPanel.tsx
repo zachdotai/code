@@ -46,6 +46,7 @@ import { WorkspacesSettings } from "@posthog/ui/features/settings/sections/Works
 import { WorktreesSettings } from "@posthog/ui/features/settings/sections/worktrees/WorktreesSettings";
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
+import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import * as nav from "@posthog/ui/router/navigationBridge";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Avatar, Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
@@ -170,15 +171,21 @@ export function SettingsPanel({
   const { localWorkspaces } = useHostCapabilities();
   const logoutMutation = useLogoutMutation();
 
+  const spendAnalysisEnabled = useSpendAnalysisEnabled();
   const sidebarItems = useMemo(
     () =>
       SIDEBAR_ITEMS.filter((item) => {
-        if (!billingEnabled && item.id === "plan-usage") return false;
+        if (
+          item.id === "plan-usage" &&
+          !billingEnabled &&
+          !spendAnalysisEnabled
+        )
+          return false;
         if (!localWorkspaces && LOCAL_ONLY_CATEGORIES.has(item.id))
           return false;
         return true;
       }),
-    [billingEnabled, localWorkspaces],
+    [billingEnabled, spendAnalysisEnabled, localWorkspaces],
   );
 
   // Guard direct navigation (URL, deep link, programmatic openSettings) to a
