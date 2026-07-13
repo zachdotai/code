@@ -1,9 +1,15 @@
 import { splitMentionSegments } from "@posthog/shared";
+import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import {
   splitLinkSegments,
   splitRichLinkSegments,
 } from "@posthog/ui/features/canvas/utils/linkify";
+import {
+  getCachedTask,
+  taskDetailQuery,
+} from "@posthog/ui/features/tasks/queries";
 import { Text } from "@radix-ui/themes";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { Fragment, useMemo } from "react";
 import "./mention-chip.css";
@@ -14,6 +20,14 @@ import {
   Shapes,
   SquircleDashed,
 } from "lucide-react";
+
+// The task-list status icon for a `…/tasks/<id>` link — live, like the sidebar
+// and feed cards (generating spinner, PR/cloud state). Falls back to the code
+// glyph while the task loads or if it isn't cached.
+function TaskLinkIcon({ taskId }: { taskId: string }) {
+  const { data } = useQuery({ ...taskDetailQuery(taskId), staleTime: 30_000 });
+  return <TaskTabIcon task={data ?? getCachedTask(taskId)} size={12} />;
+}
 
 type RenderSegment =
   | { type: "text"; text: string }
@@ -110,6 +124,7 @@ export function MentionText({
           // An in-app route (`/…`) navigates through the router (opening a
           // canvas, context, …) instead of the OS browser.
           if (segment.href.startsWith("/")) {
+            const taskId = segment.href.match(/\/tasks\/([^/?#]+)/)?.[1];
             const { Icon, label } = internalLinkMeta(
               segment.href,
               segment.text,
@@ -124,8 +139,14 @@ export function MentionText({
                 }}
                 className={linkClass}
               >
-                <Icon size={12} className="mr-0.5 inline-block align-[-1px]" />
-                {label}
+                <span className="mr-0.5 inline-block align-[-1px]">
+                  {taskId ? (
+                    <TaskLinkIcon taskId={taskId} />
+                  ) : (
+                    <Icon size={12} />
+                  )}
+                </span>
+                {taskId ? segment.text : label}
               </a>
             );
           }

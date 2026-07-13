@@ -1,4 +1,4 @@
-import { LinkIcon, RobotIcon, UserIcon } from "@phosphor-icons/react";
+import { RobotIcon, UserIcon } from "@phosphor-icons/react";
 import {
   Button,
   Dialog,
@@ -8,13 +8,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
   Field,
   FieldLabel,
   Input,
@@ -23,8 +16,8 @@ import {
 } from "@posthog/quill";
 import { DemoMessageItem } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
+import { ReferencePicker } from "@posthog/ui/features/canvas/components/ReferencePicker";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { useDemoFeedStore } from "@posthog/ui/features/canvas/stores/demoFeedStore";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
@@ -52,7 +45,6 @@ export function InsertFakeMessageDialog({
 }) {
   const { channels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
-  const { dashboards } = useDashboards(channelId);
   const { members } = useOrgMembers();
   const addDemoMessage = useDemoFeedStore((s) => s.add);
   // The dialog portals to <body>, outside the app's Radix <Theme> — re-establish
@@ -179,80 +171,15 @@ export function InsertFakeMessageDialog({
             </Field>
 
             {/* Message body: a real thread composer, so @ opens the same member
-              picker as a thread. The reference menu drops in canvas / context
-              names as text. */}
+              picker as a thread. The reference picker inserts canvas / channel /
+              task / CONTEXT.md deep links. */}
             <Field>
               <div className="flex items-center justify-between">
                 <FieldLabel>Message</FieldLabel>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="outline" size="xs">
-                        <LinkIcon size={13} />
-                        Insert reference
-                      </Button>
-                    }
-                  />
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>Canvas</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent
-                        side="right"
-                        sideOffset={4}
-                        className="max-h-72 w-56 overflow-y-auto"
-                      >
-                        {dashboards.length === 0 ? (
-                          <DropdownMenuItem disabled>
-                            No canvases yet
-                          </DropdownMenuItem>
-                        ) : (
-                          dashboards.map((d) => (
-                            <DropdownMenuItem
-                              key={d.id}
-                              onClick={() =>
-                                insertReference(
-                                  d.name,
-                                  `/website/${channelId}/dashboards/${d.id}`,
-                                )
-                              }
-                            >
-                              {d.name}
-                            </DropdownMenuItem>
-                          ))
-                        )}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>Channels</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent
-                        side="right"
-                        sideOffset={4}
-                        className="max-h-72 w-56 overflow-y-auto"
-                      >
-                        {channels.map((c) => (
-                          <DropdownMenuItem
-                            key={c.id}
-                            onClick={() =>
-                              insertReference(`#${c.name}`, `/website/${c.id}`)
-                            }
-                          >
-                            #{c.name}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        insertReference(
-                          "CONTEXT.md",
-                          `/website/${channelId}/context`,
-                        )
-                      }
-                    >
-                      This channel's CONTEXT.md
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <ReferencePicker
+                  channelId={channelId}
+                  onInsert={insertReference}
+                />
               </div>
               <div className="rounded-md border border-border px-2 py-1">
                 <MentionComposer
