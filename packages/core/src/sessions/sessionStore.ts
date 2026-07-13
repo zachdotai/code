@@ -33,6 +33,23 @@ export const sessionStore = createStore<SessionState>()(
   })),
 );
 
+/**
+ * How many messages to drain off the head of a queue, honoring both options:
+ * `stopAtEdited` caps at the in-place edit boundary (nothing from the message
+ * being edited onward); `max` caps the count. The turn-end auto-drain passes
+ * `max: 1` so queued messages send one turn at a time instead of merged into
+ * one prompt; cancel/recall pass neither and take the whole queue.
+ */
+function drainCutoff(
+  session: AgentSession,
+  options?: { stopAtEdited?: boolean; max?: number },
+): number {
+  const sendable = options?.stopAtEdited
+    ? sendableQueuePrefixLength(session)
+    : session.messageQueue.length;
+  return options?.max != null ? Math.min(sendable, options.max) : sendable;
+}
+
 export const sessionStoreSetters = {
   setSession: (session: AgentSession) => {
     sessionStore.setState((state) => {
@@ -271,15 +288,13 @@ export const sessionStoreSetters = {
   },
 
   /**
-   * Drain the queue as one combined string. With `stopAtEdited`, only the
-   * messages before the one being edited are drained (the edited message and
-   * everything after stay queued); otherwise the whole queue drains — the
-   * default used by the cancel/recall paths that pull everything back into the
-   * composer.
+   * Drain messages off the head of the queue as one combined string. See
+   * {@link drainCutoff} for the `stopAtEdited`/`max` semantics; cancel/recall
+   * pass no options and pull the whole queue back into the composer.
    */
   dequeueMessagesAsText: (
     taskId: string,
-    options?: { stopAtEdited?: boolean },
+    options?: { stopAtEdited?: boolean; max?: number },
   ): string | null => {
     // Read the queue from the frozen committed state BEFORE entering the
     // immer draft — same rationale as `dequeueMessages`: anything captured
@@ -290,9 +305,7 @@ export const sessionStoreSetters = {
     const session = state.sessions[taskRunId];
     if (!session || session.messageQueue.length === 0) return null;
 
-    const cutoff = options?.stopAtEdited
-      ? sendableQueuePrefixLength(session)
-      : session.messageQueue.length;
+    const cutoff = drainCutoff(session, options);
     if (cutoff === 0) return null;
 
     const combined = session.messageQueue
@@ -311,12 +324,12 @@ export const sessionStoreSetters = {
   },
 
   /**
-   * Drain the queue as raw messages. See {@link dequeueMessagesAsText} for the
-   * `stopAtEdited` semantics.
+   * Drain messages off the head of the queue as raw messages. See
+   * {@link dequeueMessagesAsText} for the `stopAtEdited`/`max` semantics.
    */
   dequeueMessages: (
     taskId: string,
-    options?: { stopAtEdited?: boolean },
+    options?: { stopAtEdited?: boolean; max?: number },
   ): QueuedMessage[] => {
     // Read the queue from the frozen committed state BEFORE entering the
     // immer draft, otherwise the items returned are proxies that get
@@ -328,9 +341,7 @@ export const sessionStoreSetters = {
     const session = state.sessions[taskRunId];
     if (!session || session.messageQueue.length === 0) return [];
 
-    const cutoff = options?.stopAtEdited
-      ? sendableQueuePrefixLength(session)
-      : session.messageQueue.length;
+    const cutoff = drainCutoff(session, options);
     if (cutoff === 0) return [];
 
     const queuedMessages = session.messageQueue.slice(0, cutoff);

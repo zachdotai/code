@@ -28,8 +28,8 @@ import {
   type PermissionRequest,
   type QueuedMessage,
   resolveBypassRevertMode,
-  sendableQueuePrefixLength,
   type StoredLogEntry,
+  sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
   type TaskRunStatus,
 } from "@posthog/shared";
@@ -235,11 +235,11 @@ export interface ISessionStore {
   clearMessageQueue(taskId: string): void;
   dequeueMessagesAsText(
     taskId: string,
-    options?: { stopAtEdited?: boolean },
+    options?: { stopAtEdited?: boolean; max?: number },
   ): string | null;
   dequeueMessages(
     taskId: string,
-    options?: { stopAtEdited?: boolean },
+    options?: { stopAtEdited?: boolean; max?: number },
   ): QueuedMessage[];
   prependQueuedMessages(taskId: string, messages: QueuedMessage[]): void;
   appendOptimisticItem(
@@ -2417,16 +2417,19 @@ export class SessionService {
   }
 
   /**
-   * Send all queued messages as a single prompt.
+   * Send the next queued message as its own prompt.
    * Called internally when a turn completes and there are queued messages.
-   * Queue is cleared atomically before sending - if sending fails, messages are lost
-   * (this is acceptable since the user can re-type; avoiding complex retry logic).
+   * Only the head message is dequeued (`max: 1`) so a queue drains one turn at
+   * a time — when this turn completes, the drain fires again for the next one.
+   * The message is removed from the queue before sending; if sending fails it
+   * is lost (acceptable since the user can re-type; avoids complex retry logic).
    */
   private async sendQueuedMessages(
     taskId: string,
   ): Promise<{ stopReason: string }> {
     const combinedText = this.d.store.dequeueMessagesAsText(taskId, {
       stopAtEdited: true,
+      max: 1,
     });
     if (!combinedText) {
       return { stopReason: "skipped" };
@@ -2441,7 +2444,7 @@ export class SessionService {
       return { stopReason: "no_session" };
     }
 
-    this.d.log.info("Sending queued messages as single prompt", {
+    this.d.log.info("Sending next queued message as prompt", {
       taskId,
       promptLength: combinedText.length,
     });
@@ -3070,13 +3073,17 @@ export class SessionService {
       const authStatus = await this.getAuthCredentialsStatus();
       if (authStatus.kind === "restoring") return;
 
+      // Drain one message per turn (`max: 1`) so a queue sends sequentially:
+      // the next turn_complete flushes the next message. A later flush after
+      // this send finishes picks up the rest.
       const drained = this.d.store.dequeueMessages(taskId, {
         stopAtEdited: true,
+        max: 1,
       });
       const combined = this.d.h.combineQueuedCloudPrompts(drained);
       if (!combined) return;
 
-      this.d.log.info("Sending queued cloud messages", {
+      this.d.log.info("Sending next queued cloud message", {
         taskId,
         drainedCount: drained.length,
       });

@@ -4103,7 +4103,7 @@ describe("SessionService", () => {
         });
         expect(mockSessionStoreSetters.dequeueMessages).toHaveBeenCalledWith(
           "task-123",
-          { stopAtEdited: true },
+          { stopAtEdited: true, max: 1 },
         );
       } finally {
         vi.useRealTimers();
@@ -5169,7 +5169,7 @@ describe("SessionService", () => {
         ).toHaveBeenCalledWith("task-123");
         expect(
           mockSessionStoreSetters.dequeueMessagesAsText,
-        ).toHaveBeenCalledWith("task-123", { stopAtEdited: true });
+        ).toHaveBeenCalledWith("task-123", { stopAtEdited: true, max: 1 });
         expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledWith(
           expect.objectContaining({ sessionId: "run-123" }),
         );
@@ -5215,7 +5215,7 @@ describe("SessionService", () => {
 
         expect(
           mockSessionStoreSetters.dequeueMessagesAsText,
-        ).toHaveBeenCalledWith("task-123", { stopAtEdited: true });
+        ).toHaveBeenCalledWith("task-123", { stopAtEdited: true, max: 1 });
         expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalled();
       } finally {
         vi.useRealTimers();

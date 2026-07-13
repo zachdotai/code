@@ -107,13 +107,19 @@ describe("sendableQueuePrefixLength", () => {
 
   it("stops at the edited message, so only earlier messages count", () => {
     expect(
-      sendableQueuePrefixLength({ ...q(["a", "b", "c"]), editingQueuedId: "b" }),
+      sendableQueuePrefixLength({
+        ...q(["a", "b", "c"]),
+        editingQueuedId: "b",
+      }),
     ).toBe(1);
   });
 
   it("returns 0 when the head message is being edited", () => {
     expect(
-      sendableQueuePrefixLength({ ...q(["a", "b", "c"]), editingQueuedId: "a" }),
+      sendableQueuePrefixLength({
+        ...q(["a", "b", "c"]),
+        editingQueuedId: "a",
+      }),
     ).toBe(0);
   });
 
@@ -187,5 +193,50 @@ describe("editing hold on the drain", () => {
 
     expect(combined).toBe("A\n\nB\n\nC");
     expect(queue()).toEqual([]);
+  });
+});
+
+describe("sequential drain (max: 1)", () => {
+  it("dequeueMessagesAsText drains only the head message, leaving the rest", () => {
+    seedQueue([msg("a", "A"), msg("b", "B"), msg("c", "C")]);
+
+    const first = sessionStoreSetters.dequeueMessagesAsText(TASK, { max: 1 });
+    expect(first).toBe("A");
+    expect(queue().map((m) => m.id)).toEqual(["b", "c"]);
+
+    // The turn-end drain fires again per turn; each call takes the next head.
+    const second = sessionStoreSetters.dequeueMessagesAsText(TASK, { max: 1 });
+    expect(second).toBe("B");
+    expect(queue().map((m) => m.id)).toEqual(["c"]);
+  });
+
+  it("dequeueMessages drains only the head message as a raw item", () => {
+    seedQueue([msg("a", "A"), msg("b", "B")]);
+
+    const drained = sessionStoreSetters.dequeueMessages(TASK, { max: 1 });
+
+    expect(drained.map((m) => m.id)).toEqual(["a"]);
+    expect(queue().map((m) => m.id)).toEqual(["b"]);
+  });
+
+  it("takes min(max, edit boundary): head sends, edited message and rest stay", () => {
+    seedQueue([msg("a", "A"), msg("b", "B"), msg("c", "C")]);
+    sessionStoreSetters.setEditingQueuedMessage(TASK, "b");
+
+    const first = sessionStoreSetters.dequeueMessagesAsText(TASK, {
+      stopAtEdited: true,
+      max: 1,
+    });
+    expect(first).toBe("A");
+    expect(queue().map((m) => m.id)).toEqual(["b", "c"]);
+
+    // Next drain sends nothing: the new head is the message being edited.
+    expect(
+      sessionStoreSetters.dequeueMessagesAsText(TASK, {
+        stopAtEdited: true,
+        max: 1,
+      }),
+    ).toBeNull();
+    expect(queue().map((m) => m.id)).toEqual(["b", "c"]);
   });
 });
