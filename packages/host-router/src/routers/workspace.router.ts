@@ -6,6 +6,7 @@ import {
   cachedPrUrlOutput,
   checkWorktreeBranchInput,
   checkWorktreeBranchOutput,
+  clearPendingInitialPromptInput,
   createWorkspaceInput,
   createWorkspaceOutput,
   deleteWorkspaceInput,
@@ -16,6 +17,8 @@ import {
   getAllWorkspacesOutput,
   getLocalTasksInput,
   getLocalTasksOutput,
+  getPendingInitialPromptInput,
+  getPendingInitialPromptOutput,
   getPinnedTaskIdsOutput,
   getTaskTimestampsInput,
   getTaskTimestampsOutput,
@@ -34,6 +37,7 @@ import {
   markViewedInput,
   reconcileCloudWorkspacesInput,
   reconcileCloudWorkspacesOutput,
+  setPendingInitialPromptInput,
   taskPrStatusInput,
   taskPrStatusOutput,
   togglePinInput,
@@ -206,6 +210,28 @@ export const workspaceRouter = router({
   getAllTaskTimestamps: publicProcedure
     .output(getAllTaskTimestampsOutput)
     .query(({ ctx }) => getMetadata(ctx.container).getAllTaskTimestamps()),
+
+  setPendingInitialPrompt: publicProcedure
+    .input(setPendingInitialPromptInput)
+    .mutation(({ ctx, input }) =>
+      getMetadata(ctx.container).setPendingInitialPrompt(
+        input.taskId,
+        input.promptJson,
+      ),
+    ),
+
+  getPendingInitialPrompt: publicProcedure
+    .input(getPendingInitialPromptInput)
+    .output(getPendingInitialPromptOutput)
+    .query(({ ctx, input }) =>
+      getMetadata(ctx.container).getPendingInitialPrompt(input.taskId),
+    ),
+
+  clearPendingInitialPrompt: publicProcedure
+    .input(clearPendingInitialPromptInput)
+    .mutation(({ ctx, input }) =>
+      getMetadata(ctx.container).clearPendingInitialPrompt(input.taskId),
+    ),
 
   linkBranch: publicProcedure
     .input(linkBranchInput)

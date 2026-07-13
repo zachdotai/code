@@ -130,7 +130,12 @@ export interface SessionTrpc {
     onPermissionRequest: TrpcSubscription;
     onSessionIdleKilled: TrpcSubscription;
   };
-  workspace: { verify: TrpcQuery };
+  workspace: {
+    verify: TrpcQuery;
+    setPendingInitialPrompt: TrpcMutation;
+    getPendingInitialPrompt: TrpcQuery;
+    clearPendingInitialPrompt: TrpcMutation;
+  };
   cloudTask: {
     watch: TrpcMutation;
     unwatch: TrpcMutation;
@@ -694,7 +699,7 @@ export class SessionService {
           return;
         }
 
-        await this.reconnectToLocalSession(
+        const reconnected = await this.reconnectToLocalSession(
           taskId,
           existingRunId,
           taskTitle,
@@ -703,6 +708,12 @@ export class SessionService {
           auth,
           logResult,
         );
+        if (reconnected) {
+          await this.resendPendingPromptIfNeeded(
+            taskId,
+            convertStoredEntriesToEvents(logResult.rawEntries),
+          );
+        }
       } else {
         if (!this.d.getIsOnline()) {
           this.d.log.info("Skipping connection attempt - offline", { taskId });
@@ -994,6 +1005,61 @@ export class SessionService {
     }
   }
 
+  /**
+   * After resuming a local session, re-send a durably-stored initial prompt
+   * that the agent never got a chance to consume (e.g. the app reloaded or
+   * crashed between task creation and the agent's first response).
+   *
+   * The agent echoes every prompt it receives as a `session/prompt` request in
+   * the run log — the same signal `handleSessionEvent` uses to clear the
+   * in-memory `initialPrompt`. If the replayed log already contains that echo,
+   * the prompt was delivered, so we just clear the durable copy. Otherwise we
+   * re-send it exactly once; the live echo then clears the durable copy.
+   */
+  private async resendPendingPromptIfNeeded(
+    taskId: string,
+    replayedEvents: AcpMessage[],
+  ): Promise<void> {
+    const alreadyConsumed = replayedEvents.some(
+      (e) =>
+        isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
+    );
+    if (alreadyConsumed) {
+      void this.d.trpc.workspace.clearPendingInitialPrompt
+        .mutate({ taskId })
+        .catch(() => {});
+      return;
+    }
+
+    let promptJson: string | null = null;
+    try {
+      promptJson = await this.d.trpc.workspace.getPendingInitialPrompt.query({
+        taskId,
+      });
+    } catch (err) {
+      this.d.log.warn("Failed to read pending initial prompt", { taskId, err });
+      return;
+    }
+    if (!promptJson) return;
+
+    let prompt: ContentBlock[];
+    try {
+      prompt = JSON.parse(promptJson) as ContentBlock[];
+    } catch (err) {
+      this.d.log.warn("Failed to parse pending initial prompt", {
+        taskId,
+        err,
+      });
+      return;
+    }
+    if (!prompt.length) return;
+
+    this.d.log.info("Re-sending unconsumed initial prompt after resume", {
+      taskId,
+    });
+    await this.sendPrompt(taskId, prompt);
+  }
+
   private async teardownSession(taskRunId: string): Promise<void> {
     const session = this.getSessionByRunId(taskRunId);
 
@@ -1215,6 +1281,23 @@ export class SessionService {
     const taskRun = await client.createTaskRun(taskId);
     if (!taskRun?.id) {
       throw new Error("Failed to create task run. Please try again.");
+    }
+
+    // Durably persist the initial prompt before spawning the agent, so it
+    // survives reload/crash/transient failure before the agent's first
+    // response. Never let a persistence failure abort task creation.
+    if (initialPrompt?.length) {
+      try {
+        await this.d.trpc.workspace.setPendingInitialPrompt.mutate({
+          taskId,
+          promptJson: JSON.stringify(initialPrompt),
+        });
+      } catch (err) {
+        this.d.log.warn("Failed to persist pending initial prompt", {
+          taskId,
+          err,
+        });
+      }
     }
 
     const { customInstructions: startCustomInstructions } = this.d.settings;
@@ -1626,6 +1709,16 @@ export class SessionService {
     const isUserPromptEcho =
       isJsonRpcRequest(acpMsg.message) &&
       acpMsg.message.method === "session/prompt";
+
+    // The prompt echo means the agent received the initial prompt, so the
+    // durable copy is no longer needed. Fire independently of in-memory state
+    // so it also clears after a resume-resend (where the rebuilt session has
+    // no in-memory initialPrompt). Clearing a null row is a harmless no-op.
+    if (isUserPromptEcho) {
+      void this.d.trpc.workspace.clearPendingInitialPrompt
+        .mutate({ taskId: session.taskId })
+        .catch(() => {});
+    }
 
     // Once the agent starts responding, clear initialPrompt so that
     // retry reconnects to this session instead of creating a new one.
@@ -3119,9 +3212,30 @@ export class SessionService {
   async clearSessionError(taskId: string, repoPath: string): Promise<void> {
     this.localRepoPaths.set(taskId, repoPath);
     const session = this.d.store.getSessionByTaskId(taskId);
-    if (session?.initialPrompt?.length) {
-      const { taskTitle, initialPrompt } = session;
-      await this.teardownSession(session.taskRunId);
+
+    // Prefer the in-memory prompt; fall back to the durable copy so retry
+    // still recovers after a reload wiped the in-memory session.
+    let initialPrompt = session?.initialPrompt;
+    if (!initialPrompt?.length) {
+      try {
+        const promptJson =
+          await this.d.trpc.workspace.getPendingInitialPrompt.query({ taskId });
+        if (promptJson) {
+          initialPrompt = JSON.parse(promptJson) as ContentBlock[];
+        }
+      } catch (err) {
+        this.d.log.warn("Failed to read pending initial prompt on retry", {
+          taskId,
+          err,
+        });
+      }
+    }
+
+    if (initialPrompt?.length) {
+      const taskTitle = session?.taskTitle ?? "Task";
+      if (session) {
+        await this.teardownSession(session.taskRunId);
+      }
       const authStatus = await this.getAuthCredentialsStatus();
       if (authStatus.kind === "restoring") {
         throw new Error("Authentication is still restoring. Please wait.");
