@@ -96,8 +96,14 @@ export function SidebarNavSection({
   const isAgentsActive = view.type === "agents";
   const isCommandCenterActive = view.type === "command-center";
   // Skills and MCP servers share one nav destination; either route lights it.
+  // Clicking while either half is open is a no-op — navigating would yank the
+  // user from MCP servers back to Skills, dropping that view's state.
   const isSkillsAndMcpActive =
     view.type === "skills" || view.type === "mcp-servers";
+  const goSkillsAndMcp = () => {
+    if (isSkillsAndMcpActive) return;
+    goSkills();
+  };
   const isUsageActive = view.type === "usage";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
@@ -162,7 +168,10 @@ export function SidebarNavSection({
       </Box>
 
       <Box>
-        <SkillsAndMcpItem isActive={isSkillsAndMcpActive} onClick={goSkills} />
+        <SkillsAndMcpItem
+          isActive={isSkillsAndMcpActive}
+          onClick={goSkillsAndMcp}
+        />
       </Box>
 
       <Box mb={usageEnabled || bluebirdEnabled ? undefined : "2"}>
