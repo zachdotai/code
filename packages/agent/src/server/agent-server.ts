@@ -132,6 +132,18 @@ export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
 const MAX_UPSTREAM_TURN_RETRIES = 2;
 const UPSTREAM_TURN_RETRY_DELAY_MS = 5_000;
 
+// How persistently the first turn waits for just-uploaded pending attachments to
+// show up in the run's artifact manifest. A run can start reading its record
+// before the artifacts uploaded milliseconds earlier have propagated, so a
+// single immediate refetch often still misses them; poll a few times with a
+// short linear backoff before giving up and degrading to a text notice.
+const PENDING_ARTIFACT_MAX_ATTEMPTS = 4;
+const PENDING_ARTIFACT_RETRY_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 class NdJsonTap {
   private decoder = new TextDecoder();
   private buffer = "";
@@ -2061,9 +2073,10 @@ export class AgentServer {
 
     // The run's artifact manifest can momentarily lag the pending-artifact ids
     // when a run starts right after the attachments were uploaded. If we were
-    // asked for artifacts the manifest doesn't list yet, refetch the run once so
-    // a transient gap doesn't drop the attachment and send the agent the bare
-    // "Attached files: …" description instead of the file it was promised.
+    // asked for artifacts the manifest doesn't list yet, poll the run a few
+    // times with backoff so a transient gap doesn't drop the attachment and send
+    // the agent the bare "Attached files: …" description instead of the file it
+    // was promised.
     let manifest = taskRun.artifacts ?? [];
     let resolvedArtifacts = this.getArtifactsById(manifest, artifactIds, {
       warnOnMissing: false,
@@ -2072,11 +2085,10 @@ export class AgentServer {
       artifactIds.length > 0 &&
       resolvedArtifacts.length < artifactIds.length
     ) {
-      const refreshed = await this.refetchRunArtifacts(taskRun);
-      if (refreshed) {
-        manifest = refreshed;
-        resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
-      }
+      manifest =
+        (await this.resolvePendingArtifactManifest(taskRun, artifactIds)) ??
+        manifest;
+      resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
     }
 
     const prompt = await this.buildPromptFromContentAndArtifacts({
@@ -2124,6 +2136,33 @@ export class AgentServer {
       blockTypes: prompt.prompt.map((block) => block.type),
     });
     return prompt.prompt.length > 0 ? prompt : null;
+  }
+
+  // Poll the run's artifact manifest until every requested pending artifact is
+  // listed, or the attempt budget is exhausted. Returns the freshest manifest
+  // seen (which may still be incomplete) so the caller can resolve what it can
+  // and warn about anything genuinely missing.
+  private async resolvePendingArtifactManifest(
+    taskRun: TaskRun,
+    artifactIds: string[],
+  ): Promise<TaskRunArtifact[] | null> {
+    let latestManifest: TaskRunArtifact[] | null = null;
+    for (let attempt = 1; attempt <= PENDING_ARTIFACT_MAX_ATTEMPTS; attempt++) {
+      const refreshed = await this.refetchRunArtifacts(taskRun);
+      if (refreshed) {
+        latestManifest = refreshed;
+        const resolved = this.getArtifactsById(refreshed, artifactIds, {
+          warnOnMissing: false,
+        });
+        if (resolved.length >= artifactIds.length) {
+          return refreshed;
+        }
+      }
+      if (attempt < PENDING_ARTIFACT_MAX_ATTEMPTS) {
+        await sleep(PENDING_ARTIFACT_RETRY_DELAY_MS * attempt);
+      }
+    }
+    return latestManifest;
   }
 
   // Best-effort refetch of a run's artifact manifest. Returns null on any error
