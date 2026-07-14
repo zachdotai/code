@@ -633,7 +633,7 @@ export function ChannelsList() {
               open={starredOpen}
               onOpenChange={setStarredOpen}
             >
-              <div className="pl-2">
+              <div>
                 {starred.map((channel) => (
                   <ChannelSection key={channel.id} channel={channel} />
                 ))}

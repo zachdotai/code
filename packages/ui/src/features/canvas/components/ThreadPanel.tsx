@@ -2,7 +2,6 @@ import {
   ArrowSquareOutIcon,
   CaretRightIcon,
   DotsThreeIcon,
-  GitPullRequestIcon,
   PaperPlaneRightIcon,
   RobotIcon,
   TrashIcon,
@@ -235,25 +234,17 @@ function AgentStatusChip({ status }: { status: AgentStatus }) {
 
 // One agent turn as its own thread item — a full avatar/"Agent" header row with
 // a timestamp, the turn's final message, and (on the current turn) the live
-// status chip plus ship actions. The live turn's bubble streams; settled turns
-// render static and stay put as new turns arrive below.
+// status chip. The live turn's bubble streams; settled turns render static and
+// stay put as new turns arrive below.
 function AgentTurnRow({
   message,
   status,
   streaming,
-  showActions,
-  hasPr,
-  onCreatePr,
-  onDraftPr,
 }: {
   message?: AgentMessage;
   /** The live status chip; only the current turn passes one. */
   status?: AgentStatus;
   streaming: boolean;
-  showActions: boolean;
-  hasPr: boolean;
-  onCreatePr: () => void;
-  onDraftPr: () => void;
 }) {
   return (
     <ThreadItem>
@@ -282,17 +273,6 @@ function AgentTurnRow({
               )}
             </div>
           </ThreadItemBody>
-        )}
-        {showActions && !hasPr && (
-          <div className="pbs-1 flex flex-wrap items-center gap-1.5">
-            <Button variant="primary" size="sm" onClick={onCreatePr}>
-              <GitPullRequestIcon size={13} />
-              Create PR
-            </Button>
-            <Button variant="outline" size="sm" onClick={onDraftPr}>
-              Draft PR
-            </Button>
-          </div>
         )}
       </ThreadItemContent>
     </ThreadItem>
@@ -411,7 +391,7 @@ function ThreadConversation({
   useSessionConnection({ taskId, task, session, repoPath, isCloud });
   const { items } = useConversationItems(events, isPromptPending);
   const pendingPermissions = usePendingPermissionsForTask(taskId);
-  const { handleSendPrompt } = useSessionCallbacks({
+  useSessionCallbacks({
     taskId,
     task,
     session,
@@ -454,22 +434,6 @@ function ThreadConversation({
     isInitializing,
     prUrl,
   ]);
-
-  // Shipping a PR from a channel thread means asking the agent to open it — the
-  // uniform path that works for cloud and local runs alike (the agent owns the
-  // branch/commit). Re-engages the session, so the status flips back to active.
-  const askAgentToOpenPr = (draftPr: boolean) => {
-    void handleSendPrompt(
-      draftPr
-        ? "Create a draft pull request with these changes."
-        : "Create a pull request with these changes.",
-    );
-    toast.success(
-      draftPr
-        ? "Asked the agent to open a draft PR"
-        : "Asked the agent to open a PR",
-    );
-  };
 
   // User prompts, human thread messages, and agent turns woven into one
   // chronological list. Ties keep insertion order (prompts, then humans, then
@@ -661,10 +625,6 @@ function ThreadConversation({
                     row.message.id === lastAgentId &&
                     agentStatus?.phase === "active"
                   }
-                  showActions={false}
-                  hasPr={!!prUrl}
-                  onCreatePr={() => askAgentToOpenPr(false)}
-                  onDraftPr={() => askAgentToOpenPr(true)}
                 />
               ),
             )}
@@ -674,14 +634,7 @@ function ThreadConversation({
                 PR" action above it, out of view. Once a PR exists the agent's
                 "Done" message already reflects it, so the footer is dropped. */}
             {agentStatus && !(agentStatus.phase === "complete" && !!prUrl) && (
-              <AgentTurnRow
-                status={agentStatus}
-                streaming={false}
-                showActions={agentStatus.phase === "complete"}
-                hasPr={!!prUrl}
-                onCreatePr={() => askAgentToOpenPr(false)}
-                onDraftPr={() => askAgentToOpenPr(true)}
-              />
+              <AgentTurnRow status={agentStatus} streaming={false} />
             )}
           </ThreadItemGroup>
         )}

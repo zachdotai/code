@@ -60,6 +60,7 @@ import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannel
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import { useSessionSelector } from "@posthog/ui/features/sessions/useSession";
 import {
   type SidebarPrState,
   useTaskPrStatus,
@@ -176,6 +177,20 @@ interface TaskStatusDisplay {
 // deliberate end state we should not soften with a PR.
 function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
   const data = useChannelTaskData(task);
+  // A cloud run's status lingers on "in_progress" after the agent yields its
+  // turn — the same staleness the thread's "Ready to ship" sidesteps by reading
+  // the live session instead. Once the local session has produced output and
+  // settled (not generating, not blocked on a permission), trust that the agent
+  // has finished so the card and the thread agree. Gated on real activity so a
+  // not-yet-started task (empty session) isn't mislabeled "Ready".
+  const agentSettledAfterRun = useSessionSelector(
+    task.id,
+    (s) =>
+      !!s &&
+      (s.events?.length ?? 0) > 0 &&
+      !s.isPromptPending &&
+      (s.pendingPermissions?.size ?? 0) === 0,
+  );
   const { prState } = useTaskPrStatus({
     id: task.id,
     cloudPrUrl: data?.cloudPrUrl ?? null,
@@ -215,7 +230,12 @@ function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
   } else if (!status) {
     base = <Badge>Draft</Badge>;
   } else if (environment === "cloud" || isTerminalStatus(status)) {
-    base = statusBadge(status);
+    // Prefer the settled live session over a stale non-terminal cloud status, so
+    // a finished run reads "Ready" instead of a lingering "In progress". Never
+    // softens a terminal status (a failed run stays failed).
+    const effective =
+      agentSettledAfterRun && !isTerminalStatus(status) ? "completed" : status;
+    base = statusBadge(effective);
   } else {
     // Local, non-terminal: the run status is unreliable (the backend row stays
     // "queued" while the agent runs on the creator's machine), so we render no
@@ -403,7 +423,7 @@ const FeedItem = memo(function FeedItem({
   onOpenThread: (task: Task) => void;
 }) {
   return (
-    <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
+    <ThreadItem className="rounded-none py-1 pr-8 pl-0 hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
