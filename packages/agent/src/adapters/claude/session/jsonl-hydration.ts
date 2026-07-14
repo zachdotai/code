@@ -3,6 +3,11 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
+import {
+  estimateBase64Bytes,
+  isClaudeImageMimeType,
+  MAX_CLAUDE_IMAGE_BYTES,
+} from "@posthog/shared";
 import { DEFAULT_GATEWAY_MODEL } from "../../../gateway-models";
 import type { PostHogAPIClient } from "../../../posthog-api";
 import type { StoredEntry } from "../../../types";
@@ -595,9 +600,80 @@ interface HydrationLog {
   warn: (msg: string, data?: unknown) => void;
 }
 
-// Heals JSONL files written before the empty-block and missing-tool_use-input
-// fixes existed; without this an already-poisoned transcript keeps 400ing on
-// every resume.
+// Why an image would 400 the whole request on every replay: an unsupported
+// media type, or decoded bytes over the per-image limit. URL-sourced images
+// carry no bytes here, so they're left alone.
+function unprocessableImageReason(block: unknown): string | null {
+  const candidate = block as
+    | {
+        type?: string;
+        data?: unknown;
+        mimeType?: unknown;
+        source?: { type?: string; data?: unknown; media_type?: unknown };
+      }
+    | null
+    | undefined;
+  if (candidate?.type !== "image") return null;
+
+  // ACP shape: { data, mimeType }. Anthropic SDK shape (what the resumable
+  // JSONL actually stores): { source: { type: "base64", media_type, data } }.
+  const source = candidate.source;
+  const data =
+    typeof candidate.data === "string"
+      ? candidate.data
+      : typeof source?.data === "string"
+        ? source.data
+        : null;
+  const mimeType =
+    typeof candidate.mimeType === "string"
+      ? candidate.mimeType
+      : typeof source?.media_type === "string"
+        ? source.media_type
+        : null;
+  if (data == null) return null;
+
+  if (mimeType != null && !isClaudeImageMimeType(mimeType)) {
+    return `unsupported image type ${mimeType}`;
+  }
+  if (estimateBase64Bytes(data) > MAX_CLAUDE_IMAGE_BYTES) {
+    return "image exceeds the 5 MB per-image limit";
+  }
+  return null;
+}
+
+// Replaces unprocessable image blocks with a short text note, in place. Walks
+// tool_result content arrays too, since a Read on an oversized image file lands
+// its bytes nested inside a tool_result — the most common way a session gets
+// poisoned. Returns true if anything changed.
+function neutralizeUnprocessableImages(blocks: unknown[]): boolean {
+  let changed = false;
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i] as Record<string, unknown> | null;
+    const reason = unprocessableImageReason(block);
+    if (reason) {
+      blocks[i] = {
+        type: "text",
+        text: `[Removed unprocessable image: ${reason}]`,
+      };
+      changed = true;
+      continue;
+    }
+    if (
+      block?.type === "tool_result" &&
+      Array.isArray((block as { content?: unknown }).content) &&
+      neutralizeUnprocessableImages((block as { content: unknown[] }).content)
+    ) {
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+// Heals a persisted transcript that would otherwise 400 on every resume:
+// empty content blocks, missing tool_use.input, and images the API can't
+// process (unsupported type or over the per-image byte limit). The image case
+// is why a session that once read/attached a bad image keeps re-triggering the
+// same error on nearly every subsequent turn until the block is neutralized.
 export async function sanitizeSessionJsonl(
   jsonlPath: string,
 ): Promise<boolean> {
@@ -632,6 +708,9 @@ export async function sanitizeSessionJsonl(
         block.input = {};
         lineChanged = true;
       }
+    }
+    if (neutralizeUnprocessableImages(message.content as unknown[])) {
+      lineChanged = true;
     }
     if (!lineChanged) return line;
     changed = true;
@@ -682,9 +761,10 @@ export async function hydrateSessionJsonl(params: {
       await fs.access(jsonlPath);
       try {
         if (await sanitizeSessionJsonl(jsonlPath)) {
-          log.info("Removed empty content blocks from existing session JSONL", {
-            jsonlPath,
-          });
+          log.info(
+            "Healed existing session JSONL (empty and/or unprocessable-image blocks)",
+            { jsonlPath },
+          );
         }
       } catch (err) {
         // A sanitize failure must not block resuming from the existing file.
