@@ -25,6 +25,8 @@ import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import {
+  getFullScreenDisplayBounds,
+  saveFullScreenDisplayBounds,
   saveFullScreenState,
   setRestoreFullScreenOnNextLaunch,
   type WindowStateSchema,
@@ -58,6 +60,10 @@ function getSavedWindowState(): WindowStateSchema {
     isMaximized: windowStateStore.get("isMaximized", true),
     zoomLevel: windowStateStore.get("zoomLevel", 0),
     isFullScreen: windowStateStore.get("isFullScreen", false),
+    fullScreenDisplayBounds: windowStateStore.get(
+      "fullScreenDisplayBounds",
+      undefined,
+    ),
     restoreFullScreenOnNextLaunch: windowStateStore.get(
       "restoreFullScreenOnNextLaunch",
       false,
@@ -180,6 +186,23 @@ export function createWindow(): void {
   const restoreFullScreen = savedState.restoreFullScreenOnNextLaunch;
   if (restoreFullScreen) {
     setRestoreFullScreenOnNextLaunch(false);
+
+    // setFullScreen(true) fullscreens whichever display the window is on, so
+    // start the hidden window on the display that was fullscreen before the
+    // update. getDisplayMatching falls back to the nearest display if that
+    // monitor is gone.
+    const displayBounds = getFullScreenDisplayBounds();
+    if (displayBounds) {
+      const { workArea } = screen.getDisplayMatching(displayBounds);
+      savedState.width = Math.min(savedState.width, workArea.width);
+      savedState.height = Math.min(savedState.height, workArea.height);
+      savedState.x = Math.round(
+        workArea.x + (workArea.width - savedState.width) / 2,
+      );
+      savedState.y = Math.round(
+        workArea.y + (workArea.height - savedState.height) / 2,
+      );
+    }
   }
 
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -285,8 +308,16 @@ export function createWindow(): void {
   mainWindow.on("unmaximize", () => mainWindow && saveWindowState(mainWindow));
   mainWindow.on("close", () => mainWindow && saveWindowState(mainWindow));
 
-  // Live-track fullscreen so the update-quit path can read the current state.
-  mainWindow.on("enter-full-screen", () => saveFullScreenState(true));
+  // Live-track fullscreen (and which display it is on) so the update-quit
+  // path can restore the same monitor after the relaunch.
+  mainWindow.on("enter-full-screen", () => {
+    saveFullScreenState(true);
+    if (mainWindow) {
+      saveFullScreenDisplayBounds(
+        screen.getDisplayMatching(mainWindow.getBounds()).bounds,
+      );
+    }
+  });
   mainWindow.on("leave-full-screen", () => saveFullScreenState(false));
 
   container
