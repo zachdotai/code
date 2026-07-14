@@ -104,22 +104,24 @@ export class GitHandoffTracker {
         checkpoint.checkpointId,
       );
 
-      const packBaseline = localGitState?.upstreamHead ?? null;
+      const tracking = await getTrackingMetadata(git, checkpoint.branch);
+      const baselineRefs = localGitState?.upstreamHead
+        ? [localGitState.upstreamHead]
+        : await this.resolveDefaultPackBaseline(git, tracking);
       const packRefs = [
         checkpoint.head,
         reconciledIndex.indexTree,
         checkpoint.worktreeTree,
-        packBaseline ? `^${packBaseline}` : null,
+        ...baselineRefs.map((ref) => `^${ref}`),
       ].filter((ref): ref is string => !!ref);
       const headRef = checkpoint.head
         ? `${HANDOFF_HEAD_REF_PREFIX}${checkpoint.checkpointId}`
         : undefined;
       const packPrefix = path.join(tempDir, checkpoint.checkpointId);
 
-      const [headPack, indexFile, tracking] = await Promise.all([
+      const [headPack, indexFile] = await Promise.all([
         this.captureObjectPack(packPrefix, packRefs),
         this.statFileArtifact(reconciledIndex.indexFilePath),
-        getTrackingMetadata(git, checkpoint.branch),
       ]);
 
       return {
@@ -206,6 +208,50 @@ export class GitHandoffTracker {
       indexBytes,
       totalBytes: packBytes + indexBytes,
     };
+  }
+
+  /**
+   * Without local handoff state the pack baseline must stay limited to
+   * objects the apply side is able to restore: the branch's upstream
+   * tracking ref (which ensureBaselineForApply fetches before unpacking),
+   * or failing that the remote's default branch, which any fresh clone of
+   * the repository already contains. Excluding broader refs (e.g. every
+   * remote-tracking ref) risks producing a pack that omits objects the
+   * resume repository cannot fetch. Without any baseline, a capture with no
+   * local handoff state packs the entire repo snapshot, which for large
+   * repos exceeds artifact upload limits.
+   */
+  private async resolveDefaultPackBaseline(
+    git: GitClient,
+    tracking: GitTrackingMetadata,
+  ): Promise<string[]> {
+    if (tracking.upstreamRemote && tracking.upstreamMergeRef) {
+      const branchName = tracking.upstreamMergeRef.replace(
+        /^refs\/heads\//,
+        "",
+      );
+      const upstreamHead = await this.revparseOrNull(
+        git,
+        `refs/remotes/${tracking.upstreamRemote}/${branchName}`,
+      );
+      if (upstreamHead) {
+        return [upstreamHead];
+      }
+    }
+
+    const defaultHead = await this.revparseOrNull(
+      git,
+      "refs/remotes/origin/HEAD",
+    );
+    return defaultHead ? [defaultHead] : [];
+  }
+
+  private async revparseOrNull(
+    git: GitClient,
+    ref: string,
+  ): Promise<string | null> {
+    const value = await git.revparse([ref]).catch(() => null);
+    return value ? value.trim() : null;
   }
 
   private async captureObjectPack(
