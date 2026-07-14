@@ -9,9 +9,9 @@ import {
   Menu,
   type MenuItemConstructorOptions,
   screen,
-  shell,
 } from "electron";
 import { container } from "./di/container";
+import { setupExternalLinkHandlers } from "./external-links";
 import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
@@ -112,21 +112,6 @@ export function focusMainWindow(reason: string): void {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
-}
-
-function setupExternalLinkHandlers(window: BrowserWindow): void {
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: "deny" };
-  });
-
-  window.webContents.on("will-navigate", (event, url) => {
-    const appUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL || "file://";
-    if (!url.startsWith(appUrl)) {
-      event.preventDefault();
-      shell.openExternal(url);
-    }
-  });
 }
 
 function setupCrashLogging(window: BrowserWindow): void {
