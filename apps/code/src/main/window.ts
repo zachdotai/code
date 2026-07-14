@@ -1,5 +1,5 @@
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createIPCHandler } from "@posthog/electron-trpc/main";
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import { DARK_APP_BACKGROUND_COLOR } from "@posthog/shared/constants";
@@ -305,7 +305,18 @@ export function createWindow(): void {
     },
   });
 
-  setupExternalLinkHandlers(mainWindow);
+  const rendererFilePath = path.join(
+    __dirname,
+    `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`,
+  );
+  // The URL the renderer is served from, used to tell in-app navigations from
+  // external links. In dev it's the Vite server origin; in prod it's the
+  // packaged index.html file URL.
+  const appHome = MAIN_WINDOW_VITE_DEV_SERVER_URL
+    ? new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
+    : pathToFileURL(rendererFilePath);
+
+  setupExternalLinkHandlers(mainWindow, appHome);
   setupEditableContextMenu(mainWindow);
   setupCrashLogging(mainWindow);
   buildApplicationMenu();
@@ -313,9 +324,7 @@ export function createWindow(): void {
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    mainWindow.loadFile(rendererFilePath);
   }
 
   mainWindow.on("closed", () => {
