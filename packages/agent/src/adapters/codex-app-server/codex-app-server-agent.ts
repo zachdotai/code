@@ -36,6 +36,7 @@ import {
   estimateTokens,
 } from "../claude/context-breakdown";
 import { isLocalSkillCommandChunk } from "../local-skill";
+import { resolveSpokenNarration } from "../session-meta";
 import {
   AppServerClient,
   type AppServerClientHandlers,
@@ -84,6 +85,7 @@ type AppServerSessionMeta = {
   persistence?: { taskId?: string };
   environment?: "local" | "cloud";
   channelMode?: boolean;
+  spokenNarration?: boolean;
   baseBranch?: string;
 };
 
@@ -437,6 +439,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     return {
       environment: meta.environment,
       channelMode: meta.channelMode,
+      spokenNarration: resolveSpokenNarration(meta),
       taskId: meta.taskId,
       taskRunId: meta.taskRunId,
       persistence: meta.persistence,
