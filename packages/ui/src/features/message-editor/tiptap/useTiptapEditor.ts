@@ -20,10 +20,20 @@ import {
   isUrlOnly,
   shouldAutoConvertLongText,
 } from "@posthog/core/message-editor/paste";
+import {
+  formatHotkey,
+  SHORTCUTS,
+} from "@posthog/ui/features/command/keyboard-shortcuts";
+import {
+  PROMPT_RECALL_HINT_KEY,
+  type PromptRecallHandler,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
-import { toast } from "@posthog/ui/primitives/toast";
+import { type ToastOptions, toast } from "@posthog/ui/primitives/toast";
 import { isSendMessageSubmitKey } from "@posthog/ui/utils/sendMessageKey";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { useEditor } from "@tiptap/react";
 import type React from "react";
@@ -61,6 +71,7 @@ export interface UseTiptapEditorOptions {
   };
   clearOnSubmit?: boolean;
   getPromptHistory?: () => string[];
+  onPromptRecall?: PromptRecallHandler;
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
   onSubmit?: (text: string) => void;
   onBashCommand?: (command: string) => void;
@@ -191,15 +202,49 @@ async function resolveGithubRefChip(
   );
 }
 
-function showPasteHint(message: string, description: string): void {
+function replaceComposerText(view: EditorView, text = "") {
+  const tr = view.state.tr.delete(1, view.state.doc.content.size - 1);
+  return text ? tr.insertText(text, 1) : tr;
+}
+
+function hasVisibleSuggestionPopup(sessionId: string): boolean {
+  // tippy.js sets data-state="hidden" when hiding via .hide(); the session
+  // tag keeps another mounted composer's popup from matching.
+  return (
+    document.querySelector(
+      `[data-tippy-root] .tippy-box:not([data-state='hidden']) [data-suggestion-session="${CSS.escape(sessionId)}"]`,
+    ) !== null
+  );
+}
+
+function showHintOnce(
+  key: string,
+  title: string,
+  detail: string | ToastOptions,
+): void {
   const store = useFeatureSettingsStore.getState();
-  const key =
-    message === "Pasted as file attachment" ? "paste-as-file" : "paste-inline";
   if (!store.shouldShowHint(key)) return;
   store.recordHintShown(key);
-  toast.info(message, {
+  toast.info(title, detail);
+}
+
+function showMessageNavHint(): void {
+  showHintOnce(
+    PROMPT_RECALL_HINT_KEY,
+    "Recalled a sent prompt",
+    `Use ${formatHotkey(SHORTCUTS.MESSAGE_PREV)} and ${formatHotkey(SHORTCUTS.MESSAGE_NEXT)} to jump between your messages in the conversation.`,
+  );
+}
+
+function showPasteHint(message: string, description: string): void {
+  const key =
+    message === "Pasted as file attachment" ? "paste-as-file" : "paste-inline";
+  showHintOnce(key, message, {
     description,
-    action: { label: "Got it", onClick: () => store.markHintLearned(key) },
+    action: {
+      label: "Got it",
+      onClick: () => useFeatureSettingsStore.getState().markHintLearned(key),
+    },
   });
 }
 
@@ -216,6 +261,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     capabilities = {},
     clearOnSubmit = true,
     getPromptHistory,
+    onPromptRecall,
     onBeforeSubmit,
     onSubmit,
     onBashCommand,
@@ -255,6 +301,14 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
   const getPromptHistoryRef = useRef(getPromptHistory);
   getPromptHistoryRef.current = getPromptHistory;
+
+  const onPromptRecallRef = useRef(onPromptRecall);
+  onPromptRecallRef.current = onPromptRecall;
+
+  // Doc snapshot taken when arrow-key recall first replaces the input, so
+  // arrowing back down past the newest prompt restores what was being typed
+  // (kept as a ProseMirror node to preserve mention chips).
+  const promptRecallDraftRef = useRef<ProseMirrorNode | null>(null);
 
   const prevBashModeRef = useRef(false);
   const prevIsEmptyRef = useRef(true);
@@ -324,11 +378,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
           if (isSendMessageSubmitKey(event)) {
             if (!view.editable || submitDisabledRef.current) return false;
-            // tippy.js sets data-state="hidden" when hiding via .hide()
-            const visibleSuggestion = document.querySelector(
-              "[data-tippy-root] .tippy-box:not([data-state='hidden'])",
-            );
-            if (visibleSuggestion) return false;
+            if (hasVisibleSuggestionPopup(sessionId)) return false;
             event.preventDefault();
             historyActions.reset();
             submitRef.current();
@@ -337,12 +387,17 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
           if (
             (event.key === "ArrowUp" || event.key === "ArrowDown") &&
-            // Only navigate prompt history when the input is empty, so arrow
-            // keys (and Shift+Arrow selection) behave normally while editing.
-            !event.shiftKey
+            // Plain arrows only: Shift+Arrow selects, and Alt/Cmd/Ctrl arrow
+            // chords are global shortcuts handled elsewhere.
+            !event.shiftKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !event.ctrlKey
           ) {
             const historyGetter = getPromptHistoryRef.current;
-            if (!taskId && !historyGetter) return false;
+            if (!taskId && !historyGetter && !onPromptRecallRef.current) {
+              return false;
+            }
 
             const currentText = view.state.doc.textContent;
             const isEmpty = !currentText.trim();
@@ -355,11 +410,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                   sessionStoreSetters.dequeueMessagesAsText(taskId);
                 if (queuedContent !== null && queuedContent !== undefined) {
                   event.preventDefault();
-                  view.dispatch(
-                    view.state.tr
-                      .delete(1, view.state.doc.content.size - 1)
-                      .insertText(queuedContent, 1),
-                  );
+                  view.dispatch(replaceComposerText(view, queuedContent));
                   return true;
                 }
               }
@@ -367,11 +418,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               const newText = historyActions.navigateUp(history, currentText);
               if (newText !== null) {
                 event.preventDefault();
-                view.dispatch(
-                  view.state.tr
-                    .delete(1, view.state.doc.content.size - 1)
-                    .insertText(newText, 1),
-                );
+                view.dispatch(replaceComposerText(view, newText));
                 return true;
               }
             }
@@ -380,13 +427,59 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               const newText = historyActions.navigateDown(history);
               if (newText !== null) {
                 event.preventDefault();
-                view.dispatch(
-                  view.state.tr
-                    .delete(1, view.state.doc.content.size - 1)
-                    .insertText(newText, 1),
-                );
+                view.dispatch(replaceComposerText(view, newText));
                 return true;
               }
+            }
+
+            const recallPrompt = onPromptRecallRef.current;
+            if (recallPrompt) {
+              if (hasVisibleSuggestionPopup(sessionId)) return false;
+
+              const { selection, doc } = view.state;
+              // Arrows move the caret as usual; only a press that can't
+              // travel further (caret already at the first or last position)
+              // hands off to sent-prompt recall.
+              const atBoundary =
+                selection.empty &&
+                (event.key === "ArrowUp"
+                  ? selection.from <= 1
+                  : selection.to >= doc.content.size - 1);
+              if (!atBoundary) return false;
+
+              const result = recallPrompt(event.key === "ArrowUp" ? -1 : 1);
+              if (!result) return false;
+              event.preventDefault();
+
+              if (result.kind === "recall") {
+                if (result.fresh) {
+                  promptRecallDraftRef.current = view.state.doc;
+                  showMessageNavHint();
+                }
+                const tr = replaceComposerText(view, result.text);
+                // Recalling up parks the caret at the start so the next Up
+                // press keeps cycling; recalling down parks it at the end.
+                if (event.key === "ArrowUp") {
+                  tr.setSelection(TextSelection.create(tr.doc, 1));
+                }
+                view.dispatch(tr);
+                return true;
+              }
+
+              const draft = promptRecallDraftRef.current;
+              promptRecallDraftRef.current = null;
+              if (draft) {
+                const tr = view.state.tr.replaceWith(
+                  0,
+                  view.state.doc.content.size,
+                  draft.content,
+                );
+                tr.setSelection(TextSelection.atEnd(tr.doc));
+                view.dispatch(tr);
+              } else {
+                view.dispatch(replaceComposerText(view));
+              }
+              return true;
             }
           }
 
@@ -635,6 +728,11 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const draft = useDraftSync(editor, sessionId, context);
   draftRef.current = draft;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `editor` is the trigger: a recreated editor brings a new schema, and restoring a snapshot taken against the old one would throw on replaceWith.
+  useEffect(() => {
+    promptRecallDraftRef.current = null;
+  }, [editor]);
+
   // Keep attachmentsRef in sync with state (synchronous, no effect needed)
   attachmentsRef.current = attachments;
 
@@ -674,6 +772,8 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     if (isContentEmpty(content)) return;
 
     const text = editor.getText().trim();
+
+    promptRecallDraftRef.current = null;
 
     const doClear = () => {
       if (!clearOnSubmit) return;

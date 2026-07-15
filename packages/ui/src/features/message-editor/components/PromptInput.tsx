@@ -3,6 +3,7 @@ import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { ArrowUp, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { cycleModeOption } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { hasOpenOverlay } from "@posthog/ui/utils/overlay";
@@ -76,6 +77,8 @@ export interface PromptInputProps {
   hideDefaultToolbar?: boolean;
   // prompt history provider
   getPromptHistory?: () => string[];
+  // plain Up/Down at the caret boundary recalls sent prompts into the input
+  onPromptRecall?: PromptRecallHandler;
   // callbacks
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
   onSubmit?: (text: string) => void;
@@ -121,6 +124,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       headerAddon,
       hideDefaultToolbar = false,
       getPromptHistory,
+      onPromptRecall,
       onBeforeSubmit,
       onSubmit,
       onBashCommand,
@@ -177,6 +181,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         commands: enableCommands,
       },
       getPromptHistory,
+      onPromptRecall,
       onBeforeSubmit,
       onSubmit,
       onBashCommand,
