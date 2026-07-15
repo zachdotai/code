@@ -85,6 +85,13 @@ export interface PromptInputProps {
   onBashCommand?: (command: string) => void;
   onBashModeChange?: (isBashMode: boolean) => void;
   onCancel?: () => void;
+  /**
+   * Whether the composer is currently editing a queued message in place. When
+   * true, Escape abandons the edit (via {@link onCancelEdit}) instead of
+   * stopping the running turn.
+   */
+  isEditingQueued?: boolean;
+  onCancelEdit?: () => void;
   onToggleMessagingMode?: () => void;
   onAttachFiles?: (files: File[]) => void;
   onEmptyChange?: (isEmpty: boolean) => void;
@@ -130,6 +137,8 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onBashCommand,
       onBashModeChange,
       onCancel,
+      isEditingQueued = false,
+      onCancelEdit,
       onToggleMessagingMode,
       onAttachFiles,
       onEmptyChange,
@@ -250,6 +259,13 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       (e) => {
         if (hasOpenOverlay()) return;
         if (!isActiveSession) return;
+        // Editing a queued message: Escape abandons the edit. It takes priority
+        // over stopping a running turn — while editing, Escape just cancels.
+        if (isEditingQueued && onCancelEdit) {
+          e.preventDefault();
+          onCancelEdit();
+          return;
+        }
         if (isLoading && onCancel) {
           e.preventDefault();
           onCancel();
@@ -258,9 +274,10 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       {
         enableOnFormTags: true,
         enableOnContentEditable: true,
-        enabled: isLoading && !!onCancel,
+        enabled:
+          (isEditingQueued && !!onCancelEdit) || (isLoading && !!onCancel),
       },
-      [isActiveSession, isLoading, onCancel],
+      [isActiveSession, isLoading, onCancel, isEditingQueued, onCancelEdit],
     );
 
     useHotkeys(
