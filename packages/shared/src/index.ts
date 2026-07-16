@@ -72,6 +72,8 @@ export {
 export type { SignalReportPriority, Task } from "./domain-types";
 export * from "./enrichment";
 export {
+  classifyGatewayLimitError,
+  type GatewayLimitCause,
   getErrorMessage,
   isAuthError,
   isFatalSessionError,

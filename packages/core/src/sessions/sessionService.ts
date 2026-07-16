@@ -14,6 +14,7 @@ import {
   type Adapter,
   type AgentSession,
   type CloudRegion,
+  classifyGatewayLimitError,
   type ExecutionMode,
   flattenSelectOptions,
   getBackoffDelay,
@@ -2712,15 +2713,18 @@ export class SessionService {
 
       this.d.store.clearOptimisticItems(session.taskRunId);
 
-      if (isRateLimitError(errorMessage, errorDetails)) {
-        this.d.log.warn("Rate limit exceeded, showing usage limit modal", {
+      const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
+
+      if (limitCause !== null || isRateLimitError(errorMessage, errorDetails)) {
+        this.d.log.warn("Gateway limit reached, showing usage limit modal", {
           taskRunId: session.taskRunId,
+          cause: limitCause,
         });
         this.d.store.updateSession(session.taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
         });
-        this.d.usageLimit.show();
+        this.d.usageLimit.show(limitCause ? { cause: limitCause } : undefined);
         return { stopReason: "rate_limited" };
       }
 

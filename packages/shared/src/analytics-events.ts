@@ -983,12 +983,16 @@ export type UpgradePromptClickedSurface =
   | "plan_page_card"
   | "upgrade_dialog";
 
+export type UpgradePromptCause = "model_gate" | "org_limit";
+
 export interface UpgradePromptShownProperties {
   surface: UpgradePromptShownSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface UpgradePromptClickedProperties {
   surface: UpgradePromptClickedSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface CloudTaskUsageBlockedProperties {

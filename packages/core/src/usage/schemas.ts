@@ -11,8 +11,10 @@ export const usageOutput = z.object({
   user_id: z.number(),
   sustained: usageBucketSchema,
   burst: usageBucketSchema,
+  ai_credits: z.object({ exhausted: z.boolean() }).optional(),
   is_rate_limited: z.boolean(),
   is_pro: z.boolean(),
+  code_usage_subscribed: z.boolean().optional(),
   billing_period_end: z.string().datetime().nullable().optional(),
 });
 
