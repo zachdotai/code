@@ -272,7 +272,7 @@ export function CreateChannelModal({
           <DialogTitle>Create a channel</DialogTitle>
         </DialogHeader>
 
-        <DialogBody viewportClassName="flex flex-col gap-4">
+        <DialogBody className="flex flex-col gap-4">
           <Field>
             <FieldLabel htmlFor="context-name">Name</FieldLabel>
             <Input
