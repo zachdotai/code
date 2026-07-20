@@ -196,6 +196,7 @@ export function CreateChannelModal({
         id="context-description"
         autoFocus
         rows={4}
+        className="max-h-[40vh] overflow-y-auto"
         value={description}
         placeholder={DESCRIPTION_PLACEHOLDER}
         disabled={busy}
