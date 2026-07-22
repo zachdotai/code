@@ -2,7 +2,12 @@ import { ALL_WORKSPACE_MODES } from "@posthog/core/sidebar/buildSidebarData";
 import type { WorkspaceMode } from "@posthog/shared";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { SIDEBAR_MIN_WIDTH } from "./constants";
+import {
+  type CustomizableNavItemId,
+  type NavItemOverrides,
+  SIDEBAR_MIN_WIDTH,
+  sanitizeNavItemOverrides,
+} from "./constants";
 
 interface SidebarStoreState {
   open: boolean;
@@ -21,6 +26,10 @@ interface SidebarStoreState {
   // the task list, Canvas nav item appears). Off by default — Code merged into
   // the Bluebird chrome ships with channels hidden until the user opts in.
   channelsEnabled: boolean;
+  // Per-item visibility overrides from the Customize sidebar dialog. Items
+  // absent from the map follow their CUSTOMIZABLE_NAV_ITEMS defaultVisible, so newly
+  // shipped moreable items keep their intended default for existing users.
+  navItemOverrides: NavItemOverrides;
 }
 
 interface SidebarStoreActions {
@@ -41,6 +50,7 @@ interface SidebarStoreActions {
   setShowInternal: (showInternal: boolean) => void;
   toggleTaskType: (mode: WorkspaceMode) => void;
   setChannelsEnabled: (channelsEnabled: boolean) => void;
+  setNavItemVisible: (item: CustomizableNavItemId, visible: boolean) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -61,6 +71,7 @@ export const useSidebarStore = create<SidebarStore>()(
       showInternal: false,
       taskTypeFilter: [...ALL_WORKSPACE_MODES],
       channelsEnabled: false,
+      navItemOverrides: {},
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -118,6 +129,10 @@ export const useSidebarStore = create<SidebarStore>()(
             : [...state.taskTypeFilter, mode],
         })),
       setChannelsEnabled: (channelsEnabled) => set({ channelsEnabled }),
+      setNavItemVisible: (item, visible) =>
+        set((state) => ({
+          navItemOverrides: { ...state.navItemOverrides, [item]: visible },
+        })),
     }),
     {
       name: "sidebar-storage",
@@ -134,6 +149,7 @@ export const useSidebarStore = create<SidebarStore>()(
         showInternal: state.showInternal,
         taskTypeFilter: state.taskTypeFilter,
         channelsEnabled: state.channelsEnabled,
+        navItemOverrides: state.navItemOverrides,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -149,6 +165,7 @@ export const useSidebarStore = create<SidebarStore>()(
           showInternal?: boolean;
           taskTypeFilter?: WorkspaceMode[];
           channelsEnabled?: boolean;
+          navItemOverrides?: unknown;
         };
         return {
           ...current,
@@ -171,6 +188,9 @@ export const useSidebarStore = create<SidebarStore>()(
             persistedState.taskTypeFilter ?? current.taskTypeFilter,
           channelsEnabled:
             persistedState.channelsEnabled ?? current.channelsEnabled,
+          navItemOverrides: sanitizeNavItemOverrides(
+            persistedState.navItemOverrides,
+          ),
         };
       },
     },
