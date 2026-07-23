@@ -4,7 +4,7 @@ import {
   useInboxCloudTaskRunner,
 } from "@posthog/ui/features/inbox/hooks/useInboxCloudTaskRunner";
 import { useCallback, useMemo, useRef } from "react";
-import { buildLoopBuilderPrompt } from "../loopBuilderPrompt";
+import { buildLoopBuilderSystemInstructions } from "../loopBuilderPrompt";
 
 interface UseLoopBuilderTaskReturn {
   /** Start an auto-mode cloud session that builds a loop from `instructions` and navigate to it. */
@@ -30,13 +30,18 @@ export function useLoopBuilderTask(context?: {
 
   const buildInput = useCallback(
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => {
-      const prompt = buildLoopBuilderPrompt({
-        instructions: instructionsRef.current,
+      const userPrompt = instructionsRef.current.trim();
+      const hasSeed = !!userPrompt;
+      const systemInstructions = buildLoopBuilderSystemInstructions({
+        hasSeed,
         context: contextRef.current,
       });
+      // createTask rejects empty content and the saga drops customInstructions without message text
+      const taskContent = hasSeed ? userPrompt : "Build a loop";
       return {
-        content: prompt,
-        taskDescription: prompt,
+        content: taskContent,
+        taskDescription: taskContent,
+        customInstructions: systemInstructions,
         // Building a loop is pure PostHog-MCP work (loops-list, integrations-list,
         // loops-create); it never touches a working tree. Run repo-less so the
         // sandbox skips the clone and isn't tied to some arbitrary default repo.
