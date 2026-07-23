@@ -10,6 +10,12 @@ import { Switch } from "@posthog/quill";
 import { CopyButton } from "@posthog/ui/features/agent-applications/components/CopyButton";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { Button } from "@posthog/ui/primitives/Button";
+import { TimezonePicker } from "@posthog/ui/primitives/TimezonePicker";
+import { TimezoneTimestamp } from "@posthog/ui/primitives/TimezoneTimestamp";
+import {
+  formatScheduleTimestamp,
+  systemTimezone,
+} from "@posthog/ui/primitives/timezone";
 import { Box, Checkbox, Flex, IconButton, Text } from "@radix-ui/themes";
 import {
   compileCronSchedule,
@@ -17,6 +23,7 @@ import {
   parseCronSchedule,
   type RecurringFrequency,
 } from "../loopCron";
+import { nextScheduleRun } from "../loopDisplay";
 import {
   defaultLoopScheduleTrigger,
   emptyLoopApiTriggerConfig,
@@ -117,6 +124,7 @@ export function LoopTriggerEditor({
         variant="outline"
         color="gray"
         size="1"
+        className="self-start"
         disabled={disabled}
         onClick={addTrigger}
       >
@@ -235,14 +243,6 @@ const WEEKDAY_OPTIONS = [
   { value: "6", label: "Saturday" },
 ];
 
-function localTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch {
-    return "UTC";
-  }
-}
-
 function ScheduleTriggerFields({
   config,
   disabled,
@@ -264,7 +264,12 @@ function ScheduleTriggerFields({
       : (parsed?.frequency ?? "daily");
   const time = parsed?.time ?? DEFAULT_SCHEDULE_TIME;
   const weekday = parsed?.weekday ?? "1";
-  const timezone = config.timezone || localTimezone();
+  const timezone = config.timezone ?? "UTC";
+  const nextRun = nextScheduleRun(config);
+  const nextRunTimezone = frequency === "once" ? systemTimezone() : timezone;
+  const nextRunLabel = nextRun
+    ? formatScheduleTimestamp(nextRun, nextRunTimezone)
+    : null;
   const frequencyOptions = isCustomCron
     ? [CUSTOM_FREQUENCY_OPTION, ...FREQUENCY_OPTIONS]
     : FREQUENCY_OPTIONS;
@@ -289,7 +294,10 @@ function ScheduleTriggerFields({
     if (next === "custom") return;
     if (next === "once") {
       // The backend rejects run_at values in the past; default an hour out.
-      onChange({ run_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() });
+      onChange({
+        run_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        timezone,
+      });
       return;
     }
     setRecurring(next, time, weekday);
@@ -369,7 +377,27 @@ function ScheduleTriggerFields({
       </Flex>
 
       {frequency !== "once" ? (
-        <Text className="text-[11px] text-gray-9">Times in {timezone}</Text>
+        <Flex direction="column" gap="1">
+          <Text className="text-[11px] text-gray-9">Timezone</Text>
+          <TimezonePicker
+            value={timezone}
+            disabled={disabled}
+            className="w-[240px] max-w-full"
+            onValueChange={(value) => onChange({ ...config, timezone: value })}
+          />
+        </Flex>
+      ) : null}
+
+      {nextRun && nextRunLabel ? (
+        <Flex align="center" gap="2" className="text-[12px]">
+          <Text className="text-gray-10">Next run</Text>
+          <TimezoneTimestamp
+            timestamp={nextRun}
+            timezone={nextRunTimezone}
+            label={nextRunLabel}
+            className="text-gray-12"
+          />
+        </Flex>
       ) : null}
     </Flex>
   );
