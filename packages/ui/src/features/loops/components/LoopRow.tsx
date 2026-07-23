@@ -25,11 +25,6 @@ export function LoopRow({
   creatorLookupComplete?: boolean;
 }) {
   const description = loop.description.trim();
-  const triggerLabel = loop.triggers.length === 1 ? "trigger" : "triggers";
-  const triggerSummary =
-    loop.triggers.length === 0
-      ? "No triggers configured"
-      : `${loop.triggers.length} ${triggerLabel}`;
 
   let creatorLabel: string | null = null;
   if (loop.visibility === "team" && creatorError) {
@@ -46,7 +41,7 @@ export function LoopRow({
       : "Created by a former organization member";
   }
 
-  const metadata = [triggerSummary];
+  const metadata: string[] = [];
   const notificationDestinations = summarizeNotificationDestinations(
     loop.notifications,
   );
@@ -63,7 +58,7 @@ export function LoopRow({
     >
       <Flex align="center" gap="3" className="min-w-0">
         <RepeatIcon size={20} className="shrink-0 text-gray-11" />
-        <Flex direction="column" className="min-w-0 gap-0.5">
+        <Flex direction="column" gap="1" className="min-w-0">
           <Flex align="center" gap="2" className="min-w-0">
             <Text className="truncate font-medium text-[13px] text-gray-12">
               {loop.name}
@@ -71,12 +66,14 @@ export function LoopRow({
             <Badge color={loopStatusColor(loop)}>{loopStatusLabel(loop)}</Badge>
             <Badge color="gray">{loop.visibility}</Badge>
           </Flex>
-          <Text className="text-[12px] text-gray-11 leading-snug">
-            {metadata.join(" · ")}
-          </Text>
           {description ? (
-            <Text className="truncate text-[12px] text-gray-10 leading-snug">
+            <Text className="truncate text-[12px] text-gray-11 leading-snug">
               {description}
+            </Text>
+          ) : null}
+          {metadata.length > 0 ? (
+            <Text className="mt-0.5 text-(--accent-11) text-[11px] leading-snug">
+              {metadata.join(" · ")}
             </Text>
           ) : null}
         </Flex>
