@@ -1,4 +1,7 @@
 import { CloudIcon, PlusIcon, RepeatIcon } from "@phosphor-icons/react";
+import type { LoopSchemas } from "@posthog/api-client/loops";
+import type { UserBasic } from "@posthog/shared/domain-types";
+import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
 import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
@@ -17,6 +20,20 @@ import { LoopTemplatesSection } from "./LoopTemplatesSection";
  * never drifts from the limit the server actually enforces. */
 function loopLimitReason(max: number): string {
   return `You've reached the limit of ${max} loops for this project. Delete one to add another.`;
+}
+
+const EMPTY_MEMBERS: UserBasic[] = [];
+
+function startBlankLoop(): void {
+  useLoopDraftStore.getState().setPrefill(null);
+  navigateToNewLoop();
+}
+
+function startLoopFromTemplate(template: LoopTemplate): void {
+  useLoopDraftStore
+    .getState()
+    .setPrefill({ description: template.description, ...template.build() });
+  navigateToNewLoop();
 }
 
 export function LoopsListView() {
@@ -42,18 +59,57 @@ export function LoopsListView() {
   useSetHeaderContent(headerContent);
 
   const allLoops = loops ?? [];
+  const teamLoops = allLoops.filter((loop) => loop.visibility === "team");
+  const {
+    members,
+    isLoading: membersLoading,
+    isError: membersError,
+    isComplete: membersComplete,
+  } = useOrgMembers({ enabled: teamLoops.length > 0 });
 
-  const startBlank = () => {
-    useLoopDraftStore.getState().setPrefill(null);
-    navigateToNewLoop();
-  };
+  return (
+    <LoopsListViewPresentation
+      loops={allLoops}
+      isLoading={isLoading}
+      error={isError ? error : null}
+      limitReason={limitReason}
+      members={members}
+      membersLoading={membersLoading}
+      membersError={membersError}
+      membersComplete={membersComplete}
+      onStartBlank={startBlankLoop}
+      onStartFromTemplate={startLoopFromTemplate}
+    />
+  );
+}
 
-  const startFromTemplate = (template: LoopTemplate) => {
-    useLoopDraftStore
-      .getState()
-      .setPrefill({ description: template.description, ...template.build() });
-    navigateToNewLoop();
-  };
+interface LoopsListViewPresentationProps {
+  loops: LoopSchemas.Loop[];
+  isLoading?: boolean;
+  error?: unknown;
+  limitReason?: string | null;
+  members?: UserBasic[];
+  membersLoading?: boolean;
+  membersError?: boolean;
+  membersComplete?: boolean;
+  onStartBlank: () => void;
+  onStartFromTemplate: (template: LoopTemplate) => void;
+}
+
+export function LoopsListViewPresentation({
+  loops,
+  isLoading = false,
+  error = null,
+  limitReason = null,
+  members = EMPTY_MEMBERS,
+  membersLoading = false,
+  membersError = false,
+  membersComplete = true,
+  onStartBlank,
+  onStartFromTemplate,
+}: LoopsListViewPresentationProps) {
+  const personalLoops = loops.filter((loop) => loop.visibility === "personal");
+  const teamLoops = loops.filter((loop) => loop.visibility === "team");
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -91,7 +147,7 @@ export function LoopsListView() {
               variant="soft"
               color="gray"
               size="2"
-              onClick={startBlank}
+              onClick={onStartBlank}
               disabled={limitReason != null}
               disabledReason={limitReason}
             >
@@ -102,7 +158,7 @@ export function LoopsListView() {
 
           {isLoading ? (
             <LoopsSkeleton />
-          ) : isError ? (
+          ) : error ? (
             <LoopsEmptyNotice
               title="Couldn't load loops."
               hint={
@@ -111,22 +167,27 @@ export function LoopsListView() {
                   : "The loops API returned an error."
               }
             />
-          ) : allLoops.length > 0 ? (
-            <Flex direction="column" gap="3">
-              <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
-                Your loops
-              </Text>
-              <Flex direction="column" gap="2">
-                {allLoops.map((loop) => (
-                  <LoopRow key={loop.id} loop={loop} />
-                ))}
-              </Flex>
+          ) : loops.length > 0 ? (
+            <Flex direction="column" gap="5">
+              {personalLoops.length > 0 ? (
+                <LoopListSection title="Personal loops" loops={personalLoops} />
+              ) : null}
+              {teamLoops.length > 0 ? (
+                <LoopListSection
+                  title="Team loops"
+                  loops={teamLoops}
+                  members={members}
+                  membersLoading={membersLoading}
+                  membersError={membersError}
+                  membersComplete={membersComplete}
+                />
+              ) : null}
             </Flex>
           ) : (
             <LoopsEmptyState />
           )}
 
-          <LoopTemplatesSection onSelect={startFromTemplate} />
+          <LoopTemplatesSection onSelect={onStartFromTemplate} />
         </Flex>
       </div>
 
@@ -139,6 +200,42 @@ export function LoopsListView() {
           <LoopBuilderComposer disabledReason={limitReason} />
         </Flex>
       </div>
+    </Flex>
+  );
+}
+
+function LoopListSection({
+  title,
+  loops,
+  members = EMPTY_MEMBERS,
+  membersLoading = false,
+  membersError = false,
+  membersComplete = true,
+}: {
+  title: string;
+  loops: LoopSchemas.Loop[];
+  members?: UserBasic[];
+  membersLoading?: boolean;
+  membersError?: boolean;
+  membersComplete?: boolean;
+}) {
+  return (
+    <Flex direction="column" gap="3">
+      <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
+        {title}
+      </Text>
+      <Flex direction="column" gap="2">
+        {loops.map((loop) => (
+          <LoopRow
+            key={loop.id}
+            loop={loop}
+            creator={members.find((member) => member.id === loop.created_by_id)}
+            creatorLoading={membersLoading}
+            creatorError={membersError}
+            creatorLookupComplete={membersComplete}
+          />
+        ))}
+      </Flex>
     </Flex>
   );
 }

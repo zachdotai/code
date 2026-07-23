@@ -13,6 +13,9 @@ import {
   Switch,
   Textarea,
 } from "@posthog/quill";
+import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
+import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
+import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
@@ -33,6 +36,7 @@ import {
   describeTrigger,
   loopStatusColor,
   loopStatusLabel,
+  summarizeNotificationDestinations,
 } from "../loopDisplay";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
@@ -259,6 +263,33 @@ function loopStatusBadgeVariant(
 
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
   const displayModel = useLoopDisplayModel(loop.runtime_adapter, loop.model);
+  const {
+    members,
+    isLoading: membersLoading,
+    isError: membersError,
+    isComplete: membersComplete,
+  } = useOrgMembers({ enabled: loop.visibility === "team" });
+  const creator = members.find((member) => member.id === loop.created_by_id);
+  let creatorContent: React.ReactNode = null;
+  if (loop.visibility === "team" && membersError) {
+    creatorContent = "Creator unavailable";
+  } else if (loop.visibility === "team" && membersLoading) {
+    creatorContent = "Loading…";
+  } else if (loop.visibility === "team" && creator) {
+    creatorContent = (
+      <Flex align="center" gap="2">
+        <UserAvatar user={creator} size="xs" />
+        {userDisplayName(creator)}
+      </Flex>
+    );
+  } else if (loop.visibility === "team" && membersComplete) {
+    creatorContent = "Former organization member";
+  } else if (loop.visibility === "team") {
+    creatorContent = "Creator unavailable";
+  }
+  const notificationDestinations = summarizeNotificationDestinations(
+    loop.notifications,
+  );
 
   return (
     <Flex direction="column" gap="3">
@@ -287,6 +318,10 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             : "None (connector-only loop)"}
         </SummaryRow>
 
+        {loop.visibility === "team" ? (
+          <SummaryRow label="Created by">{creatorContent}</SummaryRow>
+        ) : null}
+
         <SummaryRow label="Triggers">
           {loop.triggers.length === 0 ? (
             "No triggers configured"
@@ -301,6 +336,12 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             </Flex>
           )}
         </SummaryRow>
+
+        {notificationDestinations.length > 0 ? (
+          <SummaryRow label="Notifications">
+            {notificationDestinations.join(", ")}
+          </SummaryRow>
+        ) : null}
       </Flex>
     </Flex>
   );
